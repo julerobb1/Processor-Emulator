@@ -17,14 +17,44 @@ namespace ProcessorEmulator.Tools
                 ushort machine = BitConverter.ToUInt16(binaryOrImage, 18);
                 switch (machine)
                 {
-                    case 0x08: return "MIPS32";
-                    case 0x28: return "ARM";
-                    case 0xB7: return "ARM64";
-                    case 0xF3: return "RISC-V";
-                    case 0x3E: return "x86-64";
-                    case 0x03: return "x86";
-                    case 0x15: return "PowerPC";
-                    case 0x62: return "MIPS64";
+                    case 0x0001: return "TargetHost";
+                    case 0x014c: return "I386";
+                    case 0x014d: return "I486";
+                    case 0x014e: return "Pentium";
+                    case 0x0160: return "R3000BE";
+                    case 0x0162: return "R3000LE";
+                    case 0x0166: return "R4000";
+                    case 0x0260: return "R10000";
+                    case 0x0169: return "WceMipsV2";
+                    case 0x0184: return "Alpha_AXP";
+                    case 0x01a2: return "SH3";
+                    case 0x01a3: return "SH3DSP";
+                    case 0x01a4: return "SH3E";
+                    case 0x01a6: return "SH4";
+                    case 0x01a8: return "SH5";
+                    case 0x01c0: return "Arm";
+                    case 0x01c2: return "THUMB";
+                    case 0x01c4: return "ArmThumb2";
+                    case 0x01d3: return "AM33";
+                    case 0x01f0: return "PowerPC";
+                    case 0x01f1: return "PowerPCFP";
+                    case 0x01f2: return "PPCBE";
+                    case 0x0200: return "IA64";
+                    case 0x0366: return "MIPSFPU";
+                    case 0x0466: return "MIPSFPU16";
+                    case 0x0520: return "Tricore";
+                    case 0x0cef: return "CEF";
+                    case 0x0ebc: return "EFI Byte Code";
+                    case 0x0eba: return "SPARC";
+                    case 0x8664: return "AMD64";
+                    case 0x9041: return "M32R";
+                    case 0xaa64: return "ARM64";
+                    case 0xc0ee: return "CEE";
+                    case 0x5032: return "RISC-V32";
+                    case 0x5064: return "RISC-V64";
+                    case 0x5128: return "RISC-V128";
+                    case 0x6232: return "LoongArch32";
+                    case 0x6264: return "LoongArch64";
                     default: return "Unknown";
                 }
             }
@@ -137,7 +167,45 @@ namespace ProcessorEmulator.Tools
     {
         public static readonly List<string> All = new List<string>
         {
-            "MIPS32", "MIPS64", "ARM", "ARM64", "PowerPC", "x86", "x86-64", "RISC-V"
+            "TargetHost", // 0x0001
+            "I386", // 0x014c
+            "I486", // 0x014d
+            "Pentium", // 0x014e
+            "R3000BE", // 0x0160
+            "R3000LE", // 0x0162
+            "R4000", // 0x0166
+            "R10000", // 0x0260
+            "MIPS little endian", // 0x0166
+            "WceMipsV2", // 0x0169
+            "Alpha_AXP", // 0x0184
+            "SH3", // 0x01a2
+            "SH3DSP", // 0x01a3
+            "SH3E", // 0x01a4
+            "SH4", // 0x01a6
+            "SH5", // 0x01a8
+            "Arm", // 0x01c0
+            "THUMB", // 0x01c2
+            "ArmThumb2", // 0x01c4
+            "AM33", // 0x01d3
+            "PowerPC", // 0x01f0
+            "PowerPCFP", // 0x01f1
+            "PPCBE", // 0x01f2
+            "IA64", // 0x0200
+            "MIPSFPU", // 0x0366
+            "MIPSFPU16", // 0x0466
+            "Tricore", // 0x0520
+            "CEF", // 0x0cef
+            "EFI Byte Code", // 0x0ebc
+            "SPARC", // 0x0eba
+            "AMD64", // 0x8664
+            "M32R", // 0x9041
+            "ARM64", // 0xaa64
+            "CEE", // 0xc0ee
+            "RISC-V32", // 0x5032
+            "RISC-V64", // 0x5064
+            "RISC-V128", // 0x5128
+            "LoongArch32", // 0x6232
+            "LoongArch64" // 0x6264
         };
     }
 }
