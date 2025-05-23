@@ -23,5 +23,11 @@ namespace ProcessorEmulator.Tools
             process.Start();
             process.WaitForExit();
         }
+
+        public static void ExtractAndAnalyze(string archivePath, string outputDir)
+        {
+            ExtractArchive(archivePath, outputDir);
+            FirmwareAnalyzer.AnalyzeFirmwareArchive(archivePath, outputDir);
+        }
     }
 }
