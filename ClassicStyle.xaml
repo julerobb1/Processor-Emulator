@@ -1,0 +1,15 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- Classic Windows XP/7 style colors and fonts -->
+    <Style TargetType="Window">
+        <Setter Property="Background" Value="#F0F0F0"/>
+        <Setter Property="FontFamily" Value="Segoe UI"/>
+        <Setter Property="FontSize" Value="12"/>
+    </Style>
+    <Style TargetType="Menu">
+        <Setter Property="Background" Value="#E3E3E3"/>
+    </Style>
+    <Style TargetType="StatusBar">
+        <Setter Property="Background" Value="#D4D0C8"/>
+    </Style>
+</ResourceDictionary>
