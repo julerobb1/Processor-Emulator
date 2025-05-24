@@ -29,6 +29,28 @@ namespace ProcessorEmulator.Tools
             process.Start();
         }
 
+        public void LaunchWithArgs(string imagePath, string architecture, string extraArgs)
+        {
+            string qemuExe = GetQemuExecutable(architecture);
+            if (!File.Exists(qemuExe))
+                throw new FileNotFoundException($"QEMU executable not found: {qemuExe}");
+
+            var args = GetQemuArgs(imagePath, architecture) + " " + extraArgs;
+            var process = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = qemuExe,
+                    Arguments = args,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                }
+            };
+            process.Start();
+        }
+
         private string GetQemuExecutable(string architecture)
         {
             switch (architecture)
