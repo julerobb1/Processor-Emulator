@@ -173,4 +173,50 @@ namespace ProcessorEmulator.Emulation
             // TODO: Load and parse OS image or application binary
         }
     }
+
+    // CPU model interface and stubs
+    public interface ICpuModel
+    {
+        void Reset();
+        void Step();
+        string Name { get; }
+    }
+
+    public class MipsR4000Cpu : ICpuModel
+    {
+        public string Name => "MIPS R4000";
+        public void Reset() { /* TODO: Reset CPU state */ }
+        public void Step() { /* TODO: Execute one instruction */ }
+    }
+
+    public class ArmCortexACpu : ICpuModel
+    {
+        public string Name => "ARM Cortex-A";
+        public void Reset() { /* TODO */ }
+        public void Step() { /* TODO */ }
+    }
+
+    public class PowerPcCpu : ICpuModel
+    {
+        public string Name => "PowerPC";
+        public void Reset() { /* TODO */ }
+        public void Step() { /* TODO */ }
+    }
+
+    // Emulator with CPU and device selection
+    public class HardwareEmulator : IEmulator
+    {
+        private ICpuModel cpu;
+        private List<IDevice> devices = new List<IDevice>();
+        public HardwareEmulator(ICpuModel cpuModel, IEnumerable<IDevice> deviceModels)
+        {
+            cpu = cpuModel;
+            devices.AddRange(deviceModels);
+        }
+        public void LoadBinary(byte[] binary) { /* TODO: Load into memory */ }
+        public void Step() { cpu.Step(); foreach (var d in devices) d.Tick(); }
+        public void Run() { while (true) Step(); }
+        public void Decompile() { /* TODO */ }
+        public void Recompile(string targetArch) { /* TODO */ }
+    }
 }
