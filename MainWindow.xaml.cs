@@ -2,6 +2,8 @@ using ProcessorEmulator.Emulation;
 using ProcessorEmulator.Tools;
 using ProcessorEmulator.Architectures;
 using System.Windows;
+using Microsoft.Win32;
+using System.Threading.Tasks;
 
 namespace ProcessorEmulator
 {
@@ -36,6 +38,29 @@ namespace ProcessorEmulator
             }
             currentEmulator.LoadBinary(binary);
             currentEmulator.Run();
+        }
+
+        private async void ExtractAndAnalyzeButton_Click(object sender, RoutedEventArgs e)
+        {
+            var openFileDialog = new OpenFileDialog
+            {
+                Filter = "Firmware Archives (*.csw;*.tar;*.img;*.bin)|*.csw;*.tar;*.img;*.bin|All files (*.*)|*.*"
+            };
+            if (openFileDialog.ShowDialog() == true)
+            {
+                string archivePath = openFileDialog.FileName;
+                string extractDir = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(archivePath),
+                    System.IO.Path.GetFileNameWithoutExtension(archivePath) + "_extracted");
+                StatusBarText("Extracting and analyzing...");
+                await Task.Run(() => ArchiveExtractor.ExtractAndAnalyze(archivePath, extractDir));
+                StatusBarText("Done. See console for results.");
+            }
+        }
+
+        private void StatusBarText(string text)
+        {
+            // Update your status bar here, e.g.:
+            // statusBarItem.Content = text;
         }
     }
 }
