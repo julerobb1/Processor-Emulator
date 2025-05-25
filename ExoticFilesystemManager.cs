@@ -13,6 +13,7 @@ namespace ProcessorEmulator.Tools
         private Ext4Implementation.Ext4FileSystem ext4Fs;
         private BtrfsImplementation.BtrfsFileSystem btrfsFs;
         private XFSImplementation.XFSFileSystem xfsFs;
+        private VxWorksImplementation.VxWorksFileSystem vxworksFs;
         private Dictionary<string, object> mountedFilesystems;
 
         public ExoticFilesystemManager()
@@ -23,6 +24,7 @@ namespace ProcessorEmulator.Tools
             ext4Fs = new Ext4Implementation.Ext4FileSystem();
             btrfsFs = new BtrfsImplementation.BtrfsFileSystem();
             xfsFs = new XFSImplementation.XFSFileSystem();
+            vxworksFs = new VxWorksImplementation.VxWorksFileSystem();
             mountedFilesystems = new Dictionary<string, object>();
         }
 
@@ -106,6 +108,16 @@ namespace ProcessorEmulator.Tools
             // Implementation to map path to inode number
             // This would need a proper directory structure implementation
             return 0; // Placeholder
+        }
+
+        public void ProbeVxWorksDevice(string devicePath)
+        {
+            vxworksFs.ProbeDevice(devicePath);
+        }
+
+        public byte[] ReadVxWorksFile(string path, bool bypassEncryption = false)
+        {
+            return vxworksFs.ReadFile(path, bypassEncryption);
         }
 
         // Hardware-level disk access for raw operations
