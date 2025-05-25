@@ -5,19 +5,22 @@ namespace ProcessorEmulator.Emulation
 {
     public static class EmulatorLauncher
     {
-        public static void Launch(string binaryPath, string architecture, string platform = null, bool requireHardware = false)
+        public static void Launch(string binaryPath, string architecture, string platform = null, bool requireHardware = false, bool gpuPassthrough = false)
         {
             // Use QEMU for most architectures, fallback to custom emulator if implemented
             if (requireHardware || platform == "RDK-B" || platform == "RDK-V")
             {
-                // QEMU with hardware passthrough (example: USB, network)
                 var qemu = new QemuManager();
                 string extraArgs = "";
                 if (requireHardware)
                 {
-                    extraArgs = "-usb -device usb-host -net user -net nic"; // Example, customize as needed
+                    extraArgs += "-usb -device usb-host -net user -net nic ";
                 }
-                qemu.LaunchWithArgs(binaryPath, architecture, extraArgs);
+                if (gpuPassthrough)
+                {
+                    extraArgs += "-vga qxl -display sdl "; // Example: QEMU accelerated graphics
+                }
+                qemu.LaunchWithArgs(binaryPath, architecture, extraArgs.Trim());
             }
             else
             {
@@ -30,9 +33,8 @@ namespace ProcessorEmulator.Emulation
                     case "x86": new X86Emulator().Run(); break;
                     case "x86-64": new X64Emulator().Run(); break;
                     default:
-                        // Fallback to QEMU if custom emulator not implemented
                         var qemu = new QemuManager();
-                        qemu.Launch(binaryPath, architecture);
+                        qemu.LaunchWithArgs(binaryPath, architecture, gpuPassthrough ? "-vga qxl -display sdl" : "");
                         break;
                 }
             }
