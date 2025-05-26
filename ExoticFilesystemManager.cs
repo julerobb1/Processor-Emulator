@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Collections.Generic;
+using System.Linq;
 using ProcessorEmulator.Tools.FileSystems;
 
 namespace ProcessorEmulator.Tools
