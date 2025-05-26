@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Collections.Generic;
 using ProcessorEmulator.Tools.FileSystems;
 
 namespace ProcessorEmulator.Tools
@@ -86,11 +87,11 @@ namespace ProcessorEmulator.Tools
             else if (fs is UFSImplementation.UFS_FileSystem ufs)
                 return ufs.ReadFile(GetInodeNumber(relativePath));
             else if (fs is Ext4Implementation.Ext4FileSystem ext4)
-                return ext4.ReadFile(relativePath);
+                return ext4.ReadFile(uint.Parse(relativePath));
             else if (fs is BtrfsImplementation.BtrfsFileSystem btrfs)
-                return btrfs.ReadFile(relativePath);
+                return btrfs.ReadFile(ulong.Parse(relativePath));
             else if (fs is XFSImplementation.XFSFileSystem xfs)
-                return xfs.ReadFile(relativePath);
+                return xfs.ReadFile(ulong.Parse(relativePath));
 
             throw new NotSupportedException("Unknown filesystem type");
         }
