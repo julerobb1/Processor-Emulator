@@ -22,7 +22,7 @@ namespace ProcessorEmulator
 
         public MainWindow()
         {
-            InitializeComponent();
+            // InitializeComponent(); // Uncomment if using WPF/XAML
         }
 
         private void StatusBarText(string text)
