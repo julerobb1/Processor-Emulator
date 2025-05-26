@@ -152,7 +152,7 @@ namespace ProcessorEmulator.Emulation
         {
             if (config.IsWholeHome)
             {
-                // Setup network interfaces for Whole Home DVR functionality
+                // Set up network interfaces for Whole Home DVR functionality
                 SetupWholeHomeNetworking();
             }
         }
@@ -242,4 +242,11 @@ namespace ProcessorEmulator.Emulation
         {
             await cmts.HandleStreamRequest(GetMacAddress(), channelId);
         }
-    }}
+
+        private string GetMacAddress()
+        {
+            // Placeholder for retrieving the MAC address of the emulated device
+            return "00:11:22:33:44:55";
+        }
+    }
+}
