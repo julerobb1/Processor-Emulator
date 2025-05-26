@@ -178,11 +178,14 @@ namespace ProcessorEmulator.Tools.FileSystems
                     return data;
                 
                 // Read and store raw data
+                byte[] key = new byte[16]; // Placeholder for key initialization
                 byte[] rawData = CombineChunks(blocks);
                 if (rawData == null || rawData.Length == 0)
                 {
                     throw new Exception("rawData is not properly initialized.");
                 }
+                // Use rawData here as needed
+                byte[] decryptedData = DecryptBlock(rawData, key);
                 // Implementation for raw read
                 return rawData;
             }
