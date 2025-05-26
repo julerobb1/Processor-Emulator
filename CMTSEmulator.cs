@@ -28,6 +28,7 @@ namespace ProcessorEmulator.Network
 
         private Dictionary<int, QAMChannel> qamChannels;
         private Dictionary<string, IPAddress> subscriberModems;
+        private Dictionary<string, string> dsgConfigurations;
         private bool isInitialized;
 
         // DOCSIS configuration
@@ -39,6 +40,7 @@ namespace ProcessorEmulator.Network
         {
             qamChannels = new Dictionary<int, QAMChannel>();
             subscriberModems = new Dictionary<string, IPAddress>();
+            dsgConfigurations = new Dictionary<string, string>();
             InitializeQAMChannels();
         }
 
@@ -193,6 +195,36 @@ namespace ProcessorEmulator.Network
             {
                 await MulticastSocket.SendToAsync(data, SocketFlags.None, EndPoint);
             }
+        }
+
+        public void ConfigureDSG(string macAddress, string dsgConfig)
+        {
+            dsgConfigurations[macAddress] = dsgConfig;
+        }
+
+        public string GetDSGConfiguration(string macAddress)
+        {
+            if (dsgConfigurations.TryGetValue(macAddress, out string config))
+            {
+                return config;
+            }
+            return null;
+        }
+
+        public async Task HandleDSGRequest(string macAddress, string dsgService)
+        {
+            if (subscriberModems.TryGetValue(macAddress, out IPAddress modemIP))
+            {
+                // Simulate DSG service delivery
+                await DeliverDSGService(modemIP, dsgService);
+            }
+        }
+
+        private async Task DeliverDSGService(IPAddress modemIP, string dsgService)
+        {
+            // Simulate DSG service delivery to the modem
+            await Task.Delay(100); // Simulate network latency
+            Console.WriteLine($"DSG Service '{dsgService}' delivered to {modemIP}");
         }
     }
 }
