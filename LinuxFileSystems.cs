@@ -56,7 +56,7 @@ namespace ProcessorEmulator.Tools.FileSystems
                 {
                     InodesCount = BitConverter.ToUInt32(data, 0),
                     BlocksCount = BitConverter.ToUInt32(data, 4),
-                    BlockSize = 1024 << BitConverter.ToUInt32(data, 24),
+                    BlockSize = (uint)(1024 << (int)BitConverter.ToUInt32(data, 24)),
                     FragsPerGroup = BitConverter.ToUInt32(data, 28),
                     InodesPerGroup = BitConverter.ToUInt32(data, 40),
                     Magic = BitConverter.ToUInt16(data, 56),
