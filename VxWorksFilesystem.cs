@@ -28,6 +28,9 @@ namespace ProcessorEmulator.Tools.FileSystems
             private Dictionary<string, uint> fileIndex = new Dictionary<string, uint>();
             private List<byte[]> blocks = new List<byte[]>();
 
+            // Ensure rawData is defined at the class level if needed
+            private byte[] rawData;
+
             public void ProbeDevice(string devicePath)
             {
                 using (var stream = new FileStream(devicePath, FileMode.Open, FileAccess.Read))
@@ -127,8 +130,8 @@ namespace ProcessorEmulator.Tools.FileSystems
                     new byte[] { 0xE5, 0x2D, 0xE0, 0x04 },  // ARM
                     new byte[] { 0x27, 0xBD, 0xFF, 0xE0 }   // MIPS
                 };
-                // Ensure rawData is defined before use
-                byte[] rawData = CombineChunks(blocks);
+                // When assigning rawData, do so at the class level
+                rawData = CombineChunks(blocks);
                 foreach (var pattern in patterns)
                 {
                     int offset = FindSequence(data, pattern);
