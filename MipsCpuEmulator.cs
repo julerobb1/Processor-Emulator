@@ -51,18 +51,33 @@ namespace ProcessorEmulator.Emulation
                 case 0x00: // R-type instructions
                     ExecuteRType(instruction);
                     break;
-                case 0x11: // COP1 (Floating-point instructions)
-                    ExecuteFloatingPoint(instruction);
+                case 0x08: // addi
+                    ExecuteAddImmediate(instruction);
                     break;
-                case 0x1C: // DSP instructions
-                    ExecuteDSPInstruction(instruction);
+                case 0x0C: // andi
+                    ExecuteAndImmediate(instruction);
                     break;
-                case 0x10: // System instructions
-                    ExecuteSystemInstruction(instruction);
+                case 0x0D: // ori
+                    ExecuteOrImmediate(instruction);
                     break;
+                case 0x0E: // xori
+                    ExecuteXorImmediate(instruction);
+                    break;
+                case 0x23: // lw
+                    ExecuteLoadWord(instruction);
+                    break;
+                case 0x2B: // sw
+                    ExecuteStoreWord(instruction);
+                    break;
+                case 0x04: // beq
+                    ExecuteBranchEqual(instruction);
+                    break;
+                case 0x05: // bne
+                    ExecuteBranchNotEqual(instruction);
+                    break;
+                // ...add more opcodes as needed...
                 default:
-                    HandleException($"Unsupported opcode: {opcode:X2}");
-                    break;
+                    throw new NotSupportedException($"Opcode {opcode:X2} not supported.");
             }
         }
 
@@ -239,6 +254,52 @@ namespace ProcessorEmulator.Emulation
         {
             Console.WriteLine($"Exception: {message}");
             // Implement exception handling logic here
+        }
+
+        private void ExecuteAddImmediate(uint instruction)
+        {
+            uint rs = (instruction >> 21) & 0x1F;
+            uint rt = (instruction >> 16) & 0x1F;
+            int imm = (short)(instruction & 0xFFFF);
+            registers[rt] = registers[rs] + (uint)imm;
+        }
+
+        private void ExecuteAndImmediate(uint instruction)
+        {
+            uint rs = (instruction >> 21) & 0x1F;
+            uint rt = (instruction >> 16) & 0x1F;
+            uint imm = instruction & 0xFFFF;
+            registers[rt] = registers[rs] & imm;
+        }
+
+        private void ExecuteOrImmediate(uint instruction)
+        {
+            uint rs = (instruction >> 21) & 0x1F;
+            uint rt = (instruction >> 16) & 0x1F;
+            uint imm = instruction & 0xFFFF;
+            registers[rt] = registers[rs] | imm;
+        }
+
+        private void ExecuteXorImmediate(uint instruction)
+        {
+            uint rs = (instruction >> 21) & 0x1F;
+            uint rt = (instruction >> 16) & 0x1F;
+            uint imm = instruction & 0xFFFF;
+            registers[rt] = registers[rs] ^ imm;
+        }
+
+        // Dispatcher interface for unified translation
+        public void DispatchInstruction(uint instruction, string targetArch)
+        {
+            if (targetArch == "MIPS")
+            {
+                DecodeAndExecute(instruction);
+            }
+            else
+            {
+                // Translate to target architecture (e.g., x64) and execute
+                // Placeholder: Implement translation logic here
+            }
         }
     }
 }
