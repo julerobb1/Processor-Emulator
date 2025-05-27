@@ -1,6 +1,5 @@
 using ProcessorEmulator.Emulation;
 using ProcessorEmulator.Tools;
-using ProcessorEmulator.Architectures;
 using System.Windows;
 using Microsoft.Win32;
 using System.Threading.Tasks;
