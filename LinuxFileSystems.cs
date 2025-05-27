@@ -56,7 +56,7 @@ namespace ProcessorEmulator.Tools.FileSystems
                 {
                     InodesCount = BitConverter.ToUInt32(data, 0),
                     BlocksCount = BitConverter.ToUInt32(data, 4),
-                    BlockSize = (uint)(1024 << (int)BitConverter.ToUInt32(data, 24)),
+                    BlockSize = (uint)(1024 << (int)(BitConverter.ToUInt32(data, 24) & 0xFF)),
                     FragsPerGroup = BitConverter.ToUInt32(data, 28),
                     InodesPerGroup = BitConverter.ToUInt32(data, 40),
                     Magic = BitConverter.ToUInt16(data, 56),
@@ -67,7 +67,7 @@ namespace ProcessorEmulator.Tools.FileSystems
 
             private void ParseGroupDescriptors(byte[] data)
             {
-                int gdtOffset = superblock.BlockSize == 1024 ? 2048 : superblock.BlockSize;
+                int gdtOffset = (int)(superblock.BlockSize == 1024 ? 2048 : superblock.BlockSize);
                 // Parse group descriptors and build block allocation bitmap
             }
 
@@ -110,7 +110,7 @@ namespace ProcessorEmulator.Tools.FileSystems
 
     public class BtrfsImplementation
     {
-        private const ulong BTRFS_MAGIC = 0x4D5F53665248425FULL;
+        private const ulong BTRFS_MAGIC = 0x4D5F53665248425FUL;
 
         private struct BtrfsSuperblock
         {
