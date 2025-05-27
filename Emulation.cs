@@ -1,3 +1,6 @@
+using System.Collections.Generic;
+using System.Linq;
+
 namespace ProcessorEmulator.Emulation
 {
     // Placeholder for ISA decoders (MIPS, ARM, etc.)

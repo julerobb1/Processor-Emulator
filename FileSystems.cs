@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.InteropServices;
 
 namespace ProcessorEmulator.Tools.FileSystems
@@ -45,7 +46,7 @@ namespace ProcessorEmulator.Tools.FileSystems
                     Length = BitConverter.ToUInt32(data, offset + 8),
                     Checksum = BitConverter.ToUInt32(data, offset + 12)
                 };
-                offset += NODE_HEADER_SIZE;
+                offset += (int)NODE_HEADER_SIZE;
                 return header;
             }
 

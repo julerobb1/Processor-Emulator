@@ -1,10 +1,11 @@
 using ProcessorEmulator.Emulation;
 using ProcessorEmulator.Tools;
-using ProcessorEmulator.Architectures;
 using System.Windows;
 using Microsoft.Win32;
 using System.Threading.Tasks;
 using System.IO;
+using System;
+using System.Windows.Controls;
 
 namespace ProcessorEmulator
 {
@@ -16,13 +17,24 @@ namespace ProcessorEmulator
         private Disassembler disassembler = new Disassembler();
         private Recompiler recompiler = new Recompiler();
         private ExoticFilesystemManager fsManager = new ExoticFilesystemManager();
+        private TextBlock statusBar = new TextBlock();
 
         public MainWindow()
         {
-            InitializeComponent();
+            // InitializeComponent(); // Uncomment if using WPF/XAML
         }
 
-        private void StartEmulation_Click(object sender, RoutedEventArgs e)
+        private void StatusBarText(string text)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.Invoke(() => StatusBarText(text));
+                return;
+            }
+            statusBar.Text = text;
+        }
+
+        private async void StartEmulation_Click(object sender, RoutedEventArgs e)
         {
             var openFileDialog = new OpenFileDialog
             {
@@ -77,16 +89,6 @@ namespace ProcessorEmulator
             return true;
         }
 
-        private void StatusBarText(string text)
-        {
-            if (!Dispatcher.CheckAccess())
-            {
-                Dispatcher.Invoke(() => StatusBarText(text));
-                return;
-            }
-            statusBar.Text = text;
-        }
-
         private async void ExtractAndAnalyzeButton_Click(object sender, RoutedEventArgs e)
         {
             var openFileDialog = new OpenFileDialog
@@ -103,11 +105,8 @@ namespace ProcessorEmulator
                 StatusBarText("Done. See console for results.");
             }
         }
-
-        private void StatusBarText(string text)
-        {
-            // Update your status bar here, e.g.:
-            // statusBarItem.Content = text;
-        }
     }
 }
+
+// Ensure MainWindow.xaml exists and is properly linked to this code-behind file.
+// If the file exists, ensure the Build Action is set to 'Page' in the project properties.
