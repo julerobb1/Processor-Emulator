@@ -18,6 +18,7 @@ namespace ProcessorEmulator
         private Recompiler recompiler = new Recompiler();
         private ExoticFilesystemManager fsManager = new ExoticFilesystemManager();
         private TextBlock statusBar = new TextBlock();
+        private InstructionDispatcher dispatcher = new InstructionDispatcher();
 
         public MainWindow()
         {
@@ -70,7 +71,14 @@ namespace ProcessorEmulator
                 StatusBarText($"Loading {Path.GetFileName(openFileDialog.FileName)}...");
                 currentEmulator.LoadBinary(binary);
                 StatusBarText("Running emulation...");
-                await Task.Run(() => currentEmulator.Run());
+                // Use dispatcher for unified instruction dispatching
+                await Task.Run(() =>
+                {
+                    // Example: for each instruction, dispatch to the correct emulator
+                    // This is a placeholder; real implementation would parse instructions from binary
+                    // and call dispatcher.Dispatch(instruction, arch, hostArch)
+                    currentEmulator.Run();
+                });
             }
             catch (Exception ex)
             {
