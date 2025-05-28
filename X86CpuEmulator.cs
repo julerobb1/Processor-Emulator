@@ -5,9 +5,8 @@ namespace ProcessorEmulator.Emulation
 {
     public class X86CpuEmulator
     {
-        private const int RegisterCount = 8; // General-purpose registers: EAX, EBX, etc.
-        private const int MemorySize = 1024 * 1024; // 1 MB of memory
-
+        private const int RegisterCount = 8; // EAX, EBX, ECX, EDX, ESI, EDI, EBP, ESP
+        private const int MemorySize = 1024 * 1024; // 1 MB
         private uint[] registers;
         private byte[] memory;
         private uint instructionPointer;
@@ -52,37 +51,61 @@ namespace ProcessorEmulator.Emulation
                 case 0x29: // sub
                     ExecuteSub(instruction);
                     break;
+                case 0x31: // xor
+                    ExecuteXor(instruction);
+                    break;
+                case 0x21: // and
+                    ExecuteAnd(instruction);
+                    break;
+                case 0x09: // or
+                    ExecuteOr(instruction);
+                    break;
                 case 0x89: // mov
                     ExecuteMov(instruction);
                     break;
+                // ...add more opcodes as needed...
                 default:
-                    HandleException($"Unsupported opcode: {opcode:X2}");
-                    break;
+                    throw new NotSupportedException($"Opcode {opcode:X2} not supported.");
             }
         }
 
         private void ExecuteAdd(uint instruction)
         {
-            // Example: add eax, ebx
             registers[0] += registers[1];
         }
-
         private void ExecuteSub(uint instruction)
         {
-            // Example: sub eax, ebx
             registers[0] -= registers[1];
         }
-
+        private void ExecuteXor(uint instruction)
+        {
+            registers[0] ^= registers[1];
+        }
+        private void ExecuteAnd(uint instruction)
+        {
+            registers[0] &= registers[1];
+        }
+        private void ExecuteOr(uint instruction)
+        {
+            registers[0] |= registers[1];
+        }
         private void ExecuteMov(uint instruction)
         {
-            // Example: mov eax, ebx
             registers[0] = registers[1];
         }
 
-        private void HandleException(string message)
+        // Dispatcher interface for unified translation
+        public void DispatchInstruction(uint instruction, string targetArch)
         {
-            Console.WriteLine($"Exception: {message}");
-            // Implement exception handling logic here
+            if (targetArch == "x86" || targetArch == "x64")
+            {
+                DecodeAndExecute(instruction);
+            }
+            else
+            {
+                // Translate to target architecture (e.g., MIPS) and execute
+                // Placeholder: Implement translation logic here
+            }
         }
     }
 }
