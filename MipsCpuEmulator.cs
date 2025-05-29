@@ -3,6 +3,17 @@ using System.Collections.Generic;
 
 namespace ProcessorEmulator.Emulation
 {
+    public enum MipsChipsetProfile
+    {
+        Generic,
+        STi7101,
+        STi7111,
+        BCM7401,
+        BCM7403,
+        BCM7425,
+        BCM7445
+    }
+
     public class MipsCpuEmulator
     {
         private const int RegisterCount = 32;
@@ -13,12 +24,26 @@ namespace ProcessorEmulator.Emulation
         private uint programCounter;
         private float[] floatingPointRegisters;
 
-        public MipsCpuEmulator()
+        // Hardware module stubs
+        private VideoDecoderStub videoDecoder;
+        private AudioDecoderStub audioDecoder;
+        private SecurityModuleStub securityModule;
+        private PeripheralStub peripheralModule;
+
+        public MipsChipsetProfile ChipsetProfile { get; private set; }
+
+        public MipsCpuEmulator(MipsChipsetProfile profile = MipsChipsetProfile.Generic)
         {
+            ChipsetProfile = profile;
             registers = new uint[RegisterCount];
             floatingPointRegisters = new float[RegisterCount];
             memory = new byte[MemorySize];
             programCounter = 0x0;
+            // Initialize hardware stubs
+            videoDecoder = new VideoDecoderStub();
+            audioDecoder = new AudioDecoderStub();
+            securityModule = new SecurityModuleStub();
+            peripheralModule = new PeripheralStub();
         }
 
         public void LoadProgram(byte[] program, uint startAddress)
@@ -300,6 +325,65 @@ namespace ProcessorEmulator.Emulation
                 // Translate to target architecture (e.g., x64) and execute
                 // Placeholder: Implement translation logic here
             }
+        }
+    }
+
+    // Hardware module stubs
+    public class VideoDecoderStub { /* Emulate video hardware registers and behavior */ }
+    public class AudioDecoderStub { /* Emulate audio hardware registers and behavior */ }
+    public class SecurityModuleStub { /* Emulate smartcard, encryption, etc. */ }
+    public class PeripheralStub
+    {
+        public event Action<string> RemoteButtonPressed;
+
+        public void PressButton(string button)
+        {
+            RemoteButtonPressed?.Invoke(button);
+        }
+
+        // Map keyboard keys to remote buttons (full mapping)
+        public void HandleKeyboardInput(ConsoleKey key)
+        {
+            switch (key)
+            {
+                case ConsoleKey.UpArrow: PressButton("UP"); break;
+                case ConsoleKey.DownArrow: PressButton("DOWN"); break;
+                case ConsoleKey.LeftArrow: PressButton("LEFT"); break;
+                case ConsoleKey.RightArrow: PressButton("RIGHT"); break;
+                case ConsoleKey.Enter: PressButton("OK"); break;
+                case ConsoleKey.Escape: PressButton("EXIT"); break;
+                case ConsoleKey.M: PressButton("MENU"); break;
+                case ConsoleKey.G: PressButton("GUIDE"); break;
+                case ConsoleKey.I: PressButton("INFO"); break;
+                case ConsoleKey.D1: PressButton("1"); break;
+                case ConsoleKey.D2: PressButton("2"); break;
+                case ConsoleKey.D3: PressButton("3"); break;
+                case ConsoleKey.D4: PressButton("4"); break;
+                case ConsoleKey.D5: PressButton("5"); break;
+                case ConsoleKey.D6: PressButton("6"); break;
+                case ConsoleKey.D7: PressButton("7"); break;
+                case ConsoleKey.D8: PressButton("8"); break;
+                case ConsoleKey.D9: PressButton("9"); break;
+                case ConsoleKey.D0: PressButton("0"); break;
+                case ConsoleKey.P: PressButton("PAUSE"); break;
+                case ConsoleKey.Spacebar: PressButton("PLAY"); break;
+                case ConsoleKey.F: PressButton("FF"); break;
+                case ConsoleKey.R: PressButton("REW"); break;
+                case ConsoleKey.S: PressButton("STOP"); break;
+                // ...add more as needed...
+            }
+        }
+
+        public void HandleMouseClick()
+        {
+            PressButton("OK");
+        }
+
+        // Connect UI input (example for WPF)
+        public void ConnectUIInput(Window window)
+        {
+            window.KeyDown += (s, e) => HandleKeyboardInput((ConsoleKey)Enum.Parse(typeof(ConsoleKey), e.Key.ToString(), true));
+            // Mouse click mapping can be added as needed
         }
     }
 }
