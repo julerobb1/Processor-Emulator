@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Windows;
 
 namespace ProcessorEmulator.Emulation
 {
@@ -275,7 +276,7 @@ namespace ProcessorEmulator.Emulation
             }
         }
 
-        private void HandleException(string message)
+        private static void HandleException(string message)
         {
             Console.WriteLine($"Exception: {message}");
             // Implement exception handling logic here
@@ -325,6 +326,13 @@ namespace ProcessorEmulator.Emulation
                 // Translate to target architecture (e.g., x64) and execute
                 // Placeholder: Implement translation logic here
             }
+        }
+
+        // Connect UI input (example for WPF)
+        public void ConnectUIInput(Window window)
+        {
+            window.KeyDown += (s, e) => peripheralModule.HandleKeyboardInput((ConsoleKey)Enum.Parse(typeof(ConsoleKey), e.Key.ToString(), true));
+            // Mouse click mapping can be added as needed
         }
     }
 
@@ -380,10 +388,13 @@ namespace ProcessorEmulator.Emulation
         }
 
         // Connect UI input (example for WPF)
-        public void ConnectUIInput(Window window)
+        // Uncomment the following method and add 'using System.Windows;' if using WPF.
+        /*
+        public void ConnectUIInput(System.Windows.Window window)
         {
             window.KeyDown += (s, e) => HandleKeyboardInput((ConsoleKey)Enum.Parse(typeof(ConsoleKey), e.Key.ToString(), true));
             // Mouse click mapping can be added as needed
         }
+        */
     }
 }
