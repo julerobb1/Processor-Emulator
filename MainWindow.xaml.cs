@@ -44,7 +44,7 @@ namespace ProcessorEmulator
             if (openFileDialog.ShowDialog() != true) return;
 
             byte[] binary = File.ReadAllBytes(openFileDialog.FileName);
-            string arch = archDetector.Detect(binary);
+            string arch = ArchitectureDetector.Detect(binary);
             bool isWinCE = IsWinCEBinary(binary);
 
             try
@@ -87,7 +87,7 @@ namespace ProcessorEmulator
             }
         }
 
-        private bool IsWinCEBinary(byte[] binary)
+        private static bool IsWinCEBinary(byte[] binary)
         {
             // Check PE header and subsystem for WinCE
             if (binary.Length < 0x40) return false;
