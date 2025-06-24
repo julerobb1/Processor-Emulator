@@ -93,7 +93,7 @@ namespace ProcessorEmulator.Network
             }
         }
 
-        private IPAddress IncrementIPAddress(IPAddress baseAddr, int increment)
+        private static IPAddress IncrementIPAddress(IPAddress baseAddr, int increment)
         {
             byte[] bytes = baseAddr.GetAddressBytes();
             int lastByte = bytes[3] + increment;
@@ -116,33 +116,33 @@ namespace ProcessorEmulator.Network
             await ConfigureQoSProfile(macAddress);
         }
 
-        private void SetupIGMPSnooping()
+        private static void SetupIGMPSnooping()
         {
             // Simulate IGMP snooping for multicast group management
             Console.WriteLine("IGMP snooping initialized for multicast streams.");
         }
 
-        private void InitializeVODServers()
+        private static void InitializeVODServers()
         {
             // Simulate initialization of Video-On-Demand servers
             Console.WriteLine("VOD servers initialized and ready for requests.");
         }
 
-        private async Task SetDOCSISParameters(string macAddress)
+        private static async Task SetDOCSISParameters(string macAddress)
         {
             // Simulate setting DOCSIS parameters for the modem
             await Task.Delay(50); // Simulate network delay
             Console.WriteLine($"DOCSIS parameters set for modem {macAddress}.");
         }
 
-        private async Task AllocateUpstreamChannels(string macAddress)
+        private static async Task AllocateUpstreamChannels(string macAddress)
         {
             // Simulate allocation of upstream channels for the modem
             await Task.Delay(50); // Simulate network delay
             Console.WriteLine($"Upstream channels allocated for modem {macAddress}.");
         }
 
-        private async Task ConfigureQoSProfile(string macAddress)
+        private static async Task ConfigureQoSProfile(string macAddress)
         {
             // Simulate configuration of QoS profiles for the modem
             await Task.Delay(50); // Simulate network delay
@@ -165,7 +165,7 @@ namespace ProcessorEmulator.Network
             }
         }
 
-        private async Task StartStreamDelivery(IPAddress modemIP, MulticastStream stream)
+        private static async Task StartStreamDelivery(IPAddress modemIP, MulticastStream stream)
         {
             // Simulate starting multicast stream delivery to the modem
             await Task.Delay(50); // Simulate network delay
@@ -184,7 +184,7 @@ namespace ProcessorEmulator.Network
             }
         }
 
-        private void ApplyNetworkConditions(string macAddress, 
+        private static void ApplyNetworkConditions(string macAddress, 
                                           double packetLoss, 
                                           int latency, 
                                           int jitter)
@@ -237,7 +237,7 @@ namespace ProcessorEmulator.Network
             }
         }
 
-        private async Task DeliverDSGService(IPAddress modemIP, string dsgService)
+        private static async Task DeliverDSGService(IPAddress modemIP, string dsgService)
         {
             // Simulate DSG service delivery to the modem
             await Task.Delay(100); // Simulate network latency
@@ -285,7 +285,7 @@ namespace ProcessorEmulator.Network
             }
         }
 
-        private string ProcessHeadendRequest(string request)
+        private static string ProcessHeadendRequest(string request)
         {
             // Simulate responses to U-verse box requests
             if (request.Contains("DHCP"))
