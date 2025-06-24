@@ -15,18 +15,18 @@ namespace ProcessorEmulator.Emulation
         // - No public firmware, but protocol is partially reverse engineered
         // - See DBSTalk, SatelliteGuys, SDR projects for more info
 
-        public void SimulateReceiverRequest(byte[] request)
+        public static void SimulateReceiverRequest(byte[] request)
         {
             // Parse and respond to receiver requests
             // Example: allocate channel, return status, etc.
         }
 
-        public void SendChannelMap()
+        public static void SendChannelMap()
         {
             // Simulate sending SWM channel map to receiver
         }
 
-        public void EmulateKeepAlive()
+        public static void EmulateKeepAlive()
         {
             // Respond to keep-alive pings from receiver
         }
