@@ -23,7 +23,7 @@ namespace ProcessorEmulator.Tools
             }
         }
 
-        public void ProbeFile(string filePath)
+        public static void ProbeFile(string filePath)
         {
             Console.WriteLine($"Probing file: {filePath}");
 
