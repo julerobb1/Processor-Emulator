@@ -65,7 +65,7 @@ namespace ProcessorEmulator.Translation
             throw new NotSupportedException($"x86 instruction '{opcode}' is not supported.");
         }
 
-        private string GetOpcode(string instruction)
+        private static string GetOpcode(string instruction)
         {
             return instruction.Split(' ')[0];
         }
