@@ -56,7 +56,7 @@ namespace ProcessorEmulator.Emulation
             // Implement spoofing logic here
         }
 
-        public void SimulateSignalSaver()
+        public static void SimulateSignalSaver()
         {
             Console.WriteLine("Simulating SignalSaver streaming...");
             // Implement SignalSaver simulation here
