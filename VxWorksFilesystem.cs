@@ -55,7 +55,7 @@ namespace ProcessorEmulator.Tools.FileSystems
                 }
             }
 
-            private bool IsVxWorksPartition(byte[] data)
+            private static bool IsVxWorksPartition(byte[] data)
             {
                 uint magic = BitConverter.ToUInt32(data, 0);
                 return magic == VXWORKS_MAGIC || magic == DOSFS_MAGIC;
@@ -75,7 +75,7 @@ namespace ProcessorEmulator.Tools.FileSystems
                 };
             }
 
-            private byte[] ExtractEncryptionKey(byte[] data)
+            private static byte[] ExtractEncryptionKey(byte[] data)
             {
                 // Look for encryption headers and extract key material
                 // This varies by VxWorks version and configuration
@@ -98,7 +98,7 @@ namespace ProcessorEmulator.Tools.FileSystems
                 return FindSequence(data, signature) >= 0;
             }
 
-            private int FindSequence(byte[] array, byte[] sequence)
+            private static int FindSequence(byte[] array, byte[] sequence)
             {
                 for (int i = 0; i < array.Length - sequence.Length; i++)
                 {
@@ -146,17 +146,17 @@ namespace ProcessorEmulator.Tools.FileSystems
                 stream.Seek(partition.BootloaderOffset, SeekOrigin.Begin);
                 byte[] bootloader = new byte[32768]; // Typical bootloader size
                 stream.Read(bootloader, 0, bootloader.Length);
-                
+
                 ExtractBootParameters(bootloader);
                 LocateFilesystem(bootloader);
             }
 
-            private void ExtractBootParameters(byte[] bootloader)
+            private static void ExtractBootParameters(byte[] bootloader)
             {
                 // Extract boot parameters, memory layout, etc.
             }
 
-            private void LocateFilesystem(byte[] bootloader)
+            private static void LocateFilesystem(byte[] bootloader)
             {
                 // Find filesystem offset and structure
             }
@@ -232,7 +232,7 @@ namespace ProcessorEmulator.Tools.FileSystems
                 }
             }
 
-            private byte[] CombineChunks(List<byte[]> chunks)
+            private static byte[] CombineChunks(List<byte[]> chunks)
             {
                 int totalSize = 0;
                 foreach (var chunk in chunks)
