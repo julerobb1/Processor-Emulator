@@ -37,7 +37,7 @@ namespace ProcessorEmulator.Emulation
             RegisterAPIMapping("coredll.dll", "RegisterClassW", "user32.dll", "RegisterClassExW");
         }
 
-        private void RegisterAPIMapping(string sourceLib, string sourceFunc, string targetLib, string targetFunc)
+        private static void RegisterAPIMapping(string sourceLib, string sourceFunc, string targetLib, string targetFunc)
         {
             // Register API translation mapping
         }
@@ -50,17 +50,17 @@ namespace ProcessorEmulator.Emulation
             MapMemory();
         }
 
-        private void ParsePEHeader(byte[] binary)
+        private static void ParsePEHeader(byte[] binary)
         {
             // Parse PE header for WinCE executable
         }
 
-        private void RelocateCode()
+        private static void RelocateCode()
         {
             // Handle code relocation
         }
 
-        private void MapMemory()
+        private static void MapMemory()
         {
             // Set up memory mapping
         }
