@@ -1,10 +1,73 @@
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
 using ProcessorEmulator.Tools.FileSystems;
+using System.Reflection;
 
 namespace ProcessorEmulator.Tools
 {
+    // Translation interfaces
+    public interface IFileSystemTranslator
+    {
+        byte[] Translate(byte[] input, string fromType, string toType);
+    }
+
+    public interface ICpuTranslator
+    {
+        byte[] TranslateInstructions(byte[] input, string fromArch, string toArch);
+    }
+
+    // Hardware virtualization interface
+    public interface IVirtualizationProvider
+    {
+        bool IsAvailable();
+        void RunVirtualized(Action action);
+    }
+
+    // Example: Generic filesystem translator (identity, extend as needed)
+    public class GenericFileSystemTranslator : IFileSystemTranslator
+    {
+        public byte[] Translate(byte[] input, string fromType, string toType)
+        {
+            // TODO: Implement real translation logic for each supported type
+            // For now, just return the input (identity translation)
+            return input;
+        }
+    }
+
+    // Example: Generic CPU instruction translator (identity, extend as needed)
+    public class GenericCpuTranslator : ICpuTranslator
+    {
+        public byte[] TranslateInstructions(byte[] input, string fromArch, string toArch)
+        {
+            // TODO: Implement real translation logic for each supported architecture
+            // For now, just return the input (identity translation)
+            return input;
+        }
+    }
+
+    // Example: VT-x/AMD-V virtualization provider (stub, extend for real use)
+    public class HardwareVirtualizationProvider : IVirtualizationProvider
+    {
+        public bool IsAvailable()
+        {
+            // TODO: Implement real detection for VT-x, AMD-V, SVM, etc.
+            // For now, return false as a stub.
+            return false;
+        }
+
+        public void RunVirtualized(Action action)
+        {
+            if (!IsAvailable())
+                throw new NotSupportedException("Hardware virtualization not available.");
+            // TODO: Implement actual virtualization logic.
+            action();
+        }
+    }
+
     public class ExoticFilesystemManager
     {
         private JFFS2Implementation.JFFS2_FileSystem jffs2Fs;
@@ -16,6 +79,13 @@ namespace ProcessorEmulator.Tools
         private VxWorksImplementation.VxWorksFileSystem vxworksFs;
         private Dictionary<string, object> mountedFilesystems;
 
+        // Translation layer dictionaries
+        private Dictionary<string, IFileSystemTranslator> fsTranslators = new();
+        private Dictionary<string, ICpuTranslator> cpuTranslators = new();
+        private IVirtualizationProvider virtualizationProvider = new HardwareVirtualizationProvider();
+        private IChipsetEmulator chipsetEmulator;
+        private IManifestProvider manifestProvider;
+
         public ExoticFilesystemManager()
         {
             jffs2Fs = new JFFS2Implementation.JFFS2_FileSystem();
@@ -26,6 +96,41 @@ namespace ProcessorEmulator.Tools
             xfsFs = new XFSImplementation.XFSFileSystem();
             vxworksFs = new VxWorksImplementation.VxWorksFileSystem();
             mountedFilesystems = new Dictionary<string, object>();
+
+            // Register default translators for all supported types/architectures
+            RegisterDefaultTranslators();
+        }
+
+        private void RegisterDefaultTranslators()
+        {
+            // Register filesystem translators (add more as needed)
+            fsTranslators["JFFS2_to_YAFFS"] = new GenericFileSystemTranslator();
+            fsTranslators["YAFFS_to_JFFS2"] = new GenericFileSystemTranslator();
+            fsTranslators["UFS_to_Ext4"] = new GenericFileSystemTranslator();
+            fsTranslators["Ext4_to_UFS"] = new GenericFileSystemTranslator();
+            fsTranslators["Btrfs_to_XFS"] = new GenericFileSystemTranslator();
+            fsTranslators["XFS_to_Btrfs"] = new GenericFileSystemTranslator();
+            // Identity translators for same-type conversions
+            fsTranslators["JFFS2_to_JFFS2"] = new GenericFileSystemTranslator();
+            fsTranslators["YAFFS_to_YAFFS"] = new GenericFileSystemTranslator();
+            fsTranslators["UFS_to_UFS"] = new GenericFileSystemTranslator();
+            fsTranslators["Ext4_to_Ext4"] = new GenericFileSystemTranslator();
+            fsTranslators["Btrfs_to_Btrfs"] = new GenericFileSystemTranslator();
+            fsTranslators["XFS_to_XFS"] = new GenericFileSystemTranslator();
+
+            // Explicitly enumerate all major CPU architectures
+            string[] cpus = new[]
+            {
+                "MIPS", "ARM", "x86", "x86_64", "PowerPC", "SPARC", "RISC-V", "Alpha", "SH4", "M68K", "VAX", "SuperH", "ARC", "PA-RISC", "Itanium"
+            };
+            foreach (var from in cpus)
+            {
+                foreach (var to in cpus)
+                {
+                    string key = $"{from}_to_{to}";
+                    cpuTranslators[key] = new GenericCpuTranslator();
+                }
+            }
         }
 
         public void MountJFFS2(string imagePath, string mountPoint)
@@ -86,11 +191,11 @@ namespace ProcessorEmulator.Tools
             else if (fs is UFSImplementation.UFS_FileSystem ufs)
                 return ufs.ReadFile(GetInodeNumber(relativePath));
             else if (fs is Ext4Implementation.Ext4FileSystem ext4)
-                return ext4.ReadFile(relativePath);
+                return ext4.ReadFile(uint.Parse(relativePath));
             else if (fs is BtrfsImplementation.BtrfsFileSystem btrfs)
-                return btrfs.ReadFile(relativePath);
+                return btrfs.ReadFile(ulong.Parse(relativePath));
             else if (fs is XFSImplementation.XFSFileSystem xfs)
-                return xfs.ReadFile(relativePath);
+                return xfs.ReadFile(ulong.Parse(relativePath));
 
             throw new NotSupportedException("Unknown filesystem type");
         }
@@ -103,7 +208,7 @@ namespace ProcessorEmulator.Tools
                 .FirstOrDefault();
         }
 
-        private uint GetInodeNumber(string path)
+        private static uint GetInodeNumber(string path)
         {
             // Implementation to map path to inode number
             // This would need a proper directory structure implementation
@@ -120,6 +225,89 @@ namespace ProcessorEmulator.Tools
             return vxworksFs.ReadFile(path, bypassEncryption);
         }
 
+        public bool LoadChipsetEmulator(string chipsetName, string configPath)
+        {
+            // TODO: Implement dynamic loading of chipset emulator based on name
+            // Example: Assumes you have a class named "Contoso6311Emulator"
+            // Type emulatorType = Type.GetType($"ProcessorEmulator.Tools.{chipsetName}Emulator");
+            // chipsetEmulator = (IChipsetEmulator)Activator.CreateInstance(emulatorType);
+            chipsetEmulator = new GenericChipsetEmulator(); // Replace with actual loading
+
+            if (chipsetEmulator == null)
+                return false;
+
+            return chipsetEmulator.Initialize(configPath);
+        }
+
+        public byte[] ReadChipsetRegister(uint address)
+        {
+            if (chipsetEmulator == null)
+                throw new InvalidOperationException("Chipset emulator not loaded.");
+            return chipsetEmulator.ReadRegister(address);
+        }
+
+        public void WriteChipsetRegister(uint address, byte[] data)
+        {
+            if (chipsetEmulator == null)
+                throw new InvalidOperationException("Chipset emulator not loaded.");
+            chipsetEmulator.WriteRegister(address, data);
+        }
+
+        public byte[] RunTranslatedAndVirtualized(byte[] code, string fromArch, string toArch)
+        {
+            byte[] translatedCode = TranslateCpuInstructions(code, fromArch, toArch);
+
+            byte[] result = null;
+            RunWithHardwareVirtualization(() =>
+            {
+                // TODO: Implement actual execution of translated code within the virtualized environment
+                // This is a placeholder
+                result = translatedCode;
+            });
+            return result;
+        }
+
+        // Register a filesystem translator
+        public void RegisterFileSystemTranslator(string key, IFileSystemTranslator translator)
+        {
+            fsTranslators[key] = translator;
+        }
+
+        // Register a CPU translator
+        public void RegisterCpuTranslator(string key, ICpuTranslator translator)
+        {
+            cpuTranslators[key] = translator;
+        }
+
+        // Expose virtualization capability
+        public bool IsHardwareVirtualizationAvailable()
+        {
+            return virtualizationProvider.IsAvailable();
+        }
+
+        public void RunWithHardwareVirtualization(Action action)
+        {
+            virtualizationProvider.RunVirtualized(action);
+        }
+
+        // Translate a filesystem image from one type to another
+        public byte[] TranslateFileSystem(byte[] input, string fromType, string toType)
+        {
+            string key = $"{fromType}_to_{toType}";
+            if (fsTranslators.TryGetValue(key, out var translator))
+                return translator.Translate(input, fromType, toType);
+            throw new NotSupportedException($"No translator registered for {fromType} to {toType}");
+        }
+
+        // Translate CPU instructions from one architecture to another
+        public byte[] TranslateCpuInstructions(byte[] input, string fromArch, string toArch)
+        {
+            string key = $"{fromArch}_to_{toArch}";
+            if (cpuTranslators.TryGetValue(key, out var translator))
+                return translator.TranslateInstructions(input, fromArch, toArch);
+            throw new NotSupportedException($"No CPU translator registered for {fromArch} to {toArch}");
+        }
+
         // Hardware-level disk access for raw operations
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern IntPtr CreateFile(string filename, uint access, uint share, 
@@ -133,7 +321,7 @@ namespace ProcessorEmulator.Tools
         private static extern bool WriteFile(IntPtr hFile, byte[] buffer, uint bytesToWrite,
             out uint bytesWritten, IntPtr overlapped);
 
-        public void DirectDiskAccess(string devicePath, Action<IntPtr> operation)
+        public static void DirectDiskAccess(string devicePath, Action<IntPtr> operation)
         {
             IntPtr handle = CreateFile(devicePath, 0xC0000000, 0, IntPtr.Zero, 
                 3, 0x40000000, IntPtr.Zero);
@@ -154,5 +342,55 @@ namespace ProcessorEmulator.Tools
 
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool CloseHandle(IntPtr hObject);
+
+        public void SetManifestProvider(IManifestProvider provider)
+        {
+            manifestProvider = provider;
+        }
+
+        public IEnumerable<string> ListFiles(string imagePath, string manifestPath = null)
+        {
+            if (manifestProvider != null && manifestProvider.IsManifestPresent(manifestPath ?? imagePath))
+            {
+                var entries = manifestProvider.ParseManifest(manifestPath ?? imagePath);
+                return entries.Select(e => e.FileName);
+            }
+            else
+            {
+                // Fallback: scan the filesystem image for files (implementation depends on FS type)
+                // Example: for JFFS2
+                if (imagePath.EndsWith(".jffs2"))
+                {
+                    jffs2Fs.ParseImage(File.ReadAllBytes(imagePath));
+                    return jffs2Fs.ListFiles();
+                }
+                // Add other FS types as needed
+                // Or return an empty list if not supported
+                return Enumerable.Empty<string>();
+            }
+        }
+    }
+
+    // Example: Generic chipset emulator (stub, extend for real use)
+    public class GenericChipsetEmulator : IChipsetEmulator
+    {
+        public string ChipsetName => "GenericChipset";
+
+        public bool Initialize(string configPath)
+        {
+            // TODO: Load configuration from configPath
+            return true;
+        }
+
+        public byte[] ReadRegister(uint address)
+        {
+            // TODO: Implement register read logic
+            return new byte[4]; // Placeholder
+        }
+
+        public void WriteRegister(uint address, byte[] data)
+        {
+            // TODO: Implement register write logic
+        }
     }
 }

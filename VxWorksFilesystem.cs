@@ -26,6 +26,10 @@ namespace ProcessorEmulator.Tools.FileSystems
             private List<VxWorksPartition> partitions = new List<VxWorksPartition>();
             private Dictionary<uint, byte[]> decryptedBlocks = new Dictionary<uint, byte[]>();
             private Dictionary<string, uint> fileIndex = new Dictionary<string, uint>();
+            private List<byte[]> blocks = new List<byte[]>();
+
+            // Ensure rawData is defined at the class level if needed
+            private byte[] rawData;
 
             public void ProbeDevice(string devicePath)
             {
@@ -51,7 +55,7 @@ namespace ProcessorEmulator.Tools.FileSystems
                 }
             }
 
-            private bool IsVxWorksPartition(byte[] data)
+            private static bool IsVxWorksPartition(byte[] data)
             {
                 uint magic = BitConverter.ToUInt32(data, 0);
                 return magic == VXWORKS_MAGIC || magic == DOSFS_MAGIC;
@@ -71,7 +75,7 @@ namespace ProcessorEmulator.Tools.FileSystems
                 };
             }
 
-            private byte[] ExtractEncryptionKey(byte[] data)
+            private static byte[] ExtractEncryptionKey(byte[] data)
             {
                 // Look for encryption headers and extract key material
                 // This varies by VxWorks version and configuration
@@ -94,7 +98,7 @@ namespace ProcessorEmulator.Tools.FileSystems
                 return FindSequence(data, signature) >= 0;
             }
 
-            private int FindSequence(byte[] array, byte[] sequence)
+            private static int FindSequence(byte[] array, byte[] sequence)
             {
                 for (int i = 0; i < array.Length - sequence.Length; i++)
                 {
@@ -121,12 +125,13 @@ namespace ProcessorEmulator.Tools.FileSystems
             private int FindBootloaderCode(byte[] data)
             {
                 // Look for common bootloader patterns
-                byte[] patterns = new byte[][] {
+                byte[][] patterns = new byte[][] {
                     new byte[] { 0x94, 0x21, 0xFF, 0xF0 },  // PowerPC
                     new byte[] { 0xE5, 0x2D, 0xE0, 0x04 },  // ARM
                     new byte[] { 0x27, 0xBD, 0xFF, 0xE0 }   // MIPS
                 };
-
+                // When assigning rawData, do so at the class level
+                rawData = CombineChunks(blocks);
                 foreach (var pattern in patterns)
                 {
                     int offset = FindSequence(data, pattern);
@@ -141,17 +146,17 @@ namespace ProcessorEmulator.Tools.FileSystems
                 stream.Seek(partition.BootloaderOffset, SeekOrigin.Begin);
                 byte[] bootloader = new byte[32768]; // Typical bootloader size
                 stream.Read(bootloader, 0, bootloader.Length);
-                
+
                 ExtractBootParameters(bootloader);
                 LocateFilesystem(bootloader);
             }
 
-            private void ExtractBootParameters(byte[] bootloader)
+            private static void ExtractBootParameters(byte[] bootloader)
             {
                 // Extract boot parameters, memory layout, etc.
             }
 
-            private void LocateFilesystem(byte[] bootloader)
+            private static void LocateFilesystem(byte[] bootloader)
             {
                 // Find filesystem offset and structure
             }
@@ -176,7 +181,14 @@ namespace ProcessorEmulator.Tools.FileSystems
                     return data;
                 
                 // Read and store raw data
-                byte[] rawData = new byte[4096]; // Standard block size
+                byte[] key = new byte[16]; // Placeholder for key initialization
+                byte[] rawData = CombineChunks(blocks);
+                if (rawData == null || rawData.Length == 0)
+                {
+                    throw new Exception("rawData is not properly initialized.");
+                }
+                // Use rawData here as needed
+                byte[] decryptedData = DecryptBlock(rawData, key);
                 // Implementation for raw read
                 return rawData;
             }
@@ -215,8 +227,28 @@ namespace ProcessorEmulator.Tools.FileSystems
                 {
                     aes.Key = key;
                     // Implementation specific to target firmware
+                    byte[] decryptedData = DecryptBlock(rawData, key);
                     return data;
                 }
+            }
+
+            private static byte[] CombineChunks(List<byte[]> chunks)
+            {
+                int totalSize = 0;
+                foreach (var chunk in chunks)
+                {
+                    totalSize += chunk.Length;
+                }
+
+                byte[] combined = new byte[totalSize];
+                int offset = 0;
+                foreach (var chunk in chunks)
+                {
+                    Array.Copy(chunk, 0, combined, offset, chunk.Length);
+                    offset += chunk.Length;
+                }
+
+                return combined;
             }
         }
     }

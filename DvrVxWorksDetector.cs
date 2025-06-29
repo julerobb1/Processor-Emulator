@@ -29,7 +29,7 @@ namespace ProcessorEmulator.Tools.FileSystems
             { 0x27051960, new VxWorksVersion { Version = "6.7", Signature = 0x27051960, BootSignature = 0x0FF0AD16, DeviceType = "Generic" } }
         };
 
-        private struct EncryptionInfo
+        public struct EncryptionInfo
         {
             public string Algorithm;
             public int KeySize;
@@ -89,7 +89,7 @@ namespace ProcessorEmulator.Tools.FileSystems
             return null;
         }
 
-        private int SearchBytes(byte[] haystack, byte[] needle)
+        private static int SearchBytes(byte[] haystack, byte[] needle)
         {
             for (int i = 0; i <= haystack.Length - needle.Length; i++)
             {
@@ -107,7 +107,7 @@ namespace ProcessorEmulator.Tools.FileSystems
             return -1;
         }
 
-        private string ExtractVersionInfo(byte[] firmware, int index)
+        private static string ExtractVersionInfo(byte[] firmware, int index)
         {
             // Read up to 32 bytes after the pattern for version info
             int maxLength = Math.Min(32, firmware.Length - index);
@@ -183,7 +183,7 @@ namespace ProcessorEmulator.Tools.FileSystems
             };
         }
 
-        private EncryptionInfo DetectEncryptionFallback(byte[] firmware)
+        private static EncryptionInfo DetectEncryptionFallback(byte[] firmware)
         {
             // Generic encryption detection
             return new EncryptionInfo
@@ -195,7 +195,7 @@ namespace ProcessorEmulator.Tools.FileSystems
             };
         }
 
-        private byte[] ExtractKeyMaterial(byte[] firmware, string deviceType)
+        private static byte[] ExtractKeyMaterial(byte[] firmware, string deviceType)
         {
             // Implementation depends on specific device type
             byte[] keyMaterial = new byte[32];

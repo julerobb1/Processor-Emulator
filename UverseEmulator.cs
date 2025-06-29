@@ -5,6 +5,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
+using ProcessorEmulator.Network;
 
 namespace ProcessorEmulator.Emulation
 {
@@ -108,13 +109,13 @@ namespace ProcessorEmulator.Emulation
             }
         }
 
-        private void InitializeVIP1200()
+        private static void InitializeVIP1200()
         {
             // VIP1200-specific hardware initialization
             // Basic receiver functionality
         }
 
-        private void MapDVRHardware()
+        private static void MapDVRHardware()
         {
             // Map DVR-specific hardware registers and memory regions
             // This would include the hardware needed for recording functionality
@@ -142,7 +143,7 @@ namespace ProcessorEmulator.Emulation
             }
         }
 
-        private void ProcessVerifiedBzContent(byte[] content)
+        private static void ProcessVerifiedBzContent(byte[] content)
         {
             // Handle verified .bz file content
             // These files contain configuration and system data
@@ -152,12 +153,12 @@ namespace ProcessorEmulator.Emulation
         {
             if (config.IsWholeHome)
             {
-                // Setup network interfaces for Whole Home DVR functionality
+                // Set up network interfaces for Whole Home DVR functionality
                 SetupWholeHomeNetworking();
             }
         }
 
-        private void SetupWholeHomeNetworking()
+        private static void SetupWholeHomeNetworking()
         {
             // Configure networking for Whole Home DVR
             // This would handle communication between multiple receivers
@@ -171,13 +172,13 @@ namespace ProcessorEmulator.Emulation
             StartMediaroomPlatform();
         }
 
-        private void InitializeWinCE()
+        private static void InitializeWinCE()
         {
             // Set up Windows CE environment
             // This includes necessary system calls and API emulation
         }
 
-        private void StartMediaroomPlatform()
+        private static void StartMediaroomPlatform()
         {
             // Initialize and start the Mediaroom middleware
             // This handles the UI and content delivery
@@ -202,22 +203,22 @@ namespace ProcessorEmulator.Emulation
             }
         }
 
-        private void EmulateTuner()
+        private static void EmulateTuner()
         {
             // Emulate MPEG hardware decoder and tuner functionality
         }
 
-        private void EmulateStorage()
+        private static void EmulateStorage()
         {
             // Emulate storage controller for DVR functionality
         }
 
-        private void EmulateHDMI()
+        private static void EmulateHDMI()
         {
             // Emulate HDMI output with HDCP
         }
 
-        private void EmulateNetwork()
+        private static void EmulateNetwork()
         {
             // Emulate network interface for IPTV functionality
         }
@@ -229,7 +230,7 @@ namespace ProcessorEmulator.Emulation
                 IPAddress.Parse("192.168.100." + new Random().Next(2, 254)));
         }
 
-        private string GenerateMacAddress()
+        private static string GenerateMacAddress()
         {
             var random = new Random();
             byte[] mac = new byte[6];
@@ -242,4 +243,11 @@ namespace ProcessorEmulator.Emulation
         {
             await cmts.HandleStreamRequest(GetMacAddress(), channelId);
         }
-    }}
+
+        private static string GetMacAddress()
+        {
+            // Placeholder for retrieving the MAC address of the emulated device
+            return "00:11:22:33:44:55";
+        }
+    }
+}

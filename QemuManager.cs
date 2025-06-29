@@ -51,7 +51,7 @@ namespace ProcessorEmulator.Tools
             process.Start();
         }
 
-        private string GetQemuExecutable(string architecture)
+        private static string GetQemuExecutable(string architecture)
         {
             switch (architecture)
             {
@@ -67,7 +67,7 @@ namespace ProcessorEmulator.Tools
             }
         }
 
-        private string GetQemuArgs(string imagePath, string architecture)
+        private static string GetQemuArgs(string imagePath, string architecture)
         {
             // Basic args, can be extended for more options
             return $"-m 256 -drive file=\"{imagePath}\",format=raw -nographic";

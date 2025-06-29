@@ -50,13 +50,13 @@ namespace ProcessorEmulator.Tools.FileSystems
                     ParseJournal(imageData);
             }
 
-            private Ext4Superblock ReadSuperblock(byte[] data)
+            private static Ext4Superblock ReadSuperblock(byte[] data)
             {
                 return new Ext4Superblock
                 {
                     InodesCount = BitConverter.ToUInt32(data, 0),
                     BlocksCount = BitConverter.ToUInt32(data, 4),
-                    BlockSize = 1024 << BitConverter.ToUInt32(data, 24),
+                    BlockSize = (uint)(1024 << (int)(BitConverter.ToUInt32(data, 24) & 0xFF)),
                     FragsPerGroup = BitConverter.ToUInt32(data, 28),
                     InodesPerGroup = BitConverter.ToUInt32(data, 40),
                     Magic = BitConverter.ToUInt16(data, 56),
@@ -67,16 +67,16 @@ namespace ProcessorEmulator.Tools.FileSystems
 
             private void ParseGroupDescriptors(byte[] data)
             {
-                int gdtOffset = superblock.BlockSize == 1024 ? 2048 : superblock.BlockSize;
+                int gdtOffset = (int)(superblock.BlockSize == 1024 ? 2048 : superblock.BlockSize);
                 // Parse group descriptors and build block allocation bitmap
             }
 
-            private void ParseInodes(byte[] data)
+            private static void ParseInodes(byte[] data)
             {
                 // Parse inode tables and create inode dictionary
             }
 
-            private void ParseJournal(byte[] data)
+            private static void ParseJournal(byte[] data)
             {
                 // Parse journal blocks and maintain transaction log
             }
@@ -92,14 +92,14 @@ namespace ProcessorEmulator.Tools.FileSystems
                     return ReadFileFromBlocks(inode);
             }
 
-            private byte[] ReadFileFromExtents(Ext4Inode inode)
+            private static byte[] ReadFileFromExtents(Ext4Inode inode)
             {
                 byte[] fileData = new byte[inode.Size];
                 // Process extent tree and read data
                 return fileData;
             }
 
-            private byte[] ReadFileFromBlocks(Ext4Inode inode)
+            private static byte[] ReadFileFromBlocks(Ext4Inode inode)
             {
                 byte[] fileData = new byte[inode.Size];
                 // Process block pointers and read data
@@ -110,7 +110,7 @@ namespace ProcessorEmulator.Tools.FileSystems
 
     public class BtrfsImplementation
     {
-        private const ulong BTRFS_MAGIC = 0x4D5F53665248425FULL;
+        private const ulong BTRFS_MAGIC = 0x4D5F53665248425FUL;
 
         private struct BtrfsSuperblock
         {
@@ -146,7 +146,7 @@ namespace ProcessorEmulator.Tools.FileSystems
                 ParseFilesystemTree(imageData);
             }
 
-            private BtrfsSuperblock ReadSuperblock(byte[] data)
+            private static BtrfsSuperblock ReadSuperblock(byte[] data)
             {
                 return new BtrfsSuperblock
                 {
@@ -159,17 +159,17 @@ namespace ProcessorEmulator.Tools.FileSystems
                 };
             }
 
-            private void ParseChunkTree(byte[] data)
+            private static void ParseChunkTree(byte[] data)
             {
                 // Parse chunk tree to build physical-logical mapping
             }
 
-            private void ParseRootTree(byte[] data)
+            private static void ParseRootTree(byte[] data)
             {
                 // Parse root tree to find filesystem tree
             }
 
-            private void ParseFilesystemTree(byte[] data)
+            private static void ParseFilesystemTree(byte[] data)
             {
                 // Parse filesystem tree to build file index
             }
@@ -183,7 +183,7 @@ namespace ProcessorEmulator.Tools.FileSystems
                 return ReadFileExtents(inodeNumber);
             }
 
-            private byte[] ReadFileExtents(ulong inodeNumber)
+            private static byte[] ReadFileExtents(ulong inodeNumber)
             {
                 // Read file extents and return file data
                 return new byte[0];
@@ -229,7 +229,7 @@ namespace ProcessorEmulator.Tools.FileSystems
                 ParseInodeBtrees(imageData);
             }
 
-            private XFSSuperblock ReadSuperblock(byte[] data)
+            private static XFSSuperblock ReadSuperblock(byte[] data)
             {
                 return new XFSSuperblock
                 {
@@ -242,12 +242,12 @@ namespace ProcessorEmulator.Tools.FileSystems
                 };
             }
 
-            private void ParseAGHeaders(byte[] data)
+            private static void ParseAGHeaders(byte[] data)
             {
                 // Parse Allocation Group headers
             }
 
-            private void ParseInodeBtrees(byte[] data)
+            private static void ParseInodeBtrees(byte[] data)
             {
                 // Parse inode B+trees
             }
@@ -266,19 +266,19 @@ namespace ProcessorEmulator.Tools.FileSystems
                 }
             }
 
-            private byte[] ReadLocalFormat(XFSInode inode)
+            private static byte[] ReadLocalFormat(XFSInode inode)
             {
                 // Return data stored directly in inode
                 return inode.Data;
             }
 
-            private byte[] ReadExtentFormat(XFSInode inode)
+            private static byte[] ReadExtentFormat(XFSInode inode)
             {
                 // Read data from extent list
                 return new byte[inode.Size];
             }
 
-            private byte[] ReadBtreeFormat(XFSInode inode)
+            private static byte[] ReadBtreeFormat(XFSInode inode)
             {
                 // Read data from B+tree
                 return new byte[inode.Size];

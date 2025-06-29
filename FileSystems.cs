@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.InteropServices;
 
 namespace ProcessorEmulator.Tools.FileSystems
@@ -36,7 +37,7 @@ namespace ProcessorEmulator.Tools.FileSystems
                 }
             }
 
-            private JFFS2_NodeHeader ReadNodeHeader(byte[] data, ref int offset)
+            private static JFFS2_NodeHeader ReadNodeHeader(byte[] data, ref int offset)
             {
                 JFFS2_NodeHeader header = new JFFS2_NodeHeader
                 {
@@ -45,7 +46,7 @@ namespace ProcessorEmulator.Tools.FileSystems
                     Length = BitConverter.ToUInt32(data, offset + 8),
                     Checksum = BitConverter.ToUInt32(data, offset + 12)
                 };
-                offset += NODE_HEADER_SIZE;
+                offset += (int)NODE_HEADER_SIZE;
                 return header;
             }
 
@@ -67,12 +68,12 @@ namespace ProcessorEmulator.Tools.FileSystems
                 offset += (int)header.Length;
             }
 
-            private void ProcessInodeNode(byte[] nodeData)
+            private static void ProcessInodeNode(byte[] nodeData)
             {
                 // Implement inode processing
             }
 
-            private void ProcessDirentNode(byte[] nodeData)
+            private static void ProcessDirentNode(byte[] nodeData)
             {
                 // Implement directory entry processing
             }
@@ -118,7 +119,7 @@ namespace ProcessorEmulator.Tools.FileSystems
                 ParseChunks(imageData, header);
             }
 
-            private YAFFSHeader ParseHeader(byte[] data)
+            private static YAFFSHeader ParseHeader(byte[] data)
             {
                 return new YAFFSHeader
                 {
@@ -158,7 +159,7 @@ namespace ProcessorEmulator.Tools.FileSystems
                 return CombineChunks(fileData);
             }
 
-            private byte[] CombineChunks(List<byte[]> chunks)
+            private static byte[] CombineChunks(List<byte[]> chunks)
             {
                 int totalSize = chunks.Sum(chunk => chunk.Length);
                 byte[] result = new byte[totalSize];
@@ -208,7 +209,7 @@ namespace ProcessorEmulator.Tools.FileSystems
                 ParseBlocks(imageData);
             }
 
-            private UFSSuperblock ParseSuperblock(byte[] data)
+            private static UFSSuperblock ParseSuperblock(byte[] data)
             {
                 return new UFSSuperblock
                 {

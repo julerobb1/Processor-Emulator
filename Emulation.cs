@@ -1,3 +1,7 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
 namespace ProcessorEmulator.Emulation
 {
     // Placeholder for ISA decoders (MIPS, ARM, etc.)
@@ -23,7 +27,7 @@ namespace ProcessorEmulator.Emulation
         // Code generator stub for x86-64
         public class X64CodeGenerator
         {
-            public byte[] Generate(IntermediateRepresentation.IrInstruction[] ir)
+            public static byte[] Generate(IntermediateRepresentation.IrInstruction[] ir)
             {
                 // TODO: Translate IR to x86-64 machine code
                 return new byte[0];
@@ -50,17 +54,17 @@ namespace ProcessorEmulator.Emulation
     // Basic MIPS instruction decoder and interpreter skeleton
     public class MipsEmulator
     {
-        public void LoadBinary(byte[] binary)
+        public static void LoadBinary(byte[] binary)
         {
             // TODO: Parse and load MIPS binary
         }
 
-        public void Step()
+        public static void Step()
         {
             // TODO: Decode and execute one instruction
         }
 
-        public void Run()
+        public static void Run()
         {
             // TODO: Main emulation loop
         }
@@ -168,7 +172,7 @@ namespace ProcessorEmulator.Emulation
     // Loader for OS images and applications
     public class OsImageLoader
     {
-        public void LoadImage(string path)
+        public static void LoadImage(string path)
         {
             // TODO: Load and parse OS image or application binary
         }

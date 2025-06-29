@@ -8,7 +8,7 @@ namespace ProcessorEmulator.Tools
     // Architecture/ISA detection from binaries or disk images
     public class ArchitectureDetector
     {
-        public string Detect(byte[] binaryOrImage)
+        public static string Detect(byte[] binaryOrImage)
         {
             // ELF magic: 0x7F 'E' 'L' 'F'
             if (binaryOrImage.Length > 4 && binaryOrImage[0] == 0x7F && binaryOrImage[1] == (byte)'E' && binaryOrImage[2] == (byte)'L' && binaryOrImage[3] == (byte)'F')
@@ -66,7 +66,7 @@ namespace ProcessorEmulator.Tools
     // Filesystem and partition analysis/mounting
     public class PartitionAnalyzer
     {
-        public List<string> Analyze(byte[] diskImage)
+        public static List<string> Analyze(byte[] diskImage)
         {
             var partitions = new List<string>();
             // MBR: check for 0x55AA signature at offset 510
@@ -92,7 +92,7 @@ namespace ProcessorEmulator.Tools
     // Disassembler and decompiler stub (MIPS/ARM minimal example)
     public class Disassembler
     {
-        public List<string> Disassemble(byte[] binary, string architecture)
+        public static List<string> Disassemble(byte[] binary, string architecture)
         {
             var result = new List<string>();
             switch (architecture)
@@ -149,7 +149,7 @@ namespace ProcessorEmulator.Tools
     // Recompiler/binary translator stub
     public class Recompiler
     {
-        public void Recompile(byte[] binary, string sourceArch, string targetArch)
+        public static void Recompile(byte[] binary, string sourceArch, string targetArch)
         {
             if (!SupportedArchitectures.All.Contains(sourceArch) || !SupportedArchitectures.All.Contains(targetArch))
                 throw new NotSupportedException("Unsupported architecture");

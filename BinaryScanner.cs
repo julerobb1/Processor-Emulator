@@ -28,11 +28,11 @@ namespace ProcessorEmulator.Tools
                 try
                 {
                     byte[] data = File.ReadAllBytes(file);
-                    string arch = detector.Detect(data);
+                    string arch = ArchitectureDetector.Detect(data);
                     if (arch != "Unknown")
                     {
                         Console.WriteLine($"{file}: {arch}");
-                        var disasm = disassembler.Disassemble(data, arch);
+                        var disasm = Disassembler.Disassemble(data, arch);
                         foreach (var line in disasm.Take(5)) // Preview first 5 lines
                             Console.WriteLine("    " + line);
                     }
