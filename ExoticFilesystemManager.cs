@@ -3,7 +3,9 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using ProcessorEmulator.Tools.FileSystems;
+using System.Reflection;
 
 namespace ProcessorEmulator.Tools
 {
@@ -81,6 +83,8 @@ namespace ProcessorEmulator.Tools
         private Dictionary<string, IFileSystemTranslator> fsTranslators = new();
         private Dictionary<string, ICpuTranslator> cpuTranslators = new();
         private IVirtualizationProvider virtualizationProvider = new HardwareVirtualizationProvider();
+        private IChipsetEmulator chipsetEmulator;
+        private IManifestProvider manifestProvider;
 
         public ExoticFilesystemManager()
         {
@@ -221,6 +225,48 @@ namespace ProcessorEmulator.Tools
             return vxworksFs.ReadFile(path, bypassEncryption);
         }
 
+        public bool LoadChipsetEmulator(string chipsetName, string configPath)
+        {
+            // TODO: Implement dynamic loading of chipset emulator based on name
+            // Example: Assumes you have a class named "Contoso6311Emulator"
+            // Type emulatorType = Type.GetType($"ProcessorEmulator.Tools.{chipsetName}Emulator");
+            // chipsetEmulator = (IChipsetEmulator)Activator.CreateInstance(emulatorType);
+            chipsetEmulator = new GenericChipsetEmulator(); // Replace with actual loading
+
+            if (chipsetEmulator == null)
+                return false;
+
+            return chipsetEmulator.Initialize(configPath);
+        }
+
+        public byte[] ReadChipsetRegister(uint address)
+        {
+            if (chipsetEmulator == null)
+                throw new InvalidOperationException("Chipset emulator not loaded.");
+            return chipsetEmulator.ReadRegister(address);
+        }
+
+        public void WriteChipsetRegister(uint address, byte[] data)
+        {
+            if (chipsetEmulator == null)
+                throw new InvalidOperationException("Chipset emulator not loaded.");
+            chipsetEmulator.WriteRegister(address, data);
+        }
+
+        public byte[] RunTranslatedAndVirtualized(byte[] code, string fromArch, string toArch)
+        {
+            byte[] translatedCode = TranslateCpuInstructions(code, fromArch, toArch);
+
+            byte[] result = null;
+            RunWithHardwareVirtualization(() =>
+            {
+                // TODO: Implement actual execution of translated code within the virtualized environment
+                // This is a placeholder
+                result = translatedCode;
+            });
+            return result;
+        }
+
         // Register a filesystem translator
         public void RegisterFileSystemTranslator(string key, IFileSystemTranslator translator)
         {
@@ -296,5 +342,55 @@ namespace ProcessorEmulator.Tools
 
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool CloseHandle(IntPtr hObject);
+
+        public void SetManifestProvider(IManifestProvider provider)
+        {
+            manifestProvider = provider;
+        }
+
+        public IEnumerable<string> ListFiles(string imagePath, string manifestPath = null)
+        {
+            if (manifestProvider != null && manifestProvider.IsManifestPresent(manifestPath ?? imagePath))
+            {
+                var entries = manifestProvider.ParseManifest(manifestPath ?? imagePath);
+                return entries.Select(e => e.FileName);
+            }
+            else
+            {
+                // Fallback: scan the filesystem image for files (implementation depends on FS type)
+                // Example: for JFFS2
+                if (imagePath.EndsWith(".jffs2"))
+                {
+                    jffs2Fs.ParseImage(File.ReadAllBytes(imagePath));
+                    return jffs2Fs.ListFiles();
+                }
+                // Add other FS types as needed
+                // Or return an empty list if not supported
+                return Enumerable.Empty<string>();
+            }
+        }
+    }
+
+    // Example: Generic chipset emulator (stub, extend for real use)
+    public class GenericChipsetEmulator : IChipsetEmulator
+    {
+        public string ChipsetName => "GenericChipset";
+
+        public bool Initialize(string configPath)
+        {
+            // TODO: Load configuration from configPath
+            return true;
+        }
+
+        public byte[] ReadRegister(uint address)
+        {
+            // TODO: Implement register read logic
+            return new byte[4]; // Placeholder
+        }
+
+        public void WriteRegister(uint address, byte[] data)
+        {
+            // TODO: Implement register write logic
+        }
     }
 }

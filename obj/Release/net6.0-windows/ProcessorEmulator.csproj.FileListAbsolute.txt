@@ -1,0 +1,12 @@
+C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Release\net6.0-windows\ClassicStyle.baml
+C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Release\net6.0-windows\App.baml
+C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Release\net6.0-windows\App.g.cs
+C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Release\net6.0-windows\ProcessorEmulator_MarkupCompile.cache
+C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Release\net6.0-windows\MainWindow.baml
+C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Release\net6.0-windows\MainWindow.g.cs
+C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Release\net6.0-windows\ProcessorEmulator.g.resources
+C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Release\net6.0-windows\ProcessorEmulator.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Release\net6.0-windows\ProcessorEmulator.AssemblyInfoInputs.cache
+C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Release\net6.0-windows\ProcessorEmulator.AssemblyInfo.cs
+C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Release\net6.0-windows\ProcessorEmulator.csproj.CoreCompileInputs.cache
+C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Release\net6.0-windows\ProcessorEmulator.sourcelink.json

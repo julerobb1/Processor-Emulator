@@ -18,8 +18,9 @@
             <StackPanel Margin="20">
                 <TextBlock Text="Emulator Control Panel" FontWeight="Bold" FontSize="16" Margin="0,0,0,10"/>
                 <Button Content="Start Emulation" Width="150" Height="30" Margin="0,0,0,10" Click="StartEmulation_Click"/>
-                <TextBox Width="300" Height="25" PlaceholderText="Enter command..."/>
+                <TextBox Width="300" Height="25"/>
             </StackPanel>
         </Grid>
     </DockPanel>
+</Window>
 </Window>
