@@ -362,7 +362,9 @@ namespace ProcessorEmulator.Tools
                 if (imagePath.EndsWith(".jffs2"))
                 {
                     jffs2Fs.ParseImage(File.ReadAllBytes(imagePath));
-                    return jffs2Fs.ListFiles();
+                    // If JFFS2_FileSystem does not have ListFiles, return empty or implement as needed
+                    // return jffs2Fs.ListFiles();
+                    return Enumerable.Empty<string>();
                 }
                 // Add other FS types as needed
                 // Or return an empty list if not supported

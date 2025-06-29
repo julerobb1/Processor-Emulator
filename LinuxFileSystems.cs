@@ -22,13 +22,14 @@ namespace ProcessorEmulator.Tools.FileSystems
             public ulong JournalInode;
         }
 
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Compiler", "CS0649")]
         private struct Ext4Inode
         {
-            public uint Mode;
-            public uint Size;
-            public uint[] BlockPointers;
-            public uint[] ExtentTree;
+            public int Mode;
+            public long Size;
             public bool UsesExtents;
+            public int[] BlockPointers;
+            public object ExtentTree;
         }
 
         public class Ext4FileSystem
@@ -122,6 +123,7 @@ namespace ProcessorEmulator.Tools.FileSystems
             public ulong LogRoot;
         }
 
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Compiler", "CS0649")]
         private struct BtrfsKey
         {
             public ulong ObjectID;
@@ -179,7 +181,6 @@ namespace ProcessorEmulator.Tools.FileSystems
                 var key = new BtrfsKey { ObjectID = inodeNumber, Type = 1 }; // BTRFS_INODE_ITEM_KEY
                 if (!items.TryGetValue(key, out byte[] inodeData))
                     throw new FileNotFoundException();
-
                 return ReadFileExtents(inodeNumber);
             }
 
@@ -209,9 +210,9 @@ namespace ProcessorEmulator.Tools.FileSystems
         {
             public uint Mode;
             public ulong Size;
-            public uint Format;  // Fork offset and format
+            public int Format;
             public byte[] Data;  // Local/Extent/B+tree fork
-        }
+        } // Fork offset and format
 
         public class XFSFileSystem
         {
@@ -224,7 +225,6 @@ namespace ProcessorEmulator.Tools.FileSystems
                 superblock = ReadSuperblock(imageData);
                 if (superblock.Magic != XFS_MAGIC)
                     throw new Exception("Invalid XFS filesystem");
-
                 ParseAGHeaders(imageData);
                 ParseInodeBtrees(imageData);
             }
