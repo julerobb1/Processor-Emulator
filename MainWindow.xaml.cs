@@ -70,6 +70,20 @@ namespace ProcessorEmulator
             string arch = ArchitectureDetector.Detect(binary);
             bool isWinCE = IsWinCEBinary(binary);
 
+            // Show detected architecture for debugging
+            MessageBox.Show($"Detected architecture: {arch ?? "(none)"}", "Architecture Detection", MessageBoxButton.OK, MessageBoxImage.Information);
+
+            // If unknown, prompt user
+            if (string.IsNullOrEmpty(arch) || arch == "Unknown")
+            {
+                arch = PromptUserForInput("Architecture could not be detected. Please enter architecture (e.g., MIPS32, ARM, x86, etc.):");
+                if (string.IsNullOrWhiteSpace(arch))
+                {
+                    MessageBox.Show("Architecture is required.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+            }
+
             try
             {
                 if (isWinCE)
