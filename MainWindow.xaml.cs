@@ -119,7 +119,9 @@ namespace ProcessorEmulator
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Emulation error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(
+                    $"Emulation error: {ex.Message}\n\nIf this is a QEMU error, ensure qemu-system-mips.exe is installed and in your PATH or in the application directory.",
+                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 StatusBarText("Emulation failed.");
             }
         }
