@@ -25,10 +25,15 @@ namespace ProcessorEmulator.Tools.FileSystems
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Compiler", "CS0649")]
         private struct Ext4Inode
         {
+            [System.Diagnostics.CodeAnalysis.SuppressMessage("Compiler", "CS0649")]
             public int Mode;
+            [System.Diagnostics.CodeAnalysis.SuppressMessage("Compiler", "CS0649")]
             public long Size;
+            [System.Diagnostics.CodeAnalysis.SuppressMessage("Compiler", "CS0649")]
             public bool UsesExtents;
+            [System.Diagnostics.CodeAnalysis.SuppressMessage("Compiler", "CS0649")]
             public int[] BlockPointers;
+            [System.Diagnostics.CodeAnalysis.SuppressMessage("Compiler", "CS0649")]
             public object ExtentTree;
         }
 
@@ -128,6 +133,7 @@ namespace ProcessorEmulator.Tools.FileSystems
         {
             public ulong ObjectID;
             public byte Type;
+            [System.Diagnostics.CodeAnalysis.SuppressMessage("Compiler", "CS0649")]
             public ulong Offset;
         }
 
@@ -208,9 +214,13 @@ namespace ProcessorEmulator.Tools.FileSystems
 
         private struct XFSInode
         {
+            [System.Diagnostics.CodeAnalysis.SuppressMessage("Compiler", "CS0649")]
             public uint Mode;
+            [System.Diagnostics.CodeAnalysis.SuppressMessage("Compiler", "CS0649")]
             public ulong Size;
+            [System.Diagnostics.CodeAnalysis.SuppressMessage("Compiler", "CS0649")]
             public int Format;
+            [System.Diagnostics.CodeAnalysis.SuppressMessage("Compiler", "CS0649")]
             public byte[] Data;  // Local/Extent/B+tree fork
         } // Fork offset and format
 
