@@ -23,10 +23,10 @@ namespace ProcessorEmulator.Tools.FileSystems
 
         public class VxWorksFileSystem
         {
-            private List<VxWorksPartition> partitions = new List<VxWorksPartition>();
-            private Dictionary<uint, byte[]> decryptedBlocks = new Dictionary<uint, byte[]>();
-            private Dictionary<string, uint> fileIndex = new Dictionary<string, uint>();
-            private List<byte[]> blocks = new List<byte[]>();
+            private List<VxWorksPartition> partitions = new();
+            private Dictionary<uint, byte[]> decryptedBlocks = new();
+            private Dictionary<string, uint> fileIndex = new();
+            private List<byte[]> blocks = new();
 
             // Ensure rawData is defined at the class level if needed
             private byte[] rawData;

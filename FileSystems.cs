@@ -21,8 +21,8 @@ namespace ProcessorEmulator.Tools.FileSystems
 
         public class JFFS2_FileSystem
         {
-            private Dictionary<string, byte[]> fileData = new Dictionary<string, byte[]>();
-            private Dictionary<string, JFFS2_NodeHeader> nodeHeaders = new Dictionary<string, JFFS2_NodeHeader>();
+            private Dictionary<string, byte[]> fileData = new();
+            private Dictionary<string, JFFS2_NodeHeader> nodeHeaders = new();
 
             public void ParseImage(byte[] imageData)
             {
@@ -39,7 +39,7 @@ namespace ProcessorEmulator.Tools.FileSystems
 
             private static JFFS2_NodeHeader ReadNodeHeader(byte[] data, ref int offset)
             {
-                JFFS2_NodeHeader header = new JFFS2_NodeHeader
+                JFFS2_NodeHeader header = new()
                 {
                     Magic = BitConverter.ToUInt32(data, offset),
                     Type = BitConverter.ToUInt32(data, offset + 4),
@@ -107,8 +107,8 @@ namespace ProcessorEmulator.Tools.FileSystems
 
         public class YAFFS_FileSystem
         {
-            private Dictionary<int, byte[]> chunks = new Dictionary<int, byte[]>();
-            private Dictionary<string, List<int>> fileChunks = new Dictionary<string, List<int>>();
+            private Dictionary<int, byte[]> chunks = new();
+            private Dictionary<string, List<int>> fileChunks = new();
 
             public void ParseImage(byte[] imageData)
             {
@@ -150,7 +150,7 @@ namespace ProcessorEmulator.Tools.FileSystems
                 if (!fileChunks.ContainsKey(path))
                     throw new FileNotFoundException();
 
-                List<byte[]> fileData = new List<byte[]>();
+                List<byte[]> fileData = new();
                 foreach (int chunkId in fileChunks[path])
                 {
                     fileData.Add(chunks[chunkId]);
@@ -189,8 +189,8 @@ namespace ProcessorEmulator.Tools.FileSystems
         public class UFS_FileSystem
         {
             private UFSSuperblock superblock;
-            private Dictionary<uint, byte[]> blocks = new Dictionary<uint, byte[]>();
-            private Dictionary<uint, UFSInode> inodes = new Dictionary<uint, UFSInode>();
+            private Dictionary<uint, byte[]> blocks = new();
+            private Dictionary<uint, UFSInode> inodes = new();
 
             private struct UFSInode
             {
@@ -225,7 +225,7 @@ namespace ProcessorEmulator.Tools.FileSystems
                 int offset = 8192; // Standard UFS superblock size
                 for (uint i = 0; i < superblock.NumInodes; i++)
                 {
-                    UFSInode inode = new UFSInode
+                    UFSInode inode = new()
                     {
                         Mode = BitConverter.ToUInt32(data, offset),
                         Size = BitConverter.ToUInt32(data, offset + 4),

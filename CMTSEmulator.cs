@@ -30,7 +30,6 @@ namespace ProcessorEmulator.Network
         private Dictionary<int, QAMChannel> qamChannels;
         private Dictionary<string, IPAddress> subscriberModems;
         private Dictionary<string, string> dsgConfigurations;
-        private bool isInitialized;
 
         // DOCSIS configuration
         private const int DOCSIS_VERSION = 3;
