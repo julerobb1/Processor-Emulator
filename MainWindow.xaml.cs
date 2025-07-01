@@ -6,10 +6,21 @@ using System.Threading.Tasks;
 using System.IO;
 using System;
 using System.Windows.Controls;
+using System.Collections.Generic;
 
 namespace ProcessorEmulator
 {
-    public partial class MainWindow : Window
+    public interface IMainWindow
+    {
+        TextBlock StatusBar { get; set; }
+        PartitionAnalyzer PartitionAnalyzer { get; set; }
+        InstructionDispatcher Dispatcher1 { get; set; }
+
+        bool Equals(object obj);
+        int GetHashCode();
+    }
+
+    public partial class MainWindow : Window, IMainWindow
     {
         private IEmulator currentEmulator;
         private ArchitectureDetector archDetector = new ArchitectureDetector();
@@ -17,35 +28,24 @@ namespace ProcessorEmulator
         private Disassembler disassembler = new Disassembler();
         private Recompiler recompiler = new Recompiler();
         private ExoticFilesystemManager fsManager = new ExoticFilesystemManager();
-        private TextBlock statusBar = new TextBlock();
+
+        public MainWindow(TextBlock statusBar)
+        {
+            this.StatusBar = statusBar;
+        }
+
+        /// <summary>
+        /// Handles the dispatching and execution of instructions within the emulator.
+        /// </summary>
         private InstructionDispatcher dispatcher = new InstructionDispatcher();
 
-        public MainWindow()
-        {
-            // Entry point for the WPF application UI.
-            // All emulation actions are triggered by user interaction (button/menu clicks).
-            // The main flow is:
-            // 1. User loads a binary/firmware via the UI.
-            // 2. Architecture and chipset are detected.
-            // 3. Appropriate emulator and chipset emulation are loaded.
-            // 4. Emulation/translation is started, with firmware-level virtualization as needed.
-            // 5. Results are shown in the UI or written to disk.
-            // 
-            // For headless or CLI operation, a separate entrypoint (e.g., Program.cs) could be added.
-            // For now, MainWindow is the main entrypoint for all operations.
-            // 
-            // To extend: Implement IChipsetEmulator for each chipset, and have the emulator
-            // interact with the chipset layer when firmware accesses hardware-specific features.
-            // 
-            // Example: When firmware calls a chipset function, the emulator should route the call
-            // to the appropriate IChipsetEmulator implementation, which can either emulate the
-            // behavior or return expected values to "trick" the firmware.
-            // 
-            // The dispatcher can be extended to handle instruction translation and virtualization.
-            // 
-            // See methods: StartEmulation_Click, LoadFirmwareImage, ReadAndTranslateFile.
+        public TextBlock StatusBar { get; set; } = new TextBlock();
+        public PartitionAnalyzer PartitionAnalyzer { get => partitionAnalyzer; set => partitionAnalyzer = value; }
+        public InstructionDispatcher Dispatcher1 { get => dispatcher; set => dispatcher = value; }
 
-            // InitializeComponent(); // Uncomment if using WPF/XAML
+        private void InitializeComponent()
+        {
+            throw new NotImplementedException();
         }
 
         private void StatusBarText(string text)
@@ -55,10 +55,17 @@ namespace ProcessorEmulator
                 Dispatcher.Invoke(() => StatusBarText(text));
                 return;
             }
-            statusBar.Text = text;
+            StatusBar.Text = text;
         }
 
-        private async void StartEmulation_Click(object sender, RoutedEventArgs e)
+        private IEmulator GetCurrentEmulator()
+        {
+            return currentEmulator;
+        }
+
+        private async void StartEmulation_Click(object sender,
+                                                RoutedEventArgs e,
+                                                IEmulator currentEmulator)
         {
             var openFileDialog = new OpenFileDialog
             {
@@ -92,17 +99,17 @@ namespace ProcessorEmulator
                 }
                 else
                 {
-                    switch (arch)
+                    currentEmulator = arch switch
                     {
-                        case "MIPS32": currentEmulator = new Mips32Emulator(); break;
-                        case "MIPS64": currentEmulator = new Mips64Emulator(); break;
-                        case "ARM": currentEmulator = new ArmEmulator(); break;
-                        case "ARM64": currentEmulator = new Arm64Emulator(); break;
-                        case "PowerPC": currentEmulator = new PowerPcEmulator(); break;
-                        case "x86": currentEmulator = new X86Emulator(); break;
-                        case "x86-64": currentEmulator = new X64Emulator(); break;
-                        default: throw new Exception("Unknown architecture");
-                    }
+                        "MIPS32" => new Mips32Emulator(),
+                        "MIPS64" => new Mips64Emulator(),
+                        "ARM" => new ArmEmulator(),
+                        "ARM64" => new Arm64Emulator(),
+                        "PowerPC" => new PowerPcEmulator(),
+                        "x86" => new X86Emulator(),
+                        "x86-64" => new X64Emulator(),
+                        _ => throw new Exception("Unknown architecture"),
+                    };
                 }
 
                 StatusBarText($"Loading {Path.GetFileName(openFileDialog.FileName)}...");
@@ -278,6 +285,10 @@ namespace ProcessorEmulator
             byte[] result = fsManager.RunTranslatedAndVirtualized(fileData, fromArch, toArch);
             return result;
         }
+
+        // Removed override of Equals(object) because DependencyObject.Equals(object) is sealed and cannot be overridden.
+
+        // Removed GetHashCode override because DependencyObject.GetHashCode() is sealed and cannot be overridden.
     }
 }
 
