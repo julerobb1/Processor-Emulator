@@ -24,6 +24,12 @@ namespace ProcessorEmulator
     {
         private IEmulator currentEmulator;
 
+        // Add a default constructor for XAML
+        public MainWindow()
+        {
+            // Optionally initialize fields here
+        }
+
         public MainWindow(IEmulator currentEmulator)
         {
             this.currentEmulator = currentEmulator;
@@ -290,6 +296,12 @@ namespace ProcessorEmulator
         // Removed override of Equals(object) because DependencyObject.Equals(object) is sealed and cannot be overridden.
 
         // Removed GetHashCode override because DependencyObject.GetHashCode() is sealed and cannot be overridden.
+
+        // Add this method to handle File -> Open menu click and call StartEmulation_Click
+        private void OpenMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            StartEmulation_Click(sender, e);
+        }
     }
 }
 
