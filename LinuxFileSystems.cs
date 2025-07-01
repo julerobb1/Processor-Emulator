@@ -149,6 +149,7 @@ namespace ProcessorEmulator.Tools.FileSystems
         {
             public ulong ObjectID;
             public byte Type;
+            [System.Diagnostics.CodeAnalysis.SuppressMessage("Compiler", "CS0649")]
             public ulong Offset;
         }
 
@@ -199,7 +200,7 @@ namespace ProcessorEmulator.Tools.FileSystems
 
             public byte[] ReadFile(ulong inodeNumber)
             {
-                var key = new BtrfsKey { ObjectID = inodeNumber, Type = 1 }; // BTRFS_INODE_ITEM_KEY
+                var key = new BtrfsKey { ObjectID = inodeNumber, Type = 1, Offset = 0 }; // BTRFS_INODE_ITEM_KEY
                 if (!items.TryGetValue(key, out byte[] inodeData))
                     throw new FileNotFoundException();
                 return ReadFileExtents(inodeNumber);
