@@ -6,12 +6,12 @@ namespace ProcessorEmulator.Emulation
 {
     public class WinCEEmulator : IEmulator
     {
-        private object ceProcess;
         private bool useQEMU;
 
-        public WinCEEmulator(bool useQEMUBackend = true)
+        public WinCEEmulator(bool useQEMUBackend = true, bool useQEMU = false)
         {
             useQEMU = useQEMUBackend;
+            this.useQEMU = useQEMU;
         }
 
         public void LoadBinary(byte[] binary)
