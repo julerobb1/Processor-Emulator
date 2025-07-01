@@ -257,13 +257,13 @@ namespace ProcessorEmulator.Tools.FileSystems
                 if (!inodes.TryGetValue(inodeNumber, out XFSInode inode))
                     throw new FileNotFoundException();
 
-                switch (inode.Format & 0x3)
+                return (inode.Format & 0x3) switch
                 {
-                    case 0: return ReadLocalFormat(inode);
-                    case 1: return ReadExtentFormat(inode);
-                    case 2: return ReadBtreeFormat(inode);
-                    default: throw new Exception("Invalid inode format");
-                }
+                    0 => ReadLocalFormat(inode),
+                    1 => ReadExtentFormat(inode),
+                    2 => ReadBtreeFormat(inode),
+                    _ => throw new Exception("Invalid inode format"),
+                };
             }
 
             private static byte[] ReadLocalFormat(XFSInode inode)
