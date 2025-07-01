@@ -53,18 +53,18 @@ namespace ProcessorEmulator.Tools
 
         private static string GetQemuExecutable(string architecture)
         {
-            switch (architecture)
+            return architecture switch
             {
-                case "MIPS32": return "qemu-system-mips.exe";
-                case "MIPS64": return "qemu-system-mips64.exe";
-                case "ARM": return "qemu-system-arm.exe";
-                case "ARM64": return "qemu-system-aarch64.exe";
-                case "PowerPC": return "qemu-system-ppc.exe";
-                case "x86": return "qemu-system-i386.exe";
-                case "x86-64": return "qemu-system-x86_64.exe";
-                case "RISC-V": return "qemu-system-riscv64.exe";
-                default: return "qemu-system-mips.exe";
-            }
+                "MIPS32" => "qemu-system-mips.exe",
+                "MIPS64" => "qemu-system-mips64.exe",
+                "ARM" => "qemu-system-arm.exe",
+                "ARM64" => "qemu-system-aarch64.exe",
+                "PowerPC" => "qemu-system-ppc.exe",
+                "x86" => "qemu-system-i386.exe",
+                "x86-64" => "qemu-system-x86_64.exe",
+                "RISC-V" => "qemu-system-riscv64.exe",
+                _ => "qemu-system-mips.exe",
+            };
         }
 
         private static string GetQemuArgs(string imagePath, string architecture)
