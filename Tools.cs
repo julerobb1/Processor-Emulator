@@ -15,48 +15,48 @@ namespace ProcessorEmulator.Tools
             {
                 // e_machine field at offset 18 (16-bit)
                 ushort machine = BitConverter.ToUInt16(binaryOrImage, 18);
-                switch (machine)
+                return machine switch
                 {
-                    case 0x0001: return "TargetHost";
-                    case 0x014c: return "I386";
-                    case 0x014d: return "I486";
-                    case 0x014e: return "Pentium";
-                    case 0x0160: return "R3000BE";
-                    case 0x0162: return "R3000LE";
-                    case 0x0166: return "R4000";
-                    case 0x0260: return "R10000";
-                    case 0x0169: return "WceMipsV2";
-                    case 0x0184: return "Alpha_AXP";
-                    case 0x01a2: return "SH3";
-                    case 0x01a3: return "SH3DSP";
-                    case 0x01a4: return "SH3E";
-                    case 0x01a6: return "SH4";
-                    case 0x01a8: return "SH5";
-                    case 0x01c0: return "Arm";
-                    case 0x01c2: return "THUMB";
-                    case 0x01c4: return "ArmThumb2";
-                    case 0x01d3: return "AM33";
-                    case 0x01f0: return "PowerPC";
-                    case 0x01f1: return "PowerPCFP";
-                    case 0x01f2: return "PPCBE";
-                    case 0x0200: return "IA64";
-                    case 0x0366: return "MIPSFPU";
-                    case 0x0466: return "MIPSFPU16";
-                    case 0x0520: return "Tricore";
-                    case 0x0cef: return "CEF";
-                    case 0x0ebc: return "EFI Byte Code";
-                    case 0x0eba: return "SPARC";
-                    case 0x8664: return "AMD64";
-                    case 0x9041: return "M32R";
-                    case 0xaa64: return "ARM64";
-                    case 0xc0ee: return "CEE";
-                    case 0x5032: return "RISC-V32";
-                    case 0x5064: return "RISC-V64";
-                    case 0x5128: return "RISC-V128";
-                    case 0x6232: return "LoongArch32";
-                    case 0x6264: return "LoongArch64";
-                    default: return "Unknown";
-                }
+                    0x0001 => "TargetHost",
+                    0x014c => "I386",
+                    0x014d => "I486",
+                    0x014e => "Pentium",
+                    0x0160 => "R3000BE",
+                    0x0162 => "R3000LE",
+                    0x0166 => "R4000",
+                    0x0260 => "R10000",
+                    0x0169 => "WceMipsV2",
+                    0x0184 => "Alpha_AXP",
+                    0x01a2 => "SH3",
+                    0x01a3 => "SH3DSP",
+                    0x01a4 => "SH3E",
+                    0x01a6 => "SH4",
+                    0x01a8 => "SH5",
+                    0x01c0 => "Arm",
+                    0x01c2 => "THUMB",
+                    0x01c4 => "ArmThumb2",
+                    0x01d3 => "AM33",
+                    0x01f0 => "PowerPC",
+                    0x01f1 => "PowerPCFP",
+                    0x01f2 => "PPCBE",
+                    0x0200 => "IA64",
+                    0x0366 => "MIPSFPU",
+                    0x0466 => "MIPSFPU16",
+                    0x0520 => "Tricore",
+                    0x0cef => "CEF",
+                    0x0ebc => "EFI Byte Code",
+                    0x0eba => "SPARC",
+                    0x8664 => "AMD64",
+                    0x9041 => "M32R",
+                    0xaa64 => "ARM64",
+                    0xc0ee => "CEE",
+                    0x5032 => "RISC-V32",
+                    0x5064 => "RISC-V64",
+                    0x5128 => "RISC-V128",
+                    0x6232 => "LoongArch32",
+                    0x6264 => "LoongArch64",
+                    _ => "Unknown",
+                };
             }
             // Add more format checks as needed
             return "Unknown";
