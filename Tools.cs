@@ -165,7 +165,7 @@ namespace ProcessorEmulator.Tools
 
     public static class SupportedArchitectures
     {
-        public static readonly List<string> All = new List<string>
+        public static readonly List<string> All = new()
         {
             "TargetHost", // 0x0001
             "I386", // 0x014c
