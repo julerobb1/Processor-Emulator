@@ -6,7 +6,8 @@ namespace ProcessorEmulator.Emulation
 {
     public class WinCEEmulator : IEmulator
     {
-        private IntPtr ceProcess;
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Compiler", "CS0169")]
+        private object ceProcess;
         private bool useQEMU;
 
         public WinCEEmulator(bool useQEMUBackend = true)
