@@ -15,7 +15,7 @@ namespace ProcessorEmulator.Tools.FileSystems
             public string DeviceType; // e.g., "Hopper", "Joey", "HR54", etc.
         }
 
-        private readonly Dictionary<uint, VxWorksVersion> knownVersions = new Dictionary<uint, VxWorksVersion>
+        private readonly Dictionary<uint, VxWorksVersion> knownVersions = new()
         {
             // Dish Network Hopper signatures
             { 0x27051956, new VxWorksVersion { Version = "6.9", Signature = 0x27051956, BootSignature = 0x0FF0AD12, DeviceType = "Hopper3" } },
@@ -126,7 +126,7 @@ namespace ProcessorEmulator.Tools.FileSystems
         private string DetermineDeviceType(byte[] firmware)
         {
             // Known device identification strings
-            Dictionary<string, string> devicePatterns = new Dictionary<string, string>
+            Dictionary<string, string> devicePatterns = new()
             {
                 { "HOPPER", "Hopper" },
                 { "JOEY", "Joey" },
