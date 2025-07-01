@@ -22,6 +22,7 @@ namespace ProcessorEmulator
 
     public partial class MainWindow : Window, IMainWindow
     {
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Compiler", "CS0649")]
         private IEmulator currentEmulator;
         private ArchitectureDetector archDetector = new ArchitectureDetector();
         private PartitionAnalyzer partitionAnalyzer = new PartitionAnalyzer();
@@ -42,11 +43,6 @@ namespace ProcessorEmulator
         public TextBlock StatusBar { get; set; } = new TextBlock();
         public PartitionAnalyzer PartitionAnalyzer { get => partitionAnalyzer; set => partitionAnalyzer = value; }
         public InstructionDispatcher Dispatcher1 { get => dispatcher; set => dispatcher = value; }
-
-        private void InitializeComponent()
-        {
-            throw new NotImplementedException();
-        }
 
         private void StatusBarText(string text)
         {
@@ -292,5 +288,7 @@ namespace ProcessorEmulator
     }
 }
 
+// Note: The actual entrypoint for the application is defined in App.xaml/App.xaml.cs,
+// which launches MainWindow. All emulation logic is triggered from MainWindow event handlers.
 // Note: The actual entrypoint for the application is defined in App.xaml/App.xaml.cs,
 // which launches MainWindow. All emulation logic is triggered from MainWindow event handlers.
