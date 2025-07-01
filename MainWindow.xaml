@@ -5,7 +5,7 @@
     <DockPanel>
         <Menu DockPanel.Dock="Top">
             <MenuItem Header="_File">
-                <MenuItem Header="_Open" />
+                <MenuItem Header="_Open" Click="OpenMenuItem_Click"/>
                 <MenuItem Header="_Exit" />
             </MenuItem>
             <MenuItem Header="_Edit" />
