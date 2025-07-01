@@ -30,8 +30,6 @@ namespace ProcessorEmulator.Network
         private Dictionary<int, QAMChannel> qamChannels;
         private Dictionary<string, IPAddress> subscriberModems;
         private Dictionary<string, string> dsgConfigurations;
-        [System.Diagnostics.CodeAnalysis.SuppressMessage("Compiler", "CS0169")]
-        private bool isInitialized;
 
         // DOCSIS configuration
         private const int DOCSIS_VERSION = 3;
