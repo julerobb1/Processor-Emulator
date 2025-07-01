@@ -23,21 +23,28 @@ namespace ProcessorEmulator
     public partial class MainWindow : Window, IMainWindow
     {
         private IEmulator currentEmulator;
-        private ArchitectureDetector archDetector = new ArchitectureDetector();
-        private PartitionAnalyzer partitionAnalyzer = new PartitionAnalyzer();
-        private Disassembler disassembler = new Disassembler();
-        private Recompiler recompiler = new Recompiler();
-        private ExoticFilesystemManager fsManager = new ExoticFilesystemManager();
 
-        public MainWindow(TextBlock statusBar)
+        public MainWindow(IEmulator currentEmulator)
+        {
+            this.currentEmulator = currentEmulator;
+        }
+
+        private ArchitectureDetector archDetector = new();
+        private PartitionAnalyzer partitionAnalyzer = new();
+        private Disassembler disassembler = new();
+        private Recompiler recompiler = new();
+        private ExoticFilesystemManager fsManager = new();
+
+        public MainWindow(TextBlock statusBar, IEmulator currentEmulator = null)
         {
             this.StatusBar = statusBar;
+            this.currentEmulator = currentEmulator;
         }
 
         /// <summary>
-        /// Handles the dispatching and execution of instructions within the emulator.
+        /// Holds a reference to the currently selected or active emulator instance.
         /// </summary>
-        private InstructionDispatcher dispatcher = new InstructionDispatcher();
+        private InstructionDispatcher dispatcher = new();
 
         public TextBlock StatusBar { get; set; } = new TextBlock();
         public PartitionAnalyzer PartitionAnalyzer { get => partitionAnalyzer; set => partitionAnalyzer = value; }
