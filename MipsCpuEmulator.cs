@@ -115,32 +115,24 @@ namespace ProcessorEmulator.Emulation
             uint rd = (instruction >> 11) & 0x1F;
             uint shamt = (instruction >> 6) & 0x1F;
 
-            switch (funct)
+            registers[rd] = funct switch
             {
-                case 0x20: // add
-                    registers[rd] = registers[rs] + registers[rt];
-                    break;
-                case 0x22: // sub
-                    registers[rd] = registers[rs] - registers[rt];
-                    break;
-                case 0x24: // and
-                    registers[rd] = registers[rs] & registers[rt];
-                    break;
-                case 0x25: // or
-                    registers[rd] = registers[rs] | registers[rt];
-                    break;
-                case 0x27: // nor
-                    registers[rd] = ~(registers[rs] | registers[rt]);
-                    break;
-                case 0x00: // sll
-                    registers[rd] = registers[rt] << (int)shamt;
-                    break;
-                case 0x02: // srl
-                    registers[rd] = registers[rt] >> (int)shamt;
-                    break;
-                default:
-                    throw new NotSupportedException($"Function {funct:X2} not supported.");
-            }
+                // add
+                0x20 => registers[rs] + registers[rt],
+                // sub
+                0x22 => registers[rs] - registers[rt],
+                // and
+                0x24 => registers[rs] & registers[rt],
+                // or
+                0x25 => registers[rs] | registers[rt],
+                // nor
+                0x27 => ~(registers[rs] | registers[rt]),
+                // sll
+                0x00 => registers[rt] << (int)shamt,
+                // srl
+                0x02 => registers[rt] >> (int)shamt,
+                _ => throw new NotSupportedException($"Function {funct:X2} not supported."),
+            };
         }
 
         private void ExecuteLoadWord(uint instruction)
@@ -196,23 +188,18 @@ namespace ProcessorEmulator.Emulation
             uint fd = (instruction >> 6) & 0x1F;
             uint funct = instruction & 0x3F;
 
-            switch (funct)
+            floatingPointRegisters[fd] = funct switch
             {
-                case 0x00: // add.s
-                    floatingPointRegisters[fd] = floatingPointRegisters[fs] + floatingPointRegisters[ft];
-                    break;
-                case 0x01: // sub.s
-                    floatingPointRegisters[fd] = floatingPointRegisters[fs] - floatingPointRegisters[ft];
-                    break;
-                case 0x02: // mul.s
-                    floatingPointRegisters[fd] = floatingPointRegisters[fs] * floatingPointRegisters[ft];
-                    break;
-                case 0x03: // div.s
-                    floatingPointRegisters[fd] = floatingPointRegisters[fs] / floatingPointRegisters[ft];
-                    break;
-                default:
-                    throw new NotSupportedException($"Floating-point function {funct:X2} not supported.");
-            }
+                // add.s
+                0x00 => floatingPointRegisters[fs] + floatingPointRegisters[ft],
+                // sub.s
+                0x01 => floatingPointRegisters[fs] - floatingPointRegisters[ft],
+                // mul.s
+                0x02 => floatingPointRegisters[fs] * floatingPointRegisters[ft],
+                // div.s
+                0x03 => floatingPointRegisters[fs] / floatingPointRegisters[ft],
+                _ => throw new NotSupportedException($"Floating-point function {funct:X2} not supported."),
+            };
         }
 
         private void ExecuteDSPInstruction(uint instruction)
