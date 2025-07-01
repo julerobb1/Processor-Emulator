@@ -147,16 +147,12 @@ namespace ProcessorEmulator.Tools.FileSystems
         private EncryptionInfo DetectEncryption(byte[] firmware, VxWorksVersion version)
         {
             // Look for known encryption signatures based on device type
-            switch (version.DeviceType)
+            return version.DeviceType switch
             {
-                case "Hopper3":
-                    return DetectHopperEncryption(firmware);
-                case "HR54":
-                case "HR44":
-                    return DetectGenieDvrEncryption(firmware);
-                default:
-                    return DetectEncryptionFallback(firmware);
-            }
+                "Hopper3" => DetectHopperEncryption(firmware),
+                "HR54" or "HR44" => DetectGenieDvrEncryption(firmware),
+                _ => DetectEncryptionFallback(firmware),
+            };
         }
 
         private EncryptionInfo DetectHopperEncryption(byte[] firmware)
