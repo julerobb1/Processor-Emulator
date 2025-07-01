@@ -43,9 +43,9 @@ namespace ProcessorEmulator.Tools.FileSystems
         public class Ext4FileSystem
         {
             private Ext4Superblock superblock;
-            private Dictionary<uint, Ext4Inode> inodes = new Dictionary<uint, Ext4Inode>();
-            private Dictionary<uint, byte[]> blocks = new Dictionary<uint, byte[]>();
-            private Dictionary<uint, byte[]> journal = new Dictionary<uint, byte[]>();
+            private Dictionary<uint, Ext4Inode> inodes = new();
+            private Dictionary<uint, byte[]> blocks = new();
+            private Dictionary<uint, byte[]> journal = new();
 
             public void ParseImage(byte[] imageData)
             {
@@ -155,8 +155,8 @@ namespace ProcessorEmulator.Tools.FileSystems
         public class BtrfsFileSystem
         {
             private BtrfsSuperblock superblock;
-            private Dictionary<BtrfsKey, byte[]> items = new Dictionary<BtrfsKey, byte[]>();
-            private Dictionary<ulong, byte[]> chunks = new Dictionary<ulong, byte[]>();
+            private Dictionary<BtrfsKey, byte[]> items = new();
+            private Dictionary<ulong, byte[]> chunks = new();
 
             public void ParseImage(byte[] imageData)
             {
@@ -247,8 +247,8 @@ namespace ProcessorEmulator.Tools.FileSystems
         public class XFSFileSystem
         {
             private XFSSuperblock superblock;
-            private Dictionary<ulong, XFSInode> inodes = new Dictionary<ulong, XFSInode>();
-            private Dictionary<ulong, byte[]> blocks = new Dictionary<ulong, byte[]>();
+            private Dictionary<ulong, XFSInode> inodes = new();
+            private Dictionary<ulong, byte[]> blocks = new();
 
             public void ParseImage(byte[] imageData)
             {
