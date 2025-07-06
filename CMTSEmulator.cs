@@ -107,7 +107,7 @@ namespace ProcessorEmulator.Network
             await ConfigureModem(macAddress, modemIP);
         }
 
-        private async Task ConfigureModem(string macAddress, IPAddress modemIP)
+        private static async Task ConfigureModem(string macAddress, IPAddress modemIP)
         {
             // Configure DOCSIS parameters for the modem
             await SetDOCSISParameters(macAddress);
@@ -265,7 +265,7 @@ namespace ProcessorEmulator.Network
             }
         }
 
-        private async void HandleHeadendConnection(TcpClient client)
+        private static async void HandleHeadendConnection(TcpClient client)
         {
             using (var stream = client.GetStream())
             {
