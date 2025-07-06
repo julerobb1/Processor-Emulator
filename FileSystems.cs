@@ -50,7 +50,7 @@ namespace ProcessorEmulator.Tools.FileSystems
                 return header;
             }
 
-            private void ProcessNode(JFFS2_NodeHeader header, byte[] data, ref int offset)
+            private static void ProcessNode(JFFS2_NodeHeader header, byte[] data, ref int offset)
             {
                 byte[] nodeData = new byte[header.Length];
                 Array.Copy(data, offset, nodeData, 0, (int)header.Length);
