@@ -71,8 +71,68 @@ namespace ProcessorEmulator
             return currentEmulator;
         }
 
+        /// <summary>
+        /// Main entry point for user actions. Presents a menu of emulation and analysis options.
+        /// </summary>
         private async void StartEmulation_Click(object sender,
                                                 RoutedEventArgs e)
+        {
+            // Present main options to the user
+            var mainOptions = new List<string>
+            {
+                "Generic CPU/OS Emulation",
+                "RDK-V Emulator",
+                "RDK-B Emulator",
+                "Simulate SWM Switch/LNB",
+                "Probe Filesystem",
+                "Emulate CMTS Head End",
+                "Uverse Box Emulator",
+                "DirecTV Box/Firmware Analysis",
+                "Linux Filesystem Read/Write"
+            };
+            string mainChoice = PromptUserForChoice("What would you like to do?", mainOptions);
+            if (string.IsNullOrEmpty(mainChoice)) return;
+
+            switch (mainChoice)
+            {
+                case "Generic CPU/OS Emulation":
+                    await HandleGenericEmulation();
+                    break;
+                case "RDK-V Emulator":
+                    await HandleRdkVEmulation();
+                    break;
+                case "RDK-B Emulator":
+                    await HandleRdkBEmulation();
+                    break;
+                case "Simulate SWM Switch/LNB":
+                    await HandleSwmLnbSimulation();
+                    break;
+                case "Probe Filesystem":
+                    await HandleFilesystemProbe();
+                    break;
+                case "Emulate CMTS Head End":
+                    await HandleCmtsEmulation();
+                    break;
+                case "Uverse Box Emulator":
+                    await HandleUverseEmulation();
+                    break;
+                case "DirecTV Box/Firmware Analysis":
+                    await HandleDirectvAnalysis();
+                    break;
+                case "Linux Filesystem Read/Write":
+                    await HandleLinuxFsReadWrite();
+                    break;
+                default:
+                    MessageBox.Show("Not implemented yet.", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// Handles generic CPU/OS emulation using QEMU or custom emulators.
+        /// Detects architecture and launches the appropriate emulator.
+        /// </summary>
+        private async Task HandleGenericEmulation()
         {
             var openFileDialog = new OpenFileDialog
             {
@@ -166,24 +226,35 @@ namespace ProcessorEmulator
                     if (isWinCEOS)
                     {
                         winceVersion = DetectWinCEVersion(binary);
+                        // WinCE version is often not detectable from the binary.
+                        // If not detected, allow proceeding without specifying a version.
+                        // Only prompt if your QEMU args or emulator config truly require it.
                         if (string.IsNullOrEmpty(winceVersion))
                         {
-                            winceVersion = PromptUserForInput("WinCE version could not be detected. Please enter version (e.g., 5.0, 6.0):");
-                            if (string.IsNullOrWhiteSpace(winceVersion))
+                            var result = MessageBox.Show(
+                                "WinCE version could not be detected. Do you want to specify a version manually? (Click No to proceed without specifying a version.)",
+                                "WinCE Version Unknown",
+                                MessageBoxButton.YesNo,
+                                MessageBoxImage.Question);
+
+                            if (result == MessageBoxResult.Yes)
                             {
-                                MessageBox.Show("WinCE version is required.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                                return;
+                                winceVersion = PromptUserForInput("Please enter WinCE version (e.g., 5.0, 6.0), or leave blank to proceed:");
+                                // It's now optional; if left blank, continue without version info.
                             }
+                            // If No, winceVersion remains null/empty and we proceed.
                         }
                     }
 
                     StatusBarText(isWinCEOS
-                        ? $"Running emulation for WinCE {winceVersion} ({arch})..."
+                        ? (!string.IsNullOrEmpty(winceVersion)
+                            ? $"Running emulation for WinCE {winceVersion} ({arch})..."
+                            : $"Running emulation for WinCE ({arch})...")
                         : "Running emulation...");
 
                     if (currentEmulator is IQemuEmulator qemuEmu)
                     {
-                        // Pass WinCE version as an argument if needed
+                        // Pass WinCE version as an argument if needed, or skip if not available
                         string qemuPath = qemuEmu.GetQemuExecutablePath();
                         string args = isWinCEOS
                             ? qemuEmu.GetQemuArguments(filePath, winceVersion)
@@ -194,12 +265,16 @@ namespace ProcessorEmulator
                             Arguments = args,
                             UseShellExecute = true
                         });
-                        StatusBarText(isWinCEOS ? "QEMU launched for WinCE." : "QEMU launched.");
+                        StatusBarText(isWinCEOS
+                            ? (!string.IsNullOrEmpty(winceVersion) ? "QEMU launched for WinCE." : "QEMU launched for WinCE (version unknown).")
+                            : "QEMU launched.");
                     }
                     else
                     {
                         await Task.Run(() => currentEmulator.Run());
-                        StatusBarText(isWinCEOS ? "WinCE emulation finished." : "Emulation finished.");
+                        StatusBarText(isWinCEOS
+                            ? (!string.IsNullOrEmpty(winceVersion) ? "WinCE emulation finished." : "WinCE emulation finished (version unknown).")
+                            : "Emulation finished.");
                     }
                 }
                 else if (chosenAction == "Disassemble")
@@ -475,24 +550,158 @@ namespace ProcessorEmulator
             // Add more heuristics as needed
             return null;
         }
-    }
-}
 
-// Note: The actual entrypoint for the application is defined in App.xaml/App.xaml.cs,
-// which launches MainWindow. All emulation logic is triggered from MainWindow event handlers.
-// Note: The actual entrypoint for the application is defined in App.xaml/App.xaml.cs,
-// which launches MainWindow. All emulation logic is triggered from MainWindow event handlers.
-// which launches MainWindow. All emulation logic is triggered from MainWindow event handlers.
-        private string DetectWinCEVersion(byte[] binary)
+        /// <summary>
+        /// Handles RDK-V set-top box emulation.
+        /// Currently a stub; intended for future RDK-V research and reverse engineering.
+        /// </summary>
+        private async Task HandleRdkVEmulation()
         {
-            // Example: look for version string in the binary
-            string ascii = System.Text.Encoding.ASCII.GetString(binary);
-            if (ascii.Contains("5.00"))
-                return "5.0";
-            if (ascii.Contains("6.00"))
-                return "6.0";
-            // Add more heuristics as needed
-            return null;
+            var openFileDialog = new OpenFileDialog
+            {
+                Filter = "RDK-V Images (*.img;*.bin;*.fw)|*.img;*.bin;*.fw|All Files|*.*"
+            };
+            if (openFileDialog.ShowDialog() == true)
+            {
+                string filePath = openFileDialog.FileName;
+                StatusBarText("Launching RDK-V emulator...");
+                // TODO: Implement actual RDK-V emulation logic
+                MessageBox.Show($"RDK-V emulation for {Path.GetFileName(filePath)} is not yet implemented.", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+                StatusBarText("RDK-V emulation not implemented.");
+            }
+        }
+
+        /// <summary>
+        /// Handles RDK-B broadband gateway emulation.
+        /// Currently a stub; intended for future RDK-B research.
+        /// </summary>
+        private async Task HandleRdkBEmulation()
+        {
+            var openFileDialog = new OpenFileDialog
+            {
+                Filter = "RDK-B Images (*.img;*.bin;*.fw)|*.img;*.bin;*.fw|All Files|*.*"
+            };
+            if (openFileDialog.ShowDialog() == true)
+            {
+                string filePath = openFileDialog.FileName;
+                StatusBarText("Launching RDK-B emulator...");
+                // TODO: Implement actual RDK-B emulation logic
+                MessageBox.Show($"RDK-B emulation for {Path.GetFileName(filePath)} is not yet implemented.", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+                StatusBarText("RDK-B emulation not implemented.");
+            }
+        }
+
+        /// <summary>
+        /// Simulates DirecTV SWM switches and/or LNBs.
+        /// Currently a stub; intended for future simulation and testing.
+        /// </summary>
+        private async Task HandleSwmLnbSimulation()
+        {
+            var options = new List<string> { "Simulate SWM Switch", "Simulate LNB", "Both" };
+            string simChoice = PromptUserForChoice("What would you like to simulate?", options);
+            if (string.IsNullOrEmpty(simChoice)) return;
+            StatusBarText($"Simulating: {simChoice}...");
+            // TODO: Implement SWM/LNB simulation logic
+            MessageBox.Show($"{simChoice} simulation is not yet implemented.", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+            StatusBarText($"{simChoice} simulation not implemented.");
+        }
+
+        /// <summary>
+        /// Probes a filesystem image to determine its type and structure.
+        /// Uses FilesystemProber utility.
+        /// </summary>
+        private async Task HandleFilesystemProbe()
+        {
+            var openFileDialog = new OpenFileDialog
+            {
+                Filter = "All Files|*.*"
+            };
+            if (openFileDialog.ShowDialog() == true)
+            {
+                string filePath = openFileDialog.FileName;
+                StatusBarText("Probing filesystem...");
+                // Example: call your FilesystemProber
+                string result = FilesystemProber.Probe(filePath);
+                ShowTextWindow("Filesystem Probe Result", result);
+                StatusBarText("Filesystem probe complete.");
+            }
+        }
+
+        /// <summary>
+        /// Emulates a Cable Modem Termination System (CMTS) head end.
+        /// Currently a stub; intended for DOCSIS research.
+        /// </summary>
+        private async Task HandleCmtsEmulation()
+        {
+            StatusBarText("Launching CMTS head end emulator...");
+            // TODO: Implement CMTS emulation logic
+            MessageBox.Show("CMTS head end emulation is not yet implemented.", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+            StatusBarText("CMTS emulation not implemented.");
+        }
+
+        /// <summary>
+        /// Emulates an AT&T Uverse set-top box.
+        /// Currently a stub; intended for future Uverse research and WinCE analysis.
+        /// </summary>
+        private async Task HandleUverseEmulation()
+        {
+            var openFileDialog = new OpenFileDialog
+            {
+                Filter = "Uverse Firmware Images (*.img;*.bin;*.fw)|*.img;*.bin;*.fw|All Files|*.*"
+            };
+            if (openFileDialog.ShowDialog() == true)
+            {
+                string filePath = openFileDialog.FileName;
+                StatusBarText("Launching Uverse box emulator...");
+                // TODO: Implement Uverse emulation logic
+                MessageBox.Show($"Uverse box emulation for {Path.GetFileName(filePath)} is not yet implemented.", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+                StatusBarText("Uverse emulation not implemented.");
+            }
+        }
+
+        /// <summary>
+        /// Analyzes DirecTV firmware images for structure and content.
+        /// Uses DirecTVEmulator.AnalyzeFirmware utility.
+        /// </summary>
+        private async Task HandleDirectvAnalysis()
+        {
+            var openFileDialog = new OpenFileDialog
+            {
+                Filter = "DirecTV Firmware Images|*.img;*.bin;*.fw|All Files|*.*"
+            };
+            if (openFileDialog.ShowDialog() == true)
+            {
+                string filePath = openFileDialog.FileName;
+                StatusBarText("Analyzing DirecTV firmware...");
+                // Example: call your DirecTV analyzer
+                string result = DirecTVEmulator.AnalyzeFirmware(filePath);
+                ShowTextWindow("DirecTV Firmware Analysis", result);
+                StatusBarText("DirecTV firmware analysis complete.");
+            }
+        }
+
+        /// <summary>
+        /// Allows reading and writing to Linux filesystems from Windows.
+        /// Currently a stub; intended for future integration with drivers or FUSE.
+        /// </summary>
+        private async Task HandleLinuxFsReadWrite()
+        {
+            var options = new List<string> { "Read Linux Filesystem", "Write Linux Filesystem" };
+            string fsChoice = PromptUserForChoice("What would you like to do?", options);
+            if (string.IsNullOrEmpty(fsChoice)) return;
+
+            var openFileDialog = new OpenFileDialog
+            {
+                Filter = "Linux Filesystem Images (*.img;*.bin;*.ext2;*.ext3;*.ext4;*.jffs2;*.ubifs)|*.img;*.bin;*.ext2;*.ext3;*.ext4;*.jffs2;*.ubifs|All Files|*.*"
+            };
+            if (openFileDialog.ShowDialog() == true)
+            {
+                string filePath = openFileDialog.FileName;
+                StatusBarText($"{fsChoice} on {Path.GetFileName(filePath)}...");
+                // TODO: Implement Linux FS read/write logic, possibly with a driver or FUSE integration
+                MessageBox.Show($"{fsChoice} is not yet implemented.", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+                StatusBarText($"{fsChoice} not implemented.");
+            }
         }
     }
 }
