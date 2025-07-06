@@ -164,7 +164,7 @@ namespace ProcessorEmulator.Emulation
             // This would handle communication between multiple receivers
         }
 
-        public void StartMediaroom()
+        public static void StartMediaroom()
         {
             // Initialize Windows CE environment
             InitializeWinCE();
@@ -184,7 +184,7 @@ namespace ProcessorEmulator.Emulation
             // This handles the UI and content delivery
         }
 
-        public void EmulateHardwareDevice(string deviceType)
+        public static void EmulateHardwareDevice(string deviceType)
         {
             switch (deviceType.ToLower())
             {
