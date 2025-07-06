@@ -479,7 +479,7 @@ namespace ProcessorEmulator
         }
 
         // Helper to analyze file type
-        private string AnalyzeFileType(string filePath, byte[] binary)
+        private static string AnalyzeFileType(string filePath, byte[] binary)
         {
             string ext = Path.GetExtension(filePath).ToLowerInvariant();
             if (ext == ".exe" || ext == ".dll")
@@ -550,7 +550,7 @@ namespace ProcessorEmulator
         }
 
         // Helper to detect WinCE version from binary (simple heuristic)
-        private string DetectWinCEVersion(byte[] binary)
+        private static string DetectWinCEVersion(byte[] binary)
         {
             // Example: look for version string in the binary
             string ascii = System.Text.Encoding.ASCII.GetString(binary);
