@@ -6,7 +6,7 @@ namespace ProcessorEmulator.Tools
 {
     public class FilesystemProber
     {
-        public void ProbeDrive(string drivePath)
+        public static void ProbeDrive(string drivePath)
         {
             Console.WriteLine($"Probing drive: {drivePath}");
 
