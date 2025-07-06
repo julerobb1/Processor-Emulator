@@ -7,7 +7,7 @@ namespace ProcessorEmulator.Tools
     {
         public string QemuPath { get; set; } = "qemu-system-mips.exe"; // Default, can be changed per arch
 
-        public void Launch(string imagePath, string architecture)
+        public static void Launch(string imagePath, string architecture)
         {
             string qemuExe = GetQemuExecutable(architecture);
             if (!File.Exists(qemuExe))
@@ -29,7 +29,7 @@ namespace ProcessorEmulator.Tools
             process.Start();
         }
 
-        public void LaunchWithArgs(string imagePath, string architecture, string extraArgs)
+        public static void LaunchWithArgs(string imagePath, string architecture, string extraArgs)
         {
             string qemuExe = GetQemuExecutable(architecture);
             if (!File.Exists(qemuExe))
