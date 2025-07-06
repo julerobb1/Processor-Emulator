@@ -91,7 +91,7 @@ namespace ProcessorEmulator.Tools.FileSystems
                        ContainsBootloaderSignature(data);
             }
 
-            private bool ContainsBootloaderSignature(byte[] data)
+            private static bool ContainsBootloaderSignature(byte[] data)
             {
                 // Search for known VxWorks bootloader signatures
                 byte[] signature = new byte[] { 0x76, 0x78, 0x57, 0x6F, 0x72, 0x6B, 0x73 }; // "vxWorks"
@@ -140,7 +140,7 @@ namespace ProcessorEmulator.Tools.FileSystems
                 return 0;
             }
 
-            private void AnalyzeBootPartition(FileStream stream, VxWorksPartition partition)
+            private static void AnalyzeBootPartition(FileStream stream, VxWorksPartition partition)
             {
                 // Read and analyze boot partition
                 stream.Seek(partition.BootloaderOffset, SeekOrigin.Begin);
