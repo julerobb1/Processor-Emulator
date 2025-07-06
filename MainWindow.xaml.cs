@@ -20,6 +20,14 @@ namespace ProcessorEmulator
         int GetHashCode();
     }
 
+    // Add missing IQemuEmulator interface stub
+    public interface IQemuEmulator : IEmulator
+    {
+        string GetQemuExecutablePath();
+        string GetQemuArguments(string filePath);
+        string GetQemuArguments(string filePath, string winceVersion);
+    }
+
     public partial class MainWindow : Window, IMainWindow
     {
         private IEmulator currentEmulator;
@@ -163,7 +171,7 @@ namespace ProcessorEmulator
                 return;
             }
 
-            string chosenAction = actions.Count == 1 ? actions[0] : PromptUserForChoice("Select action:", actions);
+            string chosenAction = actions.Count == 1 ? actions[0] : PromptUserForChoice("Select action:", actions.ToArray());
             if (string.IsNullOrEmpty(chosenAction)) return;
 
             try
@@ -280,9 +288,7 @@ namespace ProcessorEmulator
                 else if (chosenAction == "Disassemble")
                 {
                     StatusBarText("Disassembling...");
-                    // Example: call disassembler
-                    var asm = disassembler.Disassemble(binary, arch);
-                    // Show disassembly in a new window or dialog
+                    var asm = Disassembler.Disassemble(binary, arch);
                     ShowTextWindow("Disassembly", asm);
                     StatusBarText("Disassembly complete.");
                 }
@@ -302,6 +308,11 @@ namespace ProcessorEmulator
                     "Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 StatusBarText("Operation failed.");
             }
+        }
+
+        private void ShowTextWindow(string v, List<string> asm)
+        {
+            throw new NotImplementedException();
         }
 
         private static bool IsWinCEBinary(byte[] binary)
@@ -489,7 +500,7 @@ namespace ProcessorEmulator
         }
 
         // Helper to prompt user for a choice
-        private string PromptUserForChoice(string message, List<string> options)
+        private string PromptUserForChoice(string message, IList<string> options)
         {
             var inputDialog = new Window
             {
@@ -565,10 +576,10 @@ namespace ProcessorEmulator
             {
                 string filePath = openFileDialog.FileName;
                 StatusBarText("Launching RDK-V emulator...");
-                // TODO: Implement actual RDK-V emulation logic
                 MessageBox.Show($"RDK-V emulation for {Path.GetFileName(filePath)} is not yet implemented.", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
                 StatusBarText("RDK-V emulation not implemented.");
             }
+            await Task.CompletedTask;
         }
 
         /// <summary>
@@ -585,10 +596,10 @@ namespace ProcessorEmulator
             {
                 string filePath = openFileDialog.FileName;
                 StatusBarText("Launching RDK-B emulator...");
-                // TODO: Implement actual RDK-B emulation logic
                 MessageBox.Show($"RDK-B emulation for {Path.GetFileName(filePath)} is not yet implemented.", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
                 StatusBarText("RDK-B emulation not implemented.");
             }
+            await Task.CompletedTask;
         }
 
         /// <summary>
@@ -601,9 +612,9 @@ namespace ProcessorEmulator
             string simChoice = PromptUserForChoice("What would you like to simulate?", options);
             if (string.IsNullOrEmpty(simChoice)) return;
             StatusBarText($"Simulating: {simChoice}...");
-            // TODO: Implement SWM/LNB simulation logic
             MessageBox.Show($"{simChoice} simulation is not yet implemented.", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
             StatusBarText($"{simChoice} simulation not implemented.");
+            await Task.CompletedTask;
         }
 
         /// <summary>
@@ -620,11 +631,11 @@ namespace ProcessorEmulator
             {
                 string filePath = openFileDialog.FileName;
                 StatusBarText("Probing filesystem...");
-                // Example: call your FilesystemProber
                 string result = FilesystemProber.Probe(filePath);
                 ShowTextWindow("Filesystem Probe Result", result);
                 StatusBarText("Filesystem probe complete.");
             }
+            await Task.CompletedTask;
         }
 
         /// <summary>
@@ -634,9 +645,9 @@ namespace ProcessorEmulator
         private async Task HandleCmtsEmulation()
         {
             StatusBarText("Launching CMTS head end emulator...");
-            // TODO: Implement CMTS emulation logic
             MessageBox.Show("CMTS head end emulation is not yet implemented.", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
             StatusBarText("CMTS emulation not implemented.");
+            await Task.CompletedTask;
         }
 
         /// <summary>
@@ -653,10 +664,10 @@ namespace ProcessorEmulator
             {
                 string filePath = openFileDialog.FileName;
                 StatusBarText("Launching Uverse box emulator...");
-                // TODO: Implement Uverse emulation logic
                 MessageBox.Show($"Uverse box emulation for {Path.GetFileName(filePath)} is not yet implemented.", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
                 StatusBarText("Uverse emulation not implemented.");
             }
+            await Task.CompletedTask;
         }
 
         /// <summary>
@@ -673,11 +684,11 @@ namespace ProcessorEmulator
             {
                 string filePath = openFileDialog.FileName;
                 StatusBarText("Analyzing DirecTV firmware...");
-                // Example: call your DirecTV analyzer
                 string result = DirecTVEmulator.AnalyzeFirmware(filePath);
                 ShowTextWindow("DirecTV Firmware Analysis", result);
                 StatusBarText("DirecTV firmware analysis complete.");
             }
+            await Task.CompletedTask;
         }
 
         /// <summary>
@@ -698,10 +709,30 @@ namespace ProcessorEmulator
             {
                 string filePath = openFileDialog.FileName;
                 StatusBarText($"{fsChoice} on {Path.GetFileName(filePath)}...");
-                // TODO: Implement Linux FS read/write logic, possibly with a driver or FUSE integration
                 MessageBox.Show($"{fsChoice} is not yet implemented.", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
                 StatusBarText($"{fsChoice} not implemented.");
             }
+            await Task.CompletedTask;
+        }
+    }
+
+    // Stub for FilesystemProber
+    public static class FilesystemProber
+    {
+        public static string Probe(string filePath)
+        {
+            // TODO: Implement real probing logic
+            return $"[Stub] Filesystem probe for {filePath} not implemented.";
+        }
+    }
+
+    // Stub for DirecTVEmulator
+    public static class DirecTVEmulator
+    {
+        public static string AnalyzeFirmware(string filePath)
+        {
+            // TODO: Implement real analysis logic
+            return $"[Stub] DirecTV firmware analysis for {filePath} not implemented.";
         }
     }
 }
@@ -709,5 +740,6 @@ namespace ProcessorEmulator
 // Note: The actual entrypoint for the application is defined in App.xaml/App.xaml.cs,
 // which launches MainWindow. All emulation logic is triggered from MainWindow event handlers.
 // Note: The actual entrypoint for the application is defined in App.xaml/App.xaml.cs,
+// which launches MainWindow. All emulation logic is triggered from MainWindow event handlers.
 // which launches MainWindow. All emulation logic is triggered from MainWindow event handlers.
 // which launches MainWindow. All emulation logic is triggered from MainWindow event handlers.
