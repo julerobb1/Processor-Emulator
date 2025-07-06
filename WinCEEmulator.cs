@@ -19,7 +19,7 @@ namespace ProcessorEmulator.Emulation
             if (useQEMU)
             {
                 var qemu = new QemuManager();
-                qemu.LaunchWithArgs("wince.img", "arm", "-M wincemips -cpu arm926");
+                QemuManager.LaunchWithArgs("wince.img", "arm", "-M wincemips -cpu arm926");
             }
             else
             {
@@ -29,7 +29,7 @@ namespace ProcessorEmulator.Emulation
             }
         }
 
-        private void MapWinCEAPIs()
+        private static void MapWinCEAPIs()
         {
             // Map common WinCE APIs to Win32 equivalents
             // Example: GWES (Graphics & Window Events Subsystem)
@@ -42,7 +42,7 @@ namespace ProcessorEmulator.Emulation
             // Register API translation mapping
         }
 
-        private void LoadWinCEBinary(byte[] binary)
+        private static void LoadWinCEBinary(byte[] binary)
         {
             // Load and prepare WinCE binary for execution
             ParsePEHeader(binary);
