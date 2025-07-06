@@ -1,1 +1,33 @@
 *.pdb
+
+# Ignore QEMU executables and related files
+qemu-*
+qemu.exe
+qemu-system-*
+qemu-img*
+*.dll
+*.so
+*.dylib
+*.qcow2
+*.vmdk
+*.vhd
+*.vdi
+*.img
+*.iso
+*.bin
+*.elf
+*.rom
+*.log
+
+# Ignore QEMU folders if present
+/qemu/
+/QEMU/
+/Qemu/
+
+# Do not ignore your own QEMU-related source code
+!**/Qemu*.cs
+!**/QEMU*.cs
+!**/Qemu*.h
+!**/QEMU*.h
+!**/Qemu*.cpp
+!**/QEMU*.cpp

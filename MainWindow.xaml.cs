@@ -80,63 +80,152 @@ namespace ProcessorEmulator
             };
             if (openFileDialog.ShowDialog() != true) return;
 
-            byte[] binary = File.ReadAllBytes(openFileDialog.FileName);
+            string filePath = openFileDialog.FileName;
+            byte[] binary = File.ReadAllBytes(filePath);
             string arch = ArchitectureDetector.Detect(binary);
             bool isWinCE = IsWinCEBinary(binary);
 
-            // Show detected architecture for debugging
-            MessageBox.Show($"Detected architecture: {arch ?? "(none)"}", "Architecture Detection", MessageBoxButton.OK, MessageBoxImage.Information);
+            // Analyze file type
+            string fileType = AnalyzeFileType(filePath, binary);
 
-            // If unknown, prompt user
-            if (string.IsNullOrEmpty(arch) || arch == "Unknown")
+            // Determine possible actions
+            List<string> actions = new();
+            if (fileType == "Executable" && !string.IsNullOrEmpty(arch) && arch != "Unknown")
+                actions.Add("Run in Emulator");
+            if (fileType == "Executable")
+                actions.Add("Disassemble");
+            if (fileType == "Firmware" || fileType == "Archive")
+                actions.Add("Extract and Analyze");
+
+            if (actions.Count == 0)
             {
-                arch = PromptUserForInput("Architecture could not be detected. Please enter architecture (e.g., MIPS32, ARM, x86, etc.):");
-                if (string.IsNullOrWhiteSpace(arch))
-                {
-                    MessageBox.Show("Architecture is required.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                    return;
-                }
+                MessageBox.Show("Unsupported file type or architecture.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
             }
+
+            string chosenAction = actions.Count == 1 ? actions[0] : PromptUserForChoice("Select action:", actions);
+            if (string.IsNullOrEmpty(chosenAction)) return;
 
             try
             {
-                if (isWinCE)
+                if (chosenAction == "Run in Emulator")
                 {
-                    currentEmulator = new WinCEEmulator();
-                }
-                else
-                {
+                    // If unknown, prompt user
+                    if (string.IsNullOrEmpty(arch) || arch == "Unknown")
+                    {
+                        arch = PromptUserForInput("Architecture could not be detected. Please enter architecture (e.g., MIPS32, ARM, x86, etc.):");
+                        if (string.IsNullOrWhiteSpace(arch))
+                        {
+                            MessageBox.Show("Architecture is required.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                            return;
+                        }
+                    }
+
+                    // WinCE is an OS, not an architecture. Use architecture for emulator selection.
+                    bool isWinCEOS = isWinCE; // or use other heuristics if needed
+
+                    // Select emulator based on architecture only
                     currentEmulator = arch switch
                     {
-                        "MIPS32" => new Mips32Emulator(),
-                        "MIPS64" => new Mips64Emulator(),
-                        "ARM" => new ArmEmulator(),
-                        "ARM64" => new Arm64Emulator(),
-                        "PowerPC" => new PowerPcEmulator(),
-                        "x86" => new X86Emulator(),
-                        "x86-64" => new X64Emulator(),
-                        _ => throw new Exception("Unknown architecture"),
+                        "MIPS32"      => new Mips32Emulator(),
+                        "MIPS64"      => new Mips64Emulator(),
+                        "ARM"         => new ArmEmulator(),
+                        "ARM64"       => new Arm64Emulator(),
+                        "PowerPC"     => new PowerPcEmulator(),
+                        "x86"         => new X86Emulator(),
+                        "x86-64"      => new X64Emulator(),
+                        "SPARC"       => new SparcEmulator(),
+                        "SPARC64"     => new Sparc64Emulator(),
+                        "Alpha"       => new AlphaEmulator(),
+                        "SuperH"      => new SuperHEmulator(),
+                        "RISC-V32"    => new RiscV32Emulator(),
+                        "RISC-V64"    => new RiscV64Emulator(),
+                        "S390X"       => new S390XEmulator(),
+                        "HPPA"        => new HppaEmulator(),
+                        "MicroBlaze"  => new MicroBlazeEmulator(),
+                        "CRIS"        => new CrisEmulator(),
+                        "LM32"        => new Lm32Emulator(),
+                        "M68K"        => new M68KEmulator(),
+                        "Xtensa"      => new XtensaEmulator(),
+                        "OpenRISC"    => new OpenRiscEmulator(),
+                        // Add more as needed for your implementation
+                        _             => null,
                     };
-                }
 
-                StatusBarText($"Loading {Path.GetFileName(openFileDialog.FileName)}...");
-                currentEmulator.LoadBinary(binary);
-                StatusBarText("Running emulation...");
-                // Use dispatcher for unified instruction dispatching
-                await Task.Run(() =>
+                    if (currentEmulator == null)
+                    {
+                        MessageBox.Show("No emulator available for this architecture.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                        return;
+                    }
+
+                    StatusBarText($"Loading {Path.GetFileName(filePath)}...");
+                    currentEmulator.LoadBinary(binary);
+
+                    // If the OS is WinCE, optionally detect version for QEMU args or emulator config
+                    string winceVersion = null;
+                    if (isWinCEOS)
+                    {
+                        winceVersion = DetectWinCEVersion(binary);
+                        if (string.IsNullOrEmpty(winceVersion))
+                        {
+                            winceVersion = PromptUserForInput("WinCE version could not be detected. Please enter version (e.g., 5.0, 6.0):");
+                            if (string.IsNullOrWhiteSpace(winceVersion))
+                            {
+                                MessageBox.Show("WinCE version is required.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                                return;
+                            }
+                        }
+                    }
+
+                    StatusBarText(isWinCEOS
+                        ? $"Running emulation for WinCE {winceVersion} ({arch})..."
+                        : "Running emulation...");
+
+                    if (currentEmulator is IQemuEmulator qemuEmu)
+                    {
+                        // Pass WinCE version as an argument if needed
+                        string qemuPath = qemuEmu.GetQemuExecutablePath();
+                        string args = isWinCEOS
+                            ? qemuEmu.GetQemuArguments(filePath, winceVersion)
+                            : qemuEmu.GetQemuArguments(filePath);
+                        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                        {
+                            FileName = qemuPath,
+                            Arguments = args,
+                            UseShellExecute = true
+                        });
+                        StatusBarText(isWinCEOS ? "QEMU launched for WinCE." : "QEMU launched.");
+                    }
+                    else
+                    {
+                        await Task.Run(() => currentEmulator.Run());
+                        StatusBarText(isWinCEOS ? "WinCE emulation finished." : "Emulation finished.");
+                    }
+                }
+                else if (chosenAction == "Disassemble")
                 {
-                    // Example: for each instruction, dispatch to the correct emulator
-                    // This is a placeholder; real implementation would parse instructions from binary
-                    // and call dispatcher.Dispatch(instruction, arch, hostArch)
-                    currentEmulator.Run();
-                });
+                    StatusBarText("Disassembling...");
+                    // Example: call disassembler
+                    var asm = disassembler.Disassemble(binary, arch);
+                    // Show disassembly in a new window or dialog
+                    ShowTextWindow("Disassembly", asm);
+                    StatusBarText("Disassembly complete.");
+                }
+                else if (chosenAction == "Extract and Analyze")
+                {
+                    StatusBarText("Extracting and analyzing...");
+                    string extractDir = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(filePath),
+                        System.IO.Path.GetFileNameWithoutExtension(filePath) + "_extracted");
+                    await Task.Run(() => ArchiveExtractor.ExtractAndAnalyze(filePath, extractDir));
+                    StatusBarText("Done. See console for results.");
+                }
             }
             catch (Exception ex)
             {
                 MessageBox.Show(
-                    $"Emulation error: {ex.Message}\n\nIf this is a QEMU error, ensure qemu-system-mips.exe is installed and in your PATH or in the application directory.",
+                    $"Error: {ex.Message}\n\nIf this is a QEMU error, ensure qemu-system-mips.exe is installed and in your PATH or in the application directory.",
                     "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                StatusBarText("Emulation failed.");
+                StatusBarText("Operation failed.");
             }
         }
 
@@ -301,6 +390,109 @@ namespace ProcessorEmulator
         private void OpenMenuItem_Click(object sender, RoutedEventArgs e)
         {
             StartEmulation_Click(sender, e);
+        }
+
+        // Helper to analyze file type
+        private string AnalyzeFileType(string filePath, byte[] binary)
+        {
+            string ext = Path.GetExtension(filePath).ToLowerInvariant();
+            if (ext == ".exe" || ext == ".dll")
+                return "Executable";
+            if (ext == ".img" || ext == ".bin")
+            {
+                // Heuristic: check for firmware or archive magic numbers
+                if (binary.Length > 4 && binary[0] == 0x1F && binary[1] == 0x8B)
+                    return "Archive"; // gzip
+                if (binary.Length > 2 && binary[0] == 0x50 && binary[1] == 0x4B)
+                    return "Archive"; // zip
+                // Add more heuristics as needed
+                return "Firmware";
+            }
+            if (ext == ".tar" || ext == ".csw")
+                return "Archive";
+            return "Unknown";
+        }
+
+        // Helper to prompt user for a choice
+        private string PromptUserForChoice(string message, List<string> options)
+        {
+            var inputDialog = new Window
+            {
+                Title = "Select Action",
+                Width = 400,
+                Height = 180,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                ResizeMode = ResizeMode.NoResize,
+                Owner = this
+            };
+            var stack = new StackPanel { Margin = new Thickness(10) };
+            stack.Children.Add(new TextBlock { Text = message, Margin = new Thickness(0, 0, 0, 10) });
+            var comboBox = new ComboBox { ItemsSource = options, SelectedIndex = 0, Margin = new Thickness(0, 0, 0, 10) };
+            stack.Children.Add(comboBox);
+            var okButton = new Button { Content = "OK", Width = 80, IsDefault = true, HorizontalAlignment = HorizontalAlignment.Right };
+            stack.Children.Add(okButton);
+            inputDialog.Content = stack;
+
+            string result = null;
+            okButton.Click += (s, e) => { result = comboBox.SelectedItem as string; inputDialog.DialogResult = true; inputDialog.Close(); };
+            inputDialog.ShowDialog();
+            return result;
+        }
+
+        // Helper to show text in a window
+        private void ShowTextWindow(string title, string text)
+        {
+            var win = new Window
+            {
+                Title = title,
+                Width = 800,
+                Height = 600,
+                Content = new ScrollViewer
+                {
+                    Content = new TextBox
+                    {
+                        Text = text,
+                        IsReadOnly = true,
+                        AcceptsReturn = true,
+                        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                        HorizontalScrollBarVisibility = ScrollBarVisibility.Auto
+                    }
+                },
+                Owner = this
+            };
+            win.ShowDialog();
+        }
+
+        // Helper to detect WinCE version from binary (simple heuristic)
+        private string DetectWinCEVersion(byte[] binary)
+        {
+            // Example: look for version string in the binary
+            string ascii = System.Text.Encoding.ASCII.GetString(binary);
+            if (ascii.Contains("5.00"))
+                return "5.0";
+            if (ascii.Contains("6.00"))
+                return "6.0";
+            // Add more heuristics as needed
+            return null;
+        }
+    }
+}
+
+// Note: The actual entrypoint for the application is defined in App.xaml/App.xaml.cs,
+// which launches MainWindow. All emulation logic is triggered from MainWindow event handlers.
+// Note: The actual entrypoint for the application is defined in App.xaml/App.xaml.cs,
+// which launches MainWindow. All emulation logic is triggered from MainWindow event handlers.
+// which launches MainWindow. All emulation logic is triggered from MainWindow event handlers.
+        private string DetectWinCEVersion(byte[] binary)
+        {
+            // Example: look for version string in the binary
+            string ascii = System.Text.Encoding.ASCII.GetString(binary);
+            if (ascii.Contains("5.00"))
+                return "5.0";
+            if (ascii.Contains("6.00"))
+                return "6.0";
+            // Add more heuristics as needed
+            return null;
         }
     }
 }
