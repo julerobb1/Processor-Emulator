@@ -66,7 +66,7 @@ namespace ProcessorEmulator.Tools.FileSystems
             throw new Exception("Unknown VxWorks version or not a VxWorks firmware");
         }
 
-        private string SearchVersionString(byte[] firmware)
+        private static string SearchVersionString(byte[] firmware)
         {
             // Common VxWorks version string patterns
             string[] patterns = {
@@ -123,7 +123,7 @@ namespace ProcessorEmulator.Tools.FileSystems
             return version.Trim();
         }
 
-        private string DetermineDeviceType(byte[] firmware)
+        private static string DetermineDeviceType(byte[] firmware)
         {
             // Known device identification strings
             Dictionary<string, string> devicePatterns = new()
@@ -155,7 +155,7 @@ namespace ProcessorEmulator.Tools.FileSystems
             };
         }
 
-        private EncryptionInfo DetectHopperEncryption(byte[] firmware)
+        private static EncryptionInfo DetectHopperEncryption(byte[] firmware)
         {
             // Hopper-specific encryption detection
             return new EncryptionInfo
@@ -167,7 +167,7 @@ namespace ProcessorEmulator.Tools.FileSystems
             };
         }
 
-        private EncryptionInfo DetectGenieDvrEncryption(byte[] firmware)
+        private static EncryptionInfo DetectGenieDvrEncryption(byte[] firmware)
         {
             // Genie DVR-specific encryption detection
             return new EncryptionInfo
