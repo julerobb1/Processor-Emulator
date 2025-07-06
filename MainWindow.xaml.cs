@@ -144,7 +144,14 @@ namespace ProcessorEmulator
         {
             var openFileDialog = new OpenFileDialog
             {
-                Filter = "All Supported Files|*.exe;*.dll;*.img;*.bin|WinCE Applications|*.exe|Firmware Images|*.img;*.bin|All Files|*.*"
+                Filter =
+                    "DirecTV Firmware Images (*.csw;*.bin;*.tar.csw.bin)|*.csw;*.bin;*.tar.csw.bin|" +
+                    "RDK-V Firmware Images (*.bin;*.tar;*.tar.gz;*.tar.bz2)|*.bin;*.tar;*.tar.gz;*.tar.bz2|" +
+                    "RDK-B Firmware Images (*.bin;*.tar;*.tar.gz;*.tar.bz2)|*.bin;*.tar;*.tar.gz;*.tar.bz2|" +
+                    "Uverse Firmware Images (*.img;*.bin;*.fw;*.bz)|*.img;*.bin;*.fw;*.bz|" +
+                    "WinCE Applications (*.nb0;*.bin)|*.nb0;*.bin|" +
+                    "All Supported Files|*.csw;*.bin;*.tar.csw.bin;*.tar;*.tar.gz;*.tar.bz2;*.img;*.fw;*.bz;*.nb0|" +
+                    "All Files (*.*)|*.*"
             };
             if (openFileDialog.ShowDialog() != true) return;
 
@@ -329,7 +336,14 @@ namespace ProcessorEmulator
         {
             var openFileDialog = new OpenFileDialog
             {
-                Filter = "Firmware Archives (*.csw;*.tar;*.img;*.bin)|*.csw;*.tar;*.img;*.bin|All files (*.*)|*.*"
+                Filter =
+                    "DirecTV Firmware Images (*.csw;*.bin;*.tar.csw.bin)|*.csw;*.bin;*.tar.csw.bin|" +
+                    "RDK-V Firmware Images (*.bin;*.tar;*.tar.gz;*.tar.bz2)|*.bin;*.tar;*.tar.gz;*.tar.bz2|" +
+                    "RDK-B Firmware Images (*.bin;*.tar;*.tar.gz;*.tar.bz2)|*.bin;*.tar;*.tar.gz;*.tar.bz2|" +
+                    "Uverse Firmware Images (*.img;*.bin;*.fw;*.bz)|*.img;*.bin;*.fw;*.bz|" +
+                    "Firmware Archives (*.csw;*.tar;*.img;*.bin;*.tar.gz;*.tar.bz2)|*.csw;*.tar;*.img;*.bin;*.tar.gz;*.tar.bz2|" +
+                    "All Supported Files|*.csw;*.bin;*.tar.csw.bin;*.tar;*.tar.gz;*.tar.bz2;*.img;*.fw;*.bz|" +
+                    "All Files (*.*)|*.*"
             };
             if (openFileDialog.ShowDialog() == true)
             {
@@ -570,7 +584,10 @@ namespace ProcessorEmulator
         {
             var openFileDialog = new OpenFileDialog
             {
-                Filter = "RDK-V Images (*.img;*.bin;*.fw)|*.img;*.bin;*.fw|All Files|*.*"
+                Filter =
+                    "RDK-V Firmware Images (*.bin;*.tar;*.tar.gz;*.tar.bz2)|*.bin;*.tar;*.tar.gz;*.tar.bz2|" +
+                    "All Supported Files|*.bin;*.tar;*.tar.gz;*.tar.bz2|" +
+                    "All Files (*.*)|*.*"
             };
             if (openFileDialog.ShowDialog() == true)
             {
@@ -590,7 +607,10 @@ namespace ProcessorEmulator
         {
             var openFileDialog = new OpenFileDialog
             {
-                Filter = "RDK-B Images (*.img;*.bin;*.fw)|*.img;*.bin;*.fw|All Files|*.*"
+                Filter =
+                    "RDK-B Firmware Images (*.bin;*.tar;*.tar.gz;*.tar.bz2)|*.bin;*.tar;*.tar.gz;*.tar.bz2|" +
+                    "All Supported Files|*.bin;*.tar;*.tar.gz;*.tar.bz2|" +
+                    "All Files (*.*)|*.*"
             };
             if (openFileDialog.ShowDialog() == true)
             {
@@ -658,7 +678,10 @@ namespace ProcessorEmulator
         {
             var openFileDialog = new OpenFileDialog
             {
-                Filter = "Uverse Firmware Images (*.img;*.bin;*.fw)|*.img;*.bin;*.fw|All Files|*.*"
+                Filter =
+                    "Uverse Firmware Images (*.img;*.bin;*.fw;*.bz)|*.img;*.bin;*.fw;*.bz|" +
+                    "All Supported Files|*.img;*.bin;*.fw;*.bz|" +
+                    "All Files (*.*)|*.*"
             };
             if (openFileDialog.ShowDialog() == true)
             {
@@ -678,7 +701,10 @@ namespace ProcessorEmulator
         {
             var openFileDialog = new OpenFileDialog
             {
-                Filter = "DirecTV Firmware Images|*.img;*.bin;*.fw|All Files|*.*"
+                Filter =
+                    "DirecTV Firmware Images (*.csw;*.bin;*.tar.csw.bin)|*.csw;*.bin;*.tar.csw.bin|" +
+                    "All Supported Files|*.csw;*.bin;*.tar.csw.bin|" +
+                    "All Files (*.*)|*.*"
             };
             if (openFileDialog.ShowDialog() == true)
             {
