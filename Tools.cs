@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Net.Http;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace ProcessorEmulator.Tools
 {
@@ -207,5 +209,35 @@ namespace ProcessorEmulator.Tools
             "LoongArch32", // 0x6232
             "LoongArch64" // 0x6264
         };
+    }
+
+    public static class FirmwareDownloader
+    {
+        /// <summary>
+        /// Downloads a file from the specified URL to the output directory and returns the local file path.
+        /// </summary>
+        public static async Task<string> DownloadFileAsync(string url, string outputDir)
+        {
+            Directory.CreateDirectory(outputDir);
+            var fileName = Path.GetFileName(new Uri(url).LocalPath);
+            var outputPath = Path.Combine(outputDir, fileName);
+            using var client = new HttpClient();
+            var data = await client.GetByteArrayAsync(url);
+            await File.WriteAllBytesAsync(outputPath, data);
+            return outputPath;
+        }
+
+        /// <summary>
+        /// Returns a dictionary of known SWM LNB firmware names and their download URLs.
+        /// </summary>
+        public static Dictionary<string, string> GetKnownSwmFirmware()
+        {
+            return new Dictionary<string, string>
+            {
+                { "SWM LNB V1", "https://example.com/firmware/swm_lnb_v1.bin" },
+                { "SWM LNB V2", "https://example.com/firmware/swm_lnb_v2.bin" }
+                // TODO: Replace with real firmware URLs
+            };
+        }
     }
 }
