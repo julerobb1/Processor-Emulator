@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
@@ -12,6 +13,14 @@ namespace ProcessorEmulator.Tools
     {
         public static string Detect(byte[] binaryOrImage)
         {
+            // Detect Broadcom BCM7346 firmware marker (e.g. DTB or header) in initial region
+            try
+            {
+                var header = System.Text.Encoding.ASCII.GetString(binaryOrImage, 0, Math.Min(binaryOrImage.Length, 256));
+                if (header.Contains("BCM7346"))
+                    return "MIPS32-BCM7346";
+            }
+            catch { }
             // ELF magic: 0x7F 'E' 'L' 'F'
             if (binaryOrImage.Length > 4 && binaryOrImage[0] == 0x7F && binaryOrImage[1] == (byte)'E' && binaryOrImage[2] == (byte)'L' && binaryOrImage[3] == (byte)'F')
             {
