@@ -141,6 +141,18 @@ namespace ProcessorEmulator
             }
         }
 
+        /// <summary>
+        /// Emulates a CMTS head end with IPTV and DOCSIS networks.
+        /// </summary>
+        private async Task HandleCmtsEmulation()
+        {
+            var emu = new CMTSEmulator();
+            emu.InitializeIPTV();
+            StatusBarText("CMTS head end initialized.");
+            ShowTextWindow("CMTS Emulation", new List<string> { "IPTV and DOCSIS networks active." });
+            await Task.CompletedTask;
+        }
+
         private async Task HandleGenericEmulation()
         {
             var openFileDialog = new OpenFileDialog
@@ -293,21 +305,6 @@ namespace ProcessorEmulator
             await Task.CompletedTask;
         }
 
-        /// <summary>
-        /// Emulates an RDK-B broadband gateway using QEMU.
-        /// </summary>
-        private async Task HandleRdkBEmulation()
-        {
-            var dlg = new OpenFileDialog { Filter = "RDK-B Firmware Images (*.bin;*.tar;*.tar.gz;*.tar.bz2)|*.bin;*.tar;*.tar.gz;*.tar.bz2|All Files (*.*)|*.*" };
-            if (dlg.ShowDialog() != true) return;
-            string path = dlg.FileName;
-            StatusBarText($"Launching RDK-B emulator for {Path.GetFileName(path)}...");
-            var bin = File.ReadAllBytes(path);
-            var arch = ArchitectureDetector.Detect(bin);
-            try { EmulatorLauncher.Launch(path, arch, platform: "RDK-B"); StatusBarText("RDK-B emulation started."); }
-            catch (Exception ex) { MessageBox.Show($"RDK-B error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error); StatusBarText("RDK-B emulation failed."); }
-            await Task.CompletedTask;
-        }
 
         /// <summary>
         /// Probes a disk image for partition tables.
@@ -325,17 +322,6 @@ namespace ProcessorEmulator
             await Task.CompletedTask;
         }
 
-        /// <summary>
-        /// Emulates a CMTS head end with IPTV and DOCSIS networks.
-        /// </summary>
-        private async Task HandleCmtsEmulation()
-        {
-            var emu = new CMTSEmulator();
-            emu.InitializeIPTV();
-            StatusBarText("CMTS head end initialized.");
-            ShowTextWindow("CMTS Emulation", new List<string> { "IPTV and DOCSIS networks active." });
-            await Task.CompletedTask;
-        }
 
         /// <summary>
         /// Handles Linux filesystem read/write operations.
@@ -369,11 +355,10 @@ namespace ProcessorEmulator
                         VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                         HorizontalScrollBarVisibility = ScrollBarVisibility.Auto
                     }
-                },
-        /// <summary>
-        /// Handles Linux filesystem read/write operations.
-        /// </summary>
-        private async Task HandleLinuxFsReadWrite()
+                }
+            };
+            win.Show();
+        }
 
         private static bool IsWinCEBinary(byte[] binary)
         {
@@ -385,32 +370,6 @@ namespace ProcessorEmulator
             return true;
         }
         
-        /// <summary>
-        /// Emulates an RDK-V set-top box using QEMU.
-        /// </summary>
-        private async Task HandleRdkVEmulation()
-        {
-            var openFileDialog = new OpenFileDialog
-            {
-                Filter = "RDK-V Firmware Images (*.bin;*.tar;*.tar.gz;*.tar.bz2)|*.bin;*.tar;*.tar.gz;*.tar.bz2|All Files (*.*)|*.*"
-            };
-            if (openFileDialog.ShowDialog() != true) return;
-            string filePath = openFileDialog.FileName;
-            StatusBarText($"Launching RDK-V emulator for {Path.GetFileName(filePath)}...");
-            byte[] binary = File.ReadAllBytes(filePath);
-            string arch = ArchitectureDetector.Detect(binary);
-            try
-            {
-                EmulatorLauncher.Launch(filePath, arch, platform: "RDK-V");
-                StatusBarText("RDK-V emulation started.");
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"RDK-V emulation error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                StatusBarText("RDK-V emulation failed.");
-            }
-            await Task.CompletedTask;
-        }
         
         /// <summary>
         /// Emulates an RDK-B broadband gateway using QEMU.
@@ -437,63 +396,6 @@ namespace ProcessorEmulator
                 StatusBarText("RDK-B emulation failed.");
             }
             await Task.CompletedTask;
-        }
-        
-        /// <summary>
-        /// Probes a disk image for partition tables.
-        /// </summary>
-        private async Task HandleFilesystemProbe()
-        {
-            var openFileDialog = new OpenFileDialog
-            {
-                Filter = "Disk/Filesystem Images (*.img;*.bin)|*.img;*.bin|All Files (*.*)|*.*"
-            };
-            if (openFileDialog.ShowDialog() != true) return;
-            string filePath = openFileDialog.FileName;
-            StatusBarText($"Probing filesystem in {Path.GetFileName(filePath)}...");
-            byte[] image = File.ReadAllBytes(filePath);
-            var partitions = PartitionAnalyzer.Analyze(image);
-            ShowTextWindow("Partition Analysis", partitions);
-            StatusBarText("Filesystem probe complete.");
-            await Task.CompletedTask;
-        }
-        
-        /// <summary>
-        /// Emulates a CMTS head end with IPTV and DOCSIS networks.
-        /// </summary>
-        private async Task HandleCmtsEmulation()
-        {
-            var emulator = new CMTSEmulator();
-            emulator.InitializeIPTV();
-            StatusBarText("CMTS head end initialized.");
-            // Display channel summary
-            var output = new List<string> { "CMTS Emulator: IPTV and DOCSIS networks active." };
-            ShowTextWindow("CMTS Emulation", output);
-            await Task.CompletedTask;
-        }
-
-        private async void ExtractAndAnalyzeButton_Click(object sender, RoutedEventArgs e)
-        {
-            var openFileDialog = new OpenFileDialog
-            {
-                Filter =
-                    "DirecTV Firmware Images (*.csw;*.bin;*.tar.csw.bin)|*.csw;*.bin;*.tar.csw.bin|" +
-                    "RDK-V Firmware Images (*.bin;*.tar;*.tar.gz;*.tar.bz2)|*.bin;*.tar;*.tar.gz;*.tar.bz2|" +
-                    "RDK-B Firmware Images (*.bin;*.tar;*.tar.gz;*.tar.bz2)|*.bin;*.tar;*.tar.gz;*.tar.bz2|" +
-                    "Uverse Firmware Images (*.img;*.bin;*.fw;*.bz)|*.img;*.bin;*.fw;*.bz|" +
-                    "Firmware Archives (*.csw;*.tar;*.img;*.bin;*.tar.gz;*.tar.bz2)|*.csw;*.tar;*.img;*.bin;*.tar.gz;*.tar.bz2|" +
-                    "All Supported Files|*.csw;*.bin;*.tar.csw.bin;*.tar;*.tar.gz;*.tar.bz2;*.img;*.fw;*.bz;*.nb0|" +
-                    "All Files (*.*)|*.*"
-            };
-            if (openFileDialog.ShowDialog() == true)
-            {
-                string archivePath = openFileDialog.FileName;
-                string extractDir = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(archivePath),
-                    System.IO.Path.GetFileNameWithoutExtension(archivePath) + "_extracted");
-                StatusBarText("Extracting and analyzing...");
-                await Task.Run(() => ArchiveExtractor.ExtractAndAnalyze(archivePath, extractDir));
-                StatusBarText("Done. See console for results.");
-            }
         }
 
         private void LoadFirmwareImage(string imagePath, string signaturePath)
