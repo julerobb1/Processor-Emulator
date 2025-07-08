@@ -23,10 +23,10 @@ namespace ProcessorEmulator.Tools.FileSystems
 
         public class VxWorksFileSystem
         {
-            private List<VxWorksPartition> partitions = new List<VxWorksPartition>();
-            private Dictionary<uint, byte[]> decryptedBlocks = new Dictionary<uint, byte[]>();
-            private Dictionary<string, uint> fileIndex = new Dictionary<string, uint>();
-            private List<byte[]> blocks = new List<byte[]>();
+            private List<VxWorksPartition> partitions = new();
+            private Dictionary<uint, byte[]> decryptedBlocks = new();
+            private Dictionary<string, uint> fileIndex = new();
+            private List<byte[]> blocks = new();
 
             // Ensure rawData is defined at the class level if needed
             private byte[] rawData;
@@ -91,7 +91,7 @@ namespace ProcessorEmulator.Tools.FileSystems
                        ContainsBootloaderSignature(data);
             }
 
-            private bool ContainsBootloaderSignature(byte[] data)
+            private static bool ContainsBootloaderSignature(byte[] data)
             {
                 // Search for known VxWorks bootloader signatures
                 byte[] signature = new byte[] { 0x76, 0x78, 0x57, 0x6F, 0x72, 0x6B, 0x73 }; // "vxWorks"
@@ -140,7 +140,7 @@ namespace ProcessorEmulator.Tools.FileSystems
                 return 0;
             }
 
-            private void AnalyzeBootPartition(FileStream stream, VxWorksPartition partition)
+            private static void AnalyzeBootPartition(FileStream stream, VxWorksPartition partition)
             {
                 // Read and analyze boot partition
                 stream.Seek(partition.BootloaderOffset, SeekOrigin.Begin);

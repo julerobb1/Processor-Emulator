@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Net.Http;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace ProcessorEmulator.Tools
 {
@@ -10,53 +13,61 @@ namespace ProcessorEmulator.Tools
     {
         public static string Detect(byte[] binaryOrImage)
         {
+            // Detect Broadcom BCM7346 firmware marker (e.g. DTB or header) in initial region
+            try
+            {
+                var header = System.Text.Encoding.ASCII.GetString(binaryOrImage, 0, Math.Min(binaryOrImage.Length, 256));
+                if (header.Contains("BCM7346"))
+                    return "MIPS32-BCM7346";
+            }
+            catch { }
             // ELF magic: 0x7F 'E' 'L' 'F'
             if (binaryOrImage.Length > 4 && binaryOrImage[0] == 0x7F && binaryOrImage[1] == (byte)'E' && binaryOrImage[2] == (byte)'L' && binaryOrImage[3] == (byte)'F')
             {
                 // e_machine field at offset 18 (16-bit)
                 ushort machine = BitConverter.ToUInt16(binaryOrImage, 18);
-                switch (machine)
+                return machine switch
                 {
-                    case 0x0001: return "TargetHost";
-                    case 0x014c: return "I386";
-                    case 0x014d: return "I486";
-                    case 0x014e: return "Pentium";
-                    case 0x0160: return "R3000BE";
-                    case 0x0162: return "R3000LE";
-                    case 0x0166: return "R4000";
-                    case 0x0260: return "R10000";
-                    case 0x0169: return "WceMipsV2";
-                    case 0x0184: return "Alpha_AXP";
-                    case 0x01a2: return "SH3";
-                    case 0x01a3: return "SH3DSP";
-                    case 0x01a4: return "SH3E";
-                    case 0x01a6: return "SH4";
-                    case 0x01a8: return "SH5";
-                    case 0x01c0: return "Arm";
-                    case 0x01c2: return "THUMB";
-                    case 0x01c4: return "ArmThumb2";
-                    case 0x01d3: return "AM33";
-                    case 0x01f0: return "PowerPC";
-                    case 0x01f1: return "PowerPCFP";
-                    case 0x01f2: return "PPCBE";
-                    case 0x0200: return "IA64";
-                    case 0x0366: return "MIPSFPU";
-                    case 0x0466: return "MIPSFPU16";
-                    case 0x0520: return "Tricore";
-                    case 0x0cef: return "CEF";
-                    case 0x0ebc: return "EFI Byte Code";
-                    case 0x0eba: return "SPARC";
-                    case 0x8664: return "AMD64";
-                    case 0x9041: return "M32R";
-                    case 0xaa64: return "ARM64";
-                    case 0xc0ee: return "CEE";
-                    case 0x5032: return "RISC-V32";
-                    case 0x5064: return "RISC-V64";
-                    case 0x5128: return "RISC-V128";
-                    case 0x6232: return "LoongArch32";
-                    case 0x6264: return "LoongArch64";
-                    default: return "Unknown";
-                }
+                    0x0001 => "TargetHost",
+                    0x014c => "I386",
+                    0x014d => "I486",
+                    0x014e => "Pentium",
+                    0x0160 => "R3000BE",
+                    0x0162 => "R3000LE",
+                    0x0166 => "R4000",
+                    0x0260 => "R10000",
+                    0x0169 => "WceMipsV2",
+                    0x0184 => "Alpha_AXP",
+                    0x01a2 => "SH3",
+                    0x01a3 => "SH3DSP",
+                    0x01a4 => "SH3E",
+                    0x01a6 => "SH4",
+                    0x01a8 => "SH5",
+                    0x01c0 => "Arm",
+                    0x01c2 => "THUMB",
+                    0x01c4 => "ArmThumb2",
+                    0x01d3 => "AM33",
+                    0x01f0 => "PowerPC",
+                    0x01f1 => "PowerPCFP",
+                    0x01f2 => "PPCBE",
+                    0x0200 => "IA64",
+                    0x0366 => "MIPSFPU",
+                    0x0466 => "MIPSFPU16",
+                    0x0520 => "Tricore",
+                    0x0cef => "CEF",
+                    0x0ebc => "EFI Byte Code",
+                    0x0eba => "SPARC",
+                    0x8664 => "AMD64",
+                    0x9041 => "M32R",
+                    0xaa64 => "ARM64",
+                    0xc0ee => "CEE",
+                    0x5032 => "RISC-V32",
+                    0x5064 => "RISC-V64",
+                    0x5128 => "RISC-V128",
+                    0x6232 => "LoongArch32",
+                    0x6264 => "LoongArch64",
+                    _ => "Unknown",
+                };
             }
             // Add more format checks as needed
             return "Unknown";
@@ -165,7 +176,7 @@ namespace ProcessorEmulator.Tools
 
     public static class SupportedArchitectures
     {
-        public static readonly List<string> All = new List<string>
+        public static readonly List<string> All = new()
         {
             "TargetHost", // 0x0001
             "I386", // 0x014c
@@ -207,5 +218,35 @@ namespace ProcessorEmulator.Tools
             "LoongArch32", // 0x6232
             "LoongArch64" // 0x6264
         };
+    }
+
+    public static class FirmwareDownloader
+    {
+        /// <summary>
+        /// Downloads a file from the specified URL to the output directory and returns the local file path.
+        /// </summary>
+        public static async Task<string> DownloadFileAsync(string url, string outputDir)
+        {
+            Directory.CreateDirectory(outputDir);
+            var fileName = Path.GetFileName(new Uri(url).LocalPath);
+            var outputPath = Path.Combine(outputDir, fileName);
+            using var client = new HttpClient();
+            var data = await client.GetByteArrayAsync(url);
+            await File.WriteAllBytesAsync(outputPath, data);
+            return outputPath;
+        }
+
+        /// <summary>
+        /// Returns a dictionary of known SWM LNB firmware names and their download URLs.
+        /// </summary>
+        public static Dictionary<string, string> GetKnownSwmFirmware()
+        {
+            return new Dictionary<string, string>
+            {
+                { "SWM LNB V1", "https://example.com/firmware/swm_lnb_v1.bin" },
+                { "SWM LNB V2", "https://example.com/firmware/swm_lnb_v2.bin" }
+                // TODO: Replace with real firmware URLs
+            };
+        }
     }
 }

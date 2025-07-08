@@ -211,7 +211,7 @@ namespace ProcessorEmulator.Emulation
     public class HardwareEmulator : IEmulator
     {
         private ICpuModel cpu;
-        private List<IDevice> devices = new List<IDevice>();
+        private List<IDevice> devices = new();
         public HardwareEmulator(ICpuModel cpuModel, IEnumerable<IDevice> deviceModels)
         {
             cpu = cpuModel;

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System;
 
 namespace ProcessorEmulator.Tools
 {
@@ -7,7 +8,63 @@ namespace ProcessorEmulator.Tools
     {
         public string QemuPath { get; set; } = "qemu-system-mips.exe"; // Default, can be changed per arch
 
-        public void Launch(string imagePath, string architecture)
+        private static string LocateExecutable(string exeName)
+        {
+            // Check current directory or absolute path
+            if (File.Exists(exeName))
+                return Path.GetFullPath(exeName);
+
+            // Search in PATH
+            var paths = Environment.GetEnvironmentVariable("PATH")?.Split(';') ?? Array.Empty<string>();
+            foreach (var dir in paths)
+            {
+                try
+                {
+                    var full = Path.Combine(dir, exeName);
+                    if (File.Exists(full))
+                        return full;
+                }
+                catch { }
+            }
+
+            // Check common installation directories
+            var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            var programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+            foreach (var baseDir in new[] { programFiles, programFilesX86 })
+            {
+                var qemuDir = Path.Combine(baseDir, "qemu");
+                var full = Path.Combine(qemuDir, exeName);
+                if (File.Exists(full))
+                    return full;
+            }
+
+            throw new FileNotFoundException($"QEMU executable not found: {exeName}");
+        }
+
+        private static string GetQemuExecutable(string architecture)
+        {
+            var exe = architecture switch
+            {
+                "MIPS32" => "qemu-system-mips.exe",
+                "MIPS64" => "qemu-system-mips64.exe",
+                "ARM" => "qemu-system-arm.exe",
+                "ARM64" => "qemu-system-aarch64.exe",
+                "PowerPC" => "qemu-system-ppc.exe",
+                "x86" => "qemu-system-i386.exe",
+                "x86-64" => "qemu-system-x86_64.exe",
+                "RISC-V" => "qemu-system-riscv64.exe",
+                _ => "qemu-system-mips.exe",
+            };
+            return LocateExecutable(exe);
+        }
+
+        private static string GetQemuArgs(string imagePath, string architecture)
+        {
+            // Basic args, can be extended for more options
+            return $"-m 256 -drive file=\"{imagePath}\",format=raw -nographic";
+        }
+
+        public static void Launch(string imagePath, string architecture)
         {
             string qemuExe = GetQemuExecutable(architecture);
             if (!File.Exists(qemuExe))
@@ -29,7 +86,7 @@ namespace ProcessorEmulator.Tools
             process.Start();
         }
 
-        public void LaunchWithArgs(string imagePath, string architecture, string extraArgs)
+        public static void LaunchWithArgs(string imagePath, string architecture, string extraArgs)
         {
             string qemuExe = GetQemuExecutable(architecture);
             if (!File.Exists(qemuExe))
@@ -49,28 +106,6 @@ namespace ProcessorEmulator.Tools
                 }
             };
             process.Start();
-        }
-
-        private static string GetQemuExecutable(string architecture)
-        {
-            switch (architecture)
-            {
-                case "MIPS32": return "qemu-system-mips.exe";
-                case "MIPS64": return "qemu-system-mips64.exe";
-                case "ARM": return "qemu-system-arm.exe";
-                case "ARM64": return "qemu-system-aarch64.exe";
-                case "PowerPC": return "qemu-system-ppc.exe";
-                case "x86": return "qemu-system-i386.exe";
-                case "x86-64": return "qemu-system-x86_64.exe";
-                case "RISC-V": return "qemu-system-riscv64.exe";
-                default: return "qemu-system-mips.exe";
-            }
-        }
-
-        private static string GetQemuArgs(string imagePath, string architecture)
-        {
-            // Basic args, can be extended for more options
-            return $"-m 256 -drive file=\"{imagePath}\",format=raw -nographic";
         }
     }
 }

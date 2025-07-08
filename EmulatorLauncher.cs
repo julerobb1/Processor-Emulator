@@ -20,7 +20,7 @@ namespace ProcessorEmulator.Emulation
                 {
                     extraArgs += "-vga qxl -display sdl "; // Example: QEMU accelerated graphics
                 }
-                qemu.LaunchWithArgs(binaryPath, architecture, extraArgs.Trim());
+                QemuManager.LaunchWithArgs(binaryPath, architecture, extraArgs.Trim());
             }
             else
             {
@@ -34,7 +34,7 @@ namespace ProcessorEmulator.Emulation
                     case "x86-64": new X64Emulator().Run(); break;
                     default:
                         var qemu = new QemuManager();
-                        qemu.LaunchWithArgs(binaryPath, architecture, gpuPassthrough ? "-vga qxl -display sdl" : "");
+                        QemuManager.LaunchWithArgs(binaryPath, architecture, gpuPassthrough ? "-vga qxl -display sdl" : "");
                         break;
                 }
             }

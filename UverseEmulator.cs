@@ -21,8 +21,8 @@ namespace ProcessorEmulator.Emulation
     public class MediaroomEmulator
     {
         private const uint MEDIAROOM_MAGIC = 0x4D524D56; // "MRMV"
-        private Dictionary<string, byte[]> contentFiles = new Dictionary<string, byte[]>();
-        private Dictionary<string, string> signatures = new Dictionary<string, string>();
+        private Dictionary<string, byte[]> contentFiles = new();
+        private Dictionary<string, string> signatures = new();
 
         public void LoadBootSignature(string bootSigPath)
         {
@@ -74,7 +74,7 @@ namespace ProcessorEmulator.Emulation
         private readonly MediaroomEmulator mediaroom;
         private readonly CMTSEmulator cmts;
         private byte[] memory;
-        private Dictionary<string, IntPtr> mappedDevices = new Dictionary<string, IntPtr>();
+        private Dictionary<string, IntPtr> mappedDevices = new();
 
         public UverseEmulator(UverseHardwareConfig config)
         {
@@ -164,7 +164,7 @@ namespace ProcessorEmulator.Emulation
             // This would handle communication between multiple receivers
         }
 
-        public void StartMediaroom()
+        public static void StartMediaroom()
         {
             // Initialize Windows CE environment
             InitializeWinCE();
@@ -184,7 +184,7 @@ namespace ProcessorEmulator.Emulation
             // This handles the UI and content delivery
         }
 
-        public void EmulateHardwareDevice(string deviceType)
+        public static void EmulateHardwareDevice(string deviceType)
         {
             switch (deviceType.ToLower())
             {

@@ -15,7 +15,7 @@ namespace ProcessorEmulator.Tools.FileSystems
             public string DeviceType; // e.g., "Hopper", "Joey", "HR54", etc.
         }
 
-        private readonly Dictionary<uint, VxWorksVersion> knownVersions = new Dictionary<uint, VxWorksVersion>
+        private readonly Dictionary<uint, VxWorksVersion> knownVersions = new()
         {
             // Dish Network Hopper signatures
             { 0x27051956, new VxWorksVersion { Version = "6.9", Signature = 0x27051956, BootSignature = 0x0FF0AD12, DeviceType = "Hopper3" } },
@@ -66,7 +66,7 @@ namespace ProcessorEmulator.Tools.FileSystems
             throw new Exception("Unknown VxWorks version or not a VxWorks firmware");
         }
 
-        private string SearchVersionString(byte[] firmware)
+        private static string SearchVersionString(byte[] firmware)
         {
             // Common VxWorks version string patterns
             string[] patterns = {
@@ -123,10 +123,10 @@ namespace ProcessorEmulator.Tools.FileSystems
             return version.Trim();
         }
 
-        private string DetermineDeviceType(byte[] firmware)
+        private static string DetermineDeviceType(byte[] firmware)
         {
             // Known device identification strings
-            Dictionary<string, string> devicePatterns = new Dictionary<string, string>
+            Dictionary<string, string> devicePatterns = new()
             {
                 { "HOPPER", "Hopper" },
                 { "JOEY", "Joey" },
@@ -147,19 +147,15 @@ namespace ProcessorEmulator.Tools.FileSystems
         private EncryptionInfo DetectEncryption(byte[] firmware, VxWorksVersion version)
         {
             // Look for known encryption signatures based on device type
-            switch (version.DeviceType)
+            return version.DeviceType switch
             {
-                case "Hopper3":
-                    return DetectHopperEncryption(firmware);
-                case "HR54":
-                case "HR44":
-                    return DetectGenieDvrEncryption(firmware);
-                default:
-                    return DetectEncryptionFallback(firmware);
-            }
+                "Hopper3" => DetectHopperEncryption(firmware),
+                "HR54" or "HR44" => DetectGenieDvrEncryption(firmware),
+                _ => DetectEncryptionFallback(firmware),
+            };
         }
 
-        private EncryptionInfo DetectHopperEncryption(byte[] firmware)
+        private static EncryptionInfo DetectHopperEncryption(byte[] firmware)
         {
             // Hopper-specific encryption detection
             return new EncryptionInfo
@@ -171,7 +167,7 @@ namespace ProcessorEmulator.Tools.FileSystems
             };
         }
 
-        private EncryptionInfo DetectGenieDvrEncryption(byte[] firmware)
+        private static EncryptionInfo DetectGenieDvrEncryption(byte[] firmware)
         {
             // Genie DVR-specific encryption detection
             return new EncryptionInfo
