@@ -8,10 +8,10 @@ namespace ProcessorEmulator.Emulation
     {
         private bool useQEMU;
 
-        public WinCEEmulator(bool useQEMUBackend = true, bool useQEMU = false)
+        public WinCEEmulator(bool useQEMUBackend = true, bool useQEMUFlag = false)
         {
-            useQEMU = useQEMUBackend;
-            this.useQEMU = useQEMU;
+            this.useQEMU = useQEMUBackend;
+            this.useQEMU = useQEMUFlag;
         }
 
         public void LoadBinary(byte[] binary)
