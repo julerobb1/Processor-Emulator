@@ -8,6 +8,7 @@ using System.IO;
 using System;
 using System.Windows.Controls;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 
 namespace ProcessorEmulator
 {
@@ -597,6 +598,14 @@ namespace ProcessorEmulator
                 // ...existing code...
                 return string.Empty;
             }
+        }
+
+        // Helper to parse DirecTV firmware filename metadata
+        private (string Manufacturer, string Model, string Version, string Tar)? ParseDirecTVFilename(string fileName)
+        {
+            var m = Regex.Match(fileName, @"image_mfr-(\d+)_mdl-([0-9a-z]+)_ver-(\d+)_tar-([0-9a-f]+)\\.csw", RegexOptions.IgnoreCase);
+            if (!m.Success) return null;
+            return (m.Groups[1].Value, m.Groups[2].Value, m.Groups[3].Value, m.Groups[4].Value);
         }
 
         /// <summary>
