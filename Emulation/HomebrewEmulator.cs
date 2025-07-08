@@ -12,6 +12,7 @@ namespace ProcessorEmulator.Emulation
         private byte[] memory;
         private uint[] regs = new uint[32];
         private uint pc;
+        private Tools.DeviceTreeManager.Node deviceTree;
 
         public HomebrewEmulator(string architecture)
         {
@@ -23,6 +24,18 @@ namespace ProcessorEmulator.Emulation
             // Load firmware into memory (256MB)
             memory = new byte[256 * 1024 * 1024];
             Array.Copy(binary, 0, memory, 0, binary.Length);
+            // Detect Flattened Device Tree (FDT) blob in memory (magic 0xd00dfeed)
+            for (int off = 0; off + 4 < binary.Length; off += 4)
+            {
+                uint magic = BitConverter.ToUInt32(memory, off);
+                if (magic == 0xd00dfeed)
+                {
+                    byte[] dtb = new byte[binary.Length - off];
+                    Array.Copy(memory, off, dtb, 0, dtb.Length);
+                    deviceTree = Tools.DeviceTreeManager.Load(dtb);
+                    break;
+                }
+            }
             // Initialize registers and PC
             for (int i = 0; i < regs.Length; i++) regs[i] = 0;
             pc = 0;
