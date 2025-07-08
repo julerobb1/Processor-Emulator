@@ -636,6 +636,6 @@ namespace ProcessorEmulator
             await Task.CompletedTask;
         }
 
-        // ===== Removed all other duplicate methods/helpers below =====
+        // All duplicate methods/helpers have been removed for clarity.
     }
 }
