@@ -20,7 +20,11 @@ namespace ProcessorEmulator.Tools
             { "BCM4506K0IE33G", "Broadcom BCM4506: satellite tuner and demodulator" },
             { "88W8801-NJR2", "Marvell 88W8801: Wi-Fi SoC for wireless connectivity" },
             { "MX65L1G80GAC1-10G", "Macronix MX65L1G80GAC1: 1Gb SPI NOR flash memory" },
-            { "QL01GS1DHSSG", "Spansion QL01GS1DHSSG: 1Gb SPI NOR flash memory for firmware storage" }
+            { "QL01GS1DHSSG", "Spansion QL01GS1DHSSG: 1Gb SPI NOR flash memory for firmware storage" },
+            // STMicroelectronics SoCs (cooler running than Broadcom)
+            { "STi7101", "STMicro STi7101 SoC: DVB multimedia decoder and processing unit" },
+            { "STi7200", "STMicro STi7200 SoC: high-performance DVB multimedia processor" },
+            { "STi5500", "STMicro STi5500 SoC: common DVB set-top box processor" }
         };
 
         // Retrieve human-friendly info for a given chip key
