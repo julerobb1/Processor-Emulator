@@ -99,6 +99,7 @@ namespace ProcessorEmulator
                 "Emulate CMTS Head End",
                 "Uverse Box Emulator",
                 "DirecTV Box/Firmware Analysis",
+                "Executable Analysis",
                 "Linux Filesystem Read/Write"
             };
             string mainChoice = PromptUserForChoice("What would you like to do?", mainOptions);
@@ -132,6 +133,9 @@ namespace ProcessorEmulator
                     break;
                 case "DirecTV Box/Firmware Analysis":
                     await HandleDirectvAnalysis();
+                    break;
+                case "Executable Analysis":
+                    await HandleExecutableAnalysis();
                     break;
                 case "Linux Filesystem Read/Write":
                     await HandleLinuxFsReadWrite();
@@ -288,6 +292,81 @@ namespace ProcessorEmulator
         await Task.CompletedTask;
         }
 
+        /// <summary>
+        /// Analyzes arbitrary executables or binaries to detect architecture and format.
+        /// </summary>
+        private async Task HandleExecutableAnalysis()
+        {
+            // Select executable file
+            var dlg = new OpenFileDialog
+            {
+                Filter = "Executables and Binaries (*.exe;*.dll;*.bin;*.so)|*.exe;*.dll;*.bin;*.so|All Files (*.*)|*.*"
+            };
+            if (dlg.ShowDialog() != true) return;
+            string filePath = dlg.FileName;
+            StatusBarText($"Analyzing executable: {Path.GetFileName(filePath)}");
+            byte[] data = File.ReadAllBytes(filePath);
+            // Determine format and architecture
+            string format = (data.Length > 4 && data[0] == 0x7F && data[1] == (byte)'E' && data[2] == (byte)'L' && data[3] == (byte)'F') ? "ELF" : "PE";
+            string arch = ArchitectureDetector.Detect(data);
+            string bitness = "Unknown";
+            if (format == "PE" && data.Length > 0x40)
+            {
+                int peOffset = BitConverter.ToInt32(data, 0x3C);
+                ushort machine = BitConverter.ToUInt16(data, peOffset + 4);
+                bitness = machine switch
+                {
+                    0x14c => "x86",
+                    0x8664 => "x64",
+                    0x1c0 => "ARM",
+                    0xaa64 => "ARM64",
+                    _ => "Unknown"
+                };
+            }
+            else if (format == "ELF" && data.Length > 5)
+            {
+                bitness = data[4] == 1 ? "32-bit" : data[4] == 2 ? "64-bit" : "Unknown";
+            }
+            var output = new List<string>
+            {
+                $"File: {Path.GetFileName(filePath)}",
+                $"Format: {format}",
+                $"Architecture: {arch}",
+                $"Bitness: {bitness}" 
+            };
+            ShowTextWindow("Executable Analysis", output);
+            StatusBarText("Executable analysis complete.");
+            // Prompt to launch emulator
+            var choice = PromptUserForChoice("Launch emulator for this executable?", new[] { "Homebrew", "QEMU", "No" });
+            if (choice == "Homebrew")
+            {
+                try
+                {
+                    var home = new HomebrewEmulator(arch);
+                    home.LoadBinary(data);
+                    home.Run();
+                    StatusBarText("Homebrew emulation complete.");
+                }
+                catch (NotImplementedException)
+                {
+                    MessageBox.Show("Homebrew emulator not supported for this architecture.", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+            }
+            else if (choice == "QEMU")
+            {
+                try
+                {
+                    EmulatorLauncher.Launch(filePath, arch);
+                    StatusBarText("QEMU emulation started.");
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Emulation error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+            await Task.CompletedTask;
+        }
+        
         // Core feature handlers
 
         /// <summary>
@@ -644,6 +723,7 @@ namespace ProcessorEmulator
 
             await Task.CompletedTask;
         }
+
 
         // All duplicate methods/helpers have been removed for clarity.
     }
