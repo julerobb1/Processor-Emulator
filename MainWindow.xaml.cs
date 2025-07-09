@@ -5,10 +5,12 @@ using System.Windows;
 using Microsoft.Win32;
 using System.Threading.Tasks;
 using System.IO;
+using System.Linq;
 using System;
 using System.Windows.Controls;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
+using System.Diagnostics;
 
 namespace ProcessorEmulator
 {
@@ -37,7 +39,9 @@ namespace ProcessorEmulator
         // Add a default constructor for XAML
         public MainWindow()
         {
-            // Optionally initialize fields here
+            // Initialize drag-and-drop for file support
+            this.AllowDrop = true;
+            this.Drop += MainWindow_Drop;
         }
 
         public MainWindow(IEmulator currentEmulator)
@@ -100,6 +104,8 @@ namespace ProcessorEmulator
                 "Uverse Box Emulator",
                 "DirecTV Box/Firmware Analysis",
                 "Executable Analysis",
+                "Firmadyne Emulation",
+                "Azeria ARM Emulation",
                 "Linux Filesystem Read/Write"
             };
             string mainChoice = PromptUserForChoice("What would you like to do?", mainOptions);
@@ -137,8 +143,11 @@ namespace ProcessorEmulator
                 case "Executable Analysis":
                     await HandleExecutableAnalysis();
                     break;
-                case "Linux Filesystem Read/Write":
-                    await HandleLinuxFsReadWrite();
+                case "Firmadyne Emulation":
+                    await HandleFirmadyneEmulation();
+                    break;
+                case "Azeria ARM Emulation":
+                    await HandleAzeriaEmulation();
                     break;
                 default:
                     MessageBox.Show("Not implemented yet.", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -244,14 +253,23 @@ namespace ProcessorEmulator
             string sigPath = openFileDialog.FileName;
             StatusBarText($"Loading Uverse configuration from {Path.GetFileName(sigPath)}...");
 
-            // Example hardware config: adjust as needed or prompt user
+            // Prompt for hardware configuration
+            string model = PromptUserForInput("Enter model type (e.g. VIP2250):")?.Trim();
+            if (string.IsNullOrWhiteSpace(model)) model = "VIP2250";
+            string proc = PromptUserForInput("Enter processor type (e.g. ARM/x86):")?.Trim();
+            if (string.IsNullOrWhiteSpace(proc)) proc = "ARM";
+            string memInput = PromptUserForInput("Enter memory size in MB:")?.Trim();
+            if (!int.TryParse(memInput, out int mb)) mb = 128;
+            long memBytes = mb * 1024L * 1024L;
+            bool isDVR = PromptUserForChoice("Is this device a DVR?", new[] { "Yes", "No" }) == "Yes";
+            bool isWholeHome = PromptUserForChoice("Enable Whole Home network?", new[] { "Yes", "No" }) == "Yes";
             var config = new UverseHardwareConfig
             {
-                ModelType = "VIP2250",
-                ProcessorType = "ARM",
-                MemorySize = 128 * 1024 * 1024,
-                IsDVR = true,
-                IsWholeHome = false
+                ModelType = model,
+                ProcessorType = proc,
+                MemorySize = (uint)memBytes,
+                IsDVR = isDVR,
+                IsWholeHome = isWholeHome
             };
             var emulator = new UverseEmulator(config);
             emulator.LoadBootImage(sigPath);
@@ -332,8 +350,14 @@ namespace ProcessorEmulator
                 $"File: {Path.GetFileName(filePath)}",
                 $"Format: {format}",
                 $"Architecture: {arch}",
-                $"Bitness: {bitness}" 
+                $"Bitness: {bitness}"
             };
+            // Encourage contribution for unsupported chips
+            var desc = ChipReferenceManager.GetInfo(arch);
+            if (!string.IsNullOrEmpty(desc))
+                output.Add($"Description: {desc}");
+            else
+                output.Add(ChipReferenceManager.GetContributionMessage(arch));
             ShowTextWindow("Executable Analysis", output);
             StatusBarText("Executable analysis complete.");
             // Prompt to launch emulator
@@ -364,6 +388,24 @@ namespace ProcessorEmulator
                     MessageBox.Show($"Emulation error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
+            await Task.CompletedTask;
+        }
+
+        private async Task HandleFirmadyneEmulation()
+        {
+            StatusBarText("Starting Firmadyne-based emulation...");
+            // TODO: Integrate Firmadyne pipeline (extract rootfs, QEMU setup, network capture)
+            ShowTextWindow("Firmadyne Emulation", new List<string> { "Firmadyne integration not implemented yet." });
+            StatusBarText("Firmadyne emulation stub complete.");
+            await Task.CompletedTask;
+        }
+
+        private async Task HandleAzeriaEmulation()
+        {
+            StatusBarText("Starting Azeria Labs ARM firmware emulation...");
+            // TODO: Follow steps from https://azeria-labs.com/emulating-arm-firmware/ to setup QEMU and load firmware
+            ShowTextWindow("Azeria ARM Emulation", new List<string> { "Azeria ARM firmware emulation not implemented yet." });
+            StatusBarText("Azeria ARM emulation stub complete.");
             await Task.CompletedTask;
         }
         
@@ -724,6 +766,28 @@ namespace ProcessorEmulator
             await Task.CompletedTask;
         }
 
+        // Handler for dropped files
+        private void MainWindow_Drop(object sender, DragEventArgs e)
+        {
+            if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
+            var files = (string[])e.Data.GetData(DataFormats.FileDrop);
+            foreach (var file in files)
+            {
+                string ext = Path.GetExtension(file).ToLowerInvariant();
+                // If unsupported extension, prompt to open GitHub issue
+                var supported = new[] { ".exe", ".dll", ".bin", ".csw", ".tar", ".img", ".fw" };
+                if (!supported.Contains(ext))
+                {
+                    var ask = MessageBox.Show($"No handler for '{ext}'. Create an issue on GitHub?", "Unsupported File", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                    if (ask == MessageBoxResult.Yes)
+                        Process.Start(new ProcessStartInfo("cmd", $"/c start https://github.com/julerobb1/Processor-Emulator/issues/new") { CreateNoWindow = true });
+                }
+                else
+                {
+                    StatusBarText($"File dropped: {Path.GetFileName(file)}. Use menu to analyze.");
+                }
+            }
+        }
 
         // All duplicate methods/helpers have been removed for clarity.
     }
