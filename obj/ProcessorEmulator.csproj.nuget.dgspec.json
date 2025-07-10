@@ -43,6 +43,16 @@
       "frameworks": {
         "net6.0-windows7.0": {
           "targetAlias": "net6.0-windows",
+          "dependencies": {
+            "Capstone.NetStandard": {
+              "target": "Package",
+              "version": "[4.0.0, )"
+            },
+            "Keystone.NET": {
+              "target": "Package",
+              "version": "[0.9.1, )"
+            }
+          },
           "imports": [
             "net461",
             "net462",
