@@ -106,7 +106,8 @@ namespace ProcessorEmulator
                 "Executable Analysis",
                 "Firmadyne Emulation",
                 "Azeria ARM Emulation",
-                "Linux Filesystem Read/Write"
+                "Linux Filesystem Read/Write",
+                "Cross-Compile Binary"
             };
             string mainChoice = PromptUserForChoice("What would you like to do?", mainOptions);
             if (string.IsNullOrEmpty(mainChoice)) return;
@@ -148,6 +149,9 @@ namespace ProcessorEmulator
                     break;
                 case "Azeria ARM Emulation":
                     await HandleAzeriaEmulation();
+                    break;
+                case "Cross-Compile Binary":
+                    await HandleCrossCompile();
                     break;
                 default:
                     MessageBox.Show("Not implemented yet.", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -460,6 +464,30 @@ namespace ProcessorEmulator
             await Task.CompletedTask;
         }
 
+        /// <summary>
+        /// Cross-compiles a binary from one architecture to another.
+        /// </summary>
+        private async Task HandleCrossCompile()
+        {
+            var dlg = new OpenFileDialog { Filter = "Binaries (*.bin;*.exe;*.dll)|*.bin;*.exe;*.dll|All Files (*.*)|*.*" };
+            if (dlg.ShowDialog() != true) return;
+            string inputPath = dlg.FileName;
+            StatusBarText($"Cross-compiling {Path.GetFileName(inputPath)}...");
+            byte[] inputData = File.ReadAllBytes(inputPath);
+            string fromArch = ArchitectureDetector.Detect(inputData);
+            var targets = new[] { "x86", "x64", "ARM", "ARM64" };
+            string toArch = PromptUserForChoice("Select target architecture:", targets);
+            if (string.IsNullOrEmpty(toArch)) return;
+            // perform translation/recompile
+            byte[] outputData = ReadAndTranslateFile(inputPath, fromArch, toArch);
+            var saveDlg = new SaveFileDialog { Filter = "Binary Output (*.bin)|*.bin|All Files (*.*)|*.*", FileName = Path.GetFileNameWithoutExtension(inputPath) + $"_{toArch}" };
+            if (saveDlg.ShowDialog() != true) return;
+            File.WriteAllBytes(saveDlg.FileName, outputData);
+            ShowTextWindow("Cross-Compile Result", new List<string> { $"Compiled from {fromArch} to {toArch} -> {Path.GetFileName(saveDlg.FileName)}" });
+            StatusBarText("Cross-compilation complete.");
+            await Task.CompletedTask;
+        }
+
         private void ShowTextWindow(string title, List<string> lines)
         {
             var win = new Window
@@ -638,12 +666,18 @@ namespace ProcessorEmulator
 
         private byte[] ReadAndTranslateFile(string filePath, string fromArch, string toArch)
         {
-            // Read a file and translate/virtualize (example)
-            byte[] fileData = fsManager.ReadFile(filePath);
-
-            // Translate and Virtualize
-            byte[] result = fsManager.RunTranslatedAndVirtualized(fileData, fromArch, toArch);
-            return result;
+            // Load raw data
+            byte[] data = File.ReadAllBytes(filePath);
+            try
+            {
+                // Attempt static cross-translation via BinaryTranslator
+                return BinaryTranslator.Translate(fromArch, toArch, data);
+            }
+            catch (NotImplementedException)
+            {
+                MessageBox.Show($"Translation from {fromArch} to {toArch} not implemented.", "Cross-Compile Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return data;
+            }
         }
 
         // Removed override of Equals(object) because DependencyObject.Equals(object) is sealed and cannot be overridden.
