@@ -16,8 +16,37 @@ namespace ProcessorEmulator.Tools
         /// <returns>Translated binary data for the target ISA.</returns>
         public static byte[] Translate(string fromArch, string toArch, byte[] input)
         {
-            // TODO: integrate Unicorn.NET or QEMU TCG to perform actual cross-translation.
-            throw new NotImplementedException($"Binary translation from {fromArch} to {toArch} is not implemented.");
+            // Bypass translation if arch matches
+            if (string.Equals(fromArch, toArch, StringComparison.OrdinalIgnoreCase))
+                return input;
+            // Write input to temp file
+            string tempIn = Path.GetTempFileName();
+            string tempOut = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+            File.WriteAllBytes(tempIn, input);
+            // Build RetDec CLI arguments
+            string args = $"--mode raw -e {fromArch} -t {toArch} -o \"{tempOut}\" \"{tempIn}\"";
+            var psi = new ProcessStartInfo
+            {
+                FileName = "retdec-decompiler", // ensure in PATH
+                Arguments = args,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            using var proc = Process.Start(psi);
+            proc.WaitForExit();
+            if (proc.ExitCode != 0)
+            {
+                string err = proc.StandardError.ReadToEnd();
+                MessageBox.Show($"RetDec error: {err}", "Translate Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return input;
+            }
+            // Read and clean up
+            var output = File.ReadAllBytes(tempOut);
+            File.Delete(tempIn);
+            File.Delete(tempOut);
+            return output;
         }
     }
 }
