@@ -7,5 +7,10 @@
     <RootNamespace>ProcessorEmulator</RootNamespace>
     <AssemblyName>ProcessorEmulator</AssemblyName>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- Capstone/Keystone for binary translation -->
+    <PackageReference Include="Capstone.NetStandard" Version="4.0.0" />
+    <PackageReference Include="Keystone.NET" Version="0.9.1" />
+  </ItemGroup>
 
 </Project>
