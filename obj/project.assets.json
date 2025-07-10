@@ -5,7 +5,10 @@
   },
   "libraries": {},
   "projectFileDependencyGroups": {
-    "net6.0-windows7.0": []
+    "net6.0-windows7.0": [
+      "Capstone.NetStandard >= 4.0.0",
+      "Keystone.NET >= 0.9.1"
+    ]
   },
   "packageFolders": {
     "C:\\Users\\juler\\.nuget\\packages\\": {}
@@ -49,6 +52,16 @@
     "frameworks": {
       "net6.0-windows7.0": {
         "targetAlias": "net6.0-windows",
+        "dependencies": {
+          "Capstone.NetStandard": {
+            "target": "Package",
+            "version": "[4.0.0, )"
+          },
+          "Keystone.NET": {
+            "target": "Package",
+            "version": "[0.9.1, )"
+          }
+        },
         "imports": [
           "net461",
           "net462",
@@ -89,5 +102,25 @@
         "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.300\\RuntimeIdentifierGraph.json"
       }
     }
-  }
+  },
+  "logs": [
+    {
+      "code": "NU1101",
+      "level": "Error",
+      "message": "Unable to find package Capstone.NetStandard. No packages exist with this id in source(s): nuget.org",
+      "libraryId": "Capstone.NetStandard",
+      "targetGraphs": [
+        "net6.0-windows7.0"
+      ]
+    },
+    {
+      "code": "NU1101",
+      "level": "Error",
+      "message": "Unable to find package Keystone.NET. No packages exist with this id in source(s): nuget.org",
+      "libraryId": "Keystone.NET",
+      "targetGraphs": [
+        "net6.0-windows7.0"
+      ]
+    }
+  ]
 }
