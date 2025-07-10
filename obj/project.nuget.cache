@@ -1,7 +1,7 @@
 {
   "version": 2,
-  "dgSpecHash": "npaWG5nq9uo=",
-  "success": true,
+  "dgSpecHash": "ceWpBiB5Odc=",
+  "success": false,
   "projectFilePath": "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\ProcessorEmulator.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\juler\\.nuget\\packages\\microsoft.netcore.app.ref\\6.0.36\\microsoft.netcore.app.ref.6.0.36.nupkg.sha512",
@@ -9,5 +9,28 @@
     "C:\\Users\\juler\\.nuget\\packages\\microsoft.aspnetcore.app.ref\\6.0.36\\microsoft.aspnetcore.app.ref.6.0.36.nupkg.sha512",
     "C:\\Users\\juler\\.nuget\\packages\\microsoft.netcore.app.host.win-x64\\6.0.36\\microsoft.netcore.app.host.win-x64.6.0.36.nupkg.sha512"
   ],
-  "logs": []
+  "logs": [
+    {
+      "code": "NU1101",
+      "level": "Error",
+      "message": "Unable to find package Capstone.NetStandard. No packages exist with this id in source(s): nuget.org",
+      "projectPath": "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\ProcessorEmulator.csproj",
+      "filePath": "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\ProcessorEmulator.csproj",
+      "libraryId": "Capstone.NetStandard",
+      "targetGraphs": [
+        "net6.0-windows7.0"
+      ]
+    },
+    {
+      "code": "NU1101",
+      "level": "Error",
+      "message": "Unable to find package Keystone.NET. No packages exist with this id in source(s): nuget.org",
+      "projectPath": "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\ProcessorEmulator.csproj",
+      "filePath": "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\ProcessorEmulator.csproj",
+      "libraryId": "Keystone.NET",
+      "targetGraphs": [
+        "net6.0-windows7.0"
+      ]
+    }
+  ]
 }
