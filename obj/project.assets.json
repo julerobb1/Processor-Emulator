@@ -5,9 +5,7 @@
   },
   "libraries": {},
   "projectFileDependencyGroups": {
-    "net6.0-windows7.0": [
-      "Unicorn.Net >= 1.0.4"
-    ]
+    "net6.0-windows7.0": []
   },
   "packageFolders": {
     "C:\\Users\\juler\\.nuget\\packages\\": {}
@@ -51,12 +49,6 @@
     "frameworks": {
       "net6.0-windows7.0": {
         "targetAlias": "net6.0-windows",
-        "dependencies": {
-          "Unicorn.Net": {
-            "target": "Package",
-            "version": "[1.0.4, )"
-          }
-        },
         "imports": [
           "net461",
           "net462",
@@ -97,16 +89,5 @@
         "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.300\\RuntimeIdentifierGraph.json"
       }
     }
-  },
-  "logs": [
-    {
-      "code": "NU1101",
-      "level": "Error",
-      "message": "Unable to find package Unicorn.Net. No packages exist with this id in source(s): nuget.org",
-      "libraryId": "Unicorn.Net",
-      "targetGraphs": [
-        "net6.0-windows7.0"
-      ]
-    }
-  ]
+  }
 }
