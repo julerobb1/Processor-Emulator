@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "dgSpecHash": "ceWpBiB5Odc=",
+  "dgSpecHash": "qp/pzXdboGE=",
   "success": false,
   "projectFilePath": "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\ProcessorEmulator.csproj",
   "expectedPackageFiles": [
@@ -13,21 +13,10 @@
     {
       "code": "NU1101",
       "level": "Error",
-      "message": "Unable to find package Capstone.NetStandard. No packages exist with this id in source(s): nuget.org",
+      "message": "Unable to find package Unicorn.Net. No packages exist with this id in source(s): nuget.org",
       "projectPath": "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\ProcessorEmulator.csproj",
       "filePath": "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\ProcessorEmulator.csproj",
-      "libraryId": "Capstone.NetStandard",
-      "targetGraphs": [
-        "net6.0-windows7.0"
-      ]
-    },
-    {
-      "code": "NU1101",
-      "level": "Error",
-      "message": "Unable to find package Keystone.NET. No packages exist with this id in source(s): nuget.org",
-      "projectPath": "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\ProcessorEmulator.csproj",
-      "filePath": "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\ProcessorEmulator.csproj",
-      "libraryId": "Keystone.NET",
+      "libraryId": "Unicorn.Net",
       "targetGraphs": [
         "net6.0-windows7.0"
       ]
