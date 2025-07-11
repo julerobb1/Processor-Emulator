@@ -10,7 +10,6 @@
   <ItemGroup>
     <!-- Unicorn.NET for in-memory binary translation -->
     <PackageReference Include="Unicorn.Net" Version="1.0.4" />
-  <ItemGroup>
-    <!-- Unicorn.NET for GUI-only cross-ISA translation -->
-    <PackageReference Include="Unicorn.Net" Version="1.0.4" />
   </ItemGroup>
+  
+</Project>
