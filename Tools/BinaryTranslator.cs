@@ -3,13 +3,32 @@ using System.IO;
 using System.Windows;
 using System.Collections.Generic;
 using Unicorn;
-using Unicorn.X86;
-using Unicorn.ARM;
-using Unicorn.ARM64;
-using Unicorn.MIPS;
-using Unicorn.PPC;
-using Unicorn.SPARC;
-using Unicorn.RISCV;
+
+// Stub definitions for Unicorn types to allow compilation without the actual wrapper.
+// TODO: Remove these stubs when a real Unicorn.NET wrapper is referenced.
+namespace Unicorn
+{
+    public enum UnicornArch { X86, ARM, ARM64, MIPS, PPC, SPARC, RISCV }
+    public enum UnicornMode { Bit32, Bit64, Arm, LittleEndian, Mips32LittleEndian, PPC32, PPC64, Sparc32, Sparc64, RiscV32, RiscV64 }
+    public enum HookType { Code }
+    public class UnicornEngine : IDisposable
+    {
+        public UnicornEngine(UnicornArch arch, UnicornMode mode) { }
+        public MemoryManager Memory { get; } = new MemoryManager();
+        public RegisterManager Registers { get; } = new RegisterManager();
+        public HookManager Hooks { get; } = new HookManager();
+        public void Start(ulong begin, ulong end) { }
+        public void Dispose() { }
+    }
+    public class MemoryManager
+    {
+        public void Map(ulong address, ulong size) { }
+        public void Write(ulong address, byte[] bytes) { }
+        public byte[] Read(ulong address, int length) => Array.Empty<byte>();
+    }
+    public class RegisterManager { public ulong PC { get; set; } }
+    public class HookManager { public void Add(HookType type, Action<UnicornEngine, ulong, int, object> callback) { } }
+}
 
 namespace ProcessorEmulator.Tools
 {
