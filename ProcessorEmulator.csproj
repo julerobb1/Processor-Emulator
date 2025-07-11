@@ -7,9 +7,10 @@
     <RootNamespace>ProcessorEmulator</RootNamespace>
     <AssemblyName>ProcessorEmulator</AssemblyName>
   </PropertyGroup>
+  <!-- Remove any residual Unicorn.Net package references to avoid NU1101 errors -->
   <ItemGroup>
-    <!-- Unicorn.NET for in-memory binary translation -->
-    <PackageReference Include="Unicorn.Net" Version="1.0.4" />
+    <PackageReference Remove="Unicorn.Net" />
   </ItemGroup>
+  <!-- Using stub Unicorn definitions in Tools/BinaryTranslator.cs; remove external package until proper wrapper is available -->
   
 </Project>
