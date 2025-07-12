@@ -196,8 +196,8 @@ namespace ProcessorEmulator
             {
                 // Fallback to QEMU with optional extra CLI options
                 StatusBarText("Homebrew emulator not implemented for this architecture, falling back to QEMU...");
-                // Prompt user for extra QEMU command-line options
-                string extraArgs = PromptUserForInput("Enter extra QEMU options (leave blank for default):")?.Trim() ?? string.Empty;
+                // Prompt user for extra QEMU command-line options using a detailed dialog
+                string extraArgs = PromptForQemuOptions();
                 try
                 {
                     if (!string.IsNullOrEmpty(extraArgs))
@@ -707,6 +707,7 @@ namespace ProcessorEmulator
             return result;
         }
 
+
         private byte[] ReadAndTranslateFile(string filePath, string fromArch, string toArch)
         {
             // Load raw data
@@ -867,5 +868,42 @@ namespace ProcessorEmulator
         }
 
         // All duplicate methods/helpers have been removed for clarity.
+
+        // New method to prompt user for QEMU options
+        private string PromptForQemuOptions()
+        {
+            var dialog = new Window
+            {
+                Title = "QEMU Options",
+                Width = 500,
+                Height = 300,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                ResizeMode = ResizeMode.CanResize,
+                Owner = this
+            };
+            var stack = new StackPanel { Margin = new Thickness(10) };
+            stack.Children.Add(new TextBlock { Text = "Enter extra QEMU command-line options:", Margin = new Thickness(0, 0, 0, 5) });
+            var textBox = new TextBox
+            {
+                AcceptsReturn = true,
+                Text = string.Empty,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Height = 180
+            };
+            stack.Children.Add(textBox);
+            var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 10, 0, 0) };
+            var okButton = new Button { Content = "OK", Width = 80, IsDefault = true, Margin = new Thickness(0, 0, 5, 0) };
+            var cancelButton = new Button { Content = "Cancel", Width = 80, IsCancel = true };
+            btnPanel.Children.Add(okButton);
+            btnPanel.Children.Add(cancelButton);
+            stack.Children.Add(btnPanel);
+            dialog.Content = stack;
+            string result = null;
+            okButton.Click += (s, e) => { result = textBox.Text.Trim(); dialog.DialogResult = true; dialog.Close(); };
+            if (dialog.ShowDialog() == true)
+                return result;
+            return string.Empty;
+        }
     }
 }
