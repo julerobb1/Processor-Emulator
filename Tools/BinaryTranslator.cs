@@ -2,9 +2,10 @@ using System;
 using System.IO;
 using System.Windows;
 using System.Collections.Generic;
-using Unicorn;
+using System.Diagnostics;
 
 // Stub Unicorn namespace definitions for in-process translation
+// (Placed before ProcessorEmulator.Tools)
 namespace Unicorn
 {
     public enum UnicornArch { X86, PPC, ARM, ARM64, MIPS, SPARC, RISCV }
@@ -33,7 +34,6 @@ namespace Unicorn
         public void Add(HookType type, Action<UnicornEngine, ulong, uint, object> callback) { /* Stub: no-op */ }
     }
 }
-using System.Diagnostics;
 
 namespace ProcessorEmulator.Tools
 {
