@@ -61,7 +61,8 @@ namespace ProcessorEmulator.Tools
         private static string GetQemuArgs(string imagePath, string architecture)
         {
             // Basic args, can be extended for more options
-            return $"-m 256 -drive file=\"{imagePath}\",format=raw -nographic";
+            // Use default graphical display; remove nographic to show firmware UI
+            return $"-m 256 -drive file=\"{imagePath}\",format=raw";
         }
 
         public static void Launch(string imagePath, string architecture)
@@ -71,16 +72,15 @@ namespace ProcessorEmulator.Tools
                 throw new FileNotFoundException($"QEMU executable not found: {qemuExe}");
 
             var args = GetQemuArgs(imagePath, architecture);
+            // Launch QEMU with GUI window
             var process = new Process
             {
                 StartInfo = new ProcessStartInfo
                 {
                     FileName = qemuExe,
                     Arguments = args,
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    CreateNoWindow = true
+                    UseShellExecute = true,
+                    CreateNoWindow = false
                 }
             };
             process.Start();
@@ -93,16 +93,15 @@ namespace ProcessorEmulator.Tools
                 throw new FileNotFoundException($"QEMU executable not found: {qemuExe}");
 
             var args = GetQemuArgs(imagePath, architecture) + " " + extraArgs;
+            // Launch QEMU with GUI window and extra args
             var process = new Process
             {
                 StartInfo = new ProcessStartInfo
                 {
                     FileName = qemuExe,
                     Arguments = args,
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    CreateNoWindow = true
+                    UseShellExecute = true,
+                    CreateNoWindow = false
                 }
             };
             process.Start();

@@ -7,5 +7,6 @@
     <RootNamespace>ProcessorEmulator</RootNamespace>
     <AssemblyName>ProcessorEmulator</AssemblyName>
   </PropertyGroup>
-
+  <!-- Using stub Unicorn definitions in Tools/BinaryTranslator.cs; no external package required -->
+  
 </Project>
