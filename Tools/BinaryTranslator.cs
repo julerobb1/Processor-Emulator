@@ -3,6 +3,7 @@ using System.IO;
 using System.Windows;
 using System.Collections.Generic;
 using System.Diagnostics;
+// using Unicorn; // removed: use fully qualified stub implementations below
 
 // Stub Unicorn namespace definitions for in-process translation
 // (Placed before ProcessorEmulator.Tools)
@@ -55,44 +56,44 @@ namespace ProcessorEmulator.Tools
             if (string.Equals(fromArch, toArch, StringComparison.OrdinalIgnoreCase))
                 return input;
             // Determine Unicorn arch/mode
-            UnicornEngine uc;
+            Unicorn.UnicornEngine uc;
             switch (fromArch.ToLowerInvariant())
             {
                 case "x86":
-                    uc = new UnicornEngine(UnicornArch.X86, UnicornMode.Bit32);
+                    uc = new Unicorn.UnicornEngine(Unicorn.UnicornArch.X86, Unicorn.UnicornMode.Bit32);
                     break;
                 case "x64":
                 case "x86_64":
-                    uc = new UnicornEngine(UnicornArch.X86, UnicornMode.Bit64);
+                    uc = new Unicorn.UnicornEngine(Unicorn.UnicornArch.X86, Unicorn.UnicornMode.Bit64);
                     break;
                 case "arm":
-                    uc = new UnicornEngine(UnicornArch.ARM, UnicornMode.Arm);
+                    uc = new Unicorn.UnicornEngine(Unicorn.UnicornArch.ARM, Unicorn.UnicornMode.Arm);
                     break;
                 case "arm64":
-                    uc = new UnicornEngine(UnicornArch.ARM64, UnicornMode.LittleEndian);
+                    uc = new Unicorn.UnicornEngine(Unicorn.UnicornArch.ARM64, Unicorn.UnicornMode.LittleEndian);
                     break;
                 case "mips":
-                    uc = new UnicornEngine(UnicornArch.MIPS, UnicornMode.Mips32LittleEndian);
+                    uc = new Unicorn.UnicornEngine(Unicorn.UnicornArch.MIPS, Unicorn.UnicornMode.Mips32LittleEndian);
                     break;
                 case "ppc":
                 case "ppc32":
-                    uc = new UnicornEngine(UnicornArch.PPC, UnicornMode.PPC32);
+                    uc = new Unicorn.UnicornEngine(Unicorn.UnicornArch.PPC, Unicorn.UnicornMode.PPC32);
                     break;
                 case "ppc64":
-                    uc = new UnicornEngine(UnicornArch.PPC, UnicornMode.PPC64);
+                    uc = new Unicorn.UnicornEngine(Unicorn.UnicornArch.PPC, Unicorn.UnicornMode.PPC64);
                     break;
                 case "sparc":
-                    uc = new UnicornEngine(UnicornArch.SPARC, UnicornMode.Sparc32);
+                    uc = new Unicorn.UnicornEngine(Unicorn.UnicornArch.SPARC, Unicorn.UnicornMode.Sparc32);
                     break;
                 case "sparc64":
-                    uc = new UnicornEngine(UnicornArch.SPARC, UnicornMode.Sparc64);
+                    uc = new Unicorn.UnicornEngine(Unicorn.UnicornArch.SPARC, Unicorn.UnicornMode.Sparc64);
                     break;
                 case "riscv":
                 case "riscv32":
-                    uc = new UnicornEngine(UnicornArch.RISCV, UnicornMode.RiscV32);
+                    uc = new Unicorn.UnicornEngine(Unicorn.UnicornArch.RISCV, Unicorn.UnicornMode.RiscV32);
                     break;
                 case "riscv64":
-                    uc = new UnicornEngine(UnicornArch.RISCV, UnicornMode.RiscV64);
+                    uc = new Unicorn.UnicornEngine(Unicorn.UnicornArch.RISCV, Unicorn.UnicornMode.RiscV64);
                     break;
                 default:
                     // RetDec fallback for unsupported ISA
@@ -107,7 +108,7 @@ namespace ProcessorEmulator.Tools
             uc.Registers.PC = BASE;
             var output = new List<byte>();
             // Hook instructions to capture translated bytes
-            uc.Hooks.Add(HookType.Code, (ucEngine, address, length, user) =>
+            uc.Hooks.Add(Unicorn.HookType.Code, (ucEngine, address, length, user) =>
             {
                 var bytes = ucEngine.Memory.Read(address, length);
                 output.AddRange(bytes);
