@@ -194,11 +194,21 @@ namespace ProcessorEmulator
             }
             catch (NotImplementedException)
             {
-                // Fallback to QEMU
+                // Fallback to QEMU with optional extra CLI options
                 StatusBarText("Homebrew emulator not implemented for this architecture, falling back to QEMU...");
+                // Prompt user for extra QEMU command-line options
+                string extraArgs = PromptUserForInput("Enter extra QEMU options (leave blank for default):")?.Trim() ?? string.Empty;
                 try
                 {
-                    EmulatorLauncher.Launch(filePath, arch);
+                    if (!string.IsNullOrEmpty(extraArgs))
+                    {
+                        // Use QemuManager directly for extra arguments
+                        ProcessorEmulator.Tools.QemuManager.LaunchWithArgs(filePath, arch, extraArgs);
+                    }
+                    else
+                    {
+                        EmulatorLauncher.Launch(filePath, arch);
+                    }
                     StatusBarText("QEMU emulation started.");
                 }
                 catch (Exception qex)
@@ -276,15 +286,32 @@ namespace ProcessorEmulator
                 IsWholeHome = isWholeHome
             };
             var emulator = new UverseEmulator(config);
+            ShowTextWindow("Uverse Emulation", new List<string> { "Initialized emulator with config." });
             emulator.LoadBootImage(sigPath);
+            ShowTextWindow("Uverse Emulation", new List<string> { $"Loaded boot image: {Path.GetFileName(sigPath)}" });
 
             // Attempt to load content signature in same folder
             string contentSig = Path.Combine(Path.GetDirectoryName(sigPath), "content.sig");
             if (File.Exists(contentSig))
+            {
                 emulator.LoadMediaroomContent(contentSig);
+                ShowTextWindow("Uverse Emulation", new List<string> { $"Loaded content signatures: {Path.GetFileName(contentSig)}" });
+            }
 
             emulator.EmulateWholeHomeNetwork();
+            ShowTextWindow("Uverse Emulation", new List<string> { "Configured whole home network." });
             UverseEmulator.StartMediaroom();
+            ShowTextWindow("Uverse Emulation", new List<string> { "Started Mediaroom platform." });
+            // Display Uverse emulation details to user
+            var uverseLog = new List<string>
+            {
+                $"Model: {model}",
+                $"Processor: {proc}",
+                $"Memory (MB): {mb}",
+                $"DVR Enabled: {isDVR}",
+                $"Whole Home Network: {isWholeHome}"
+            };
+            ShowTextWindow("Uverse Emulation Log", uverseLog);
 
             StatusBarText("Uverse emulation complete.");
             await Task.CompletedTask;
@@ -478,6 +505,22 @@ namespace ProcessorEmulator
             var targets = new[] { "x86", "x64", "ARM", "ARM64" };
             string toArch = PromptUserForChoice("Select target architecture:", targets);
             if (string.IsNullOrEmpty(toArch)) return;
+            // If this is a WinCE binary, launch emulator instead of static cross-compilation
+            if (IsWinCEBinary(inputData))
+            {
+                MessageBox.Show("WinCE binary detected; launching built-in emulator.", "WinCE Detected", MessageBoxButton.OK, MessageBoxImage.Information);
+                try
+                {
+                    EmulatorLauncher.Launch(inputPath, fromArch);
+                    StatusBarText("WinCE emulation started.");
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"WinCE emulation error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    StatusBarText("WinCE emulation failed.");
+                }
+                return;
+            }
             // perform translation/recompile
             byte[] outputData = ReadAndTranslateFile(inputPath, fromArch, toArch);
             var saveDlg = new SaveFileDialog { Filter = "Binary Output (*.bin)|*.bin|All Files (*.*)|*.*", FileName = Path.GetFileNameWithoutExtension(inputPath) + $"_{toArch}" };
