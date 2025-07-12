@@ -7,10 +7,6 @@
     <RootNamespace>ProcessorEmulator</RootNamespace>
     <AssemblyName>ProcessorEmulator</AssemblyName>
   </PropertyGroup>
-  <!-- Remove any residual Unicorn.Net package references to avoid NU1101 errors -->
-  <ItemGroup>
-    <PackageReference Remove="Unicorn.Net" />
-  </ItemGroup>
-  <!-- Using stub Unicorn definitions in Tools/BinaryTranslator.cs; remove external package until proper wrapper is available -->
+  <!-- Using stub Unicorn definitions in Tools/BinaryTranslator.cs; no external package required -->
   
 </Project>
