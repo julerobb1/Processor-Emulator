@@ -2,33 +2,12 @@ using System;
 using System.IO;
 using System.Windows;
 using System.Collections.Generic;
-using Unicorn;
-
-// Stub definitions for Unicorn types to allow compilation without the actual wrapper.
-// TODO: Remove these stubs when a real Unicorn.NET wrapper is referenced.
-namespace Unicorn
-{
-    public enum UnicornArch { X86, ARM, ARM64, MIPS, PPC, SPARC, RISCV }
-    public enum UnicornMode { Bit32, Bit64, Arm, LittleEndian, Mips32LittleEndian, PPC32, PPC64, Sparc32, Sparc64, RiscV32, RiscV64 }
-    public enum HookType { Code }
-    public class UnicornEngine : IDisposable
-    {
-        public UnicornEngine(UnicornArch arch, UnicornMode mode) { }
-        public MemoryManager Memory { get; } = new MemoryManager();
-        public RegisterManager Registers { get; } = new RegisterManager();
-        public HookManager Hooks { get; } = new HookManager();
-        public void Start(ulong begin, ulong end) { }
-        public void Dispose() { }
-    }
-    public class MemoryManager
-    {
-        public void Map(ulong address, ulong size) { }
-        public void Write(ulong address, byte[] bytes) { }
-        public byte[] Read(ulong address, int length) => Array.Empty<byte>();
-    }
-    public class RegisterManager { public ulong PC { get; set; } }
-    public class HookManager { public void Add(HookType type, Action<UnicornEngine, ulong, int, object> callback) { } }
-}
+using UnicornSharp;
+using UnicornSharp.Arch;
+using UnicornSharp.Control;
+using UnicornSharp.Memory;
+using UnicornSharp.Hooks;
+using System.Diagnostics;
 
 namespace ProcessorEmulator.Tools
 {
@@ -90,8 +69,8 @@ namespace ProcessorEmulator.Tools
                     uc = new UnicornEngine(UnicornArch.RISCV, UnicornMode.RiscV64);
                     break;
                 default:
-                    MessageBox.Show($"Unsupported ISA: {fromArch}", "Translate Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                    return input;
+                    // RetDec fallback for unsupported ISA
+                    return TranslateWithRetDec(fromArch, toArch, input);
             }
             const ulong BASE = 0x100000;
             ulong size = (ulong)input.Length;
@@ -115,9 +94,57 @@ namespace ProcessorEmulator.Tools
             catch (Exception ex)
             {
                 MessageBox.Show($"Emulation error: {ex.Message}", "Translate Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                // Fallback to RetDec CLI
+                return TranslateWithRetDec(fromArch, toArch, input);
             }
             uc.Dispose();
             return output.ToArray();
+        }
+
+        /// <summary>
+        /// Fallback translation using RetDec CLI.
+        /// </summary>
+        private static byte[] TranslateWithRetDec(string fromArch, string toArch, byte[] input)
+        {
+            string tempInput = null;
+            string tempOutput = null;
+            try
+            {
+                tempInput = Path.GetTempFileName();
+                tempOutput = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+                File.WriteAllBytes(tempInput, input);
+                var args = $"--mode raw -e {fromArch} -t {toArch} -o {tempOutput} {tempInput}";
+                var psi = new ProcessStartInfo("retdec-decompiler", args)
+                {
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                using var proc = Process.Start(psi);
+                proc.WaitForExit();
+                if (proc.ExitCode != 0)
+                {
+                    var err = proc.StandardError.ReadToEnd();
+                    MessageBox.Show($"RetDec error: {err}", "Translate Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return input;
+                }
+                if (File.Exists(tempOutput))
+                {
+                    return File.ReadAllBytes(tempOutput);
+                }
+                MessageBox.Show("RetDec did not produce output.", "Translate Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return input;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"RetDec invocation error: {ex.Message}", "Translate Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return input;
+            }
+            finally
+            {
+                try { File.Delete(tempInput); File.Delete(tempOutput); } catch { }
+            }
         }
     }
 }
