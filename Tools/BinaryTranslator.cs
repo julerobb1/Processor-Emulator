@@ -6,10 +6,9 @@ using System.Diagnostics;
 
 // Stub Unicorn namespace definitions for in-process translation
 namespace ProcessorEmulator.Tools.StubUnicorn
-{
-    public enum UnicornArch { X86, PPC, ARM, ARM64, MIPS, SPARC, RISCV }
-    public enum UnicornMode { Bit32, Bit64, Arm, LittleEndian, Mips32LittleEndian, PPC32, PPC64, Sparc32, Sparc64, RiscV32, RiscV64 }
-    public enum HookType { Code }
+    }
+    // Stub: memory manager for in-process translation
+    public class MemoryManager
     public class UnicornEngine : IDisposable
     {
         public UnicornArch Arch { get; }
@@ -20,6 +19,8 @@ namespace ProcessorEmulator.Tools.StubUnicorn
         public UnicornEngine(UnicornArch arch, UnicornMode mode) { Arch = arch; Mode = mode; }
         public void Start(ulong begin, ulong end) { /* Stub: no-op */ }
         public void Dispose() { /* Stub: no-op */ }
+    }
+    // Stub: memory manager for in-process translation
     public class MemoryManager
     {
         public void Map(ulong addr, ulong size) { /* Stub: no-op */ }
