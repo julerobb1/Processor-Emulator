@@ -52,11 +52,30 @@ namespace ProcessorEmulator.Tools
         /// <param name="toArch">Target architecture (e.g. "x64", "MIPS").</param>
         /// <param name="input">Original binary data.</param>
         /// <returns>Translated binary data for the target ISA.</returns>
+        /// <summary>
+        /// Flag to enable in-process Unicorn stub emulation instead of RetDec.
+        /// </summary>
+        public static bool UseUnicornEngine { get; set; } = false;
         public static byte[] Translate(string fromArch, string toArch, byte[] input)
         {
             // If no translation needed
             if (string.Equals(fromArch, toArch, StringComparison.OrdinalIgnoreCase))
                 return input;
+            // Use in-process Unicorn stub engine if toggled
+            if (UseUnicornEngine)
+                return TranslateWithUnicornEngine(fromArch, toArch, input);
+            // Otherwise use external RetDec tool for full cross-ISA translation
+            return TranslateWithRetDec(fromArch, toArch, input);
+        }
+
+        /// <summary>
+        /// In-process translation stub using Unicorn to execute and capture bytes. Only supports same-architecture emulation.
+        /// </summary>
+        private static byte[] TranslateWithUnicornEngine(string fromArch, string toArch, byte[] input)
+        {
+            // Only emulate if architectures match; otherwise fallback to RetDec
+            if (!string.Equals(fromArch, toArch, StringComparison.OrdinalIgnoreCase))
+                return TranslateWithRetDec(fromArch, toArch, input);
             // Determine Unicorn arch/mode
             StubUnicorn.UnicornEngine uc;
             switch (fromArch.ToLowerInvariant())
@@ -95,18 +114,14 @@ namespace ProcessorEmulator.Tools
                     uc = new StubUnicorn.UnicornEngine(StubUnicorn.UnicornArch.RISCV, StubUnicorn.UnicornMode.RiscV32);
                     break;
                 default:
-                    // RetDec fallback for unsupported ISA
-                    return TranslateWithRetDec(fromArch, toArch, input);
+                    return input;
             }
             const ulong BASE = 0x100000;
             ulong size = (ulong)input.Length;
-            // Map memory and write code
             uc.Memory.Map(BASE, size);
             uc.Memory.Write(BASE, input);
-            // Initialize PC
             uc.Registers.PC = BASE;
             var output = new List<byte>();
-            // Hook instructions to capture translated bytes
             uc.Hooks.Add(StubUnicorn.HookType.Code, (engine, address, length, user) =>
             {
                 var bytes = engine.Memory.Read(address, length);
@@ -114,19 +129,16 @@ namespace ProcessorEmulator.Tools
             });
             try
             {
-                // Run through the region once
                 uc.Start(BASE, BASE + size);
             }
-            catch (Exception ex)
+            catch
             {
-                MessageBox.Show($"Emulation error: {ex.Message}", "Translate Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                // Fallback to RetDec CLI
-                return TranslateWithRetDec(fromArch, toArch, input);
+                uc.Dispose();
+                return input;
             }
             uc.Dispose();
             return output.ToArray();
         }
-
         /// <summary>
         /// Fallback translation using RetDec CLI.
         /// </summary>
