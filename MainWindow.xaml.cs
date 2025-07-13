@@ -555,6 +555,19 @@ namespace ProcessorEmulator
             win.Show();
         }
 
+        // Menu event handlers to toggle Unicorn engine usage
+        private void UseUnicorn_Checked(object sender, RoutedEventArgs e)
+        {
+            BinaryTranslator.UseUnicornEngine = true;
+            StatusBarText("Unicorn engine enabled");
+        }
+
+        private void UseUnicorn_Unchecked(object sender, RoutedEventArgs e)
+        {
+            BinaryTranslator.UseUnicornEngine = false;
+            StatusBarText("Unicorn engine disabled");
+        }
+
         private static bool IsWinCEBinary(byte[] binary)
         {
             // Check PE header and subsystem for WinCE
