@@ -61,12 +61,118 @@ namespace ProcessorEmulator.Emulation
                 armEmu.Run();
                 return;
             }
-            // Add other ISA dispatch as needed
+            // Additional ISA dispatch
+            else if (architecture.StartsWith("X86", StringComparison.OrdinalIgnoreCase) ||
+                     architecture.StartsWith("I386", StringComparison.OrdinalIgnoreCase))
+            {
+                var x86Emu = new X86CpuEmulator();
+                x86Emu.LoadProgram(memory, 0);
+                x86Emu.Run();
+                return;
+            }
+            else if (architecture.StartsWith("SPARC64", StringComparison.OrdinalIgnoreCase))
+            {
+                var sparc64 = new Sparc64Emulator();
+                sparc64.LoadBinary(memory);
+                sparc64.Run();
+                return;
+            }
+            else if (architecture.StartsWith("SPARC", StringComparison.OrdinalIgnoreCase))
+            {
+                var sparc = new SparcEmulator();
+                sparc.LoadBinary(memory);
+                sparc.Run();
+                return;
+            }
+            else if (architecture.StartsWith("ALPHA", StringComparison.OrdinalIgnoreCase))
+            {
+                var alpha = new AlphaEmulator();
+                alpha.LoadBinary(memory);
+                alpha.Run();
+                return;
+            }
+            else if (architecture.StartsWith("SUPERH", StringComparison.OrdinalIgnoreCase) ||
+                     architecture.StartsWith("SH", StringComparison.OrdinalIgnoreCase))
+            {
+                var sh = new SuperHEmulator();
+                sh.LoadBinary(memory);
+                sh.Run();
+                return;
+            }
+            else if (architecture.StartsWith("RISCV32", StringComparison.OrdinalIgnoreCase))
+            {
+                var rv32 = new RiscV32Emulator();
+                rv32.LoadBinary(memory);
+                rv32.Run();
+                return;
+            }
+            else if (architecture.StartsWith("RISCV64", StringComparison.OrdinalIgnoreCase))
+            {
+                var rv64 = new RiscV64Emulator();
+                rv64.LoadBinary(memory);
+                rv64.Run();
+                return;
+            }
+            else if (architecture.StartsWith("S390X", StringComparison.OrdinalIgnoreCase))
+            {
+                var s390 = new S390XEmulator();
+                s390.LoadBinary(memory);
+                s390.Run();
+                return;
+            }
+            else if (architecture.StartsWith("HPPA", StringComparison.OrdinalIgnoreCase))
+            {
+                var hppa = new HppaEmulator();
+                hppa.LoadBinary(memory);
+                hppa.Run();
+                return;
+            }
+            else if (architecture.StartsWith("MICROBLAZE", StringComparison.OrdinalIgnoreCase))
+            {
+                var mb = new MicroBlazeEmulator();
+                mb.LoadBinary(memory);
+                mb.Run();
+                return;
+            }
+            else if (architecture.StartsWith("CRIS", StringComparison.OrdinalIgnoreCase))
+            {
+                var cris = new CrisEmulator();
+                cris.LoadBinary(memory);
+                cris.Run();
+                return;
+            }
+            else if (architecture.StartsWith("LM32", StringComparison.OrdinalIgnoreCase))
+            {
+                var lm = new Lm32Emulator();
+                lm.LoadBinary(memory);
+                lm.Run();
+                return;
+            }
+            else if (architecture.StartsWith("M68K", StringComparison.OrdinalIgnoreCase))
+            {
+                var m68k = new M68KEmulator();
+                m68k.LoadBinary(memory);
+                m68k.Run();
+                return;
+            }
+            else if (architecture.StartsWith("XTENSA", StringComparison.OrdinalIgnoreCase))
+            {
+                var xt = new XtensaEmulator();
+                xt.LoadBinary(memory);
+                xt.Run();
+                return;
+            }
+            else if (architecture.StartsWith("OPENRISC", StringComparison.OrdinalIgnoreCase))
+            {
+                var or = new OpenRiscEmulator();
+                or.LoadBinary(memory);
+                or.Run();
+                return;
+            }
             // Unknown or unsupported architecture: warn and fallback to QEMU
             MessageBox.Show(
                 $"Homebrew emulator not implemented for architecture: {architecture}.\nFalling back to QEMU emulation.",
                 "Homebrew Emulator", MessageBoxButton.OK, MessageBoxImage.Warning);
-            // Throw to signal MainWindow to catch and launch QEMU
             throw new NotImplementedException($"Homebrew emulator not implemented for architecture: {architecture}");
         }
         
