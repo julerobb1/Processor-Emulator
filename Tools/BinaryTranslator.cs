@@ -125,7 +125,11 @@ namespace ProcessorEmulator.Tools
                     break;
                 default:
                     // RetDec fallback for unsupported ISA
-                    return TranslateWithRetDec(fromArch, toArch, input);
+    public enum UnicornArch { X86, PPC, ARM, ARM64, MIPS, SPARC, RISCV }
+    public enum UnicornMode { Bit32, Bit64, Arm, LittleEndian, Mips32LittleEndian, PPC32, PPC64, Sparc32, Sparc64, RiscV32, RiscV64 }
+    public enum HookType { Code }
+
+    public class UnicornEngine : IDisposable
             }
             const ulong BASE = 0x100000;
             ulong size = (ulong)input.Length;
