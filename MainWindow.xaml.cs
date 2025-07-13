@@ -11,7 +11,6 @@ using System.Windows.Controls;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using System.Diagnostics;
-using ProcessorEmulator.Tools.StubUnicorn.ProcessorEmulator.Tools; // Add this if BinaryTranslator is in Tools namespace
 
 namespace ProcessorEmulator
 {
