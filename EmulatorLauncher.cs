@@ -1,4 +1,3 @@
-using System;
 using ProcessorEmulator.Tools;
 
 namespace ProcessorEmulator.Emulation
