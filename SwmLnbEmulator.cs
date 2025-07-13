@@ -1,5 +1,3 @@
-using System;
-
 namespace ProcessorEmulator.Emulation
 {
     // Stub for DIRECTV SWM LNB/Switch emulation
