@@ -185,8 +185,9 @@ namespace ProcessorEmulator.Tools
                 if (proc.ExitCode != 0)
                 {
                     var err = proc.StandardError.ReadToEnd();
-                    MessageBox.Show($"RetDec error: {err}", "Translate Error", MessageBoxButton.OK, MessageBoxImage.Error);
+// Stub Unicorn namespace definitions for in-process translation
                     return input;
+{
                 }
                 if (File.Exists(tempOutput))
                 {
