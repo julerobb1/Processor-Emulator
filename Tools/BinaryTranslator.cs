@@ -3,7 +3,6 @@ using System.IO;
 using System.Windows;
 using System.Collections.Generic;
 using System.Diagnostics;
-using StubUnicorn = ProcessorEmulator.Tools.StubUnicorn;
 
 // Stub Unicorn namespace definitions for in-process translation
 namespace ProcessorEmulator.Tools.StubUnicorn
