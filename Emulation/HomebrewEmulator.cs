@@ -1,4 +1,5 @@
 using System;
+using System.Windows;
 
 namespace ProcessorEmulator.Emulation
 {
@@ -61,9 +62,12 @@ namespace ProcessorEmulator.Emulation
                 return;
             }
             // Add other ISA dispatch as needed
-            // Unknown or unsupported architecture: skip homebrew emulation
-            Debug.WriteLine($"Homebrew emulator skipping unsupported architecture: {architecture}");
-            return;
+            // Unknown or unsupported architecture: warn and fallback to QEMU
+            MessageBox.Show(
+                $"Homebrew emulator not implemented for architecture: {architecture}.\nFalling back to QEMU emulation.",
+                "Homebrew Emulator", MessageBoxButton.OK, MessageBoxImage.Warning);
+            // Throw to signal MainWindow to catch and launch QEMU
+            throw new NotImplementedException($"Homebrew emulator not implemented for architecture: {architecture}");
         }
         
         public void Step()
