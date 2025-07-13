@@ -8,7 +8,13 @@
                 <MenuItem Header="_Open" Click="OpenMenuItem_Click"/>
                 <MenuItem Header="_Exit" />
             </MenuItem>
-            <MenuItem Header="_Edit" />
+            <MenuItem Header="_Edit">
+                <MenuItem Header="Use Unicorn Engine"
+                          ToolTip="Toggle in-process Unicorn stub engine for same-architecture execution-based translation"
+                          IsCheckable="True"
+                          Checked="UseUnicorn_Checked"
+                          Unchecked="UseUnicorn_Unchecked"/>
+            </MenuItem>
             <MenuItem Header="_Help" />
         </Menu>
         <StatusBar DockPanel.Dock="Bottom">
