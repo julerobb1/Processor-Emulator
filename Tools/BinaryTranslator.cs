@@ -3,12 +3,12 @@ using System.IO;
 using System.Windows;
 using System.Collections.Generic;
 using System.Diagnostics;
+using StubUnicorn = ProcessorEmulator.Tools.StubUnicorn;
 
 // Stub Unicorn namespace definitions for in-process translation
 namespace ProcessorEmulator.Tools.StubUnicorn
     }
     // Stub: memory manager for in-process translation
-    public class MemoryManager
     public class UnicornEngine : IDisposable
     {
         public UnicornArch Arch { get; }
@@ -30,6 +30,36 @@ namespace ProcessorEmulator.Tools.StubUnicorn
     public class RegisterManager { public ulong PC { get; set; } }
     public class HookManager
     {
+        public UnicornArch Arch { get; }
+        public UnicornMode Mode { get; }
+        public MemoryManager Memory { get; } = new MemoryManager();
+        public RegisterManager Registers { get; } = new RegisterManager();
+        public HookManager Hooks { get; } = new HookManager();
+
+        public UnicornEngine(UnicornArch arch, UnicornMode mode)
+        {
+            Arch = arch;
+            Mode = mode;
+        }
+
+        public void Start(ulong begin, ulong end) { /* Stub: no-op */ }
+
+        public void Dispose() { /* Stub: no-op */ }
+    }
+
+    public class MemoryManager
+    {
+        public void Map(ulong addr, ulong size) { /* Stub: no-op */ }
+        public void Write(ulong addr, byte[] data) { /* Stub: no-op */ }
+        public byte[] Read(ulong addr, uint length) { return new byte[length]; }
+    }
+
+    public class RegisterManager { public ulong PC { get; set; } }
+
+    public class HookManager
+    {
+        public void Add(HookType type, Action<UnicornEngine, ulong, uint, object> callback) { /* Stub: no-op */ }
+    }
         public void Add(HookType type, Action<UnicornEngine, ulong, uint, object> callback) { /* Stub: no-op */ }
     }
 }
