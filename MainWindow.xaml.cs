@@ -39,6 +39,8 @@ namespace ProcessorEmulator
         // Add a default constructor for XAML
         public MainWindow()
         {
+            // Load XAML UI components
+            InitializeComponent();
             // Initialize drag-and-drop for file support
             this.AllowDrop = true;
             this.Drop += MainWindow_Drop;
