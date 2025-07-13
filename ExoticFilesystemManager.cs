@@ -3,9 +3,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using ProcessorEmulator.Tools.FileSystems;
-using System.Reflection;
 
 namespace ProcessorEmulator.Tools
 {
