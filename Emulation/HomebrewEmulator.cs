@@ -61,7 +61,9 @@ namespace ProcessorEmulator.Emulation
                 return;
             }
             // Add other ISA dispatch as needed
-            throw new NotImplementedException($"Homebrew emulator not implemented for architecture: {architecture}");
+            // Unknown or unsupported architecture: skip homebrew emulation
+            Debug.WriteLine($"Homebrew emulator skipping unsupported architecture: {architecture}");
+            return;
         }
         
         public void Step()
