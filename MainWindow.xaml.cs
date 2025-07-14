@@ -454,7 +454,20 @@ namespace ProcessorEmulator
             string path = dlg.FileName;
             StatusBarText($"Launching RDK-V emulator for {Path.GetFileName(path)}...");
             var bin = File.ReadAllBytes(path);
+            // Auto-detect the binary's architecture
             var arch = ArchitectureDetector.Detect(bin);
+            Debug.WriteLine($"RDK-V auto-detected architecture: '{arch}'");
+            // Override Broadcom MIPS marker for X1 boxes to ARM
+            if (arch.StartsWith("MIPS32-BCM7346", StringComparison.OrdinalIgnoreCase))
+            {
+                Debug.WriteLine("Overriding BCM7346 MIPS detection to ARM for X1 hardware.");
+                arch = "ARM";
+                StatusBarText("Overrode architecture to ARM for X1 hardware");
+            }
+            else
+            {
+                StatusBarText($"Detected architecture: {arch}");
+            }
             try { EmulatorLauncher.Launch(path, arch, platform: "RDK-V"); StatusBarText("RDK-V emulation started."); }
             catch (Exception ex) { MessageBox.Show($"RDK-V error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error); StatusBarText("RDK-V emulation failed."); }
             await Task.CompletedTask;

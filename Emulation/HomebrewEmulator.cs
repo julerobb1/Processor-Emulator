@@ -1,5 +1,6 @@
 using System;
 using System.Windows;
+using ProcessorEmulator.Tools;
 
 namespace ProcessorEmulator.Emulation
 {
@@ -9,20 +10,22 @@ namespace ProcessorEmulator.Emulation
     /// </summary>
     public class HomebrewEmulator : IEmulator
     {
-        private readonly string architecture;
+        // Architecture is auto-detected from original binary
+        private byte[] originalBinary;
         private byte[] memory;
         private uint[] regs = new uint[32];
         private uint pc;
         private Tools.DeviceTreeManager.Node deviceTree;
 
-        public HomebrewEmulator(string architecture)
+        public HomebrewEmulator()
         {
-            this.architecture = architecture;
+            // No-op: architecture will be detected at runtime
         }
 
         public void LoadBinary(byte[] binary)
         {
-            // Load firmware into memory (256MB)
+            // Store original binary and load firmware into memory (256MB)
+            originalBinary = binary;
             memory = new byte[256 * 1024 * 1024];
             Array.Copy(binary, 0, memory, 0, binary.Length);
             // Detect Flattened Device Tree (FDT) blob in memory (magic 0xd00dfeed)
@@ -44,8 +47,11 @@ namespace ProcessorEmulator.Emulation
 
         public void Run()
         {
-            // Dispatch by architecture
-            if (architecture.StartsWith("MIPS", StringComparison.OrdinalIgnoreCase))
+            // Auto-detect architecture from original binary
+            var detectedArch = ArchitectureDetector.Detect(originalBinary);
+            Debug.WriteLine($"HomebrewEmulator: auto-detected architecture: {detectedArch}");
+            // Dispatch by detected architecture
+            if (detectedArch.StartsWith("MIPS", StringComparison.OrdinalIgnoreCase))
             {
                 // MIPS32 fetch-decode-execute
                 const int maxSteps = 1000000;
@@ -53,7 +59,7 @@ namespace ProcessorEmulator.Emulation
                     Step();
                 return;
             }
-            else if (architecture.StartsWith("ARM", StringComparison.OrdinalIgnoreCase))
+            else if (detectedArch.StartsWith("ARM", StringComparison.OrdinalIgnoreCase))
             {
                 // Delegate to ARM emulator stub
                 var armEmu = new ArmEmulator();
@@ -62,107 +68,107 @@ namespace ProcessorEmulator.Emulation
                 return;
             }
             // Additional ISA dispatch
-            else if (architecture.StartsWith("X86", StringComparison.OrdinalIgnoreCase) ||
-                     architecture.StartsWith("I386", StringComparison.OrdinalIgnoreCase))
+            else if (detectedArch.StartsWith("X86", StringComparison.OrdinalIgnoreCase) ||
+                     detectedArch.StartsWith("I386", StringComparison.OrdinalIgnoreCase))
             {
                 var x86Emu = new X86CpuEmulator();
                 x86Emu.LoadProgram(memory, 0);
                 x86Emu.Run();
                 return;
             }
-            else if (architecture.StartsWith("SPARC64", StringComparison.OrdinalIgnoreCase))
+            else if (detectedArch.StartsWith("SPARC64", StringComparison.OrdinalIgnoreCase))
             {
                 var sparc64 = new Sparc64Emulator();
                 sparc64.LoadBinary(memory);
                 sparc64.Run();
                 return;
             }
-            else if (architecture.StartsWith("SPARC", StringComparison.OrdinalIgnoreCase))
+            else if (detectedArch.StartsWith("SPARC", StringComparison.OrdinalIgnoreCase))
             {
                 var sparc = new SparcEmulator();
                 sparc.LoadBinary(memory);
                 sparc.Run();
                 return;
             }
-            else if (architecture.StartsWith("ALPHA", StringComparison.OrdinalIgnoreCase))
+            else if (detectedArch.StartsWith("ALPHA", StringComparison.OrdinalIgnoreCase))
             {
                 var alpha = new AlphaEmulator();
                 alpha.LoadBinary(memory);
                 alpha.Run();
                 return;
             }
-            else if (architecture.StartsWith("SUPERH", StringComparison.OrdinalIgnoreCase) ||
-                     architecture.StartsWith("SH", StringComparison.OrdinalIgnoreCase))
+            else if (detectedArch.StartsWith("SUPERH", StringComparison.OrdinalIgnoreCase) ||
+                     detectedArch.StartsWith("SH", StringComparison.OrdinalIgnoreCase))
             {
                 var sh = new SuperHEmulator();
                 sh.LoadBinary(memory);
                 sh.Run();
                 return;
             }
-            else if (architecture.StartsWith("RISCV32", StringComparison.OrdinalIgnoreCase))
+            else if (detectedArch.StartsWith("RISCV32", StringComparison.OrdinalIgnoreCase))
             {
                 var rv32 = new RiscV32Emulator();
                 rv32.LoadBinary(memory);
                 rv32.Run();
                 return;
             }
-            else if (architecture.StartsWith("RISCV64", StringComparison.OrdinalIgnoreCase))
+            else if (detectedArch.StartsWith("RISCV64", StringComparison.OrdinalIgnoreCase))
             {
                 var rv64 = new RiscV64Emulator();
                 rv64.LoadBinary(memory);
                 rv64.Run();
                 return;
             }
-            else if (architecture.StartsWith("S390X", StringComparison.OrdinalIgnoreCase))
+            else if (detectedArch.StartsWith("S390X", StringComparison.OrdinalIgnoreCase))
             {
                 var s390 = new S390XEmulator();
                 s390.LoadBinary(memory);
                 s390.Run();
                 return;
             }
-            else if (architecture.StartsWith("HPPA", StringComparison.OrdinalIgnoreCase))
+            else if (detectedArch.StartsWith("HPPA", StringComparison.OrdinalIgnoreCase))
             {
                 var hppa = new HppaEmulator();
                 hppa.LoadBinary(memory);
                 hppa.Run();
                 return;
             }
-            else if (architecture.StartsWith("MICROBLAZE", StringComparison.OrdinalIgnoreCase))
+            else if (detectedArch.StartsWith("MICROBLAZE", StringComparison.OrdinalIgnoreCase))
             {
                 var mb = new MicroBlazeEmulator();
                 mb.LoadBinary(memory);
                 mb.Run();
                 return;
             }
-            else if (architecture.StartsWith("CRIS", StringComparison.OrdinalIgnoreCase))
+            else if (detectedArch.StartsWith("CRIS", StringComparison.OrdinalIgnoreCase))
             {
                 var cris = new CrisEmulator();
                 cris.LoadBinary(memory);
                 cris.Run();
                 return;
             }
-            else if (architecture.StartsWith("LM32", StringComparison.OrdinalIgnoreCase))
+            else if (detectedArch.StartsWith("LM32", StringComparison.OrdinalIgnoreCase))
             {
                 var lm = new Lm32Emulator();
                 lm.LoadBinary(memory);
                 lm.Run();
                 return;
             }
-            else if (architecture.StartsWith("M68K", StringComparison.OrdinalIgnoreCase))
+            else if (detectedArch.StartsWith("M68K", StringComparison.OrdinalIgnoreCase))
             {
                 var m68k = new M68KEmulator();
                 m68k.LoadBinary(memory);
                 m68k.Run();
                 return;
             }
-            else if (architecture.StartsWith("XTENSA", StringComparison.OrdinalIgnoreCase))
+            else if (detectedArch.StartsWith("XTENSA", StringComparison.OrdinalIgnoreCase))
             {
                 var xt = new XtensaEmulator();
                 xt.LoadBinary(memory);
                 xt.Run();
                 return;
             }
-            else if (architecture.StartsWith("OPENRISC", StringComparison.OrdinalIgnoreCase))
+            else if (detectedArch.StartsWith("OPENRISC", StringComparison.OrdinalIgnoreCase))
             {
                 var or = new OpenRiscEmulator();
                 or.LoadBinary(memory);
@@ -171,9 +177,9 @@ namespace ProcessorEmulator.Emulation
             }
             // Unknown or unsupported architecture: warn and fallback to QEMU
             MessageBox.Show(
-                $"Homebrew emulator not implemented for architecture: {architecture}.\nFalling back to QEMU emulation.",
+                $"Homebrew emulator not implemented for architecture: {detectedArch}.\nFalling back to QEMU emulation.",
                 "Homebrew Emulator", MessageBoxButton.OK, MessageBoxImage.Warning);
-            throw new NotImplementedException($"Homebrew emulator not implemented for architecture: {architecture}");
+            throw new NotImplementedException($"Homebrew emulator not implemented for architecture: {detectedArch}");
         }
         
         public void Step()

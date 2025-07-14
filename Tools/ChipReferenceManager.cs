@@ -17,6 +17,7 @@ namespace ProcessorEmulator.Tools
             { "PE", "Generic PE format (Windows/WinCE)" },
             // Humax HR44/HR54 Receiver SoCs and components
             { "BCM7346DRKFEBB35G", "Broadcom BCM7346 SoC: main processor for Humax DIRECTV DVR" },
+            { "BCM7445",        "Broadcom BCM7445 (Brahma15) quad-core ARM Cortex-A15 SoC used in X1 set-top boxes" },
             { "BCM4506K0IE33G", "Broadcom BCM4506: satellite tuner and demodulator" },
             { "88W8801-NJR2", "Marvell 88W8801: Wi-Fi SoC for wireless connectivity" },
             { "MX65L1G80GAC1-10G", "Macronix MX65L1G80GAC1: 1Gb SPI NOR flash memory" },

@@ -7,6 +7,10 @@
     <RootNamespace>ProcessorEmulator</RootNamespace>
     <AssemblyName>ProcessorEmulator</AssemblyName>
   </PropertyGroup>
+  <!-- Pre-build: kill any running instance to avoid file lock issues -->
+  <Target Name="KillRunningProcess" BeforeTargets="Build">
+    <Exec Command="taskkill /f /im ProcessorEmulator.exe" ContinueOnError="true" />
+  </Target>
   <!-- Using stub Unicorn definitions in Tools/BinaryTranslator.cs; no external package required -->
   
 </Project>
