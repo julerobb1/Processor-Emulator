@@ -189,7 +189,7 @@ namespace ProcessorEmulator
             try
             {
                 // First attempt homebrew emulation
-                var home = new HomebrewEmulator(arch);
+                var home = new HomebrewEmulator();
                 home.LoadBinary(binary);
                 home.Run();
                 StatusBarText("Homebrew emulation complete.");
@@ -399,7 +399,7 @@ namespace ProcessorEmulator
             {
                 try
                 {
-                    var home = new HomebrewEmulator(arch);
+                    var home = new HomebrewEmulator();
                     home.LoadBinary(data);
                     home.Run();
                     StatusBarText("Homebrew emulation complete.");
