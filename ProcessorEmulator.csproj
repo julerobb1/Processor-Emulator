@@ -4,12 +4,15 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net6.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
+    <!-- Disable native apphost to prevent file lock issues on rebuild -->
+    <UseAppHost>false</UseAppHost>
     <RootNamespace>ProcessorEmulator</RootNamespace>
     <AssemblyName>ProcessorEmulator</AssemblyName>
   </PropertyGroup>
-  <!-- Pre-build: kill any running instance to avoid file lock issues -->
-  <Target Name="KillRunningProcess" BeforeTargets="Build">
-    <Exec Command="taskkill /f /im ProcessorEmulator.exe" ContinueOnError="true" />
+  <!-- Pre-build/clean: kill any running instance to avoid file lock issues -->
+  <Target Name="EnsureNoRunningInstance" BeforeTargets="Clean;Build;Rebuild;Publish">
+    <!-- Attempt to terminate any running ProcessorEmulator.exe -->
+    <Exec Command="taskkill /F /IM ProcessorEmulator.exe" ContinueOnError="true" />
   </Target>
   <!-- Using stub Unicorn definitions in Tools/BinaryTranslator.cs; no external package required -->
   
