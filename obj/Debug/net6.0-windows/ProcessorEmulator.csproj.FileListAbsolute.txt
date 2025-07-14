@@ -1,4 +1,3 @@
-c:\Users\juler\Documents\GitHub\Processor-Emulator\bin\Debug\net6.0-windows\ProcessorEmulator.exe
 c:\Users\juler\Documents\GitHub\Processor-Emulator\bin\Debug\net6.0-windows\ProcessorEmulator.deps.json
 c:\Users\juler\Documents\GitHub\Processor-Emulator\bin\Debug\net6.0-windows\ProcessorEmulator.runtimeconfig.json
 c:\Users\juler\Documents\GitHub\Processor-Emulator\bin\Debug\net6.0-windows\ProcessorEmulator.dll
