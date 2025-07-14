@@ -34,6 +34,10 @@ namespace ProcessorEmulator
 
     public partial class MainWindow : Window, IMainWindow
     {
+        // Ensure InitializeComponent exists even if XAML generation missed it
+        [System.Diagnostics.DebuggerNonUserCode]
+        private void InitializeComponent() {}
+
         private IEmulator currentEmulator;
 
         // Add a default constructor for XAML
