@@ -19,3 +19,4 @@ c:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Debug\net6.0-windows\refi
 c:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Debug\net6.0-windows\ProcessorEmulator.pdb
 c:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Debug\net6.0-windows\ProcessorEmulator.genruntimeconfig.cache
 c:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Debug\net6.0-windows\ref\ProcessorEmulator.dll
+C:\Users\juler\Documents\GitHub\Processor-Emulator\bin\Debug\net6.0-windows\ProcessorEmulator.exe
