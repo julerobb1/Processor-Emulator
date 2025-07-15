@@ -22,6 +22,9 @@ namespace ProcessorEmulator.Tools
             { "88W8801-NJR2", "Marvell 88W8801: Wi-Fi SoC for wireless connectivity" },
             { "MX65L1G80GAC1-10G", "Macronix MX65L1G80GAC1: 1Gb SPI NOR flash memory" },
             { "QL01GS1DHSSG", "Spansion QL01GS1DHSSG: 1Gb SPI NOR flash memory for firmware storage" },
+            // Added entries for BCM7405 and MIPS4380 based on hardware references
+            { "BCM7405", "Broadcom BCM7405: MIPS 4380 class SoC commonly used in set-top boxes" },
+            { "MIPS4380", "MIPS 4380 class CPU: core used in Broadcom SoCs such as BCM7405" },
             // STMicroelectronics SoCs (cooler running than Broadcom)
             { "STi7101", "STMicro STi7101 SoC: DVB multimedia decoder and processing unit" },
             { "STi7200", "STMicro STi7200 SoC: high-performance DVB multimedia processor" },
