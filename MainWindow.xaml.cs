@@ -47,6 +47,11 @@ namespace ProcessorEmulator
             this.Drop += MainWindow_Drop;
         }
 
+        private void InitializeComponent()
+        {
+            throw new NotImplementedException();
+        }
+
         public MainWindow(IEmulator currentEmulator)
         {
             this.currentEmulator = currentEmulator;
