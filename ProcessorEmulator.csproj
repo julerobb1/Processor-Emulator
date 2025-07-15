@@ -4,8 +4,11 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net6.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
-    <!-- Disable native apphost to prevent file lock issues on rebuild -->
-    <UseAppHost>false</UseAppHost>
+    <!-- Disable implicit XAML items; explicitly include them for code-behind generation -->
+    <EnableDefaultApplicationDefinitionItems>false</EnableDefaultApplicationDefinitionItems>
+    <EnableDefaultPageItems>false</EnableDefaultPageItems>
+    <!-- Enable native apphost so an .exe is generated -->
+    <UseAppHost>true</UseAppHost>
     <RootNamespace>ProcessorEmulator</RootNamespace>
     <AssemblyName>ProcessorEmulator</AssemblyName>
   </PropertyGroup>
@@ -15,5 +18,8 @@
     <Exec Command="taskkill /F /IM ProcessorEmulator.exe" ContinueOnError="true" />
   </Target>
   <!-- Using stub Unicorn definitions in Tools/BinaryTranslator.cs; no external package required -->
-  
+  <ItemGroup>
+    <ApplicationDefinition Include="App.xaml" />
+    <Page Include="MainWindow.xaml" />
+  </ItemGroup>
 </Project>
