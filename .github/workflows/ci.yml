@@ -26,4 +26,5 @@ jobs:
         run: dotnet build ProcessorEmulator.csproj --configuration Release --no-restore
 
       - name: Run tests (if any)
-        run: echo "Skipping tests: no test projects defined."
+        run: |
+          echo "Skipping tests: no test projects defined."
