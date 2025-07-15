@@ -5,33 +5,46 @@ Supports generic CPU/OS emulation, RDK-V/B, Uverse, DirecTV firmware analysis, f
 
 ## Features
 
-- **Generic CPU/OS Emulation:**  
   Load and emulate binaries for a wide range of architectures (MIPS, ARM, x86, PowerPC, SPARC, etc.) using QEMU or custom emulators.
 
-- **RDK-V Emulator:**  
   (Planned) Emulate RDK-V set-top box environments for research and reverse engineering.
 
-- **RDK-B Emulator:**  
   (Planned) Emulate RDK-B broadband gateway environments.
 
-- **Simulate SWM Switch/LNB:**  
   (Planned) Simulate DirecTV SWM switches and LNBs for testing and analysis.
 
-- **Probe Filesystem:**  
   Analyze and identify the type of filesystem in a given image or partition.
 
-- **Emulate CMTS Head End:**  
   (Planned) Simulate a Cable Modem Termination System (CMTS) head end for DOCSIS research.
 
-- **Uverse Box Emulator:**  
   (Planned) Emulate AT&T Uverse set-top boxes, including WinCE-based environments.
 
-- **DirecTV Box/Firmware Analysis:**  
   Analyze DirecTV firmware images for structure, content, and possible vulnerabilities.
 
-- **Linux Filesystem Read/Write:**  
   (Planned) Read and write to Linux filesystems (ext2/3/4, JFFS2, UBIFS, etc.) from Windows.
 
+
+## Cross-Compile Binary (RetDec Integration)
+
+This tool uses the [RetDec decompiler](https://github.com/avast/retdec) CLI to perform static cross-architecture translation of raw binaries.
+
+Prerequisites:
+1. Install RetDec on your system and ensure `retdec-decompiler` is in your PATH.
+   - Windows: Download the latest [RetDec Windows release](https://github.com/avast/retdec/releases) and add its `bin` folder to your PATH.
+   - Linux/macOS: Follow RetDec build instructions or use package manager if available.
+2. Supported source/target architectures: x86 (32-bit), x64 (64-bit), ARM, ARM64, MIPS.
+
+Usage:
+1. In the app UI, select **Cross-Compile Binary**.
+2. Choose an input file (`.bin`, `.exe`, etc.).
+3. Pick the target architecture from the dropdown.
+4. The tool will invoke:
+   ```
+   retdec-decompiler --mode raw -e <source> -t <target> -o <output> <input>
+   ```
+5. The resulting file will be saved and opened in a result window.
+
+Note: Raw mode preserves only code sections. PE/ELF headers are not rebuilt. For full executable formats, integrate a header-rebuilder or patcher on the output.
 ## Getting Started
 
 1. **Clone the repository:**

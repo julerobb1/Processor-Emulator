@@ -1,0 +1,35 @@
+name: Release Drafter
+
+on:
+  push:
+    branches: [dev, main]
+
+jobs:
+  update_release_draft:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: release-drafter/release-drafter@v5
+        with:
+          config-name: "release-drafter.yml"
+          template: |
+            # 🎉 Release {{ version }}
+            
+            Hello everyone!
+            
+            We’re excited to share **{{ version }}** with you. Here’s what’s new:
+            
+            {{#changes}}
+            {{> change}}
+            {{/changes}}
+            
+            A heartfelt thank you to all contributors:
+            {{#contributors}}
+            - @{{this}}
+            {{/contributors}}
+            
+            Stay tuned for more updates!
+          change-template: |
+            {{#if is:added}}✨ **New** {{description}} (thanks @{{author}})!{{/if}}
+            {{#if is:changed}}🔄 **Updated** {{description}} (thanks @{{author}})!{{/if}}
+            {{#if is:fixed}}🐞 **Fixed** {{description}} (thanks @{{author}})!{{/if}}

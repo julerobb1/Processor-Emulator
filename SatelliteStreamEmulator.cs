@@ -1,5 +1,3 @@
-using System;
-
 namespace ProcessorEmulator.Emulation
 {
     // Placeholder for satellite transport stream and keep-alive emulation

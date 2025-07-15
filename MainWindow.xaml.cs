@@ -5,9 +5,12 @@ using System.Windows;
 using Microsoft.Win32;
 using System.Threading.Tasks;
 using System.IO;
+using System.Linq;
 using System;
 using System.Windows.Controls;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
+using System.Diagnostics;
 
 namespace ProcessorEmulator
 {
@@ -31,13 +34,18 @@ namespace ProcessorEmulator
 
     public partial class MainWindow : Window, IMainWindow
     {
+
         private IEmulator currentEmulator;
 
         // Add a default constructor for XAML
         public MainWindow()
         {
-            // Optionally initialize fields here
+            // Load XAML UI components
+            // Initialize drag-and-drop for file support
+            this.AllowDrop = true;
+            this.Drop += MainWindow_Drop;
         }
+
 
         public MainWindow(IEmulator currentEmulator)
         {
@@ -98,7 +106,9 @@ namespace ProcessorEmulator
                 "Emulate CMTS Head End",
                 "Uverse Box Emulator",
                 "DirecTV Box/Firmware Analysis",
-                "Linux Filesystem Read/Write"
+                "Executable Analysis",
+                "Linux Filesystem Read/Write",
+                "Cross-Compile Binary"
             };
             string mainChoice = PromptUserForChoice("What would you like to do?", mainOptions);
             if (string.IsNullOrEmpty(mainChoice)) return;
@@ -132,8 +142,14 @@ namespace ProcessorEmulator
                 case "DirecTV Box/Firmware Analysis":
                     await HandleDirectvAnalysis();
                     break;
+                case "Executable Analysis":
+                    await HandleExecutableAnalysis();
+                    break;
                 case "Linux Filesystem Read/Write":
                     await HandleLinuxFsReadWrite();
+                    break;
+                case "Cross-Compile Binary":
+                    await HandleCrossCompile();
                     break;
                 default:
                     MessageBox.Show("Not implemented yet.", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -169,18 +185,28 @@ namespace ProcessorEmulator
             try
             {
                 // First attempt homebrew emulation
-                var home = new HomebrewEmulator(arch);
+                var home = new HomebrewEmulator();
                 home.LoadBinary(binary);
                 home.Run();
                 StatusBarText("Homebrew emulation complete.");
             }
             catch (NotImplementedException)
             {
-                // Fallback to QEMU
+                // Fallback to QEMU with optional extra CLI options
                 StatusBarText("Homebrew emulator not implemented for this architecture, falling back to QEMU...");
+                // Prompt user for extra QEMU command-line options using a detailed dialog
+                string extraArgs = PromptForQemuOptions();
                 try
                 {
-                    EmulatorLauncher.Launch(filePath, arch);
+                    if (!string.IsNullOrEmpty(extraArgs))
+                    {
+                        // Use QemuManager directly for extra arguments
+                        ProcessorEmulator.Tools.QemuManager.LaunchWithArgs(filePath, arch, extraArgs);
+                    }
+                    else
+                    {
+                        EmulatorLauncher.Launch(filePath, arch);
+                    }
                     StatusBarText("QEMU emulation started.");
                 }
                 catch (Exception qex)
@@ -232,34 +258,75 @@ namespace ProcessorEmulator
         {
             var openFileDialog = new OpenFileDialog
             {
-                Filter = "Uverse Boot or Signature File (*.bin;*.sig)|*.bin;*.sig|All Files (*.*)|*.*"
+                Filter = "Firmware Images (*.bin;*.img;*.sig)|*.bin;*.img;*.sig|All Files (*.*)|*.*"
             };
             if (openFileDialog.ShowDialog() != true) return;
 
-            string sigPath = openFileDialog.FileName;
-            StatusBarText($"Loading Uverse configuration from {Path.GetFileName(sigPath)}...");
-
-            // Example hardware config: adjust as needed or prompt user
-            var config = new UverseHardwareConfig
+            string filePath = openFileDialog.FileName;
+            StatusBarText($"Selected file: {Path.GetFileName(filePath)}");
+            try
             {
-                ModelType = "VIP2250",
-                ProcessorType = "ARM",
-                MemorySize = 128 * 1024 * 1024,
-                IsDVR = true,
-                IsWholeHome = false
-            };
-            var emulator = new UverseEmulator(config);
-            emulator.LoadBootImage(sigPath);
+                string ext = Path.GetExtension(filePath).ToLowerInvariant();
+                string extractDir = Path.Combine(Path.GetDirectoryName(filePath), Path.GetFileNameWithoutExtension(filePath) + "_extracted");
+                if (ext != ".sig")
+                {
+                    // Perform generic firmware analysis
+                    await Task.Run(() => ArchiveExtractor.ExtractAndAnalyze(filePath, extractDir));
+                    FirmwareAnalyzer.AnalyzeFirmwareArchive(filePath, extractDir);
+                    StatusBarText("Firmware analysis complete.");
+                    MessageBox.Show($"Firmware {Path.GetFileName(filePath)} analyzed in {extractDir}", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
 
-            // Attempt to load content signature in same folder
-            string contentSig = Path.Combine(Path.GetDirectoryName(sigPath), "content.sig");
-            if (File.Exists(contentSig))
-                emulator.LoadMediaroomContent(contentSig);
-
-            emulator.EmulateWholeHomeNetwork();
-            UverseEmulator.StartMediaroom();
-
-            StatusBarText("Uverse emulation complete.");
+                // Signature-based Uverse emulation
+                StatusBarText($"Loading Uverse config from {Path.GetFileName(filePath)}...");
+                string model = PromptUserForInput("Enter model type (e.g. VIP2250):")?.Trim();
+                if (string.IsNullOrWhiteSpace(model)) model = "VIP2250";
+                string proc = PromptUserForInput("Enter processor type (e.g. ARM/x86):")?.Trim();
+                if (string.IsNullOrWhiteSpace(proc)) proc = "ARM";
+                string memInput = PromptUserForInput("Enter memory size in MB:")?.Trim();
+                if (!int.TryParse(memInput, out int mb)) mb = 128;
+                uint memBytes = (uint)(mb * 1024 * 1024);
+                bool isDVR = PromptUserForChoice("Is this device a DVR?", new[] { "Yes", "No" }) == "Yes";
+                bool isWholeHome = PromptUserForChoice("Enable Whole Home network?", new[] { "Yes", "No" }) == "Yes";
+                var config = new UverseHardwareConfig
+                {
+                    ModelType = model,
+                    ProcessorType = proc,
+                    MemorySize = memBytes,
+                    IsDVR = isDVR,
+                    IsWholeHome = isWholeHome
+                };
+                var emulator = new UverseEmulator(config);
+                ShowTextWindow("Uverse Emulation", new List<string> { "Initialized emulator with config." });
+                emulator.LoadBootImage(filePath);
+                ShowTextWindow("Uverse Emulation", new List<string> { $"Loaded boot image: {Path.GetFileName(filePath)}" });
+                string contentSig = Path.Combine(Path.GetDirectoryName(filePath), "content.sig");
+                if (File.Exists(contentSig))
+                {
+                    emulator.LoadMediaroomContent(contentSig);
+                    ShowTextWindow("Uverse Emulation", new List<string> { $"Loaded content signatures: {Path.GetFileName(contentSig)}" });
+                }
+                emulator.EmulateWholeHomeNetwork();
+                ShowTextWindow("Uverse Emulation", new List<string> { "Configured whole home network." });
+                UverseEmulator.StartMediaroom();
+                ShowTextWindow("Uverse Emulation", new List<string> { "Started Mediaroom platform." });
+                var uverseLog = new List<string>
+                {
+                    $"Model: {model}",
+                    $"Processor: {proc}",
+                    $"Memory (MB): {mb}",
+                    $"DVR Enabled: {isDVR}",
+                    $"Whole Home Network: {isWholeHome}"
+                };
+                ShowTextWindow("Uverse Emulation Log", uverseLog);
+                StatusBarText("Uverse emulation complete.");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Uverse processing failed: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusBarText("Uverse processing failed.");
+            }
             await Task.CompletedTask;
         }
 
@@ -278,15 +345,129 @@ namespace ProcessorEmulator
             if (openFileDialog.ShowDialog() == true)
             {
                 string filePath = openFileDialog.FileName;
-                StatusBarText($"Selected DirecTV firmware: {Path.GetFileName(filePath)}");
-                string extractDir = Path.Combine(Path.GetDirectoryName(filePath), Path.GetFileNameWithoutExtension(filePath) + "_directv_extracted");
-                await Task.Run(() => ArchiveExtractor.ExtractAndAnalyze(filePath, extractDir));
-                StatusBarText("DirecTV firmware extraction and analysis complete.");
-                MessageBox.Show($"DirecTV firmware {Path.GetFileName(filePath)} extracted and analyzed to {extractDir}.", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+                StatusBarText($"Selected firmware: {Path.GetFileName(filePath)}");
+                string extractDir = Path.Combine(Path.GetDirectoryName(filePath), Path.GetFileNameWithoutExtension(filePath) + "_extracted");
+                try
+                {
+                    // Extract archive and analyze file structure
+                    await Task.Run(() => ArchiveExtractor.ExtractAndAnalyze(filePath, extractDir));
+                    // Further analyze binaries in the extracted directory
+                    FirmwareAnalyzer.AnalyzeFirmwareArchive(filePath, extractDir);
+                    StatusBarText("Firmware extraction and analysis complete.");
+                    MessageBox.Show($"Firmware {Path.GetFileName(filePath)} extracted and analyzed to {extractDir}.", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Analysis failed: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    StatusBarText("Firmware analysis failed.");
+                }
             }
         await Task.CompletedTask;
         }
 
+        /// <summary>
+        /// Analyzes arbitrary executables or binaries to detect architecture and format.
+        /// </summary>
+        private async Task HandleExecutableAnalysis()
+        {
+            // Select executable file
+            var dlg = new OpenFileDialog
+            {
+                Filter = "Executables and Binaries (*.exe;*.dll;*.bin;*.so)|*.exe;*.dll;*.bin;*.so|All Files (*.*)|*.*"
+            };
+            if (dlg.ShowDialog() != true) return;
+            string filePath = dlg.FileName;
+            StatusBarText($"Analyzing executable: {Path.GetFileName(filePath)}");
+            byte[] data = File.ReadAllBytes(filePath);
+            // Determine format and architecture
+            string format = (data.Length > 4 && data[0] == 0x7F && data[1] == (byte)'E' && data[2] == (byte)'L' && data[3] == (byte)'F') ? "ELF" : "PE";
+            string arch = ArchitectureDetector.Detect(data);
+            string bitness = "Unknown";
+            if (format == "PE" && data.Length > 0x40)
+            {
+                int peOffset = BitConverter.ToInt32(data, 0x3C);
+                ushort machine = BitConverter.ToUInt16(data, peOffset + 4);
+                bitness = machine switch
+                {
+                    0x14c => "x86",
+                    0x8664 => "x64",
+                    0x1c0 => "ARM",
+                    0xaa64 => "ARM64",
+                    _ => "Unknown"
+                };
+            }
+            else if (format == "ELF" && data.Length > 5)
+            {
+                bitness = data[4] == 1 ? "32-bit" : data[4] == 2 ? "64-bit" : "Unknown";
+            }
+            var output = new List<string>
+            {
+                $"File: {Path.GetFileName(filePath)}",
+                $"Format: {format}",
+                $"Architecture: {arch}",
+                $"Bitness: {bitness}"
+            };
+            // Encourage contribution for unsupported chips
+            var desc = ChipReferenceManager.GetInfo(arch);
+            if (!string.IsNullOrEmpty(desc))
+                output.Add($"Description: {desc}");
+            else
+                output.Add(ChipReferenceManager.GetContributionMessage(arch));
+            ShowTextWindow("Executable Analysis", output);
+            StatusBarText("Executable analysis complete.");
+            // Prompt to launch emulator
+            var choice = PromptUserForChoice("Launch emulator for this executable?", new[] { "Homebrew", "QEMU", "No" });
+            if (choice == "Homebrew")
+            {
+                try
+                {
+                    var home = new HomebrewEmulator();
+                    home.LoadBinary(data);
+                    home.Run();
+                    StatusBarText("Homebrew emulation complete.");
+                }
+                catch (NotImplementedException)
+                {
+                    MessageBox.Show("Homebrew emulator not supported for this architecture.", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+            }
+            else if (choice == "QEMU")
+            {
+                try
+                {
+                    EmulatorLauncher.Launch(filePath, arch);
+                    StatusBarText("QEMU emulation started.");
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Emulation error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+            await Task.CompletedTask;
+        }
+
+        #if false
+        private async Task HandleFirmadyneEmulation()
+        {
+            StatusBarText("Starting Firmadyne-based emulation...");
+            // TODO: Integrate Firmadyne pipeline (extract rootfs, QEMU setup, network capture)
+            ShowTextWindow("Firmadyne Emulation", new List<string> { "Firmadyne integration not implemented yet." });
+            StatusBarText("Firmadyne emulation stub complete.");
+            await Task.CompletedTask;
+        }
+        #endif
+
+        #if false
+        private async Task HandleAzeriaEmulation()
+        {
+            StatusBarText("Starting Azeria Labs ARM firmware emulation...");
+            // TODO: Follow steps from https://azeria-labs.com/emulating-arm-firmware/ to setup QEMU and load firmware
+            ShowTextWindow("Azeria ARM Emulation", new List<string> { "Azeria ARM firmware emulation not implemented yet." });
+            StatusBarText("Azeria ARM emulation stub complete.");
+            await Task.CompletedTask;
+        }
+        #endif
+        
         // Core feature handlers
 
         /// <summary>
@@ -299,7 +480,10 @@ namespace ProcessorEmulator
             string path = dlg.FileName;
             StatusBarText($"Launching RDK-V emulator for {Path.GetFileName(path)}...");
             var bin = File.ReadAllBytes(path);
-            var arch = ArchitectureDetector.Detect(bin);
+            // Force ARM architecture for RDK-V hardware
+            var arch = "ARM";
+            Debug.WriteLine("Forcing architecture to ARM for RDK-V hardware.");
+            StatusBarText("Forcing ARM architecture for RDK-V hardware.");
             try { EmulatorLauncher.Launch(path, arch, platform: "RDK-V"); StatusBarText("RDK-V emulation started."); }
             catch (Exception ex) { MessageBox.Show($"RDK-V error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error); StatusBarText("RDK-V emulation failed."); }
             await Task.CompletedTask;
@@ -338,6 +522,46 @@ namespace ProcessorEmulator
             await Task.CompletedTask;
         }
 
+        /// <summary>
+        /// Cross-compiles a binary from one architecture to another.
+        /// </summary>
+        private async Task HandleCrossCompile()
+        {
+            var dlg = new OpenFileDialog { Filter = "Binaries (*.bin;*.exe;*.dll)|*.bin;*.exe;*.dll|All Files (*.*)|*.*" };
+            if (dlg.ShowDialog() != true) return;
+            string inputPath = dlg.FileName;
+            StatusBarText($"Cross-compiling {Path.GetFileName(inputPath)}...");
+            byte[] inputData = File.ReadAllBytes(inputPath);
+            string fromArch = ArchitectureDetector.Detect(inputData);
+            var targets = new[] { "x86", "x64", "ARM", "ARM64" };
+            string toArch = PromptUserForChoice("Select target architecture:", targets);
+            if (string.IsNullOrEmpty(toArch)) return;
+            // If this is a WinCE binary, launch emulator instead of static cross-compilation
+            if (IsWinCEBinary(inputData))
+            {
+                MessageBox.Show("WinCE binary detected; launching built-in emulator.", "WinCE Detected", MessageBoxButton.OK, MessageBoxImage.Information);
+                try
+                {
+                    EmulatorLauncher.Launch(inputPath, fromArch);
+                    StatusBarText("WinCE emulation started.");
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"WinCE emulation error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    StatusBarText("WinCE emulation failed.");
+                }
+                return;
+            }
+            // perform translation/recompile
+            byte[] outputData = ReadAndTranslateFile(inputPath, fromArch, toArch);
+            var saveDlg = new SaveFileDialog { Filter = "Binary Output (*.bin)|*.bin|All Files (*.*)|*.*", FileName = Path.GetFileNameWithoutExtension(inputPath) + $"_{toArch}" };
+            if (saveDlg.ShowDialog() != true) return;
+            File.WriteAllBytes(saveDlg.FileName, outputData);
+            ShowTextWindow("Cross-Compile Result", new List<string> { $"Compiled from {fromArch} to {toArch} -> {Path.GetFileName(saveDlg.FileName)}" });
+            StatusBarText("Cross-compilation complete.");
+            await Task.CompletedTask;
+        }
+
         private void ShowTextWindow(string title, List<string> lines)
         {
             var win = new Window
@@ -358,6 +582,19 @@ namespace ProcessorEmulator
                 }
             };
             win.Show();
+        }
+
+        // Menu event handlers to toggle Unicorn engine usage
+        private void UseUnicorn_Checked(object sender, RoutedEventArgs e)
+        {
+            BinaryTranslator.UseUnicornEngine = true;
+            StatusBarText("Unicorn engine enabled");
+        }
+
+        private void UseUnicorn_Unchecked(object sender, RoutedEventArgs e)
+        {
+            BinaryTranslator.UseUnicornEngine = false;
+            StatusBarText("Unicorn engine disabled");
         }
 
         private static bool IsWinCEBinary(byte[] binary)
@@ -438,6 +675,10 @@ namespace ProcessorEmulator
                     chipsetName = "Contoso6311";
                 else if (fwStr.Contains("FooChip9000"))
                     chipsetName = "FooChip9000";
+                else if (fwStr.Contains("BCM7405"))
+                    chipsetName = "BCM7405";
+                else if (fwStr.Contains("MIPS 4380") || fwStr.Contains("MIPS4380"))
+                    chipsetName = "MIPS4380";
                 // Add more heuristics as needed
 
                 // Example heuristic: look for filesystem markers
@@ -514,14 +755,21 @@ namespace ProcessorEmulator
             return result;
         }
 
+
         private byte[] ReadAndTranslateFile(string filePath, string fromArch, string toArch)
         {
-            // Read a file and translate/virtualize (example)
-            byte[] fileData = fsManager.ReadFile(filePath);
-
-            // Translate and Virtualize
-            byte[] result = fsManager.RunTranslatedAndVirtualized(fileData, fromArch, toArch);
-            return result;
+            // Load raw data
+            byte[] data = File.ReadAllBytes(filePath);
+            try
+            {
+                // Attempt static cross-translation via BinaryTranslator
+                return BinaryTranslator.Translate(fromArch, toArch, data);
+            }
+            catch (NotImplementedException)
+            {
+                MessageBox.Show($"Translation from {fromArch} to {toArch} not implemented.", "Cross-Compile Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return data;
+            }
         }
 
         // Removed override of Equals(object) because DependencyObject.Equals(object) is sealed and cannot be overridden.
@@ -532,6 +780,69 @@ namespace ProcessorEmulator
         private void OpenMenuItem_Click(object sender, RoutedEventArgs e)
         {
             StartEmulation_Click(sender, e);
+        }
+
+        // New handler for firmware analysis from menu
+        private async void AnalyzeFirmware_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new OpenFileDialog
+            {
+                Filter = "Firmware Archives (*.zip;*.tar;*.tar.gz;*.tar.bz2;*.bin)|*.zip;*.tar;*.tar.gz;*.tar.bz2;*.bin|All Files (*.*)|*.*"
+            };
+            if (dlg.ShowDialog() != true) return;
+            string archivePath = dlg.FileName;
+            string extractDir = Path.Combine(Path.GetDirectoryName(archivePath), Path.GetFileNameWithoutExtension(archivePath) + "_analyzed");
+            StatusBarText($"Analyzing firmware: {Path.GetFileName(archivePath)}...");
+            try
+            {
+                await Task.Run(() => FirmwareAnalyzer.AnalyzeFirmwareArchive(archivePath, extractDir));
+                StatusBarText("Firmware analysis complete.");
+                MessageBox.Show($"Firmware analysis finished. Check the console for details and extracted files at:\n{extractDir}", "Analysis Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Firmware analysis failed: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusBarText("Firmware analysis failed.");
+            }
+        }
+
+        // New handler to extract selected firmware archives
+        private async void ExtractFirmware_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new OpenFileDialog
+            {
+                Filter = "Firmware Archives (*.zip;*.tar;*.tar.gz;*.tar.bz2;*.bin)|*.zip;*.tar;*.tar.gz;*.tar.bz2;*.bin|All Files (*.*)|*.*"
+            };
+            if (dlg.ShowDialog() != true) return;
+            string archivePath = dlg.FileName;
+            string extractDir = Path.Combine(Path.GetDirectoryName(archivePath), Path.GetFileNameWithoutExtension(archivePath) + "_extracted");
+            try
+            {
+                await Task.Run(() => ArchiveExtractor.ExtractAndAnalyze(archivePath, extractDir));
+                MessageBox.Show($"Extraction complete. Files extracted to:\n{extractDir}", "Extraction Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Extraction failed: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        // New handler to detect the type of selected file
+        private void DetectFileType_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new OpenFileDialog { Filter = "All Files (*.*)|*.*" };
+            if (dlg.ShowDialog() != true) return;
+            string filePath = dlg.FileName;
+            try
+            {
+                byte[] data = File.ReadAllBytes(filePath);
+                string type = AnalyzeFileType(filePath, data);
+                MessageBox.Show($"Detected file type: {type}", "File Type Detection", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Detection failed: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         // Helper to analyze file type
@@ -599,6 +910,14 @@ namespace ProcessorEmulator
             }
         }
 
+        // Helper to parse DirecTV firmware filename metadata
+        private (string Manufacturer, string Model, string Version, string Tar)? ParseDirecTVFilename(string fileName)
+        {
+            var m = Regex.Match(fileName, @"image_mfr-(\d+)_mdl-([0-9a-z]+)_ver-(\d+)_tar-([0-9a-f]+)\\.csw", RegexOptions.IgnoreCase);
+            if (!m.Success) return null;
+            return (m.Groups[1].Value, m.Groups[2].Value, m.Groups[3].Value, m.Groups[4].Value);
+        }
+
         /// <summary>
         /// Simulates DirecTV SWM switches and/or LNBs.
         /// Currently a stub; intended for future simulation and testing.
@@ -636,6 +955,66 @@ namespace ProcessorEmulator
             await Task.CompletedTask;
         }
 
+        // Handler for dropped files
+        private void MainWindow_Drop(object sender, DragEventArgs e)
+        {
+            if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
+            var files = (string[])e.Data.GetData(DataFormats.FileDrop);
+            foreach (var file in files)
+            {
+                string ext = Path.GetExtension(file).ToLowerInvariant();
+                // If unsupported extension, prompt to open GitHub issue
+                var supported = new[] { ".exe", ".dll", ".bin", ".csw", ".tar", ".img", ".fw" };
+                if (!supported.Contains(ext))
+                {
+                    var ask = MessageBox.Show($"No handler for '{ext}'. Create an issue on GitHub?", "Unsupported File", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                    if (ask == MessageBoxResult.Yes)
+                        Process.Start(new ProcessStartInfo("cmd", $"/c start https://github.com/julerobb1/Processor-Emulator/issues/new") { CreateNoWindow = true });
+                }
+                else
+                {
+                    StatusBarText($"File dropped: {Path.GetFileName(file)}. Use menu to analyze.");
+                }
+            }
+        }
+
         // All duplicate methods/helpers have been removed for clarity.
+
+        // New method to prompt user for QEMU options
+        private string PromptForQemuOptions()
+        {
+            var dialog = new Window
+            {
+                Title = "QEMU Options",
+                Width = 500,
+                Height = 300,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                ResizeMode = ResizeMode.CanResize,
+                Owner = this
+            };
+            var stack = new StackPanel { Margin = new Thickness(10) };
+            stack.Children.Add(new TextBlock { Text = "Enter extra QEMU command-line options:", Margin = new Thickness(0, 0, 0, 5) });
+            var textBox = new TextBox
+            {
+                AcceptsReturn = true,
+                Text = string.Empty,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Height = 180
+            };
+            stack.Children.Add(textBox);
+            var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 10, 0, 0) };
+            var okButton = new Button { Content = "OK", Width = 80, IsDefault = true, Margin = new Thickness(0, 0, 5, 0) };
+            var cancelButton = new Button { Content = "Cancel", Width = 80, IsCancel = true };
+            btnPanel.Children.Add(okButton);
+            btnPanel.Children.Add(cancelButton);
+            stack.Children.Add(btnPanel);
+            dialog.Content = stack;
+            string result = null;
+            okButton.Click += (s, e) => { result = textBox.Text.Trim(); dialog.DialogResult = true; dialog.Close(); };
+            if (dialog.ShowDialog() == true)
+                return result;
+            return string.Empty;
+        }
     }
 }

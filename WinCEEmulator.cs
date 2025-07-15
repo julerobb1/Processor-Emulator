@@ -1,5 +1,3 @@
-using System;
-using System.Runtime.InteropServices;
 using ProcessorEmulator.Tools;
 
 namespace ProcessorEmulator.Emulation
