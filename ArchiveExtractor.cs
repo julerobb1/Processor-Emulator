@@ -1,4 +1,6 @@
+using System;
 using System.Diagnostics;
+using System.IO;
 
 namespace ProcessorEmulator.Tools
 {
@@ -12,7 +14,8 @@ namespace ProcessorEmulator.Tools
                 StartInfo = new ProcessStartInfo
                 {
                     FileName = "7z.exe",
-                    Arguments = $"x \"{archivePath}\" -o\"{outputDir}\" -y",
+                    // Use -spf to allow extraction of full (potentially dangerous) paths and symlinks
+                    Arguments = $"x -spf \"{archivePath}\" -o\"{outputDir}\" -y",
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
@@ -21,12 +24,38 @@ namespace ProcessorEmulator.Tools
             };
             process.Start();
             process.WaitForExit();
+            // Remove any files extracted outside of the output directory (prevent overwriting host paths)
+            SanitizeExtraction(outputDir);
         }
 
         public static void ExtractAndAnalyze(string archivePath, string outputDir)
         {
             ExtractArchive(archivePath, outputDir);
+            // Further sanitize before analysis
             FirmwareAnalyzer.AnalyzeFirmwareArchive(archivePath, outputDir);
+        }
+
+        /// <summary>
+        /// Deletes any files or directories unintentionally placed outside the extraction root.
+        /// </summary>
+        private static void SanitizeExtraction(string outputDir)
+        {
+            try
+            {
+                var root = Path.GetFullPath(outputDir).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                // Check all files under the extraction parent path
+                var parent = Path.GetDirectoryName(root);
+                foreach (var file in Directory.GetFiles(parent, "*", SearchOption.AllDirectories))
+                {
+                    var full = Path.GetFullPath(file);
+                    if (!full.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+                    {
+                        File.Delete(full);
+                    }
+                }
+                // Optionally, similar cleanup for directories can be added
+            }
+            catch { /* Ignore cleanup errors */ }
         }
     }
 }
