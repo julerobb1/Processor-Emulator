@@ -107,8 +107,6 @@ namespace ProcessorEmulator
                 "Uverse Box Emulator",
                 "DirecTV Box/Firmware Analysis",
                 "Executable Analysis",
-                "Firmadyne Emulation",
-                "Azeria ARM Emulation",
                 "Linux Filesystem Read/Write",
                 "Cross-Compile Binary"
             };
@@ -147,11 +145,8 @@ namespace ProcessorEmulator
                 case "Executable Analysis":
                     await HandleExecutableAnalysis();
                     break;
-                case "Firmadyne Emulation":
-                    await HandleFirmadyneEmulation();
-                    break;
-                case "Azeria ARM Emulation":
-                    await HandleAzeriaEmulation();
+                case "Linux Filesystem Read/Write":
+                    await HandleLinuxFsReadWrite();
                     break;
                 case "Cross-Compile Binary":
                     await HandleCrossCompile();
@@ -451,6 +446,7 @@ namespace ProcessorEmulator
             await Task.CompletedTask;
         }
 
+        #if false
         private async Task HandleFirmadyneEmulation()
         {
             StatusBarText("Starting Firmadyne-based emulation...");
@@ -459,7 +455,9 @@ namespace ProcessorEmulator
             StatusBarText("Firmadyne emulation stub complete.");
             await Task.CompletedTask;
         }
+        #endif
 
+        #if false
         private async Task HandleAzeriaEmulation()
         {
             StatusBarText("Starting Azeria Labs ARM firmware emulation...");
@@ -468,6 +466,7 @@ namespace ProcessorEmulator
             StatusBarText("Azeria ARM emulation stub complete.");
             await Task.CompletedTask;
         }
+        #endif
         
         // Core feature handlers
 
@@ -800,6 +799,45 @@ namespace ProcessorEmulator
             {
                 MessageBox.Show($"Firmware analysis failed: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 StatusBarText("Firmware analysis failed.");
+            }
+        }
+
+        // New handler to extract selected firmware archives
+        private async void ExtractFirmware_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new OpenFileDialog
+            {
+                Filter = "Firmware Archives (*.zip;*.tar;*.tar.gz;*.tar.bz2;*.bin)|*.zip;*.tar;*.tar.gz;*.tar.bz2;*.bin|All Files (*.*)|*.*"
+            };
+            if (dlg.ShowDialog() != true) return;
+            string archivePath = dlg.FileName;
+            string extractDir = Path.Combine(Path.GetDirectoryName(archivePath), Path.GetFileNameWithoutExtension(archivePath) + "_extracted");
+            try
+            {
+                await Task.Run(() => ArchiveExtractor.ExtractAndAnalyze(archivePath, extractDir));
+                MessageBox.Show($"Extraction complete. Files extracted to:\n{extractDir}", "Extraction Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Extraction failed: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        // New handler to detect the type of selected file
+        private void DetectFileType_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new OpenFileDialog { Filter = "All Files (*.*)|*.*" };
+            if (dlg.ShowDialog() != true) return;
+            string filePath = dlg.FileName;
+            try
+            {
+                byte[] data = File.ReadAllBytes(filePath);
+                string type = AnalyzeFileType(filePath, data);
+                MessageBox.Show($"Detected file type: {type}", "File Type Detection", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Detection failed: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
