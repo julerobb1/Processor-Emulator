@@ -60,9 +60,19 @@ namespace ProcessorEmulator.Tools
 
         private static string GetQemuArgs(string imagePath, string architecture)
         {
-            // Basic args, can be extended for more options
-            // Use default graphical display; remove nographic to show firmware UI
-            return $"-m 256 -drive file=\"{imagePath}\",format=raw";
+            // Select machine type based on architecture: malta for MIPS, virt for ARM
+            string machine = null;
+            if (architecture.StartsWith("MIPS", StringComparison.OrdinalIgnoreCase)) machine = "malta";
+            else if (architecture.StartsWith("ARM", StringComparison.OrdinalIgnoreCase)) machine = "virt";
+            string machineArg = string.IsNullOrEmpty(machine) ? string.Empty : $"-machine {machine}";
+            // If this is a raw firmware blob, boot it as a kernel with serial console
+            var ext = Path.GetExtension(imagePath).ToLowerInvariant();
+            if (ext == ".bin")
+            {
+                return $"{machineArg} -m 256 -kernel \"{imagePath}\" -serial stdio";
+            }
+            // Otherwise boot from image drive with VGA display
+            return $"{machineArg} -m 256 -drive file=\"{imagePath}\",format=raw -boot order=c -vga std -display sdl";
         }
 
         public static void Launch(string imagePath, string architecture)
@@ -73,6 +83,7 @@ namespace ProcessorEmulator.Tools
 
             var args = GetQemuArgs(imagePath, architecture);
             // Launch QEMU with GUI window
+            // Launch QEMU directly with GUI
             var process = new Process
             {
                 StartInfo = new ProcessStartInfo
@@ -94,12 +105,13 @@ namespace ProcessorEmulator.Tools
 
             var args = GetQemuArgs(imagePath, architecture) + " " + extraArgs;
             // Launch QEMU with GUI window and extra args
+            // Launch QEMU with extra args directly
             var process = new Process
             {
                 StartInfo = new ProcessStartInfo
                 {
                     FileName = qemuExe,
-                    Arguments = args,
+                    Arguments = args + " " + extraArgs,
                     UseShellExecute = true,
                     CreateNoWindow = false
                 }
