@@ -671,7 +671,11 @@ namespace ProcessorEmulator
                 string fwStr = System.Text.Encoding.ASCII.GetString(fw);
 
                 // Example heuristic: look for known chipset names
-                        else if (fwStr.Contains("BCM7405"))
+                if (fwStr.Contains("Contoso6311"))
+                    chipsetName = "Contoso6311";
+                else if (fwStr.Contains("FooChip9000"))
+                    chipsetName = "FooChip9000";
+                else if (fwStr.Contains("BCM7405"))
                     chipsetName = "BCM7405";
                 else if (fwStr.Contains("MIPS 4380") || fwStr.Contains("MIPS4380"))
                     chipsetName = "MIPS4380";
