@@ -11,7 +11,16 @@ namespace ProcessorEmulator.Tools
             // Resolve 7z executable path
             string sevenZip = Resolve7zExecutable();
             if (string.IsNullOrEmpty(sevenZip))
+            {
+                // Fallback for ZIP archives using built-in .NET extraction
+                if (Path.GetExtension(archivePath).Equals(".zip", StringComparison.OrdinalIgnoreCase))
+                {
+                    System.IO.Compression.ZipFile.ExtractToDirectory(archivePath, outputDir);
+                    SanitizeExtraction(outputDir);
+                    return;
+                }
                 throw new InvalidOperationException("7z.exe not found. Please install 7-Zip or locate 7z.exe manually.");
+            }
             // Use -spf to allow extraction of full paths
             var process = new Process
             {
