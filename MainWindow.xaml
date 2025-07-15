@@ -28,6 +28,9 @@
                 <TextBlock Text="Emulator Control Panel" FontWeight="Bold" FontSize="16" Margin="0,0,0,10"/>
                 <Button Content="Start Emulation" Width="150" Height="30" Margin="0,0,0,10" Click="StartEmulation_Click"/>
                 <TextBox Width="300" Height="25"/>
+                <Button Content="Analyze Firmware" Width="150" Height="30" Margin="0,10,0,10" Click="AnalyzeFirmware_Click"/>
+                <Button Content="Extract Firmware" Width="150" Height="30" Margin="0,0,0,10" Click="ExtractFirmware_Click"/>
+                <Button Content="Detect File Type" Width="150" Height="30" Margin="0,0,0,10" Click="DetectFileType_Click"/>
             </StackPanel>
         </Grid>
     </DockPanel>
