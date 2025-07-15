@@ -37,5 +37,8 @@
 
     // Disable telemetry for reduced background activity
     "telemetry.enableTelemetry": false,
-    "telemetry.telemetryLevel": "off"
+    "telemetry.telemetryLevel": "off",
+
+    // YAML: disable built-in validation to ignore ci.yml errors
+    "yaml.validate": false
 }

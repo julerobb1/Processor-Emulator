@@ -41,16 +41,11 @@ namespace ProcessorEmulator
         public MainWindow()
         {
             // Load XAML UI components
-            InitializeComponent();
             // Initialize drag-and-drop for file support
             this.AllowDrop = true;
             this.Drop += MainWindow_Drop;
         }
 
-        private void InitializeComponent()
-        {
-            throw new NotImplementedException();
-        }
 
         public MainWindow(IEmulator currentEmulator)
         {
