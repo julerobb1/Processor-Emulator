@@ -34,9 +34,6 @@ namespace ProcessorEmulator
 
     public partial class MainWindow : Window, IMainWindow
     {
-        // Ensure InitializeComponent exists even if XAML generation missed it
-        [System.Diagnostics.DebuggerNonUserCode]
-        private void InitializeComponent() {}
 
         private IEmulator currentEmulator;
 
@@ -266,60 +263,75 @@ namespace ProcessorEmulator
         {
             var openFileDialog = new OpenFileDialog
             {
-                Filter = "Uverse Boot or Signature File (*.bin;*.sig)|*.bin;*.sig|All Files (*.*)|*.*"
+                Filter = "Firmware Images (*.bin;*.img;*.sig)|*.bin;*.img;*.sig|All Files (*.*)|*.*"
             };
             if (openFileDialog.ShowDialog() != true) return;
 
-            string sigPath = openFileDialog.FileName;
-            StatusBarText($"Loading Uverse configuration from {Path.GetFileName(sigPath)}...");
-
-            // Prompt for hardware configuration
-            string model = PromptUserForInput("Enter model type (e.g. VIP2250):")?.Trim();
-            if (string.IsNullOrWhiteSpace(model)) model = "VIP2250";
-            string proc = PromptUserForInput("Enter processor type (e.g. ARM/x86):")?.Trim();
-            if (string.IsNullOrWhiteSpace(proc)) proc = "ARM";
-            string memInput = PromptUserForInput("Enter memory size in MB:")?.Trim();
-            if (!int.TryParse(memInput, out int mb)) mb = 128;
-            long memBytes = mb * 1024L * 1024L;
-            bool isDVR = PromptUserForChoice("Is this device a DVR?", new[] { "Yes", "No" }) == "Yes";
-            bool isWholeHome = PromptUserForChoice("Enable Whole Home network?", new[] { "Yes", "No" }) == "Yes";
-            var config = new UverseHardwareConfig
+            string filePath = openFileDialog.FileName;
+            StatusBarText($"Selected file: {Path.GetFileName(filePath)}");
+            try
             {
-                ModelType = model,
-                ProcessorType = proc,
-                MemorySize = (uint)memBytes,
-                IsDVR = isDVR,
-                IsWholeHome = isWholeHome
-            };
-            var emulator = new UverseEmulator(config);
-            ShowTextWindow("Uverse Emulation", new List<string> { "Initialized emulator with config." });
-            emulator.LoadBootImage(sigPath);
-            ShowTextWindow("Uverse Emulation", new List<string> { $"Loaded boot image: {Path.GetFileName(sigPath)}" });
+                string ext = Path.GetExtension(filePath).ToLowerInvariant();
+                string extractDir = Path.Combine(Path.GetDirectoryName(filePath), Path.GetFileNameWithoutExtension(filePath) + "_extracted");
+                if (ext != ".sig")
+                {
+                    // Perform generic firmware analysis
+                    await Task.Run(() => ArchiveExtractor.ExtractAndAnalyze(filePath, extractDir));
+                    FirmwareAnalyzer.AnalyzeFirmwareArchive(filePath, extractDir);
+                    StatusBarText("Firmware analysis complete.");
+                    MessageBox.Show($"Firmware {Path.GetFileName(filePath)} analyzed in {extractDir}", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
 
-            // Attempt to load content signature in same folder
-            string contentSig = Path.Combine(Path.GetDirectoryName(sigPath), "content.sig");
-            if (File.Exists(contentSig))
-            {
-                emulator.LoadMediaroomContent(contentSig);
-                ShowTextWindow("Uverse Emulation", new List<string> { $"Loaded content signatures: {Path.GetFileName(contentSig)}" });
+                // Signature-based Uverse emulation
+                StatusBarText($"Loading Uverse config from {Path.GetFileName(filePath)}...");
+                string model = PromptUserForInput("Enter model type (e.g. VIP2250):")?.Trim();
+                if (string.IsNullOrWhiteSpace(model)) model = "VIP2250";
+                string proc = PromptUserForInput("Enter processor type (e.g. ARM/x86):")?.Trim();
+                if (string.IsNullOrWhiteSpace(proc)) proc = "ARM";
+                string memInput = PromptUserForInput("Enter memory size in MB:")?.Trim();
+                if (!int.TryParse(memInput, out int mb)) mb = 128;
+                uint memBytes = (uint)(mb * 1024 * 1024);
+                bool isDVR = PromptUserForChoice("Is this device a DVR?", new[] { "Yes", "No" }) == "Yes";
+                bool isWholeHome = PromptUserForChoice("Enable Whole Home network?", new[] { "Yes", "No" }) == "Yes";
+                var config = new UverseHardwareConfig
+                {
+                    ModelType = model,
+                    ProcessorType = proc,
+                    MemorySize = memBytes,
+                    IsDVR = isDVR,
+                    IsWholeHome = isWholeHome
+                };
+                var emulator = new UverseEmulator(config);
+                ShowTextWindow("Uverse Emulation", new List<string> { "Initialized emulator with config." });
+                emulator.LoadBootImage(filePath);
+                ShowTextWindow("Uverse Emulation", new List<string> { $"Loaded boot image: {Path.GetFileName(filePath)}" });
+                string contentSig = Path.Combine(Path.GetDirectoryName(filePath), "content.sig");
+                if (File.Exists(contentSig))
+                {
+                    emulator.LoadMediaroomContent(contentSig);
+                    ShowTextWindow("Uverse Emulation", new List<string> { $"Loaded content signatures: {Path.GetFileName(contentSig)}" });
+                }
+                emulator.EmulateWholeHomeNetwork();
+                ShowTextWindow("Uverse Emulation", new List<string> { "Configured whole home network." });
+                UverseEmulator.StartMediaroom();
+                ShowTextWindow("Uverse Emulation", new List<string> { "Started Mediaroom platform." });
+                var uverseLog = new List<string>
+                {
+                    $"Model: {model}",
+                    $"Processor: {proc}",
+                    $"Memory (MB): {mb}",
+                    $"DVR Enabled: {isDVR}",
+                    $"Whole Home Network: {isWholeHome}"
+                };
+                ShowTextWindow("Uverse Emulation Log", uverseLog);
+                StatusBarText("Uverse emulation complete.");
             }
-
-            emulator.EmulateWholeHomeNetwork();
-            ShowTextWindow("Uverse Emulation", new List<string> { "Configured whole home network." });
-            UverseEmulator.StartMediaroom();
-            ShowTextWindow("Uverse Emulation", new List<string> { "Started Mediaroom platform." });
-            // Display Uverse emulation details to user
-            var uverseLog = new List<string>
+            catch (Exception ex)
             {
-                $"Model: {model}",
-                $"Processor: {proc}",
-                $"Memory (MB): {mb}",
-                $"DVR Enabled: {isDVR}",
-                $"Whole Home Network: {isWholeHome}"
-            };
-            ShowTextWindow("Uverse Emulation Log", uverseLog);
-
-            StatusBarText("Uverse emulation complete.");
+                MessageBox.Show($"Uverse processing failed: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusBarText("Uverse processing failed.");
+            }
             await Task.CompletedTask;
         }
 
@@ -338,11 +350,22 @@ namespace ProcessorEmulator
             if (openFileDialog.ShowDialog() == true)
             {
                 string filePath = openFileDialog.FileName;
-                StatusBarText($"Selected DirecTV firmware: {Path.GetFileName(filePath)}");
-                string extractDir = Path.Combine(Path.GetDirectoryName(filePath), Path.GetFileNameWithoutExtension(filePath) + "_directv_extracted");
-                await Task.Run(() => ArchiveExtractor.ExtractAndAnalyze(filePath, extractDir));
-                StatusBarText("DirecTV firmware extraction and analysis complete.");
-                MessageBox.Show($"DirecTV firmware {Path.GetFileName(filePath)} extracted and analyzed to {extractDir}.", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+                StatusBarText($"Selected firmware: {Path.GetFileName(filePath)}");
+                string extractDir = Path.Combine(Path.GetDirectoryName(filePath), Path.GetFileNameWithoutExtension(filePath) + "_extracted");
+                try
+                {
+                    // Extract archive and analyze file structure
+                    await Task.Run(() => ArchiveExtractor.ExtractAndAnalyze(filePath, extractDir));
+                    // Further analyze binaries in the extracted directory
+                    FirmwareAnalyzer.AnalyzeFirmwareArchive(filePath, extractDir);
+                    StatusBarText("Firmware extraction and analysis complete.");
+                    MessageBox.Show($"Firmware {Path.GetFileName(filePath)} extracted and analyzed to {extractDir}.", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Analysis failed: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    StatusBarText("Firmware analysis failed.");
+                }
             }
         await Task.CompletedTask;
         }
@@ -458,20 +481,10 @@ namespace ProcessorEmulator
             string path = dlg.FileName;
             StatusBarText($"Launching RDK-V emulator for {Path.GetFileName(path)}...");
             var bin = File.ReadAllBytes(path);
-            // Auto-detect the binary's architecture
-            var arch = ArchitectureDetector.Detect(bin);
-            Debug.WriteLine($"RDK-V auto-detected architecture: '{arch}'");
-            // Override Broadcom MIPS marker for X1 boxes to ARM
-            if (arch.StartsWith("MIPS32-BCM7346", StringComparison.OrdinalIgnoreCase))
-            {
-                Debug.WriteLine("Overriding BCM7346 MIPS detection to ARM for X1 hardware.");
-                arch = "ARM";
-                StatusBarText("Overrode architecture to ARM for X1 hardware");
-            }
-            else
-            {
-                StatusBarText($"Detected architecture: {arch}");
-            }
+            // Force ARM architecture for RDK-V hardware
+            var arch = "ARM";
+            Debug.WriteLine("Forcing architecture to ARM for RDK-V hardware.");
+            StatusBarText("Forcing ARM architecture for RDK-V hardware.");
             try { EmulatorLauncher.Launch(path, arch, platform: "RDK-V"); StatusBarText("RDK-V emulation started."); }
             catch (Exception ex) { MessageBox.Show($"RDK-V error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error); StatusBarText("RDK-V emulation failed."); }
             await Task.CompletedTask;
@@ -764,6 +777,30 @@ namespace ProcessorEmulator
         private void OpenMenuItem_Click(object sender, RoutedEventArgs e)
         {
             StartEmulation_Click(sender, e);
+        }
+
+        // New handler for firmware analysis from menu
+        private async void AnalyzeFirmware_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new OpenFileDialog
+            {
+                Filter = "Firmware Archives (*.zip;*.tar;*.tar.gz;*.tar.bz2;*.bin)|*.zip;*.tar;*.tar.gz;*.tar.bz2;*.bin|All Files (*.*)|*.*"
+            };
+            if (dlg.ShowDialog() != true) return;
+            string archivePath = dlg.FileName;
+            string extractDir = Path.Combine(Path.GetDirectoryName(archivePath), Path.GetFileNameWithoutExtension(archivePath) + "_analyzed");
+            StatusBarText($"Analyzing firmware: {Path.GetFileName(archivePath)}...");
+            try
+            {
+                await Task.Run(() => FirmwareAnalyzer.AnalyzeFirmwareArchive(archivePath, extractDir));
+                StatusBarText("Firmware analysis complete.");
+                MessageBox.Show($"Firmware analysis finished. Check the console for details and extracted files at:\n{extractDir}", "Analysis Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Firmware analysis failed: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusBarText("Firmware analysis failed.");
+            }
         }
 
         // Helper to analyze file type
