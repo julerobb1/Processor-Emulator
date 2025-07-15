@@ -675,6 +675,10 @@ namespace ProcessorEmulator
                     chipsetName = "Contoso6311";
                 else if (fwStr.Contains("FooChip9000"))
                     chipsetName = "FooChip9000";
+                else if (fwStr.Contains("BCM7405"))
+                    chipsetName = "BCM7405";
+                else if (fwStr.Contains("MIPS 4380") || fwStr.Contains("MIPS4380"))
+                    chipsetName = "MIPS4380";
                 // Add more heuristics as needed
 
                 // Example heuristic: look for filesystem markers
