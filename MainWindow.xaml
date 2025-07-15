@@ -6,6 +6,9 @@
         <Menu DockPanel.Dock="Top">
             <MenuItem Header="_File">
                 <MenuItem Header="_Open" Click="OpenMenuItem_Click"/>
+                <!-- General firmware extract & analysis -->
+                <MenuItem Header="Analyze _Firmware..." Click="AnalyzeFirmware_Click"/>
+                <Separator/>
                 <MenuItem Header="_Exit" />
             </MenuItem>
             <MenuItem Header="_Edit">
