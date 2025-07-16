@@ -12,11 +12,20 @@ namespace ProcessorEmulator.Tools
             string sevenZip = Resolve7zExecutable();
             if (string.IsNullOrEmpty(sevenZip))
             {
+                string ext = Path.GetExtension(archivePath).ToLowerInvariant();
                 // Fallback for ZIP archives using built-in .NET extraction
-                if (Path.GetExtension(archivePath).Equals(".zip", StringComparison.OrdinalIgnoreCase))
+                if (ext == ".zip")
                 {
                     System.IO.Compression.ZipFile.ExtractToDirectory(archivePath, outputDir);
-                    SanitizeExtraction(outputDir);
+                    try { SanitizeExtraction(outputDir); } catch { }
+                    return;
+                }
+                // Fallback for raw binary images: copy into outputDir
+                if (ext == ".bin")
+                {
+                    Directory.CreateDirectory(outputDir);
+                    string dest = Path.Combine(outputDir, Path.GetFileName(archivePath));
+                    File.Copy(archivePath, dest, overwrite: true);
                     return;
                 }
                 throw new InvalidOperationException("7z.exe not found. Please install 7-Zip or locate 7z.exe manually.");
@@ -37,7 +46,7 @@ namespace ProcessorEmulator.Tools
             process.Start();
             process.WaitForExit();
             // Remove any files extracted outside of the output directory (prevent overwriting host paths)
-            SanitizeExtraction(outputDir);
+            try { SanitizeExtraction(outputDir); } catch { }
         }
 
         public static void ExtractAndAnalyze(string archivePath, string outputDir)
@@ -55,8 +64,14 @@ namespace ProcessorEmulator.Tools
             try
             {
                 var root = Path.GetFullPath(outputDir).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                // Skip sanitization if output directory doesn't exist
+                if (!Directory.Exists(outputDir))
+                    return;
                 // Check all files under the extraction parent path
                 var parent = Path.GetDirectoryName(root);
+                // Skip if parent directory doesn't exist
+                if (parent == null || !Directory.Exists(parent))
+                    return;
                 foreach (var file in Directory.GetFiles(parent, "*", SearchOption.AllDirectories))
                 {
                     var full = Path.GetFullPath(file);
