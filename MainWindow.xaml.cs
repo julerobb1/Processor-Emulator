@@ -108,7 +108,8 @@ namespace ProcessorEmulator
                 "DirecTV Box/Firmware Analysis",
                 "Executable Analysis",
                 "Linux Filesystem Read/Write",
-                "Cross-Compile Binary"
+                "Cross-Compile Binary",
+                "Mount YAFFS Filesystem"
             };
             string mainChoice = PromptUserForChoice("What would you like to do?", mainOptions);
             if (string.IsNullOrEmpty(mainChoice)) return;
@@ -150,6 +151,9 @@ namespace ProcessorEmulator
                     break;
                 case "Cross-Compile Binary":
                     await HandleCrossCompile();
+                    break;
+                case "Mount YAFFS Filesystem":
+                    await HandleYaffsMount();
                     break;
                 default:
                     MessageBox.Show("Not implemented yet.", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -1015,6 +1019,33 @@ namespace ProcessorEmulator
             if (dialog.ShowDialog() == true)
                 return result;
             return string.Empty;
+        }
+
+        /// <summary>
+        /// Mounts a YAFFS filesystem image using the ExoticFilesystemManager.
+        /// </summary>
+        private async Task HandleYaffsMount()
+        {
+            var dlg = new Microsoft.Win32.OpenFileDialog
+            {
+                Filter = "YAFFS Images (*.img;*.yaffs)|*.img;*.yaffs|All Files (*.*)|*.*"
+            };
+            if (dlg.ShowDialog() != true) return;
+            string path = dlg.FileName;
+            StatusBarText($"Mounting YAFFS image {System.IO.Path.GetFileName(path)}...");
+            try
+            {
+                string mountPoint = "/";
+                fsManager.MountYAFFS(path, mountPoint);
+                StatusBarText("YAFFS image mounted.");
+                ShowTextWindow("YAFFS Mount", new List<string> { $"Mounted {System.IO.Path.GetFileName(path)} at {mountPoint}" });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"YAFFS mount error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusBarText("YAFFS mount failed.");
+            }
+            await Task.CompletedTask;
         }
     }
 }
