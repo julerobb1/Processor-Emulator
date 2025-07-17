@@ -13,6 +13,12 @@ namespace ProcessorEmulator.Tools
         {
             // Use 7z CLI to fully extract firmware images and archives
             Directory.CreateDirectory(outputDir);
+            // If this is a raw disk image, split out MBR partitions
+            if (Path.GetExtension(archivePath).Equals(".bin", StringComparison.OrdinalIgnoreCase))
+            {
+                ExtractPartitions(archivePath, outputDir);
+                return;
+            }
             string sevenZip = Resolve7zExecutable();
             if (string.IsNullOrEmpty(sevenZip))
                 throw new InvalidOperationException("7z.exe not found. Please install 7-Zip.");
