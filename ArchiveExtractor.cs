@@ -11,38 +11,26 @@ namespace ProcessorEmulator.Tools
     {
         public static void ExtractArchive(string archivePath, string outputDir)
         {
+            // Use 7z CLI to fully extract firmware images and archives
             Directory.CreateDirectory(outputDir);
-            // Try 7z CLI if available for robust extraction of firmware images
             string sevenZip = Resolve7zExecutable();
-            if (!string.IsNullOrEmpty(sevenZip))
+            if (string.IsNullOrEmpty(sevenZip))
+                throw new InvalidOperationException("7z.exe not found. Please install 7-Zip.");
+            var proc = new Process
             {
-                var proc = new Process
+                StartInfo = new ProcessStartInfo
                 {
-                    StartInfo = new ProcessStartInfo
-                    {
-                        FileName = sevenZip,
-                        Arguments = $"x -y -o\"{outputDir}\" \"{archivePath}\"",
-                        UseShellExecute = false,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        CreateNoWindow = true
-                    }
-                };
-                proc.Start();
-                proc.WaitForExit();
-                try { SanitizeExtraction(outputDir); } catch { }
-                return;
-            }
-            // Fallback: use SharpCompress for ZIP archives
-            if (Path.GetExtension(archivePath).Equals(".zip", StringComparison.OrdinalIgnoreCase))
-            {
-                using var archive = ArchiveFactory.Open(archivePath);
-                foreach (var entry in archive.Entries.Where(e => !e.IsDirectory))
-                    entry.WriteToDirectory(outputDir, new ExtractionOptions { ExtractFullPath = true, Overwrite = true });
-                try { SanitizeExtraction(outputDir); } catch { }
-                return;
-            }
-            throw new InvalidOperationException("Unable to extract archive: 7z.exe not found and unsupported format.");
+                    FileName = sevenZip,
+                    Arguments = $"x -y -o\"{outputDir}\" \"{archivePath}\"",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                }
+            };
+            proc.Start();
+            proc.WaitForExit();
+            try { SanitizeExtraction(outputDir); } catch { }
         }
 
         public static void ExtractAndAnalyze(string archivePath, string outputDir)
