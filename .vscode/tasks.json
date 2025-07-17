@@ -7,6 +7,17 @@
       "command": "dotnet build \"${workspaceFolder}/ProcessorEmulator.csproj\" --configuration Debug",
       "group": "build",
       "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "Watch Build",
+      "type": "shell",
+      "command": "dotnet watch build --project \"${workspaceFolder}/ProcessorEmulator.csproj\" --configuration Debug",
+      "isBackground": true,
+      "problemMatcher": "$msCompile",
+      "group": {
+        "kind": "build",
+        "isDefault": false
+      }
     }
   ]
 }
