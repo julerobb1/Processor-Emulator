@@ -12,7 +12,10 @@
   <!-- Pre-build: kill any running instance to avoid file lock issues -->
   <Target Name="EnsureNoRunningInstance" BeforeTargets="BeforeBuild">
     <!-- Attempt to terminate any running ProcessorEmulator process -->
-    <Exec Command="powershell -NoProfile -Command \"Get-Process -Name ProcessorEmulator -ErrorAction SilentlyContinue | Stop-Process -Force\"" ContinueOnError="true" />
+    <Exec Command="taskkill /F /IM ProcessorEmulator.exe" ContinueOnError="true" />
   </Target>
   <!-- Using stub Unicorn definitions in Tools/BinaryTranslator.cs; no external package required -->
+  <ItemGroup>
+    <PackageReference Include="SharpCompress" Version="0.30.0" />
+  </ItemGroup>
 </Project>
