@@ -1,6 +1,9 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
+using SharpCompress.Archives;
+using SharpCompress.Common;
 
 namespace ProcessorEmulator.Tools
 {
@@ -8,45 +11,38 @@ namespace ProcessorEmulator.Tools
     {
         public static void ExtractArchive(string archivePath, string outputDir)
         {
-            // Resolve 7z executable path
+            Directory.CreateDirectory(outputDir);
+            // Try 7z CLI if available for robust extraction of firmware images
             string sevenZip = Resolve7zExecutable();
-            if (string.IsNullOrEmpty(sevenZip))
+            if (!string.IsNullOrEmpty(sevenZip))
             {
-                string ext = Path.GetExtension(archivePath).ToLowerInvariant();
-                // Fallback for ZIP archives using built-in .NET extraction
-                if (ext == ".zip")
+                var proc = new Process
                 {
-                    System.IO.Compression.ZipFile.ExtractToDirectory(archivePath, outputDir);
-                    try { SanitizeExtraction(outputDir); } catch { }
-                    return;
-                }
-                // Fallback for raw binary images: copy into outputDir
-                if (ext == ".bin")
-                {
-                    Directory.CreateDirectory(outputDir);
-                    string dest = Path.Combine(outputDir, Path.GetFileName(archivePath));
-                    File.Copy(archivePath, dest, overwrite: true);
-                    return;
-                }
-                throw new InvalidOperationException("7z.exe not found. Please install 7-Zip or locate 7z.exe manually.");
+                    StartInfo = new ProcessStartInfo
+                    {
+                        FileName = sevenZip,
+                        Arguments = $"x -y -o\"{outputDir}\" \"{archivePath}\"",
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        CreateNoWindow = true
+                    }
+                };
+                proc.Start();
+                proc.WaitForExit();
+                try { SanitizeExtraction(outputDir); } catch { }
+                return;
             }
-            // Use -spf to allow extraction of full paths
-            var process = new Process
+            // Fallback: use SharpCompress for ZIP archives
+            if (Path.GetExtension(archivePath).Equals(".zip", StringComparison.OrdinalIgnoreCase))
             {
-                StartInfo = new ProcessStartInfo
-                {
-                    FileName = sevenZip,
-                    Arguments = $"x -spf \"{archivePath}\" -o\"{outputDir}\" -y",
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    CreateNoWindow = true
-                }
-            };
-            process.Start();
-            process.WaitForExit();
-            // Remove any files extracted outside of the output directory (prevent overwriting host paths)
-            try { SanitizeExtraction(outputDir); } catch { }
+                using var archive = ArchiveFactory.Open(archivePath);
+                foreach (var entry in archive.Entries.Where(e => !e.IsDirectory))
+                    entry.WriteToDirectory(outputDir, new ExtractionOptions { ExtractFullPath = true, Overwrite = true });
+                try { SanitizeExtraction(outputDir); } catch { }
+                return;
+            }
+            throw new InvalidOperationException("Unable to extract archive: 7z.exe not found and unsupported format.");
         }
 
         public static void ExtractAndAnalyze(string archivePath, string outputDir)
