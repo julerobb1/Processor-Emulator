@@ -19,7 +19,9 @@ namespace ProcessorEmulator
         public static void ExtractArchive(string archivePath, string outputDir)
         {
             Directory.CreateDirectory(outputDir);
-            if (Path.GetExtension(archivePath).Equals(".bin", StringComparison.OrdinalIgnoreCase))
+            // Treat raw images or files without extension like .bin
+            var ext = Path.GetExtension(archivePath);
+            if (string.IsNullOrEmpty(ext) || ext.Equals(".bin", StringComparison.OrdinalIgnoreCase))
             {
                 ExtractPartitions(archivePath, outputDir);
                 ExtractFirmwareSections(archivePath, outputDir);
