@@ -12,10 +12,13 @@
   <!-- Pre-build: kill any running instance to avoid file lock issues -->
   <Target Name="EnsureNoRunningInstance" BeforeTargets="BeforeBuild">
     <!-- Attempt to terminate any running ProcessorEmulator process -->
-    <Exec Command="taskkill /F /IM ProcessorEmulator.exe" ContinueOnError="true" />
+  <!-- Attempt to terminate any running ProcessorEmulator process; suppress warnings -->
+  <Exec Command="taskkill /F /IM ProcessorEmulator.exe >nul 2>&1 || exit 0" ContinueOnError="true" />
   </Target>
   <!-- Using stub Unicorn definitions in Tools/BinaryTranslator.cs; no external package required -->
   <ItemGroup>
     <PackageReference Include="SharpCompress" Version="0.30.0" />
+  <!-- Exclude duplicate console entry-point file -->
+  <Compile Remove="Program.cs" />
   </ItemGroup>
 </Project>
