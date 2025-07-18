@@ -182,8 +182,14 @@ namespace ProcessorEmulator
                 int end = (i + 1 < found.Count) ? found[i + 1].off : buf.Length;
                 int length = end - off;
                 Console.WriteLine($"[ArchiveExtractor] extracting '{name}' at 0x{off:X} ({length} bytes)");
-                File.WriteAllBytes(Path.Combine(outDir, $"{name}_{off:X}.bin"),
-                    buf.Skip(off).Take(length).ToArray());
+                var outputFile = Path.Combine(outDir, $"{name}_{off:X}.bin");
+                File.WriteAllBytes(outputFile, buf.Skip(off).Take(length).ToArray());
+                // If YAFFS filesystem detected, run YAFFS extractor stub
+                if (name.Equals("yaffs", StringComparison.OrdinalIgnoreCase))
+                {
+                    var yaffsOut = Path.Combine(outDir, $"{name}_{off:X}_extracted");
+                    YaffsExtractor.ExtractYaffs(outputFile, yaffsOut);
+                }
             }
         }
 
