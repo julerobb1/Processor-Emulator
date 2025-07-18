@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "B5HNCZnQdVw=",
+  "dgSpecHash": "56gj521rChk=",
   "success": true,
-  "projectFilePath": "c:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\ProcessorEmulator.csproj",
+  "projectFilePath": "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\ProcessorEmulator.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\juler\\.nuget\\packages\\sharpcompress\\0.30.0\\sharpcompress.0.30.0.nupkg.sha512",
     "C:\\Users\\juler\\.nuget\\packages\\microsoft.netcore.app.ref\\6.0.36\\microsoft.netcore.app.ref.6.0.36.nupkg.sha512",
