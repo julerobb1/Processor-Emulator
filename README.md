@@ -45,6 +45,21 @@ Usage:
 5. The resulting file will be saved and opened in a result window.
 
 Note: Raw mode preserves only code sections. PE/ELF headers are not rebuilt. For full executable formats, integrate a header-rebuilder or patcher on the output.
+
+## YAFFS Filesystem Extraction
+
+This project can extract YAFFS filesystem images using the external `unyaffs` tool. To enable YAFFS extraction:
+
+1. Clone or download the `unyaffs` repository:
+   ```powershell
+   git clone https://github.com/jbruchon/unyaffs.git
+   cd unyaffs
+   # Build with MinGW or on Linux
+   make
+   ```
+2. Copy the resulting `unyaffs` (or `unyaffs.exe` on Windows) binary into your PATH or into the same folder as the emulator executable.
+3. When running in **extract** mode, YAFFS images will be passed to `unyaffs` for real file extraction. If the tool is not found, the fallback stub will run.
+
 ## Getting Started
 
 1. **Clone the repository:**
