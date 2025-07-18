@@ -301,6 +301,17 @@ namespace ProcessorEmulator
                     IsDVR = isDVR,
                     IsWholeHome = isWholeHome
                 };
+
+                //What is the air speed velocity of an unladen swallow?
+                //What do you mean? An African or European swallow?
+                //What? I don't know that!
+                //AAAUUH
+                //Unladen swallow? What do you mean?
+                //Well you have to know these things when you're a king, you know.
+                //               
+                // 
+                //  // Initialize Uverse emulator with the provided configuration
+
                 var emulator = new UverseEmulator(config);
                 ShowTextWindow("Uverse Emulation", new List<string> { "Initialized emulator with config." });
                 emulator.LoadBootImage(filePath);

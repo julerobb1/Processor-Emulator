@@ -20,7 +20,7 @@ jobs:
           dotnet-version: '6.0.x'
 
       - name: Restore dependencies
-        run: dotnet restore
+        run: dotnet restore ProcessorEmulator.sln
 
       - name: Build solution
         run: dotnet build ProcessorEmulator.csproj --configuration Release --no-restore
