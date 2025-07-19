@@ -23,3 +23,5 @@ C:\Users\juler\Documents\GitHub\Processor-Emulator\bin\Debug\net6.0-windows\Proc
 C:\Users\juler\Documents\GitHub\Processor-Emulator\bin\Debug\net6.0-windows\SharpCompress.dll
 C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Debug\net6.0-windows\ProcessorEmulator.csproj.AssemblyReference.cache
 C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Debug\net6.0-windows\Processo.4E19C3D8.Up2Date
+C:\Users\juler\Documents\GitHub\Processor-Emulator\bin\Debug\net6.0-windows\DiscUtils.Core.dll
+C:\Users\juler\Documents\GitHub\Processor-Emulator\bin\Debug\net6.0-windows\DiscUtils.Streams.dll
