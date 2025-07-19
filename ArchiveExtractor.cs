@@ -61,34 +61,25 @@ namespace ProcessorEmulator
             var ext = Path.GetExtension(archivePath);
             if (string.IsNullOrEmpty(ext) || ext.Equals(".bin", StringComparison.OrdinalIgnoreCase))
             {
-                // 1. Use DiscUtils to mount partitions & filesystems if available
+                // Use binwalk for extraction if available
                 try
                 {
-                    using var fs = File.OpenRead(archivePath);
-                    // Load MBR/GPT and logical volumes
-                    var vhd = DiscUtils.Streams.Disk.Initialize(fs, Ownership.None);
-                    var volMgr = new VolumeManager(vhd);
-                    int idx = 1;
-                    foreach (var vol in volMgr.GetLogicalVolumes())
+                    var binwalk = new ProcessStartInfo("binwalk", $"-e -M -C \"{outputDir}\" \"{archivePath}\"")
                     {
-                        string volDir = Path.Combine(outputDir, $"volume{idx++}");
-                        Directory.CreateDirectory(volDir);
-                        using var volStream = vol.Open();
-                        var fsys = FileSystemManager.DetectFileSystem(volStream);
-                        if (fsys != null)
-                        {
-                            fsys.CopyAll(volDir);
-                            Console.WriteLine($"[ArchiveExtractor] Extracted filesystem from volume {idx - 1} to {volDir}");
-                        }
-                        else
-                        {
-                            Console.WriteLine($"[ArchiveExtractor] No known filesystem on volume {idx - 1}");
-                        }
-                    }
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
+                    using var bw = Process.Start(binwalk);
+                    bw.WaitForExit();
+                    Console.WriteLine(bw.StandardOutput.ReadToEnd());
+                    Console.Error.WriteLine(bw.StandardError.ReadToEnd());
+                    return;
                 }
-                catch (Exception ex)
+                catch
                 {
-                    Console.WriteLine($"[ArchiveExtractor] DiscUtils extraction failed: {ex.Message}");
+                    Console.WriteLine("[ArchiveExtractor] binwalk not available, falling back to signature carving.");
                 }
 
                 // 2. Fallback: partition split and signature carving
