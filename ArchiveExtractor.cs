@@ -6,9 +6,6 @@ using System.IO;
 using System.Linq;
 using Microsoft.Win32;
 using ProcessorEmulator.Tools;
-using DiscUtils;
-using DiscUtils.Partitions;
-using DiscUtils.FileSystemManager;
 
 namespace ProcessorEmulator
 {
@@ -64,7 +61,7 @@ namespace ProcessorEmulator
                 // Use binwalk for extraction if available
                 try
                 {
-                    var binwalk = new ProcessStartInfo("binwalk", $"-e -M -C \"{outputDir}\" \"{archivePath}\"")
+                    var binwalk = new ProcessStartInfo("binwalk", $"-eM \"{archivePath}\" -C \"{outputDir}\"")
                     {
                         RedirectStandardOutput = true,
                         RedirectStandardError = true,
@@ -77,12 +74,12 @@ namespace ProcessorEmulator
                     Console.Error.WriteLine(bw.StandardError.ReadToEnd());
                     return;
                 }
-                catch
+                catch (Exception ex)
                 {
-                    Console.WriteLine("[ArchiveExtractor] binwalk not available, falling back to signature carving.");
+                    Console.WriteLine($"[ArchiveExtractor] binwalk extraction failed: {ex.Message}");
                 }
 
-                // 2. Fallback: partition split and signature carving
+                // Fallback: partition split and signature carving
                 ExtractPartitions(archivePath, outputDir);
                 ExtractFirmwareSections(archivePath, outputDir);
                 return;
