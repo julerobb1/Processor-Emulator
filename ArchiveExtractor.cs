@@ -6,6 +6,9 @@ using System.IO;
 using System.Linq;
 using Microsoft.Win32;
 using ProcessorEmulator.Tools;
+using DiscUtils;
+using DiscUtils.Partitions;
+using DiscUtils.FileSystemManager;
 
 namespace ProcessorEmulator
 {
@@ -39,7 +42,9 @@ namespace ProcessorEmulator
                 ["macho32"]  = new byte[]{0xCE,0xFA,0xED,0xFE},
                 ["macho64"]  = new byte[]{0xCF,0xFA,0xED,0xFE},
                 ["iso9660"]  = System.Text.Encoding.ASCII.GetBytes("CD001"),
-                ["cab"]      = System.Text.Encoding.ASCII.GetBytes("MSCF"),             
+                ["cab"]      = System.Text.Encoding.ASCII.GetBytes("MSCF"),
+                ["trx"]      = System.Text.Encoding.ASCII.GetBytes("HDR0"),    // Broadcom TRX container
+                ["xmi"]      = System.Text.Encoding.ASCII.GetBytes("XMI\0"),   // Mediaroom XMI package header
                 // Additional kernel and filesystem-specific headers
                 ["bzImage"]  = System.Text.Encoding.ASCII.GetBytes("HdrB"),            // Linux bzImage header
                 ["yaffs"]    = System.Text.Encoding.ASCII.GetBytes("Yaffs")            // YAFFS filesystem superblock
@@ -53,10 +58,40 @@ namespace ProcessorEmulator
         public static void ExtractArchive(string archivePath, string outputDir)
         {
             Directory.CreateDirectory(outputDir);
-            // Treat raw images or files without extension like .bin
             var ext = Path.GetExtension(archivePath);
             if (string.IsNullOrEmpty(ext) || ext.Equals(".bin", StringComparison.OrdinalIgnoreCase))
             {
+                // 1. Use DiscUtils to mount partitions & filesystems if available
+                try
+                {
+                    using var fs = File.OpenRead(archivePath);
+                    // Load MBR/GPT and logical volumes
+                    var vhd = DiscUtils.Streams.Disk.Initialize(fs, Ownership.None);
+                    var volMgr = new VolumeManager(vhd);
+                    int idx = 1;
+                    foreach (var vol in volMgr.GetLogicalVolumes())
+                    {
+                        string volDir = Path.Combine(outputDir, $"volume{idx++}");
+                        Directory.CreateDirectory(volDir);
+                        using var volStream = vol.Open();
+                        var fsys = FileSystemManager.DetectFileSystem(volStream);
+                        if (fsys != null)
+                        {
+                            fsys.CopyAll(volDir);
+                            Console.WriteLine($"[ArchiveExtractor] Extracted filesystem from volume {idx - 1} to {volDir}");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"[ArchiveExtractor] No known filesystem on volume {idx - 1}");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[ArchiveExtractor] DiscUtils extraction failed: {ex.Message}");
+                }
+
+                // 2. Fallback: partition split and signature carving
                 ExtractPartitions(archivePath, outputDir);
                 ExtractFirmwareSections(archivePath, outputDir);
                 return;
@@ -189,6 +224,18 @@ namespace ProcessorEmulator
                 {
                     var yaffsOut = Path.Combine(outDir, $"{name}_{off:X}_extracted");
                     YaffsExtractor.ExtractYaffs(outputFile, yaffsOut);
+                }
+                // If TRX container detected, run TRX extractor
+                if (name.Equals("trx", StringComparison.OrdinalIgnoreCase))
+                {
+                    var trxOut = Path.Combine(outDir, $"{name}_{off:X}_extracted");
+                    ProcessorEmulator.Tools.TrxExtractor.ExtractTrx(outputFile, trxOut);
+                }
+                // If Mediaroom XMI detected, run XMI extractor stub
+                if (name.Equals("xmi", StringComparison.OrdinalIgnoreCase))
+                {
+                    var xmiOut = Path.Combine(outDir, $"{name}_{off:X}_extracted");
+                    ProcessorEmulator.Tools.XmiExtractor.ExtractXmi(outputFile, xmiOut);
                 }
             }
         }
