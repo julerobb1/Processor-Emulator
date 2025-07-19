@@ -133,7 +133,9 @@ namespace ProcessorEmulator
             }
         }
         //suppose that little things behave very differently than anything big
-//nothing's really as it seems , its so wonderfully //different, so wonderfully different
+        //nothing's really as it seems , its so wonderfully different than anything big
+        // the world is a dynmic mess of jiggling things its hard to believe
+        
         public static void ExtractPartitions(string img, string outDir)
         {
             var buf = File.ReadAllBytes(img);
