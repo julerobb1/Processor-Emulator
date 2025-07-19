@@ -132,8 +132,9 @@ namespace ProcessorEmulator
                     Console.WriteLine($"  No '{name}' signatures found.");
             }
         }
-
-        private static void ExtractPartitions(string img, string outDir)
+        //suppose that little things behave very differently than anything big
+//nothing's really as it seems , its so wonderfully //different, so wonderfully different
+        public static void ExtractPartitions(string img, string outDir)
         {
             var buf = File.ReadAllBytes(img);
             if (buf.Length < 512 || buf[510] != 0x55 || buf[511] != 0xAA)
@@ -151,12 +152,12 @@ namespace ProcessorEmulator
                 long length = (long)sec * 512;
                 if (start + length > buf.LongLength) length = buf.LongLength - start;
 
-                string partFile = Path.Combine(outDir, $"part{i+1}_type{type:X2}.bin");
+                string partFile = Path.Combine(outDir, $"part{i + 1}_type{type:X2}.bin");
                 File.WriteAllBytes(partFile, buf.Skip((int)start).Take((int)length).ToArray());
             }
         }
 
-        private static void ExtractFirmwareSections(string img, string outDir)
+    public static void ExtractFirmwareSections(string img, string outDir)
         {
             var buf = File.ReadAllBytes(img);
             var sigs = new Dictionary<string, byte[]>
