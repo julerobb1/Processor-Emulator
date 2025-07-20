@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -30,5 +30,15 @@
   <PackageReference Include="UnicornEngine.Unicorn" Version="1.0.1" />
     <!-- Exclude duplicate console entry-point file -->
     <Compile Remove="Program.cs" />
+  </ItemGroup>
+  <!-- WPF windows -->
+  <ItemGroup>
+    <Page Include="FolderAnalysisWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Compile Include="FolderAnalysisWindow.xaml.cs">
+      <DependentUpon>FolderAnalysisWindow.xaml</DependentUpon>
+    </Compile>
   </ItemGroup>
 </Project>
