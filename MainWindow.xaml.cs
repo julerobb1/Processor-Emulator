@@ -1132,20 +1132,27 @@ namespace ProcessorEmulator
             StatusBarText($"Analyzing folder: {folderPath}...");
             try
             {
-                // Recursively gather all files
-                var files = Directory.GetFiles(folderPath, "*.*", SearchOption.AllDirectories);
-                var output = new List<string> { $"Folder: {folderPath}", $"Total files: {files.Length}" };
-                foreach (var file in files)
+                // Recursively gather all files and prepare records
+                var filePaths = Directory.GetFiles(folderPath, "*.*", SearchOption.AllDirectories);
+                var records = new List<FileRecord>(filePaths.Length);
+                foreach (var file in filePaths)
                 {
                     var info = new FileInfo(file);
                     // Read up to first 16 bytes
-                    byte[] buffer = new byte[Math.Min(16, info.Length > int.MaxValue ? 16 : (int)info.Length)];
-                    using (var fs = File.OpenRead(file))
-                        fs.Read(buffer, 0, buffer.Length);
+                    int previewLen = (int)Math.Min(16, info.Length);
+                    byte[] buffer = new byte[previewLen];
+                    using (var stream = File.OpenRead(file))
+                        stream.Read(buffer, 0, previewLen);
                     string hex = BitConverter.ToString(buffer).Replace("-", " ");
-                    output.Add($"{file} ({info.Length} bytes): {hex}");
+                    records.Add(new FileRecord { FilePath = file, Size = info.Length, HexPreview = hex });
                 }
-                ShowTextWindow("Folder Analysis", output);
+                // Show detailed grid view
+                var window = new FolderAnalysisWindow(records)
+                {
+                    Title = $"Folder Analysis: {folderPath}" ,
+                    Owner = this
+                };
+                window.Show();
                 StatusBarText("Folder analysis complete.");
             }
             catch (Exception ex)
