@@ -1,17 +1,19 @@
 {
   "version": 2,
-  "dgSpecHash": "gjBHvOIkeZA=",
-  "success": false,
+  "dgSpecHash": "IU9ogf7XCws=",
+  "success": true,
   "projectFilePath": "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\ProcessorEmulator.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\juler\\.nuget\\packages\\discutils.core\\0.16.13\\discutils.core.0.16.13.nupkg.sha512",
     "C:\\Users\\juler\\.nuget\\packages\\discutils.fat\\0.16.13\\discutils.fat.0.16.13.nupkg.sha512",
     "C:\\Users\\juler\\.nuget\\packages\\discutils.squashfs\\0.16.13\\discutils.squashfs.0.16.13.nupkg.sha512",
     "C:\\Users\\juler\\.nuget\\packages\\discutils.streams\\0.16.13\\discutils.streams.0.16.13.nupkg.sha512",
+    "C:\\Users\\juler\\.nuget\\packages\\fsharp.core\\8.0.400\\fsharp.core.8.0.400.nupkg.sha512",
     "C:\\Users\\juler\\.nuget\\packages\\microsoft.netcore.platforms\\5.0.0\\microsoft.netcore.platforms.5.0.0.nupkg.sha512",
     "C:\\Users\\juler\\.nuget\\packages\\sharpcompress\\0.30.0\\sharpcompress.0.30.0.nupkg.sha512",
     "C:\\Users\\juler\\.nuget\\packages\\system.security.accesscontrol\\5.0.0\\system.security.accesscontrol.5.0.0.nupkg.sha512",
     "C:\\Users\\juler\\.nuget\\packages\\system.security.principal.windows\\5.0.0\\system.security.principal.windows.5.0.0.nupkg.sha512",
+    "C:\\Users\\juler\\.nuget\\packages\\unicornengine.unicorn\\2.1.0\\unicornengine.unicorn.2.1.0.nupkg.sha512",
     "C:\\Users\\juler\\.nuget\\packages\\microsoft.netcore.app.ref\\6.0.36\\microsoft.netcore.app.ref.6.0.36.nupkg.sha512",
     "C:\\Users\\juler\\.nuget\\packages\\microsoft.windowsdesktop.app.ref\\6.0.36\\microsoft.windowsdesktop.app.ref.6.0.36.nupkg.sha512",
     "C:\\Users\\juler\\.nuget\\packages\\microsoft.aspnetcore.app.ref\\6.0.36\\microsoft.aspnetcore.app.ref.6.0.36.nupkg.sha512",
@@ -19,12 +21,13 @@
   ],
   "logs": [
     {
-      "code": "NU1101",
-      "level": "Error",
-      "message": "Unable to find package Unicorn.NET. No packages exist with this id in source(s): nuget.org",
+      "code": "NU1603",
+      "level": "Warning",
+      "message": "ProcessorEmulator depends on UnicornEngine.Unicorn (>= 1.0.1) but UnicornEngine.Unicorn 1.0.1 was not found. UnicornEngine.Unicorn 2.1.0 was resolved instead.",
       "projectPath": "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\ProcessorEmulator.csproj",
+      "warningLevel": 1,
       "filePath": "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\ProcessorEmulator.csproj",
-      "libraryId": "Unicorn.NET",
+      "libraryId": "UnicornEngine.Unicorn",
       "targetGraphs": [
         "net6.0-windows7.0"
       ]
