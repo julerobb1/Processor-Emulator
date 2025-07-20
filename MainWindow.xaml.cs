@@ -154,6 +154,12 @@ namespace ProcessorEmulator
                 case "Mount YAFFS Filesystem":
                     await HandleYaffsMount();
                     break;
+                case "Firmadyne Emulation":
+                    await HandleFirmadyneEmulation();
+                    break;
+                case "Azeria ARM Emulation":
+                    await HandleAzeriaEmulation();
+                    break;
                 case "Analyze Folder Contents":
                     await HandleFolderAnalysis();
                     break;
