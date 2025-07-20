@@ -1,10 +1,11 @@
 {
   "version": 2,
-  "dgSpecHash": "R4dOTZT7g1Q=",
+  "dgSpecHash": "9qifmCQ8qLY=",
   "success": true,
   "projectFilePath": "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\ProcessorEmulator.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\juler\\.nuget\\packages\\discutils.core\\0.16.13\\discutils.core.0.16.13.nupkg.sha512",
+    "C:\\Users\\juler\\.nuget\\packages\\discutils.fat\\0.16.13\\discutils.fat.0.16.13.nupkg.sha512",
     "C:\\Users\\juler\\.nuget\\packages\\discutils.streams\\0.16.13\\discutils.streams.0.16.13.nupkg.sha512",
     "C:\\Users\\juler\\.nuget\\packages\\microsoft.netcore.platforms\\5.0.0\\microsoft.netcore.platforms.5.0.0.nupkg.sha512",
     "C:\\Users\\juler\\.nuget\\packages\\sharpcompress\\0.30.0\\sharpcompress.0.30.0.nupkg.sha512",
