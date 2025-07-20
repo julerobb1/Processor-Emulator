@@ -9,6 +9,7 @@
       "ProcessorEmulator/1.0.0": {
         "dependencies": {
           "DiscUtils.Core": "0.16.13",
+          "DiscUtils.Fat": "0.16.13",
           "SharpCompress": "0.30.0"
         },
         "runtime": {
@@ -22,6 +23,17 @@
         },
         "runtime": {
           "lib/net5.0/DiscUtils.Core.dll": {
+            "assemblyVersion": "0.16.0.0",
+            "fileVersion": "0.16.13.55129"
+          }
+        }
+      },
+      "DiscUtils.Fat/0.16.13": {
+        "dependencies": {
+          "DiscUtils.Core": "0.16.13"
+        },
+        "runtime": {
+          "lib/net5.0/DiscUtils.Fat.dll": {
             "assemblyVersion": "0.16.0.0",
             "fileVersion": "0.16.13.55129"
           }
@@ -65,6 +77,13 @@
       "sha512": "sha512-TU/Ns5RMa3060K7AsSDqG94/H7eaWaz1XoYuCUur40Mg+t0/ubtKqxCffkoiB1e/cFMGvHL0evFoY6uDL9Ocmw==",
       "path": "discutils.core/0.16.13",
       "hashPath": "discutils.core.0.16.13.nupkg.sha512"
+    },
+    "DiscUtils.Fat/0.16.13": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-Ch29amFF0dMBwHuq4Tuu1ycXzRpNY+8K8BMvGyMjJyrYQaNh0y99MNYEDQJK7lG9f8ih+PEWljLyp5AjR/SDlw==",
+      "path": "discutils.fat/0.16.13",
+      "hashPath": "discutils.fat.0.16.13.nupkg.sha512"
     },
     "DiscUtils.Streams/0.16.13": {
       "type": "package",
