@@ -20,7 +20,9 @@
   <ItemGroup>
     <PackageReference Include="SharpCompress" Version="0.30.0" />
     <!-- DiscUtils for partition & filesystem support; latest available version -->
-    <PackageReference Include="DiscUtils.Core" Version="0.16.13" />
+  <PackageReference Include="DiscUtils.Core" Version="0.16.13" />
+  <!-- FAT filesystem support -->
+  <PackageReference Include="DiscUtils.Fat" Version="0.16.13" />
     <!-- Exclude duplicate console entry-point file -->
     <Compile Remove="Program.cs" />
   </ItemGroup>
