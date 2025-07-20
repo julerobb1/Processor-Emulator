@@ -64,6 +64,60 @@
           }
         }
       },
+      "FSharp.Core/8.0.400": {
+        "type": "package",
+        "compile": {
+          "lib/netstandard2.1/FSharp.Core.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/netstandard2.1/FSharp.Core.dll": {
+            "related": ".xml"
+          }
+        },
+        "resource": {
+          "lib/netstandard2.1/cs/FSharp.Core.resources.dll": {
+            "locale": "cs"
+          },
+          "lib/netstandard2.1/de/FSharp.Core.resources.dll": {
+            "locale": "de"
+          },
+          "lib/netstandard2.1/es/FSharp.Core.resources.dll": {
+            "locale": "es"
+          },
+          "lib/netstandard2.1/fr/FSharp.Core.resources.dll": {
+            "locale": "fr"
+          },
+          "lib/netstandard2.1/it/FSharp.Core.resources.dll": {
+            "locale": "it"
+          },
+          "lib/netstandard2.1/ja/FSharp.Core.resources.dll": {
+            "locale": "ja"
+          },
+          "lib/netstandard2.1/ko/FSharp.Core.resources.dll": {
+            "locale": "ko"
+          },
+          "lib/netstandard2.1/pl/FSharp.Core.resources.dll": {
+            "locale": "pl"
+          },
+          "lib/netstandard2.1/pt-BR/FSharp.Core.resources.dll": {
+            "locale": "pt-BR"
+          },
+          "lib/netstandard2.1/ru/FSharp.Core.resources.dll": {
+            "locale": "ru"
+          },
+          "lib/netstandard2.1/tr/FSharp.Core.resources.dll": {
+            "locale": "tr"
+          },
+          "lib/netstandard2.1/zh-Hans/FSharp.Core.resources.dll": {
+            "locale": "zh-Hans"
+          },
+          "lib/netstandard2.1/zh-Hant/FSharp.Core.resources.dll": {
+            "locale": "zh-Hant"
+          }
+        }
+      },
       "Microsoft.NETCore.Platforms/5.0.0": {
         "type": "package",
         "compile": {
@@ -125,6 +179,48 @@
           "runtimes/win/lib/netcoreapp2.1/System.Security.Principal.Windows.dll": {
             "assetType": "runtime",
             "rid": "win"
+          }
+        }
+      },
+      "UnicornEngine.Unicorn/2.1.0": {
+        "type": "package",
+        "dependencies": {
+          "FSharp.Core": "8.0.400"
+        },
+        "compile": {
+          "lib/net6.0/UnicornEngine.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net6.0/UnicornEngine.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtimeTargets": {
+          "runtimes/linux-arm64/native/libunicorn.so": {
+            "assetType": "native",
+            "rid": "linux-arm64"
+          },
+          "runtimes/linux-ppc64le/native/libunicorn.so": {
+            "assetType": "native",
+            "rid": "linux-ppc64le"
+          },
+          "runtimes/linux-x64/native/libunicorn.so": {
+            "assetType": "native",
+            "rid": "linux-x64"
+          },
+          "runtimes/osx-x64/native/libunicorn.dylib": {
+            "assetType": "native",
+            "rid": "osx-x64"
+          },
+          "runtimes/win-x64/native/unicorn.dll": {
+            "assetType": "native",
+            "rid": "win-x64"
+          },
+          "runtimes/win-x86/native/unicorn.dll": {
+            "assetType": "native",
+            "rid": "win-x86"
           }
         }
       }
@@ -205,6 +301,48 @@
         "lib/net5.0/DiscUtils.Streams.xml",
         "lib/netstandard2.0/DiscUtils.Streams.dll",
         "lib/netstandard2.0/DiscUtils.Streams.xml"
+      ]
+    },
+    "FSharp.Core/8.0.400": {
+      "sha512": "kHMdDDmlZl98tujgHCmL8/HNH9VKbxsRMC9s7wbwr4noR40SSa5D4d00yF8cMK52s8jabVuiLLcrUw9r+PkKDQ==",
+      "type": "package",
+      "path": "fsharp.core/8.0.400",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "Icon.png",
+        "fsharp.core.8.0.400.nupkg.sha512",
+        "fsharp.core.nuspec",
+        "lib/netstandard2.0/FSharp.Core.dll",
+        "lib/netstandard2.0/FSharp.Core.xml",
+        "lib/netstandard2.0/cs/FSharp.Core.resources.dll",
+        "lib/netstandard2.0/de/FSharp.Core.resources.dll",
+        "lib/netstandard2.0/es/FSharp.Core.resources.dll",
+        "lib/netstandard2.0/fr/FSharp.Core.resources.dll",
+        "lib/netstandard2.0/it/FSharp.Core.resources.dll",
+        "lib/netstandard2.0/ja/FSharp.Core.resources.dll",
+        "lib/netstandard2.0/ko/FSharp.Core.resources.dll",
+        "lib/netstandard2.0/pl/FSharp.Core.resources.dll",
+        "lib/netstandard2.0/pt-BR/FSharp.Core.resources.dll",
+        "lib/netstandard2.0/ru/FSharp.Core.resources.dll",
+        "lib/netstandard2.0/tr/FSharp.Core.resources.dll",
+        "lib/netstandard2.0/zh-Hans/FSharp.Core.resources.dll",
+        "lib/netstandard2.0/zh-Hant/FSharp.Core.resources.dll",
+        "lib/netstandard2.1/FSharp.Core.dll",
+        "lib/netstandard2.1/FSharp.Core.xml",
+        "lib/netstandard2.1/cs/FSharp.Core.resources.dll",
+        "lib/netstandard2.1/de/FSharp.Core.resources.dll",
+        "lib/netstandard2.1/es/FSharp.Core.resources.dll",
+        "lib/netstandard2.1/fr/FSharp.Core.resources.dll",
+        "lib/netstandard2.1/it/FSharp.Core.resources.dll",
+        "lib/netstandard2.1/ja/FSharp.Core.resources.dll",
+        "lib/netstandard2.1/ko/FSharp.Core.resources.dll",
+        "lib/netstandard2.1/pl/FSharp.Core.resources.dll",
+        "lib/netstandard2.1/pt-BR/FSharp.Core.resources.dll",
+        "lib/netstandard2.1/ru/FSharp.Core.resources.dll",
+        "lib/netstandard2.1/tr/FSharp.Core.resources.dll",
+        "lib/netstandard2.1/zh-Hans/FSharp.Core.resources.dll",
+        "lib/netstandard2.1/zh-Hant/FSharp.Core.resources.dll"
       ]
     },
     "Microsoft.NETCore.Platforms/5.0.0": {
@@ -342,6 +480,25 @@
         "useSharedDesignerContext.txt",
         "version.txt"
       ]
+    },
+    "UnicornEngine.Unicorn/2.1.0": {
+      "sha512": "8fpyT7znmJSK9bK9KJdW6Ouq0GFZjQiJ9GAAWh52c26YBN92sDC/zvhVQCbYhV+/SjXQGyrUuNV5ZBL2Gy/ydA==",
+      "type": "package",
+      "path": "unicornengine.unicorn/2.1.0",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "lib/net6.0/UnicornEngine.dll",
+        "lib/net6.0/UnicornEngine.xml",
+        "runtimes/linux-arm64/native/libunicorn.so",
+        "runtimes/linux-ppc64le/native/libunicorn.so",
+        "runtimes/linux-x64/native/libunicorn.so",
+        "runtimes/osx-x64/native/libunicorn.dylib",
+        "runtimes/win-x64/native/unicorn.dll",
+        "runtimes/win-x86/native/unicorn.dll",
+        "unicornengine.unicorn.2.1.0.nupkg.sha512",
+        "unicornengine.unicorn.nuspec"
+      ]
     }
   },
   "projectFileDependencyGroups": {
@@ -350,7 +507,7 @@
       "DiscUtils.Fat >= 0.16.13",
       "DiscUtils.SquashFs >= 0.16.13",
       "SharpCompress >= 0.30.0",
-      "Unicorn.NET >= 1.0.3"
+      "UnicornEngine.Unicorn >= 1.0.1"
     ]
   },
   "packageFolders": {
@@ -412,9 +569,9 @@
             "target": "Package",
             "version": "[0.30.0, )"
           },
-          "Unicorn.NET": {
+          "UnicornEngine.Unicorn": {
             "target": "Package",
-            "version": "[1.0.3, )"
+            "version": "[1.0.1, )"
           }
         },
         "imports": [
@@ -460,10 +617,11 @@
   },
   "logs": [
     {
-      "code": "NU1101",
-      "level": "Error",
-      "message": "Unable to find package Unicorn.NET. No packages exist with this id in source(s): nuget.org",
-      "libraryId": "Unicorn.NET",
+      "code": "NU1603",
+      "level": "Warning",
+      "warningLevel": 1,
+      "message": "ProcessorEmulator depends on UnicornEngine.Unicorn (>= 1.0.1) but UnicornEngine.Unicorn 1.0.1 was not found. UnicornEngine.Unicorn 2.1.0 was resolved instead.",
+      "libraryId": "UnicornEngine.Unicorn",
       "targetGraphs": [
         "net6.0-windows7.0"
       ]

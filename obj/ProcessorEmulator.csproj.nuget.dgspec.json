@@ -60,9 +60,9 @@
               "target": "Package",
               "version": "[0.30.0, )"
             },
-            "Unicorn.NET": {
+            "UnicornEngine.Unicorn": {
               "target": "Package",
-              "version": "[1.0.3, )"
+              "version": "[1.0.1, )"
             }
           },
           "imports": [
