@@ -31,10 +31,4 @@
     <!-- Exclude duplicate console entry-point file -->
     <Compile Remove="Program.cs" />
   </ItemGroup>
-  <ItemGroup>
-    <Page Include="FolderAnalysisWindow.xaml">
-      <Generator>MSBuild:Compile</Generator>
-      <SubType>Designer</SubType>
-    </Page>
-  </ItemGroup>
 </Project>
