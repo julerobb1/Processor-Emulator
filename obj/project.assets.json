@@ -19,6 +19,22 @@
           }
         }
       },
+      "DiscUtils.Fat/0.16.13": {
+        "type": "package",
+        "dependencies": {
+          "DiscUtils.Core": "0.16.13"
+        },
+        "compile": {
+          "lib/net5.0/DiscUtils.Fat.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net5.0/DiscUtils.Fat.dll": {
+            "related": ".xml"
+          }
+        }
+      },
       "DiscUtils.Streams/0.16.13": {
         "type": "package",
         "compile": {
@@ -116,6 +132,25 @@
         "lib/net5.0/DiscUtils.Core.xml",
         "lib/netstandard2.0/DiscUtils.Core.dll",
         "lib/netstandard2.0/DiscUtils.Core.xml"
+      ]
+    },
+    "DiscUtils.Fat/0.16.13": {
+      "sha512": "Ch29amFF0dMBwHuq4Tuu1ycXzRpNY+8K8BMvGyMjJyrYQaNh0y99MNYEDQJK7lG9f8ih+PEWljLyp5AjR/SDlw==",
+      "type": "package",
+      "path": "discutils.fat/0.16.13",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "discutils.fat.0.16.13.nupkg.sha512",
+        "discutils.fat.nuspec",
+        "lib/net40/DiscUtils.Fat.dll",
+        "lib/net40/DiscUtils.Fat.xml",
+        "lib/net45/DiscUtils.Fat.dll",
+        "lib/net45/DiscUtils.Fat.xml",
+        "lib/net5.0/DiscUtils.Fat.dll",
+        "lib/net5.0/DiscUtils.Fat.xml",
+        "lib/netstandard2.0/DiscUtils.Fat.dll",
+        "lib/netstandard2.0/DiscUtils.Fat.xml"
       ]
     },
     "DiscUtils.Streams/0.16.13": {
@@ -277,6 +312,7 @@
   "projectFileDependencyGroups": {
     "net6.0-windows7.0": [
       "DiscUtils.Core >= 0.16.13",
+      "DiscUtils.Fat >= 0.16.13",
       "SharpCompress >= 0.30.0"
     ]
   },
@@ -324,6 +360,10 @@
         "targetAlias": "net6.0-windows",
         "dependencies": {
           "DiscUtils.Core": {
+            "target": "Package",
+            "version": "[0.16.13, )"
+          },
+          "DiscUtils.Fat": {
             "target": "Package",
             "version": "[0.16.13, )"
           },
