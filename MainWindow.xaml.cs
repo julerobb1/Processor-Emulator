@@ -2,6 +2,8 @@ using ProcessorEmulator.Emulation;
 using ProcessorEmulator.Tools;
 using ProcessorEmulator.Network;
 using System.Windows;
+using DiscUtils.Fat;
+using DiscUtils.Setup;
 using Microsoft.Win32;
 using System.Threading.Tasks;
 using System.IO;
@@ -57,16 +59,6 @@ namespace ProcessorEmulator
         private Disassembler disassembler = new();
         private Recompiler recompiler = new();
         private ExoticFilesystemManager fsManager = new();
-
-        public MainWindow(TextBlock statusBar, IEmulator currentEmulator = null)
-        {
-            this.StatusBar = statusBar;
-            this.currentEmulator = currentEmulator;
-        }
-
-        /// <summary>
-        /// Holds a reference to the currently selected or active emulator instance.
-        /// </summary>
         private InstructionDispatcher dispatcher = new();
 
         public TextBlock StatusBar { get; set; } = new TextBlock();
@@ -109,6 +101,7 @@ namespace ProcessorEmulator
                 "Executable Analysis",
                 "Linux Filesystem Read/Write",
                 "Cross-Compile Binary",
+                "Mount CE Filesystem",
                 "Mount YAFFS Filesystem",
                 "Analyze Folder Contents"
             };
@@ -152,6 +145,9 @@ namespace ProcessorEmulator
                     break;
                 case "Cross-Compile Binary":
                     await HandleCrossCompile();
+                    break;
+                case "Mount CE Filesystem":
+                    await HandleCeMount();
                     break;
                 case "Mount YAFFS Filesystem":
                     await HandleYaffsMount();
@@ -506,9 +502,6 @@ namespace ProcessorEmulator
             try { EmulatorLauncher.Launch(path, arch, platform: "RDK-V"); StatusBarText("RDK-V emulation started."); }
             catch (Exception ex) { MessageBox.Show($"RDK-V error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error); StatusBarText("RDK-V emulation failed."); }
             await Task.CompletedTask;
-            case "Analyze Folder Contents":
-                await HandleFolderAnalysis();
-                break;
         }
 
 
@@ -1040,6 +1033,37 @@ namespace ProcessorEmulator
         }
 
         /// <summary>
+        /// Mounts a Windows CE filesystem image using DiscUtils.Fat
+        /// </summary>
+        private async Task HandleCeMount()
+        {
+            var dlg = new Microsoft.Win32.OpenFileDialog { Filter = "CE Image Files (*.bin;*.img)|*.bin;*.img|All Files (*.*)|*.*" };
+            if (dlg.ShowDialog() != true) return;
+            string path = dlg.FileName;
+            StatusBarText($"Mounting CE filesystem image {Path.GetFileName(path)}...");
+            try
+            {
+                using var stream = File.OpenRead(path);
+                // DiscUtils initialization
+                DiscUtils.Setup.SetupHelper.RegisterAssembly(typeof(DiscUtils.Fat.FatFileSystem).Assembly);
+                var fs = new DiscUtils.Fat.FatFileSystem(stream);
+                var entries = new List<string> { $"Mounted CE FS: {Path.GetFileName(path)}" };
+                foreach (var entry in fs.GetFiles("", "*", SearchOption.TopDirectoryOnly))
+                {
+                    entries.Add(entry);
+                }
+                ShowTextWindow("CE Filesystem Mount", entries);
+                StatusBarText("CE filesystem mount complete.");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"CE mount error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusBarText("CE filesystem mount failed.");
+            }
+            await Task.CompletedTask;
+        }
+
+        /// <summary>
         /// Mounts a YAFFS filesystem image using the ExoticFilesystemManager.
         /// </summary>
         private async Task HandleYaffsMount()
@@ -1077,14 +1101,19 @@ namespace ProcessorEmulator
             StatusBarText($"Analyzing folder: {folderPath}...");
             try
             {
-                var files = Directory.GetFiles(folderPath);
-                var subfolders = Directory.GetDirectories(folderPath);
-                var output = new List<string>
+                // Recursively gather all files
+                var files = Directory.GetFiles(folderPath, "*.*", SearchOption.AllDirectories);
+                var output = new List<string> { $"Folder: {folderPath}", $"Total files: {files.Length}" };
+                foreach (var file in files)
                 {
-                    $"Folder: {folderPath}",
-                    $"Files: {files.Length}",
-                    $"Subfolders: {subfolders.Length}"
-                };
+                    var info = new FileInfo(file);
+                    // Read up to first 16 bytes
+                    byte[] buffer = new byte[Math.Min(16, info.Length > int.MaxValue ? 16 : (int)info.Length)];
+                    using (var fs = File.OpenRead(file))
+                        fs.Read(buffer, 0, buffer.Length);
+                    string hex = BitConverter.ToString(buffer).Replace("-", " ");
+                    output.Add($"{file} ({info.Length} bytes): {hex}");
+                }
                 ShowTextWindow("Folder Analysis", output);
                 StatusBarText("Folder analysis complete.");
             }
