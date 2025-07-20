@@ -103,6 +103,8 @@ namespace ProcessorEmulator
                 "Cross-Compile Binary",
                 "Mount CE Filesystem",
                 "Mount YAFFS Filesystem",
+                "Firmadyne Emulation",
+                "Azeria ARM Emulation",
                 "Analyze Folder Contents"
             };
             string mainChoice = PromptUserForChoice("What would you like to do?", mainOptions);
