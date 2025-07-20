@@ -48,11 +48,23 @@
               "target": "Package",
               "version": "[0.16.13, )"
             },
+            "DiscUtils.Ext": {
+              "target": "Package",
+              "version": "[0.16.13, )"
+            },
             "DiscUtils.Fat": {
               "target": "Package",
               "version": "[0.16.13, )"
             },
+            "DiscUtils.Iso9660": {
+              "target": "Package",
+              "version": "[0.16.13, )"
+            },
             "DiscUtils.SquashFs": {
+              "target": "Package",
+              "version": "[0.16.13, )"
+            },
+            "DiscUtils.Yaffs": {
               "target": "Package",
               "version": "[0.16.13, )"
             },
