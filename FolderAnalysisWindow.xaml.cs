@@ -9,26 +9,13 @@ namespace ProcessorEmulator
     /// </summary>
     public partial class FolderAnalysisWindow : Window
     {
-        public FolderAnalysisWindow(List<FileRecord> records)
-        {
-        }
-
-        public FolderAnalysisWindow(List<FileRecord> items, object dataGridFiles)
+        public FolderAnalysisWindow(List<FileRecord> items)
         {
             InitializeComponent();
             DataGridFiles.ItemsSource = items;
         }
-
-        private void InitializeComponent()
-        {
-            throw new NotImplementedException();
-        }
     }
 
-    internal class DataGridFiles
-    {
-        public static List<FileRecord> ItemsSource { get; internal set; }
-    }
 
     public class FileRecord
     {
