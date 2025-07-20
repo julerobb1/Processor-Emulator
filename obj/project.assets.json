@@ -19,6 +19,22 @@
           }
         }
       },
+      "DiscUtils.Ext/0.16.13": {
+        "type": "package",
+        "dependencies": {
+          "DiscUtils.Core": "0.16.13"
+        },
+        "compile": {
+          "lib/net5.0/DiscUtils.Ext.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net5.0/DiscUtils.Ext.dll": {
+            "related": ".xml"
+          }
+        }
+      },
       "DiscUtils.Fat/0.16.13": {
         "type": "package",
         "dependencies": {
@@ -31,6 +47,22 @@
         },
         "runtime": {
           "lib/net5.0/DiscUtils.Fat.dll": {
+            "related": ".xml"
+          }
+        }
+      },
+      "DiscUtils.Iso9660/0.16.13": {
+        "type": "package",
+        "dependencies": {
+          "DiscUtils.Core": "0.16.13"
+        },
+        "compile": {
+          "lib/net5.0/DiscUtils.Iso9660.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net5.0/DiscUtils.Iso9660.dll": {
             "related": ".xml"
           }
         }
@@ -246,6 +278,25 @@
         "lib/netstandard2.0/DiscUtils.Core.xml"
       ]
     },
+    "DiscUtils.Ext/0.16.13": {
+      "sha512": "eRomHwL21AAtHY9rA1beaN7+dVj9ZKwvGlEk2m0syxok4obLESVJyz5OYwbxxuCNyKmdSMpLOqKIV5ZNxFK7yQ==",
+      "type": "package",
+      "path": "discutils.ext/0.16.13",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "discutils.ext.0.16.13.nupkg.sha512",
+        "discutils.ext.nuspec",
+        "lib/net40/DiscUtils.Ext.dll",
+        "lib/net40/DiscUtils.Ext.xml",
+        "lib/net45/DiscUtils.Ext.dll",
+        "lib/net45/DiscUtils.Ext.xml",
+        "lib/net5.0/DiscUtils.Ext.dll",
+        "lib/net5.0/DiscUtils.Ext.xml",
+        "lib/netstandard2.0/DiscUtils.Ext.dll",
+        "lib/netstandard2.0/DiscUtils.Ext.xml"
+      ]
+    },
     "DiscUtils.Fat/0.16.13": {
       "sha512": "Ch29amFF0dMBwHuq4Tuu1ycXzRpNY+8K8BMvGyMjJyrYQaNh0y99MNYEDQJK7lG9f8ih+PEWljLyp5AjR/SDlw==",
       "type": "package",
@@ -263,6 +314,25 @@
         "lib/net5.0/DiscUtils.Fat.xml",
         "lib/netstandard2.0/DiscUtils.Fat.dll",
         "lib/netstandard2.0/DiscUtils.Fat.xml"
+      ]
+    },
+    "DiscUtils.Iso9660/0.16.13": {
+      "sha512": "hT0DbN+sIqg5Bu3/sCQUuKLwIrceF9BZvn7AeRe+f2iY0p4mgN9xEmXpFWQshnBBxN9r75364agBHDeb5owiUA==",
+      "type": "package",
+      "path": "discutils.iso9660/0.16.13",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "discutils.iso9660.0.16.13.nupkg.sha512",
+        "discutils.iso9660.nuspec",
+        "lib/net40/DiscUtils.Iso9660.dll",
+        "lib/net40/DiscUtils.Iso9660.xml",
+        "lib/net45/DiscUtils.Iso9660.dll",
+        "lib/net45/DiscUtils.Iso9660.xml",
+        "lib/net5.0/DiscUtils.Iso9660.dll",
+        "lib/net5.0/DiscUtils.Iso9660.xml",
+        "lib/netstandard2.0/DiscUtils.Iso9660.dll",
+        "lib/netstandard2.0/DiscUtils.Iso9660.xml"
       ]
     },
     "DiscUtils.SquashFs/0.16.13": {
@@ -504,8 +574,11 @@
   "projectFileDependencyGroups": {
     "net6.0-windows7.0": [
       "DiscUtils.Core >= 0.16.13",
+      "DiscUtils.Ext >= 0.16.13",
       "DiscUtils.Fat >= 0.16.13",
+      "DiscUtils.Iso9660 >= 0.16.13",
       "DiscUtils.SquashFs >= 0.16.13",
+      "DiscUtils.Yaffs >= 0.16.13",
       "SharpCompress >= 0.30.0",
       "UnicornEngine.Unicorn >= 1.0.1"
     ]
@@ -557,11 +630,23 @@
             "target": "Package",
             "version": "[0.16.13, )"
           },
+          "DiscUtils.Ext": {
+            "target": "Package",
+            "version": "[0.16.13, )"
+          },
           "DiscUtils.Fat": {
             "target": "Package",
             "version": "[0.16.13, )"
           },
+          "DiscUtils.Iso9660": {
+            "target": "Package",
+            "version": "[0.16.13, )"
+          },
           "DiscUtils.SquashFs": {
+            "target": "Package",
+            "version": "[0.16.13, )"
+          },
+          "DiscUtils.Yaffs": {
             "target": "Package",
             "version": "[0.16.13, )"
           },
@@ -622,6 +707,15 @@
       "warningLevel": 1,
       "message": "ProcessorEmulator depends on UnicornEngine.Unicorn (>= 1.0.1) but UnicornEngine.Unicorn 1.0.1 was not found. UnicornEngine.Unicorn 2.1.0 was resolved instead.",
       "libraryId": "UnicornEngine.Unicorn",
+      "targetGraphs": [
+        "net6.0-windows7.0"
+      ]
+    },
+    {
+      "code": "NU1101",
+      "level": "Error",
+      "message": "Unable to find package DiscUtils.Yaffs. No packages exist with this id in source(s): nuget.org",
+      "libraryId": "DiscUtils.Yaffs",
       "targetGraphs": [
         "net6.0-windows7.0"
       ]
