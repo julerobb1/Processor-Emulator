@@ -1,23 +1,20 @@
 using System;
 using System.Collections.Generic;
 using System.Windows;
+using System.Windows.Controls;
 
 namespace ProcessorEmulator
 {
     /// <summary>
     /// Interaction logic for FolderAnalysisWindow.xaml
     /// </summary>
+    using System.Windows.Controls;
+
     public partial class FolderAnalysisWindow : Window
     {
-        // Default constructor for XAML code-behind
-        public FolderAnalysisWindow()
+        public FolderAnalysisWindow(List<FileRecord> items)
         {
             InitializeComponent();
-        }
-
-        // Constructor to supply items
-        public FolderAnalysisWindow(List<FileRecord> items) : this()
-        {
             DataGridFiles.ItemsSource = items;
         }
     }
