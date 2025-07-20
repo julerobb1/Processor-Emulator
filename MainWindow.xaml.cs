@@ -2,6 +2,8 @@ using ProcessorEmulator.Emulation;
 using ProcessorEmulator.Tools;
 using ProcessorEmulator.Network;
 using System.Windows;
+using DiscUtils.Fat;
+using DiscUtils.Setup;
 using Microsoft.Win32;
 using System.Threading.Tasks;
 using System.IO;
@@ -11,6 +13,7 @@ using System.Windows.Controls;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using System.Diagnostics;
+using DiscUtils.SquashFS;
 
 namespace ProcessorEmulator
 {
@@ -57,16 +60,6 @@ namespace ProcessorEmulator
         private Disassembler disassembler = new();
         private Recompiler recompiler = new();
         private ExoticFilesystemManager fsManager = new();
-
-        public MainWindow(TextBlock statusBar, IEmulator currentEmulator = null)
-        {
-            this.StatusBar = statusBar;
-            this.currentEmulator = currentEmulator;
-        }
-
-        /// <summary>
-        /// Holds a reference to the currently selected or active emulator instance.
-        /// </summary>
         private InstructionDispatcher dispatcher = new();
 
         public TextBlock StatusBar { get; set; } = new TextBlock();
@@ -108,7 +101,11 @@ namespace ProcessorEmulator
                 "DirecTV Box/Firmware Analysis",
                 "Executable Analysis",
                 "Linux Filesystem Read/Write",
-                "Cross-Compile Binary"
+                "Cross-Compile Binary",
+                "Mount CE Filesystem",
+                "Mount YAFFS Filesystem",
+                "Mount SquashFS Filesystem",
+                "Analyze Folder Contents"
             };
             string mainChoice = PromptUserForChoice("What would you like to do?", mainOptions);
             if (string.IsNullOrEmpty(mainChoice)) return;
@@ -150,6 +147,18 @@ namespace ProcessorEmulator
                     break;
                 case "Cross-Compile Binary":
                     await HandleCrossCompile();
+                    break;
+                case "Mount CE Filesystem":
+                    await HandleCeMount();
+                    break;
+                case "Mount YAFFS Filesystem":
+                    await HandleYaffsMount();
+                    break;
+                case "Mount SquashFS Filesystem":
+                    await HandleSquashFsMount();
+                    break;
+                case "Analyze Folder Contents":
+                    await HandleFolderAnalysis();
                     break;
                 default:
                     MessageBox.Show("Not implemented yet.", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -297,6 +306,17 @@ namespace ProcessorEmulator
                     IsDVR = isDVR,
                     IsWholeHome = isWholeHome
                 };
+
+                //What is the air speed velocity of an unladen swallow?
+                //What do you mean? An African or European swallow?
+                //What? I don't know that!
+                //AAAUUH
+                //Unladen swallow? What do you mean?
+                //Well you have to know these things when you're a king, you know.
+                //               
+                // 
+                //  // Initialize Uverse emulator with the provided configuration
+
                 var emulator = new UverseEmulator(config);
                 ShowTextWindow("Uverse Emulation", new List<string> { "Initialized emulator with config." });
                 emulator.LoadBootImage(filePath);
@@ -446,7 +466,6 @@ namespace ProcessorEmulator
             await Task.CompletedTask;
         }
 
-        #if false
         private async Task HandleFirmadyneEmulation()
         {
             StatusBarText("Starting Firmadyne-based emulation...");
@@ -455,9 +474,7 @@ namespace ProcessorEmulator
             StatusBarText("Firmadyne emulation stub complete.");
             await Task.CompletedTask;
         }
-        #endif
 
-        #if false
         private async Task HandleAzeriaEmulation()
         {
             StatusBarText("Starting Azeria Labs ARM firmware emulation...");
@@ -466,7 +483,6 @@ namespace ProcessorEmulator
             StatusBarText("Azeria ARM emulation stub complete.");
             await Task.CompletedTask;
         }
-        #endif
         
         // Core feature handlers
 
@@ -1015,6 +1031,129 @@ namespace ProcessorEmulator
             if (dialog.ShowDialog() == true)
                 return result;
             return string.Empty;
+        }
+
+        /// <summary>
+        /// Mounts a Windows CE filesystem image using DiscUtils.Fat
+        /// </summary>
+        private async Task HandleCeMount()
+        {
+            var dlg = new Microsoft.Win32.OpenFileDialog { Filter = "CE Image Files (*.bin;*.img)|*.bin;*.img|All Files (*.*)|*.*" };
+            if (dlg.ShowDialog() != true) return;
+            string path = dlg.FileName;
+            StatusBarText($"Mounting CE filesystem image {Path.GetFileName(path)}...");
+            try
+            {
+                using var stream = File.OpenRead(path);
+                // DiscUtils initialization
+                DiscUtils.Setup.SetupHelper.RegisterAssembly(typeof(DiscUtils.Fat.FatFileSystem).Assembly);
+                var fs = new DiscUtils.Fat.FatFileSystem(stream);
+                var entries = new List<string> { $"Mounted CE FS: {Path.GetFileName(path)}" };
+                foreach (var entry in fs.GetFiles("", "*", SearchOption.TopDirectoryOnly))
+                {
+                    entries.Add(entry);
+                }
+                ShowTextWindow("CE Filesystem Mount", entries);
+                StatusBarText("CE filesystem mount complete.");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"CE mount error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusBarText("CE filesystem mount failed.");
+            }
+            await Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Mounts a YAFFS filesystem image using the ExoticFilesystemManager.
+        /// </summary>
+        private async Task HandleYaffsMount()
+        {
+            var dlg = new Microsoft.Win32.OpenFileDialog
+            {
+                Filter = "YAFFS Images (*.img;*.yaffs)|*.img;*.yaffs|All Files (*.*)|*.*"
+            };
+            if (dlg.ShowDialog() != true) return;
+            string path = dlg.FileName;
+            StatusBarText($"Mounting YAFFS image {System.IO.Path.GetFileName(path)}...");
+            try
+            {
+                string mountPoint = "/";
+                fsManager.MountYAFFS(path, mountPoint);
+                StatusBarText("YAFFS image mounted.");
+                ShowTextWindow("YAFFS Mount", new List<string> { $"Mounted {System.IO.Path.GetFileName(path)} at {mountPoint}" });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"YAFFS mount error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusBarText("YAFFS mount failed.");
+            }
+            await Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Mounts a SquashFS filesystem image using DiscUtils.SquashFs
+        /// </summary>
+        private async Task HandleSquashFsMount()
+        {
+            var dlg = new OpenFileDialog { Filter = "SquashFS Images (*.bin;*.img;*.squashfs)|*.bin;*.img;*.squashfs|All Files (*.*)|*.*" };
+            if (dlg.ShowDialog() != true) return;
+            string path = dlg.FileName;
+            StatusBarText($"Mounting SquashFS image {Path.GetFileName(path)}...");
+            try
+            {
+                using var stream = File.OpenRead(path);
+                DiscUtils.Setup.SetupHelper.RegisterAssembly(typeof(DiscUtils.SquashFS.SquashFileSystem).Assembly);
+                var fs = new DiscUtils.SquashFS.SquashFileSystem(stream);
+                var entries = new List<string> { $"Mounted SquashFS: {Path.GetFileName(path)}" };
+                foreach (var entry in fs.GetFiles("", "*", SearchOption.AllDirectories))
+                {
+                    entries.Add(entry);
+                }
+                ShowTextWindow("SquashFS Mount", entries);
+                StatusBarText("SquashFS mount complete.");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"SquashFS mount error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusBarText("SquashFS mount failed.");
+            }
+            await Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Analyzes the contents of a folder, providing information about the files and subfolders.
+        /// </summary>
+        private async Task HandleFolderAnalysis()
+        {
+            var dlg = new System.Windows.Forms.FolderBrowserDialog();
+            if (dlg.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;
+            string folderPath = dlg.SelectedPath;
+            StatusBarText($"Analyzing folder: {folderPath}...");
+            try
+            {
+                // Recursively gather all files
+                var files = Directory.GetFiles(folderPath, "*.*", SearchOption.AllDirectories);
+                var output = new List<string> { $"Folder: {folderPath}", $"Total files: {files.Length}" };
+                foreach (var file in files)
+                {
+                    var info = new FileInfo(file);
+                    // Read up to first 16 bytes
+                    byte[] buffer = new byte[Math.Min(16, info.Length > int.MaxValue ? 16 : (int)info.Length)];
+                    using (var fs = File.OpenRead(file))
+                        fs.Read(buffer, 0, buffer.Length);
+                    string hex = BitConverter.ToString(buffer).Replace("-", " ");
+                    output.Add($"{file} ({info.Length} bytes): {hex}");
+                }
+                ShowTextWindow("Folder Analysis", output);
+                StatusBarText("Folder analysis complete.");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Folder analysis error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusBarText("Folder analysis failed.");
+            }
+            await Task.CompletedTask;
         }
     }
 }

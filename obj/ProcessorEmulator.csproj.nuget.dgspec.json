@@ -43,6 +43,28 @@
       "frameworks": {
         "net6.0-windows7.0": {
           "targetAlias": "net6.0-windows",
+          "dependencies": {
+            "DiscUtils.Core": {
+              "target": "Package",
+              "version": "[0.16.13, )"
+            },
+            "DiscUtils.Fat": {
+              "target": "Package",
+              "version": "[0.16.13, )"
+            },
+            "DiscUtils.SquashFs": {
+              "target": "Package",
+              "version": "[0.16.13, )"
+            },
+            "SharpCompress": {
+              "target": "Package",
+              "version": "[0.30.0, )"
+            },
+            "Unicorn.NET": {
+              "target": "Package",
+              "version": "[1.0.3, )"
+            }
+          },
           "imports": [
             "net461",
             "net462",
@@ -76,7 +98,7 @@
             "Microsoft.NETCore.App": {
               "privateAssets": "all"
             },
-            "Microsoft.WindowsDesktop.App.WPF": {
+            "Microsoft.WindowsDesktop.App": {
               "privateAssets": "none"
             }
           },
