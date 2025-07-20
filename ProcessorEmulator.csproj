@@ -26,8 +26,8 @@
   <PackageReference Include="DiscUtils.Fat" Version="0.16.13" />
   <!-- SquashFS filesystem support -->
   <PackageReference Include="DiscUtils.SquashFs" Version="0.16.13" />
-  <!-- Real Unicorn.NET binding for firmware emulation -->
-  <PackageReference Include="Unicorn.NET" Version="1.0.3" />
+  <!-- Real Unicorn binding for firmware emulation -->
+  <PackageReference Include="UnicornEngine.Unicorn" Version="1.0.1" />
     <!-- Exclude duplicate console entry-point file -->
     <Compile Remove="Program.cs" />
   </ItemGroup>
