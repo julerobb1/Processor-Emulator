@@ -1,6 +1,11 @@
 using ProcessorEmulator.Emulation;
 using ProcessorEmulator.Tools;
 using ProcessorEmulator.Network;
+using System.IO;
+using System.Linq;
+using DiscUtils.Iso9660;
+using DiscUtils.Ext;
+// YAFFS handled by ExoticFilesystemManager
 using System.Windows;
 using DiscUtils.Setup;
 using Microsoft.Win32;
@@ -12,6 +17,10 @@ using System.Windows.Controls;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using System.Diagnostics;
+using DiscUtils.Iso9660;
+using DiscUtils.Ext;
+// Removed UFS support
+
 namespace ProcessorEmulator
 {
     public interface IMainWindow
@@ -101,6 +110,8 @@ namespace ProcessorEmulator
                 "Cross-Compile Binary",
                 "Mount CE Filesystem",
                 "Mount YAFFS Filesystem",
+                "Mount ISO Filesystem",
+                "Mount EXT Filesystem",
                 "Analyze Folder Contents"
             };
             string mainChoice = PromptUserForChoice("What would you like to do?", mainOptions);
@@ -149,6 +160,12 @@ namespace ProcessorEmulator
                     break;
                 case "Mount YAFFS Filesystem":
                     await HandleYaffsMount();
+                    break;
+                case "Mount ISO Filesystem":
+                    await HandleIsoMount();
+                    break;
+                case "Mount EXT Filesystem":
+                    await HandleExtMount();
                     break;
                 case "Analyze Folder Contents":
                     await HandleFolderAnalysis();
@@ -1115,34 +1132,75 @@ namespace ProcessorEmulator
         }
 
         /// <summary>
+        /// Mounts an ISO9660 image and lists all files.
+        /// </summary>
+        private async Task HandleIsoMount()
+        {
+            var dlg = new OpenFileDialog { Filter = "ISO Images (*.iso)|*.iso|All Files (*.*)|*.*" };
+            if (dlg.ShowDialog() != true) return;
+            string path = dlg.FileName;
+            StatusBarText($"Mounting ISO image {Path.GetFileName(path)}...");
+            try
+            {
+                using var stream = File.OpenRead(path);
+                SetupHelper.RegisterAssembly(typeof(CDReader).Assembly);
+                var fs = new CDReader(stream, true);
+                var entries = new List<string> { $"Mounted ISO: {Path.GetFileName(path)}" };
+                foreach (var entry in fs.GetFiles("", "*", SearchOption.AllDirectories))
+                    entries.Add(entry);
+                ShowTextWindow("ISO Filesystem Mount", entries);
+                StatusBarText("ISO mount complete.");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"ISO mount error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusBarText("ISO mount failed.");
+            }
+            await Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Mounts an ext2/3/4 filesystem image and lists all files.
+        /// </summary>
+        private async Task HandleExtMount()
+        {
+            var dlg = new OpenFileDialog { Filter = "EXT Images (*.img;*.ext2;*.ext3;*.ext4)|*.img;*.ext2;*.ext3;*.ext4|All Files (*.*)|*.*" };
+            if (dlg.ShowDialog() != true) return;
+            string path = dlg.FileName;
+            StatusBarText($"Mounting EXT image {Path.GetFileName(path)}...");
+            try
+            {
+                using var stream = File.OpenRead(path);
+                SetupHelper.RegisterAssembly(typeof(DiscUtils.Ext.ExtFileSystem).Assembly);
+                var fs = new DiscUtils.Ext.ExtFileSystem(stream);
+                var entries = new List<string> { $"Mounted EXT: {Path.GetFileName(path)}" };
+                foreach (var entry in fs.GetFiles("", "*", SearchOption.AllDirectories))
+                    entries.Add(entry);
+                ShowTextWindow("EXT Filesystem Mount", entries);
+                StatusBarText("EXT mount complete.");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"EXT mount error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusBarText("EXT mount failed.");
+            }
+            await Task.CompletedTask;
+        }
+
+        /// <summary>
         /// Analyzes the contents of a folder, providing information about the files and subfolders.
         /// </summary>
         private async Task HandleFolderAnalysis()
         {
             var dlg = new System.Windows.Forms.FolderBrowserDialog();
-        if (dlg.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;
+            if (dlg.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;
             string folderPath = dlg.SelectedPath;
             StatusBarText($"Analyzing folder: {folderPath}...");
             try
             {
-                // Recursively gather all files and prepare records
-                var filePaths = Directory.GetFiles(folderPath, "*.*", SearchOption.AllDirectories);
-                var records = new List<FileRecord>(filePaths.Length);
-                foreach (var file in filePaths)
+                // Launch the new folder analysis window (code-only)
+                var window = new FolderAnalysisWindow(folderPath)
                 {
-                    var info = new FileInfo(file);
-                    // Read up to first 16 bytes
-                    int previewLen = (int)Math.Min(16, info.Length);
-                    byte[] buffer = new byte[previewLen];
-                    using (var stream = File.OpenRead(file))
-                        stream.Read(buffer, 0, previewLen);
-                    string hex = BitConverter.ToString(buffer).Replace("-", " ");
-                    records.Add(new FileRecord { FilePath = file, Size = info.Length, HexPreview = hex });
-                }
-                // Show detailed grid view
-                var window = new FolderAnalysisWindow(records)
-                {
-                    Title = $"Folder Analysis: {folderPath}" ,
                     Owner = this
                 };
                 window.Show();
