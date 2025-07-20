@@ -13,6 +13,7 @@ using System.Windows.Controls;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using System.Diagnostics;
+using DiscUtils.SquashFs;
 
 namespace ProcessorEmulator
 {
@@ -103,6 +104,7 @@ namespace ProcessorEmulator
                 "Cross-Compile Binary",
                 "Mount CE Filesystem",
                 "Mount YAFFS Filesystem",
+                "Mount SquashFS Filesystem",
                 "Analyze Folder Contents"
             };
             string mainChoice = PromptUserForChoice("What would you like to do?", mainOptions);
@@ -151,6 +153,9 @@ namespace ProcessorEmulator
                     break;
                 case "Mount YAFFS Filesystem":
                     await HandleYaffsMount();
+                    break;
+                case "Mount SquashFS Filesystem":
+                    await HandleSquashFsMount();
                     break;
                 case "Analyze Folder Contents":
                     await HandleFolderAnalysis();
@@ -1082,6 +1087,36 @@ namespace ProcessorEmulator
             {
                 MessageBox.Show($"YAFFS mount error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 StatusBarText("YAFFS mount failed.");
+            }
+            await Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Mounts a SquashFS filesystem image using DiscUtils.SquashFs
+        /// </summary>
+        private async Task HandleSquashFsMount()
+        {
+            var dlg = new OpenFileDialog { Filter = "SquashFS Images (*.bin;*.img;*.squashfs)|*.bin;*.img;*.squashfs|All Files (*.*)|*.*" };
+            if (dlg.ShowDialog() != true) return;
+            string path = dlg.FileName;
+            StatusBarText($"Mounting SquashFS image {Path.GetFileName(path)}...");
+            try
+            {
+                using var stream = File.OpenRead(path);
+                DiscUtils.Setup.SetupHelper.RegisterAssembly(typeof(DiscUtils.SquashFs.SquashFsFileSystem).Assembly);
+                var fs = new DiscUtils.SquashFs.SquashFsFileSystem(stream);
+                var entries = new List<string> { $"Mounted SquashFS: {Path.GetFileName(path)}" };
+                foreach (var entry in fs.GetFiles("", "*", SearchOption.AllDirectories))
+                {
+                    entries.Add(entry);
+                }
+                ShowTextWindow("SquashFS Mount", entries);
+                StatusBarText("SquashFS mount complete.");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"SquashFS mount error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusBarText("SquashFS mount failed.");
             }
             await Task.CompletedTask;
         }
