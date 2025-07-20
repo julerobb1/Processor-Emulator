@@ -26,3 +26,5 @@ C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Debug\net6.0-windows\Proc
 C:\Users\juler\Documents\GitHub\Processor-Emulator\bin\Debug\net6.0-windows\DiscUtils.Core.dll
 C:\Users\juler\Documents\GitHub\Processor-Emulator\bin\Debug\net6.0-windows\DiscUtils.Streams.dll
 C:\Users\juler\Documents\GitHub\Processor-Emulator\bin\Debug\net6.0-windows\DiscUtils.Fat.dll
+C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Debug\net6.0-windows\FolderAnalysisWindow.baml
+C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Debug\net6.0-windows\FolderAnalysisWindow.g.cs
