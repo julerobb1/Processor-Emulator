@@ -2,7 +2,6 @@ using ProcessorEmulator.Emulation;
 using ProcessorEmulator.Tools;
 using ProcessorEmulator.Network;
 using System.Windows;
-using DiscUtils.Fat;
 using DiscUtils.Setup;
 using Microsoft.Win32;
 using System.Threading.Tasks;
@@ -13,8 +12,6 @@ using System.Windows.Controls;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using System.Diagnostics;
-using DiscUtils.SquashFs;
-
 namespace ProcessorEmulator
 {
     public interface IMainWindow
@@ -104,7 +101,6 @@ namespace ProcessorEmulator
                 "Cross-Compile Binary",
                 "Mount CE Filesystem",
                 "Mount YAFFS Filesystem",
-                "Mount SquashFS Filesystem",
                 "Analyze Folder Contents"
             };
             string mainChoice = PromptUserForChoice("What would you like to do?", mainOptions);
@@ -153,9 +149,6 @@ namespace ProcessorEmulator
                     break;
                 case "Mount YAFFS Filesystem":
                     await HandleYaffsMount();
-                    break;
-                case "Mount SquashFS Filesystem":
-                    await HandleSquashFsMount();
                     break;
                 case "Analyze Folder Contents":
                     await HandleFolderAnalysis();
@@ -483,7 +476,7 @@ namespace ProcessorEmulator
             StatusBarText("Azeria ARM emulation stub complete.");
             await Task.CompletedTask;
         }
-        
+    
         // Core feature handlers
 
         /// <summary>
@@ -622,8 +615,8 @@ namespace ProcessorEmulator
             // More detailed PE header checks would go here
             return true;
         }
-        
-        
+    
+    
         /// <summary>
         /// Emulates an RDK-B broadband gateway using QEMU.
         /// </summary>
