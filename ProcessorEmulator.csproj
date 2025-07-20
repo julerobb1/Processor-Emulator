@@ -19,11 +19,15 @@
   <!-- Using stub Unicorn definitions in Tools/BinaryTranslator.cs; no external package required -->
   <ItemGroup>
     <PackageReference Include="SharpCompress" Version="0.30.0" />
-    
+
     <!-- DiscUtils for partition & filesystem support; latest available version -->
   <PackageReference Include="DiscUtils.Core" Version="0.16.13" />
   <!-- FAT filesystem support -->
   <PackageReference Include="DiscUtils.Fat" Version="0.16.13" />
+  <!-- SquashFS filesystem support -->
+  <PackageReference Include="DiscUtils.SquashFs" Version="0.16.13" />
+  <!-- Real Unicorn.NET binding for firmware emulation -->
+  <PackageReference Include="Unicorn.NET" Version="1.0.3" />
     <!-- Exclude duplicate console entry-point file -->
     <Compile Remove="Program.cs" />
   </ItemGroup>
