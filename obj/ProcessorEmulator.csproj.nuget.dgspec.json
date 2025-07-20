@@ -48,6 +48,10 @@
               "target": "Package",
               "version": "[0.16.13, )"
             },
+            "DiscUtils.Fat": {
+              "target": "Package",
+              "version": "[0.16.13, )"
+            },
             "SharpCompress": {
               "target": "Package",
               "version": "[0.30.0, )"
