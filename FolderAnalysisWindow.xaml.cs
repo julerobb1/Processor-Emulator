@@ -9,9 +9,15 @@ namespace ProcessorEmulator
     /// </summary>
     public partial class FolderAnalysisWindow : Window
     {
-        public FolderAnalysisWindow(List<FileRecord> items)
+        // Default constructor for XAML code-behind
+        public FolderAnalysisWindow()
         {
             InitializeComponent();
+        }
+
+        // Constructor to supply items
+        public FolderAnalysisWindow(List<FileRecord> items) : this()
+        {
             DataGridFiles.ItemsSource = items;
         }
     }
