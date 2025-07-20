@@ -35,6 +35,22 @@
           }
         }
       },
+      "DiscUtils.SquashFs/0.16.13": {
+        "type": "package",
+        "dependencies": {
+          "DiscUtils.Core": "0.16.13"
+        },
+        "compile": {
+          "lib/net5.0/DiscUtils.SquashFs.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net5.0/DiscUtils.SquashFs.dll": {
+            "related": ".xml"
+          }
+        }
+      },
       "DiscUtils.Streams/0.16.13": {
         "type": "package",
         "compile": {
@@ -151,6 +167,25 @@
         "lib/net5.0/DiscUtils.Fat.xml",
         "lib/netstandard2.0/DiscUtils.Fat.dll",
         "lib/netstandard2.0/DiscUtils.Fat.xml"
+      ]
+    },
+    "DiscUtils.SquashFs/0.16.13": {
+      "sha512": "1ce0l4RSVlzY/YvVkLy9bF3A2Pil2B+qxXG1gjeWINCsgPgNAMRxnzv1pUR5pLZws4+u3cbEY3v9ubSf9jpopA==",
+      "type": "package",
+      "path": "discutils.squashfs/0.16.13",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "discutils.squashfs.0.16.13.nupkg.sha512",
+        "discutils.squashfs.nuspec",
+        "lib/net40/DiscUtils.SquashFs.dll",
+        "lib/net40/DiscUtils.SquashFs.xml",
+        "lib/net45/DiscUtils.SquashFs.dll",
+        "lib/net45/DiscUtils.SquashFs.xml",
+        "lib/net5.0/DiscUtils.SquashFs.dll",
+        "lib/net5.0/DiscUtils.SquashFs.xml",
+        "lib/netstandard2.0/DiscUtils.SquashFs.dll",
+        "lib/netstandard2.0/DiscUtils.SquashFs.xml"
       ]
     },
     "DiscUtils.Streams/0.16.13": {
@@ -313,7 +348,9 @@
     "net6.0-windows7.0": [
       "DiscUtils.Core >= 0.16.13",
       "DiscUtils.Fat >= 0.16.13",
-      "SharpCompress >= 0.30.0"
+      "DiscUtils.SquashFs >= 0.16.13",
+      "SharpCompress >= 0.30.0",
+      "Unicorn.NET >= 1.0.3"
     ]
   },
   "packageFolders": {
@@ -367,9 +404,17 @@
             "target": "Package",
             "version": "[0.16.13, )"
           },
+          "DiscUtils.SquashFs": {
+            "target": "Package",
+            "version": "[0.16.13, )"
+          },
           "SharpCompress": {
             "target": "Package",
             "version": "[0.30.0, )"
+          },
+          "Unicorn.NET": {
+            "target": "Package",
+            "version": "[1.0.3, )"
           }
         },
         "imports": [
@@ -412,5 +457,16 @@
         "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.300\\RuntimeIdentifierGraph.json"
       }
     }
-  }
+  },
+  "logs": [
+    {
+      "code": "NU1101",
+      "level": "Error",
+      "message": "Unable to find package Unicorn.NET. No packages exist with this id in source(s): nuget.org",
+      "libraryId": "Unicorn.NET",
+      "targetGraphs": [
+        "net6.0-windows7.0"
+      ]
+    }
+  ]
 }
