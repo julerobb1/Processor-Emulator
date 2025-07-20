@@ -34,7 +34,6 @@
   <!-- WPF windows -->
   <ItemGroup>
     <Page Include="FolderAnalysisWindow.xaml">
-      <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </Page>
     <Compile Include="FolderAnalysisWindow.xaml.cs">
