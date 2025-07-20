@@ -31,14 +31,4 @@
     <!-- Exclude duplicate console entry-point file -->
     <Compile Remove="Program.cs" />
   </ItemGroup>
-    <!-- Explicitly include FolderAnalysisWindow XAML and its code-behind -->
-    <ItemGroup>
-      <Page Include="FolderAnalysisWindow.xaml">
-        <Generator>MSBuild:Compile</Generator>
-        <SubType>Designer</SubType>
-      </Page>
-      <Compile Include="FolderAnalysisWindow.xaml.cs">
-        <DependentUpon>FolderAnalysisWindow.xaml</DependentUpon>
-      </Compile>
-    </ItemGroup>
 </Project>
