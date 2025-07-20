@@ -13,7 +13,7 @@ using System.Windows.Controls;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using System.Diagnostics;
-using DiscUtils.SquashFs;
+using DiscUtils.SquashFS;
 
 namespace ProcessorEmulator
 {
@@ -1103,8 +1103,8 @@ namespace ProcessorEmulator
             try
             {
                 using var stream = File.OpenRead(path);
-                DiscUtils.Setup.SetupHelper.RegisterAssembly(typeof(DiscUtils.SquashFs.SquashFsFileSystem).Assembly);
-                var fs = new DiscUtils.SquashFs.SquashFsFileSystem(stream);
+                DiscUtils.Setup.SetupHelper.RegisterAssembly(typeof(DiscUtils.SquashFS.SquashFileSystem).Assembly);
+                var fs = new DiscUtils.SquashFS.SquashFileSystem(stream);
                 var entries = new List<string> { $"Mounted SquashFS: {Path.GetFileName(path)}" };
                 foreach (var entry in fs.GetFiles("", "*", SearchOption.AllDirectories))
                 {
