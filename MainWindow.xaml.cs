@@ -109,7 +109,8 @@ namespace ProcessorEmulator
                 "Executable Analysis",
                 "Linux Filesystem Read/Write",
                 "Cross-Compile Binary",
-                "Mount YAFFS Filesystem"
+                "Mount YAFFS Filesystem",
+        ,"Analyze Folder Contents"
             };
             string mainChoice = PromptUserForChoice("What would you like to do?", mainOptions);
             if (string.IsNullOrEmpty(mainChoice)) return;
@@ -154,6 +155,9 @@ namespace ProcessorEmulator
                     break;
                 case "Mount YAFFS Filesystem":
                     await HandleYaffsMount();
+                    break;
+                case "Analyze Folder Contents":
+                    await HandleFolderAnalysis();
                     break;
                 default:
                     MessageBox.Show("Not implemented yet.", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -502,6 +506,9 @@ namespace ProcessorEmulator
             try { EmulatorLauncher.Launch(path, arch, platform: "RDK-V"); StatusBarText("RDK-V emulation started."); }
             catch (Exception ex) { MessageBox.Show($"RDK-V error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error); StatusBarText("RDK-V emulation failed."); }
             await Task.CompletedTask;
+            case "Analyze Folder Contents":
+                await HandleFolderAnalysis();
+                break;
         }
 
 
@@ -1055,6 +1062,36 @@ namespace ProcessorEmulator
             {
                 MessageBox.Show($"YAFFS mount error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 StatusBarText("YAFFS mount failed.");
+            }
+            await Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Analyzes the contents of a folder, providing information about the files and subfolders.
+        /// </summary>
+        private async Task HandleFolderAnalysis()
+        {
+            var dlg = new FolderBrowserDialog();
+            if (dlg.ShowDialog() != DialogResult.OK) return;
+            string folderPath = dlg.SelectedPath;
+            StatusBarText($"Analyzing folder: {folderPath}...");
+            try
+            {
+                var files = Directory.GetFiles(folderPath);
+                var subfolders = Directory.GetDirectories(folderPath);
+                var output = new List<string>
+                {
+                    $"Folder: {folderPath}",
+                    $"Files: {files.Length}",
+                    $"Subfolders: {subfolders.Length}"
+                };
+                ShowTextWindow("Folder Analysis", output);
+                StatusBarText("Folder analysis complete.");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Folder analysis error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusBarText("Folder analysis failed.");
             }
             await Task.CompletedTask;
         }
