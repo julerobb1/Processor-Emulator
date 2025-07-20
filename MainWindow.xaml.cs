@@ -110,7 +110,7 @@ namespace ProcessorEmulator
                 "Linux Filesystem Read/Write",
                 "Cross-Compile Binary",
                 "Mount YAFFS Filesystem",
-        ,"Analyze Folder Contents"
+                "Analyze Folder Contents"
             };
             string mainChoice = PromptUserForChoice("What would you like to do?", mainOptions);
             if (string.IsNullOrEmpty(mainChoice)) return;
@@ -1071,8 +1071,8 @@ namespace ProcessorEmulator
         /// </summary>
         private async Task HandleFolderAnalysis()
         {
-            var dlg = new FolderBrowserDialog();
-            if (dlg.ShowDialog() != DialogResult.OK) return;
+            var dlg = new System.Windows.Forms.FolderBrowserDialog();
+            if (dlg.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;
             string folderPath = dlg.SelectedPath;
             StatusBarText($"Analyzing folder: {folderPath}...");
             try
