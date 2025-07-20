@@ -103,8 +103,6 @@ namespace ProcessorEmulator
                 "Cross-Compile Binary",
                 "Mount CE Filesystem",
                 "Mount YAFFS Filesystem",
-                "Firmadyne Emulation",
-                "Azeria ARM Emulation",
                 "Analyze Folder Contents"
             };
             string mainChoice = PromptUserForChoice("What would you like to do?", mainOptions);
@@ -153,12 +151,6 @@ namespace ProcessorEmulator
                     break;
                 case "Mount YAFFS Filesystem":
                     await HandleYaffsMount();
-                    break;
-                case "Firmadyne Emulation":
-                    await HandleFirmadyneEmulation();
-                    break;
-                case "Azeria ARM Emulation":
-                    await HandleAzeriaEmulation();
                     break;
                 case "Analyze Folder Contents":
                     await HandleFolderAnalysis();
@@ -469,7 +461,6 @@ namespace ProcessorEmulator
             await Task.CompletedTask;
         }
 
-        #if false
         private async Task HandleFirmadyneEmulation()
         {
             StatusBarText("Starting Firmadyne-based emulation...");
@@ -478,9 +469,7 @@ namespace ProcessorEmulator
             StatusBarText("Firmadyne emulation stub complete.");
             await Task.CompletedTask;
         }
-        #endif
 
-        #if false
         private async Task HandleAzeriaEmulation()
         {
             StatusBarText("Starting Azeria Labs ARM firmware emulation...");
@@ -489,7 +478,6 @@ namespace ProcessorEmulator
             StatusBarText("Azeria ARM emulation stub complete.");
             await Task.CompletedTask;
         }
-        #endif
         
         // Core feature handlers
 
