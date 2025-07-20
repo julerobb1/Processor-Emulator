@@ -1097,9 +1097,9 @@ namespace ProcessorEmulator
             {
                 using var stream = File.OpenRead(path);
                 // Register the SquashFs assembly
-                SetupHelper.RegisterAssembly(typeof(DiscUtils.SquashFs.SquashFileSystem).Assembly);
+                SetupHelper.RegisterAssembly(typeof(DiscUtils.SquashFs.SquashFileSystemReader).Assembly);
                 // Create a SquashFS filesystem
-                var fs = new DiscUtils.SquashFs.SquashFileSystem(stream);
+                var fs = new DiscUtils.SquashFs.SquashFileSystemReader(stream);
                 var entries = new List<string> { $"Mounted SquashFS: {Path.GetFileName(path)}" };
                 foreach (var entry in fs.GetFiles("", "*", SearchOption.AllDirectories))
                     entries.Add(entry);
@@ -1120,7 +1120,7 @@ namespace ProcessorEmulator
         private async Task HandleFolderAnalysis()
         {
             var dlg = new System.Windows.Forms.FolderBrowserDialog();
-            if (dlg.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;
+        if (dlg.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;
             string folderPath = dlg.SelectedPath;
             StatusBarText($"Analyzing folder: {folderPath}...");
             try
