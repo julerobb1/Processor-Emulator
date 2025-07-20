@@ -1,11 +1,13 @@
 {
   "version": 2,
-  "dgSpecHash": "IU9ogf7XCws=",
-  "success": true,
+  "dgSpecHash": "XQYdsB4Vvuo=",
+  "success": false,
   "projectFilePath": "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\ProcessorEmulator.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\juler\\.nuget\\packages\\discutils.core\\0.16.13\\discutils.core.0.16.13.nupkg.sha512",
+    "C:\\Users\\juler\\.nuget\\packages\\discutils.ext\\0.16.13\\discutils.ext.0.16.13.nupkg.sha512",
     "C:\\Users\\juler\\.nuget\\packages\\discutils.fat\\0.16.13\\discutils.fat.0.16.13.nupkg.sha512",
+    "C:\\Users\\juler\\.nuget\\packages\\discutils.iso9660\\0.16.13\\discutils.iso9660.0.16.13.nupkg.sha512",
     "C:\\Users\\juler\\.nuget\\packages\\discutils.squashfs\\0.16.13\\discutils.squashfs.0.16.13.nupkg.sha512",
     "C:\\Users\\juler\\.nuget\\packages\\discutils.streams\\0.16.13\\discutils.streams.0.16.13.nupkg.sha512",
     "C:\\Users\\juler\\.nuget\\packages\\fsharp.core\\8.0.400\\fsharp.core.8.0.400.nupkg.sha512",
@@ -28,6 +30,17 @@
       "warningLevel": 1,
       "filePath": "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\ProcessorEmulator.csproj",
       "libraryId": "UnicornEngine.Unicorn",
+      "targetGraphs": [
+        "net6.0-windows7.0"
+      ]
+    },
+    {
+      "code": "NU1101",
+      "level": "Error",
+      "message": "Unable to find package DiscUtils.Yaffs. No packages exist with this id in source(s): nuget.org",
+      "projectPath": "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\ProcessorEmulator.csproj",
+      "filePath": "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\ProcessorEmulator.csproj",
+      "libraryId": "DiscUtils.Yaffs",
       "targetGraphs": [
         "net6.0-windows7.0"
       ]
