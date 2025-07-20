@@ -221,6 +221,8 @@ namespace ProcessorEmulator.Tools
 
     public static class FirmwareDownloader
     {
+        // Shared HttpClient to avoid socket exhaustion
+        private static readonly HttpClient httpClient = new HttpClient();
         /// <summary>
         /// Downloads a file from the specified URL to the output directory and returns the local file path.
         /// </summary>
@@ -229,8 +231,7 @@ namespace ProcessorEmulator.Tools
             Directory.CreateDirectory(outputDir);
             var fileName = Path.GetFileName(new Uri(url).LocalPath);
             var outputPath = Path.Combine(outputDir, fileName);
-            using var client = new HttpClient();
-            var data = await client.GetByteArrayAsync(url);
+            var data = await httpClient.GetByteArrayAsync(url);
             await File.WriteAllBytesAsync(outputPath, data);
             return outputPath;
         }
