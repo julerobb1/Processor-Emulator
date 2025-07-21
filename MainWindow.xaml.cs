@@ -1268,5 +1268,92 @@ namespace ProcessorEmulator
             }
             await Task.CompletedTask;
         }
+
+        private void ScanDvrData_Click(object sender, RoutedEventArgs e)
+        {
+            string baseDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data", "DVR");
+            if (!Directory.Exists(baseDir))
+            {
+                ShowTextWindow("DVR Scan", new List<string> { "Data\\DVR directory not found." });
+                return;
+            }
+            var summary = new List<string>();
+            foreach (var dir in Directory.GetDirectories(baseDir))
+            {
+                var name = Path.GetFileName(dir);
+                summary.Add($"Dataset: {name}");
+                var files = Directory.GetFiles(dir, "*.*", SearchOption.AllDirectories);
+                int firmwareCount = files.Count(f => new[] { ".csw", ".bin", ".pkgstream", ".gz", ".tar.gz" }
+                                            .Any(ext => f.EndsWith(ext, StringComparison.OrdinalIgnoreCase)));
+                int logCount = files.Count(f => new[] { ".log", ".log.*", ".dump" }
+                                    .Any(ext => f.IndexOf(ext, StringComparison.OrdinalIgnoreCase) >= 0));
+                int rawCount = files.Count(f => f.EndsWith(".raw", StringComparison.OrdinalIgnoreCase));
+                summary.Add($"  Firmware files: {firmwareCount}");
+                summary.Add($"  Log files: {logCount}");
+                summary.Add($"  Raw partitions: {rawCount}");
+                summary.Add(string.Empty);
+            }
+            ShowTextWindow("DVR Data Scan", summary);
+        }
+
+        private void ListDvrFirmware_Click(object sender, RoutedEventArgs e)
+        {
+            string baseDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data", "DVR");
+            if (!Directory.Exists(baseDir))
+            {
+                ShowTextWindow("DVR Firmware List", new List<string> { "Data\\DVR directory not found." });
+                return;
+            }
+            var result = new List<string>();
+            var firmwareExts = new[] { ".csw", ".bin", ".pkgstream", ".gz", ".tar.gz" };
+            foreach (var dir in Directory.GetDirectories(baseDir))
+            {
+                string dataset = Path.GetFileName(dir);
+                result.Add($"Dataset: {dataset}");
+                var allFiles = Directory.GetFiles(dir, "*.*", SearchOption.AllDirectories);
+                var fwFiles = allFiles.Where(f => firmwareExts.Any(ext => f.EndsWith(ext, StringComparison.OrdinalIgnoreCase))).ToList();
+                if (fwFiles.Count == 0)
+                {
+                    result.Add("  (no firmware files found)");
+                }
+                else
+                {
+                    foreach (var file in fwFiles)
+                        result.Add("  " + file.Substring(baseDir.Length + 1));
+                }
+                result.Add(string.Empty);
+            }
+            ShowTextWindow("DVR Firmware List", result);
+        }
+
+        private void ProbeDvrXfs_Click(object sender, RoutedEventArgs e)
+        {
+            string baseDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data", "DVR");
+            if (!Directory.Exists(baseDir))
+            {
+                ShowTextWindow("DVR XFS Probe", new List<string> { "Data\\DVR directory not found." });
+                return;
+            }
+            var lines = new List<string>();
+            var xfsDirs = Directory.GetDirectories(baseDir, "XFS", SearchOption.AllDirectories);
+            if (xfsDirs.Length == 0)
+            {
+                lines.Add("No XFS directories found in DVR datasets.");
+            }
+            foreach (var xfs in xfsDirs)
+            {
+                string parent = Path.GetDirectoryName(xfs);
+                string dataset = Path.GetFileName(parent);
+                lines.Add($"Dataset: {dataset} - XFS at {xfs}");
+                var subDirs = Directory.GetDirectories(xfs);
+                lines.Add("  Subdirectories:");
+                foreach (var d in subDirs)
+                    lines.Add("    " + Path.GetFileName(d));
+                int fileCount = Directory.GetFiles(xfs, "*.*", SearchOption.AllDirectories).Length;
+                lines.Add($"  Total files: {fileCount}");
+                lines.Add(string.Empty);
+            }
+            ShowTextWindow("DVR XFS Probe", lines);
+        }
     }
 }
