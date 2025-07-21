@@ -10,6 +10,7 @@
                 <MenuItem Header="Analyze _Firmware..." Click="AnalyzeFirmware_Click"/>
                 <MenuItem Header="Scan _DVR Data..." Click="ScanDvrData_Click" ToolTip="Scan attached DVR datasets for firmware and logs"/>
                 <MenuItem Header="List DVR _Firmware" Click="ListDvrFirmware_Click" ToolTip="List all firmware files in DVR datasets"/>
+                <MenuItem Header="Analyze _All DVR Data" Click="AnalyzeAllDvrData_Click" ToolTip="Perform full DVR dataset analysis (firmware, XFS, configs)"/>
                 <Separator/>
                 <MenuItem Header="_Exit" />
             </MenuItem>
