@@ -208,6 +208,18 @@ namespace ProcessorEmulator
             StatusBarText($"Launching emulation for {Path.GetFileName(filePath)}...");
             byte[] binary = File.ReadAllBytes(filePath);
             string arch = ArchitectureDetector.Detect(binary);
+            
+            // If architecture is unknown, prompt user to select one
+            if (arch == "Unknown")
+            {
+                arch = PromptUserForChoice("Architecture detection failed. Please select CPU Architecture:", 
+                    new List<string> { "MIPS32", "MIPS64", "ARM", "ARM64", "PowerPC", "x86", "x86-64", "RISC-V" });
+                if (string.IsNullOrEmpty(arch))
+                {
+                    StatusBarText("Emulation cancelled - no architecture selected.");
+                    return;
+                }
+            }
 
             try
             {
@@ -1383,6 +1395,18 @@ namespace ProcessorEmulator
             {
                 var bytes = File.ReadAllBytes(imagePath);
                 arch = ArchitectureDetector.Detect(bytes);
+                
+                // If architecture is unknown, prompt user to select one
+                if (arch == "Unknown")
+                {
+                    arch = PromptUserForChoice("Architecture detection failed. Please select CPU Architecture:", 
+                        new List<string> { "MIPS32", "MIPS64", "ARM", "ARM64", "PowerPC", "x86", "x86-64", "RISC-V" });
+                    if (string.IsNullOrEmpty(arch))
+                    {
+                        StatusBarText("Boot cancelled - no architecture selected.");
+                        return;
+                    }
+                }
             }
             catch (Exception ex)
             {
