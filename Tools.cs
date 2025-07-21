@@ -72,7 +72,6 @@ namespace ProcessorEmulator.Tools
             // Add more format checks as needed
                 return "Unknown";
             }
-
     // Filesystem and partition analysis/mounting
     public class PartitionAnalyzer
     {
@@ -221,11 +220,7 @@ namespace ProcessorEmulator.Tools
 
     public static class FirmwareDownloader
     {
-        // Shared HttpClient to avoid socket exhaustion
         private static readonly HttpClient httpClient = new HttpClient();
-        /// <summary>
-        /// Downloads a file from the specified URL to the output directory and returns the local file path.
-    /// </summary>
         public static async Task<string> DownloadFileAsync(string url, string outputDir)
         {
             Directory.CreateDirectory(outputDir);
@@ -235,17 +230,12 @@ namespace ProcessorEmulator.Tools
             await File.WriteAllBytesAsync(outputPath, data);
             return outputPath;
         }
-
-        /// <summary>
-        /// Returns a dictionary of known SWM LNB firmware names and their download URLs.
-        /// </summary>
         public static Dictionary<string, string> GetKnownSwmFirmware()
         {
             return new Dictionary<string, string>
             {
                 { "SWM LNB V1", "https://example.com/firmware/swm_lnb_v1.bin" },
                 { "SWM LNB V2", "https://example.com/firmware/swm_lnb_v2.bin" }
-                // TODO: Replace with real firmware URLs
             };
         }
     }
@@ -253,7 +243,6 @@ namespace ProcessorEmulator.Tools
     // DVR dataset analysis helpers
     public static class DvrDataAnalyzer
     {
-        // Parse push-message service properties under pms_data
         public static List<string> ParsePmsProperties(string dvrBase)
         {
             var lines = new List<string>();
@@ -263,20 +252,15 @@ namespace ProcessorEmulator.Tools
                 lines.Add($"Dataset: {Path.GetFileName(Path.GetDirectoryName(dir))} - PMS properties:");
                 var propFile = Path.Combine(dir, "pms.properties");
                 if (File.Exists(propFile))
-                {
                     foreach (var l in File.ReadAllLines(propFile))
                         lines.Add("  " + l.Trim());
-                }
                 else
-                {
                     lines.Add("  (none)");
-                }
                 lines.Add(string.Empty);
             }
             return lines;
         }
 
-        // Summarize network configuration files
         public static List<string> SummarizeNetworkConfigs(string dvrBase)
         {
             var lines = new List<string>();
@@ -291,13 +275,10 @@ namespace ProcessorEmulator.Tools
             return lines;
         }
 
-        // Perform a full DVR analysis: combine firmware list, XFS probe, PMS and network summaries
         public static List<string> AnalyzeAll(string dvrBase)
         {
             var result = new List<string>();
-            // firmware
             result.Add("=== Firmware Files ===");
-            // gather firmware file list
             var firmwareList = Directory.GetDirectories(dvrBase)
                 .SelectMany(dir => Directory.GetFiles(dir, "*.*", SearchOption.AllDirectories)
                     .Where(f => new[]{".csw",".bin",".pkgstream",".gz",".tar.gz"}
@@ -306,18 +287,14 @@ namespace ProcessorEmulator.Tools
                 .ToList();
             result.AddRange(firmwareList);
             result.Add(string.Empty);
-            // XFS probe
             result.Add("=== XFS Summary ===");
             result.AddRange(new[] { "(use Probe DVR XFS from UI for details)" });
             result.Add(string.Empty);
-            // PMS
             result.Add("=== PMS Properties ===");
             result.AddRange(ParsePmsProperties(dvrBase));
-            // Network
             result.Add("=== Network Configs ===");
             result.AddRange(SummarizeNetworkConfigs(dvrBase));
             return result;
         }
     }
-} // end of ProcessorEmulator.Tools namespace
 }
