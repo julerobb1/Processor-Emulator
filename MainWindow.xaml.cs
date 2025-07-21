@@ -95,6 +95,7 @@ namespace ProcessorEmulator
                 "Generic CPU/OS Emulation",
                 "RDK-V Emulator",
                 "RDK-B Emulator",
+                "PowerPC Bootloader Demo",
                 "Dish Network Box/VxWorks Analysis",
                 "Simulate SWM Switch/LNB",
                 "Probe Filesystem",
@@ -109,7 +110,7 @@ namespace ProcessorEmulator
                 "Mount ISO Filesystem",
                 "Mount EXT Filesystem",
                 "Simulate SWM LNB",
-                "Boot Firmware in QEMU",
+                "Boot Firmware (Homebrew First)",
                 "Boot Firmware in Homebrew Emulator",
                 "Analyze Folder Contents"
             };
@@ -126,6 +127,9 @@ namespace ProcessorEmulator
                     break;
                 case "RDK-B Emulator":
                     await HandleRdkBEmulation();
+                    break;
+                case "PowerPC Bootloader Demo":
+                    await HandlePowerPCBootloaderDemo();
                     break;
                 case "Dish Network Box/VxWorks Analysis":
                     await HandleDishVxWorksAnalysis();
@@ -169,8 +173,8 @@ namespace ProcessorEmulator
                 case "Simulate SWM LNB":
                     await HandleSwmLnbSimulation();
                     break;
-                case "Boot Firmware in QEMU":
-                    await HandleBootFirmwareInQemu();
+                case "Boot Firmware (Homebrew First)":
+                    await HandleBootFirmwareHomebrewFirst();
                     break;
                 case "Boot Firmware in Homebrew Emulator":
                     await HandleBootFirmwareInHomebrew();
@@ -521,32 +525,54 @@ namespace ProcessorEmulator
         /// </summary>
         private async Task HandleRdkVEmulation()
         {
-            var dlg = new OpenFileDialog { Filter = "RDK-V Firmware Images (*.bin;*.tar;*.tar.gz;*.tar.bz2)|*.bin;*.tar;*.tar.gz;*.tar.bz2|All Files (*.*)|*.*" };
+            var dlg = new OpenFileDialog { Filter = "RDK-V Firmware Images (*.bin;*.tar;*.gz;*.img;*.ubi)|*.bin;*.tar;*.gz;*.img;*.ubi|All Files (*.*)|*.*" };
             if (dlg.ShowDialog() != true) return;
             string path = dlg.FileName;
-            StatusBarText($"Launching RDK-V emulator for {Path.GetFileName(path)}...");
+            StatusBarText($"Analyzing RDK-V firmware: {Path.GetFileName(path)}...");
             
             try 
             {
                 var bin = File.ReadAllBytes(path);
-                Debug.WriteLine($"Loaded RDK-V firmware: {bin.Length} bytes");
+                Debug.WriteLine($"Loaded RDK-V firmware: {bin.Length} bytes from {path}");
                 StatusBarText($"Loaded RDK-V firmware: {bin.Length} bytes");
                 
-                // Configure for ARRIS XG1V4 (common Comcast RDK-V device)
+                // Configure for ARRIS XG1V4 (ARM Cortex-A15 based)
                 var config = RDKVPlatformConfig.CreateArrisXG1V4Config();
                 Debug.WriteLine($"Using {config.DeviceModel} configuration: {config.ProcessorType}, {config.MemorySize / 1024 / 1024}MB");
-                StatusBarText($"Configured for {config.DeviceModel} ({config.ProcessorType}, {config.MemorySize / 1024 / 1024}MB)");
+                StatusBarText($"Configured for {config.DeviceModel} (ARM Cortex-A15, {config.MemorySize / 1024 / 1024}MB)");
                 
-                // Use HomebrewEmulator for RDK-V with display
+                // Force ARM architecture detection for RDK-V (all RDK-V devices are ARM-based)
+                string detectedArch = Tools.ArchitectureDetector.Detect(bin);
+                string arch = "ARM"; // Override - RDK-V is always ARM-based
+                
+                if (detectedArch != "ARM" && detectedArch != "Unknown")
+                {
+                    Debug.WriteLine($"Note: Detected {detectedArch} but forcing ARM for RDK-V compatibility");
+                }
+                
+                // Show firmware analysis
+                MessageBox.Show($"RDK-V Firmware Analysis:\n\n" +
+                               $"File: {Path.GetFileName(path)}\n" +
+                               $"Size: {bin.Length:N0} bytes\n" +
+                               $"Detected: {detectedArch}\n" +
+                               $"Using: {arch} (RDK-V standard)\n" +
+                               $"Platform: {config.DeviceModel}\n" +
+                               $"SoC: Broadcom BCM7445 (ARM Cortex-A15)\n\n" +
+                               $"Starting ARM emulation...", 
+                               "RDK-V Firmware Loaded", MessageBoxButton.OK, MessageBoxImage.Information);
+                
+                // Always use HomebrewEmulator for RDK-V (never QEMU)
                 var emulator = new HomebrewEmulator();
                 emulator.LoadBinary(bin);
-                emulator.Run(); // This will open the EmulatorWindow with display
+                StatusBarText("Starting RDK-V ARM emulation...");
+                emulator.Run(); // This will start actual ARM emulation loop
                 
-                StatusBarText("RDK-V emulation started with display window.");
+                StatusBarText("RDK-V ARM emulation started successfully.");
             }
             catch (Exception ex) 
             { 
-                MessageBox.Show($"RDK-V error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error); 
+                MessageBox.Show($"RDK-V emulation error:\n\n{ex.Message}\n\nCheck that the firmware file is valid and accessible.", 
+                               "RDK-V Emulation Error", MessageBoxButton.OK, MessageBoxImage.Error); 
                 StatusBarText("RDK-V emulation failed."); 
             }
             await Task.CompletedTask;
@@ -694,6 +720,54 @@ namespace ProcessorEmulator
             {
                 MessageBox.Show($"RDK-B emulation error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 StatusBarText("RDK-B emulation failed.");
+            }
+            await Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Demonstrates PowerPC bootloader functionality and emulation.
+        /// </summary>
+        private async Task HandlePowerPCBootloaderDemo()
+        {
+            var choice = PromptUserForChoice("PowerPC Bootloader Demo", 
+                new List<string> { "Create Bootloader Only", "Load Firmware + Bootloader", "Show Bootloader Info" });
+            
+            if (string.IsNullOrEmpty(choice)) return;
+            
+            try
+            {
+                switch (choice)
+                {
+                    case "Create Bootloader Only":
+                        StatusBarText("Creating PowerPC bootloader...");
+                        PowerPCBootloaderManager.LaunchPowerPCWithBootloader(null);
+                        StatusBarText("PowerPC bootloader demo started.");
+                        break;
+                        
+                    case "Load Firmware + Bootloader":
+                        var dlg = new OpenFileDialog 
+                        { 
+                            Filter = "PowerPC Firmware (*.bin;*.img;*.elf)|*.bin;*.img;*.elf|All Files (*.*)|*.*" 
+                        };
+                        if (dlg.ShowDialog() == true)
+                        {
+                            StatusBarText($"Loading PowerPC firmware: {Path.GetFileName(dlg.FileName)}...");
+                            PowerPCBootloaderManager.LaunchPowerPCWithBootloader(dlg.FileName);
+                            StatusBarText("PowerPC emulation with firmware started.");
+                        }
+                        break;
+                        
+                    case "Show Bootloader Info":
+                        PowerPCBootloaderManager.ShowBootloaderInfo();
+                        StatusBarText("Displayed PowerPC bootloader information.");
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"PowerPC bootloader error: {ex.Message}", "PowerPC Error", 
+                               MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusBarText("PowerPC bootloader demo failed.");
             }
             await Task.CompletedTask;
         }
@@ -1270,23 +1344,65 @@ namespace ProcessorEmulator
         /// <summary>
         /// Boots a firmware image in QEMU for rapid hardware testing.
         /// </summary>
-        private async Task HandleBootFirmwareInQemu()
+        /// <summary>
+        /// Boot firmware with HomebrewEmulator first, fallback to QEMU if needed.
+        /// </summary>
+        private async Task HandleBootFirmwareHomebrewFirst()
         {
             var dlg = new OpenFileDialog { Filter = "Firmware Images (*.bin;*.img)|*.bin;*.img|All Files (*.*)|*.*" };
             if (dlg.ShowDialog() != true) return;
             string path = dlg.FileName;
-            // Detect architecture from user prompt or file extension
-            string arch = PromptUserForChoice("Select CPU Architecture:", new List<string> { "MIPS32", "MIPS64", "ARM", "ARM64", "PowerPC", "x86", "x86-64", "RISC-V" });
-            if (string.IsNullOrEmpty(arch)) return;
+            
             try
             {
-                QemuManager.Launch(path, arch);
-                StatusBarText($"Launched QEMU for {Path.GetFileName(path)} ({arch})");
+                byte[] binary = File.ReadAllBytes(path);
+                string detectedArch = Tools.ArchitectureDetector.Detect(binary);
+                
+                // Prompt for architecture if unknown or to override detection
+                string arch = PromptUserForChoice($"Detected: {detectedArch}. Select CPU Architecture:", 
+                    new List<string> { "MIPS32", "MIPS64", "ARM", "ARM64", "PowerPC", "x86", "x86-64", "RISC-V" });
+                if (string.IsNullOrEmpty(arch)) return;
+                
+                StatusBarText($"Launching emulation for {Path.GetFileName(path)} ({arch})...");
+                
+                try
+                {
+                    // First attempt: HomebrewEmulator
+                    var emulator = new HomebrewEmulator();
+                    emulator.LoadBinary(binary);
+                    emulator.Run();
+                    StatusBarText($"HomebrewEmulator started for {Path.GetFileName(path)} ({arch})");
+                }
+                catch (Exception homebrewEx)
+                {
+                    Debug.WriteLine($"HomebrewEmulator failed: {homebrewEx.Message}");
+                    StatusBarText("HomebrewEmulator failed, falling back to QEMU...");
+                    
+                    // Fallback: QEMU
+                    try
+                    {
+                        // Special handling for PowerPC - use bootloader manager
+                        if (arch.Equals("PowerPC", StringComparison.OrdinalIgnoreCase))
+                        {
+                            PowerPCBootloaderManager.LaunchPowerPCWithBootloader(path);
+                            StatusBarText($"Launched PowerPC emulation with bootloader for {Path.GetFileName(path)}");
+                        }
+                        else
+                        {
+                            QemuManager.Launch(path, arch);
+                            StatusBarText($"Launched QEMU for {Path.GetFileName(path)} ({arch})");
+                        }
+                    }
+                    catch (Exception qemuEx)
+                    {
+                        throw new Exception($"Both emulators failed:\n\nHomebrewEmulator: {homebrewEx.Message}\n\nQEMU: {qemuEx.Message}");
+                    }
+                }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"QEMU launch error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                StatusBarText("QEMU launch failed.");
+                MessageBox.Show($"Emulator launch error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusBarText("Emulation failed.");
             }
             await Task.CompletedTask;
         }
