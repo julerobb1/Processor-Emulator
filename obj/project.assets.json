@@ -573,14 +573,12 @@
   },
   "projectFileDependencyGroups": {
     "net6.0-windows7.0": [
-      "DiscUtils.Core >= 0.16.13",
       "DiscUtils.Ext >= 0.16.13",
       "DiscUtils.Fat >= 0.16.13",
       "DiscUtils.Iso9660 >= 0.16.13",
       "DiscUtils.SquashFs >= 0.16.13",
-      "DiscUtils.Yaffs >= 0.16.13",
       "SharpCompress >= 0.30.0",
-      "UnicornEngine.Unicorn >= 1.0.1"
+      "UnicornEngine.Unicorn >= 2.1.0"
     ]
   },
   "packageFolders": {
@@ -626,10 +624,6 @@
       "net6.0-windows7.0": {
         "targetAlias": "net6.0-windows",
         "dependencies": {
-          "DiscUtils.Core": {
-            "target": "Package",
-            "version": "[0.16.13, )"
-          },
           "DiscUtils.Ext": {
             "target": "Package",
             "version": "[0.16.13, )"
@@ -646,17 +640,13 @@
             "target": "Package",
             "version": "[0.16.13, )"
           },
-          "DiscUtils.Yaffs": {
-            "target": "Package",
-            "version": "[0.16.13, )"
-          },
           "SharpCompress": {
             "target": "Package",
             "version": "[0.30.0, )"
           },
           "UnicornEngine.Unicorn": {
             "target": "Package",
-            "version": "[1.0.1, )"
+            "version": "[2.1.0, )"
           }
         },
         "imports": [
@@ -699,26 +689,5 @@
         "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.300\\RuntimeIdentifierGraph.json"
       }
     }
-  },
-  "logs": [
-    {
-      "code": "NU1603",
-      "level": "Warning",
-      "warningLevel": 1,
-      "message": "ProcessorEmulator depends on UnicornEngine.Unicorn (>= 1.0.1) but UnicornEngine.Unicorn 1.0.1 was not found. UnicornEngine.Unicorn 2.1.0 was resolved instead.",
-      "libraryId": "UnicornEngine.Unicorn",
-      "targetGraphs": [
-        "net6.0-windows7.0"
-      ]
-    },
-    {
-      "code": "NU1101",
-      "level": "Error",
-      "message": "Unable to find package DiscUtils.Yaffs. No packages exist with this id in source(s): nuget.org",
-      "libraryId": "DiscUtils.Yaffs",
-      "targetGraphs": [
-        "net6.0-windows7.0"
-      ]
-    }
-  ]
+  }
 }
