@@ -1,24 +1,20 @@
 using ProcessorEmulator.Emulation;
 using ProcessorEmulator.Tools;
 using ProcessorEmulator.Network;
-using System.IO;
-using System.Linq;
-using DiscUtils.Iso9660;
-using DiscUtils.Ext;
-// YAFFS handled by ExoticFilesystemManager
-using System.Windows;
-using DiscUtils.Setup;
-using Microsoft.Win32;
-using System.Threading.Tasks;
-using System.IO;
-using System.Linq;
+using ProcessorEmulator; // Add this if PartitionAnalyzer is in the root namespace
 using System;
-using System.Windows.Controls;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Windows;
+using System.Windows.Controls;
 using System.Text.RegularExpressions;
 using System.Diagnostics;
+using Microsoft.Win32;
+using System.Threading.Tasks;
 using DiscUtils.Iso9660;
-using DiscUtils.Ext;
+// YAFFS handled by ExoticFilesystemManager
+using DiscUtils.Setup;
 // Removed UFS support
 
 namespace ProcessorEmulator
@@ -1255,10 +1251,9 @@ namespace ProcessorEmulator
             {
                 byte[] data = File.ReadAllBytes(path);
                 // Load into instruction dispatcher memory region starting at 0
-                dispatcher.Memory.Clear(); // assuming dispatcher exposes Memory
-                dispatcher.Memory.Write(0, data);
+                dispatcher.LoadBinary(data); // Use a method to load binary data
                 dispatcher.PC = 0;
-                dispatcher.Run(); // assuming Run starts emulation loop
+                dispatcher.Run(); // begins emulation loop
                 StatusBarText($"Homebrew emulation started for {Path.GetFileName(path)}");
             }
             catch (Exception ex)
