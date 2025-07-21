@@ -72,7 +72,7 @@ namespace ProcessorEmulator.Tools
             // Add more format checks as needed
             return "Unknown";
         }
-    }
+// Removed premature namespace closure to include all classes in ProcessorEmulator.Tools
 
     // Filesystem and partition analysis/mounting
     public class PartitionAnalyzer
@@ -89,7 +89,6 @@ namespace ProcessorEmulator.Tools
                     if (type != 0)
                         partitions.Add($"MBR Partition Type: 0x{type:X2}");
                 }
-            }
             // GPT: check for 'EFI PART' at offset 512
             if (diskImage.Length > 520 && Encoding.ASCII.GetString(diskImage, 512, 8) == "EFI PART")
             {
@@ -250,7 +249,6 @@ namespace ProcessorEmulator.Tools
             };
         }
     }
-}
 
     // DVR dataset analysis helpers
     public static class DvrDataAnalyzer
@@ -321,3 +319,4 @@ namespace ProcessorEmulator.Tools
             return result;
         }
     }
+} // end of ProcessorEmulator.Tools namespace
