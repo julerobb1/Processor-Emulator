@@ -44,10 +44,6 @@
         "net6.0-windows7.0": {
           "targetAlias": "net6.0-windows",
           "dependencies": {
-            "DiscUtils.Core": {
-              "target": "Package",
-              "version": "[0.16.13, )"
-            },
             "DiscUtils.Ext": {
               "target": "Package",
               "version": "[0.16.13, )"
@@ -64,17 +60,13 @@
               "target": "Package",
               "version": "[0.16.13, )"
             },
-            "DiscUtils.Yaffs": {
-              "target": "Package",
-              "version": "[0.16.13, )"
-            },
             "SharpCompress": {
               "target": "Package",
               "version": "[0.30.0, )"
             },
             "UnicornEngine.Unicorn": {
               "target": "Package",
-              "version": "[1.0.1, )"
+              "version": "[2.1.0, )"
             }
           },
           "imports": [
