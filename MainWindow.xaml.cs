@@ -41,20 +41,26 @@ namespace ProcessorEmulator
     public partial class MainWindow : Window, IMainWindow
     {
 
-        private IEmulator currentEmulator;
+    // Stub for generated XAML initialization
+    private void InitializeComponent() { }
+    // Stub for named control in XAML
+    private TextBox FirmwarePathTextBox;
+        
+    private IEmulator currentEmulator;
 
-        // Add a default constructor for XAML
+        // Add default constructor for XAML
         public MainWindow()
         {
+            InitializeComponent();
             // Load XAML UI components
             // Initialize drag-and-drop for file support
             this.AllowDrop = true;
             this.Drop += MainWindow_Drop;
         }
-
-
+        
         public MainWindow(IEmulator currentEmulator)
         {
+            InitializeComponent();
             this.currentEmulator = currentEmulator;
         }
 
@@ -1364,6 +1370,75 @@ namespace ProcessorEmulator
             }
             var report = DvrDataAnalyzer.AnalyzeAll(baseDir);
             ShowTextWindow("DVR Full Analysis", report);
+        }
+
+        private void BrowseFirmwareButton_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new OpenFileDialog { Filter = "Firmware Images|*.bin;*.img;*.exe;*.fw;*.csw;*.pkgstream|All Files|*.*" };
+            if (dlg.ShowDialog() == true)
+                FirmwarePathTextBox.Text = dlg.FileName;
+        }
+
+        private void BootFirmwareButton_Click(object sender, RoutedEventArgs e)
+        {
+            string imagePath = FirmwarePathTextBox.Text;
+            if (string.IsNullOrEmpty(imagePath) || !File.Exists(imagePath))
+            {
+                MessageBox.Show("Please select a valid firmware image.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+            string arch;
+            try
+            {
+                var bytes = File.ReadAllBytes(imagePath);
+                arch = ArchitectureDetector.Detect(bytes);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to detect architecture: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+            try
+            {
+                QemuManager.Launch(imagePath, arch);
+                StatusBarText($"QEMU launched for {Path.GetFileName(imagePath)} ({arch}).");
+            }
+            catch (Exception ex)
+            {
+                ShowTextWindow("QEMU Boot Error", new List<string> { ex.Message });
+            }
+        }
+
+        private void StartEmulationButton_Click(object sender, RoutedEventArgs e)
+        {
+            // Reuse existing dropdown-based handler
+            StartEmulation_Click(sender, e);
+        }
+
+        private void SummarizeDvrData_Click(object sender, RoutedEventArgs e)
+        {
+            var baseDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data", "DVR");
+            var subs = new[] { "ATT_Firmware", "Uverse_Stuff", "Dish_Stuff", "Directv_Stuff" };
+            var output = new List<string>();
+            foreach (var sub in subs)
+            {
+                var path = Path.Combine(baseDir, sub);
+                output.Add($"===== {sub} =====");
+                if (Directory.Exists(path))
+                {
+                    var groups = Directory.EnumerateFiles(path, "*.*", SearchOption.AllDirectories)
+                        .GroupBy(p => Path.GetExtension(p).ToLowerInvariant())
+                        .OrderByDescending(g => g.Count());
+                    foreach (var g in groups)
+                        output.Add($"{g.Count()} {g.Key}");
+                }
+                else
+                {
+                    output.Add($"Folder not found: {path}");
+                }
+                output.Add(string.Empty);
+            }
+            ShowTextWindow("DVR Data Summary", output);
         }
     }
 }
