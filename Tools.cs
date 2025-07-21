@@ -20,7 +20,6 @@ namespace ProcessorEmulator.Tools
                 if (header.Contains("BCM7346"))
                     return "MIPS32-BCM7346";
             }
-            }
             catch { }
             // ELF magic: 0x7F 'E' 'L' 'F'
             if (binaryOrImage.Length > 4 && binaryOrImage[0] == 0x7F && binaryOrImage[1] == (byte)'E' && binaryOrImage[2] == (byte)'L' && binaryOrImage[3] == (byte)'F')
@@ -68,117 +67,114 @@ namespace ProcessorEmulator.Tools
                     0x6232 => "LoongArch32",
                     0x6264 => "LoongArch64",
                     _ => "Unknown",
-public class PartitionAnalyzer
-        {
-        }
-    };
+                };
             }
             // Add more format checks as needed
-                return "Unknown";
-            }
-    // Filesystem and partition analysis/mounting
-    public class PartitionAnalyzer
-    {
-        public static List<string> Analyze(byte[] diskImage)
+            return "Unknown";
+        }
+        // Filesystem and partition analysis/mounting
+        public class PartitionAnalyzer
         {
-            var partitions = new List<string>();
-            // MBR: check for 0x55AA signature at offset 510
-            if (diskImage.Length > 512 && diskImage[510] == 0x55 && diskImage[511] == 0xAA)
+            public static List<string> Analyze(byte[] diskImage)
             {
-                for (int i = 0x1BE; i < 0x1FE; i += 16)
+                var partitions = new List<string>();
+                // MBR: check for 0x55AA signature at offset 510
+                if (diskImage.Length > 512 && diskImage[510] == 0x55 && diskImage[511] == 0xAA)
                 {
-                    byte type = diskImage[i + 4];
-                    if (type != 0)
-                        partitions.Add($"MBR Partition Type: 0x{type:X2}");
+                    for (int i = 0x1BE; i < 0x1FE; i += 16)
+                    {
+                        byte type = diskImage[i + 4];
+                        if (type != 0)
+                            partitions.Add($"MBR Partition Type: 0x{type:X2}");
+                    }
                 }
+                // GPT: check for 'EFI PART' at offset 512
+                if (diskImage.Length > 520 && Encoding.ASCII.GetString(diskImage, 512, 8) == "EFI PART")
+                {
+                    partitions.Add("GPT Partition Table Detected");
+                }
+                // Add more filesystem detection as needed
+                return partitions;
             }
-            // GPT: check for 'EFI PART' at offset 512
-            if (diskImage.Length > 520 && Encoding.ASCII.GetString(diskImage, 512, 8) == "EFI PART")
-            {
-                partitions.Add("GPT Partition Table Detected");
-            }
-            // Add more filesystem detection as needed
-            return partitions;
         }
-    }
 
-    // Disassembler and decompiler stub (MIPS/ARM minimal example)
-    public class Disassembler
-    {
-        public static List<string> Disassemble(byte[] binary, string architecture)
+        // Disassembler and decompiler stub (MIPS/ARM minimal example)
+        public class Disassembler
         {
-            var result = new List<string>();
-            switch (architecture)
+            public static List<string> Disassemble(byte[] binary, string architecture)
             {
-                case "MIPS32":
-                case "MIPS64":
-                    for (int i = 0; i < binary.Length; i += 4)
-                    {
-                        if (i + 4 > binary.Length) break;
-                        uint instr = BitConverter.ToUInt32(binary, i);
-                        result.Add($"0x{i:X8}: 0x{instr:X8} (MIPS instruction)");
-                    }
-                    break;
-                case "ARM":
-                case "ARM64":
-                    for (int i = 0; i < binary.Length; i += 4)
-                    {
-                        if (i + 4 > binary.Length) break;
-                        uint instr = BitConverter.ToUInt32(binary, i);
-                        result.Add($"0x{i:X8}: 0x{instr:X8} (ARM instruction)");
-                    }
-                    break;
-                case "PowerPC":
-                    for (int i = 0; i < binary.Length; i += 4)
-                    {
-                        if (i + 4 > binary.Length) break;
-                        uint instr = BitConverter.ToUInt32(binary, i);
-                        result.Add($"0x{i:X8}: 0x{instr:X8} (PowerPC instruction)");
-                    }
-                    break;
-                case "x86":
-                case "x86-64":
-                    for (int i = 0; i < binary.Length; i += 1)
-                    {
-                        result.Add($"0x{i:X8}: 0x{binary[i]:X2} (x86 byte)");
-                    }
-                    break;
-                case "RISC-V":
-                    for (int i = 0; i < binary.Length; i += 4)
-                    {
-                        if (i + 4 > binary.Length) break;
-                        uint instr = BitConverter.ToUInt32(binary, i);
-                        result.Add($"0x{i:X8}: 0x{instr:X8} (RISC-V instruction)");
-                    }
-                    break;
-                default:
-                    result.Add("Disassembly not implemented for this architecture.");
-                    break;
+                var result = new List<string>();
+                switch (architecture)
+                {
+                    case "MIPS32":
+                    case "MIPS64":
+                        for (int i = 0; i < binary.Length; i += 4)
+                        {
+                            if (i + 4 > binary.Length) break;
+                            uint instr = BitConverter.ToUInt32(binary, i);
+                            result.Add($"0x{i:X8}: 0x{instr:X8} (MIPS instruction)");
+                        }
+                        break;
+                    case "ARM":
+                    case "ARM64":
+                        for (int i = 0; i < binary.Length; i += 4)
+                        {
+                            if (i + 4 > binary.Length) break;
+                            uint instr = BitConverter.ToUInt32(binary, i);
+                            result.Add($"0x{i:X8}: 0x{instr:X8} (ARM instruction)");
+                        }
+                        break;
+                    case "PowerPC":
+                        for (int i = 0; i < binary.Length; i += 4)
+                        {
+                            if (i + 4 > binary.Length) break;
+                            uint instr = BitConverter.ToUInt32(binary, i);
+                            result.Add($"0x{i:X8}: 0x{instr:X8} (PowerPC instruction)");
+                        }
+                        break;
+                    case "x86":
+                    case "x86-64":
+                        for (int i = 0; i < binary.Length; i += 1)
+                        {
+                            result.Add($"0x{i:X8}: 0x{binary[i]:X2} (x86 byte)");
+                        }
+                        break;
+                    case "RISC-V":
+                        for (int i = 0; i < binary.Length; i += 4)
+                        {
+                            if (i + 4 > binary.Length) break;
+                            uint instr = BitConverter.ToUInt32(binary, i);
+                            result.Add($"0x{i:X8}: 0x{instr:X8} (RISC-V instruction)");
+                        }
+                        break;
+                    default:
+                        result.Add("Disassembly not implemented for this architecture.");
+                        break;
+                }
+                return result;
             }
-            return result;
         }
-    }
 
-    // Recompiler/binary translator stub
-    public class Recompiler
-    {
-        public static void Recompile(byte[] binary, string sourceArch, string targetArch)
+        // Recompiler/binary translator stub
+        public class Recompiler
         {
-            if (!SupportedArchitectures.All.Contains(sourceArch) || !SupportedArchitectures.All.Contains(targetArch))
-                throw new NotSupportedException("Unsupported architecture");
-            // Steps:
-            // 1. Disassemble source binary
-            // 2. Convert instructions to IR
-            // 3. Generate target architecture code from IR
-            // 4. Output new binary
-            // (Not implemented: requires full IR and codegen logic)
-            throw new NotImplementedException("Universal binary translation not implemented.");
+            public static void Recompile(byte[] binary, string sourceArch, string targetArch)
+            {
+                if (!SupportedArchitectures.All.Contains(sourceArch) || !SupportedArchitectures.All.Contains(targetArch))
+                    throw new NotSupportedException("Unsupported architecture");
+                // Steps:
+                // 1. Disassemble source binary
+                // 2. Convert instructions to IR
+                // 3. Generate target architecture code from IR
+                // 4. Output new binary
+                // (Not implemented: requires full IR and codegen logic)
+                throw new NotImplementedException("Universal binary translation not implemented.");
+            }
         }
-    }
 
-    public static class SupportedArchitectures
-    {
-        public static readonly List<string> All = new()
+        public static class SupportedArchitectures
+        {
+            public static readonly List<string> All = new()
         {
             "TargetHost", // 0x0001
             "I386", // 0x014c
@@ -220,85 +216,86 @@ public class PartitionAnalyzer
             "LoongArch32", // 0x6232
             "LoongArch64" // 0x6264
         };
-    }
-
-    public static class FirmwareDownloader
-    {
-        private static readonly HttpClient httpClient = new HttpClient();
-        public static async Task<string> DownloadFileAsync(string url, string outputDir)
-        {
-            Directory.CreateDirectory(outputDir);
-            var fileName = Path.GetFileName(new Uri(url).LocalPath);
-            var outputPath = Path.Combine(outputDir, fileName);
-            var data = await httpClient.GetByteArrayAsync(url);
-            await File.WriteAllBytesAsync(outputPath, data);
-            return outputPath;
         }
-        public static Dictionary<string, string> GetKnownSwmFirmware()
+
+        public static class FirmwareDownloader
         {
-            return new Dictionary<string, string>
+            private static readonly HttpClient httpClient = new HttpClient();
+            public static async Task<string> DownloadFileAsync(string url, string outputDir)
+            {
+                Directory.CreateDirectory(outputDir);
+                var fileName = Path.GetFileName(new Uri(url).LocalPath);
+                var outputPath = Path.Combine(outputDir, fileName);
+                var data = await httpClient.GetByteArrayAsync(url);
+                await File.WriteAllBytesAsync(outputPath, data);
+                return outputPath;
+            }
+            public static Dictionary<string, string> GetKnownSwmFirmware()
+            {
+                return new Dictionary<string, string>
             {
                 { "SWM LNB V1", "https://example.com/firmware/swm_lnb_v1.bin" },
                 { "SWM LNB V2", "https://example.com/firmware/swm_lnb_v2.bin" }
             };
-        }
-    }
-
-    // DVR dataset analysis helpers
-    public static class DvrDataAnalyzer
-    {
-        public static List<string> ParsePmsProperties(string dvrBase)
-        {
-            var lines = new List<string>();
-            var pmsDirs = Directory.GetDirectories(dvrBase, "pms_data", SearchOption.AllDirectories);
-            foreach (var dir in pmsDirs)
-            {
-                lines.Add($"Dataset: {Path.GetFileName(Path.GetDirectoryName(dir))} - PMS properties:");
-                var propFile = Path.Combine(dir, "pms.properties");
-                if (File.Exists(propFile))
-                    foreach (var l in File.ReadAllLines(propFile))
-                        lines.Add("  " + l.Trim());
-                else
-                    lines.Add("  (none)");
-                lines.Add(string.Empty);
             }
-            return lines;
         }
 
-        public static List<string> SummarizeNetworkConfigs(string dvrBase)
+        // DVR dataset analysis helpers
+        public static class DvrDataAnalyzer
         {
-            var lines = new List<string>();
-            var netDirs = Directory.GetDirectories(dvrBase, "network", SearchOption.AllDirectories);
-            foreach (var dir in netDirs)
+            public static List<string> ParsePmsProperties(string dvrBase)
             {
-                lines.Add($"Dataset: {Path.GetFileName(Path.GetDirectoryName(dir))} - Network configs:");
-                foreach (var file in Directory.GetFiles(dir, "*.conf", SearchOption.TopDirectoryOnly))
-                    lines.Add("  " + Path.GetFileName(file));
-                lines.Add(string.Empty);
+                var lines = new List<string>();
+                var pmsDirs = Directory.GetDirectories(dvrBase, "pms_data", SearchOption.AllDirectories);
+                foreach (var dir in pmsDirs)
+                {
+                    lines.Add($"Dataset: {Path.GetFileName(Path.GetDirectoryName(dir))} - PMS properties:");
+                    var propFile = Path.Combine(dir, "pms.properties");
+                    if (File.Exists(propFile))
+                        foreach (var l in File.ReadAllLines(propFile))
+                            lines.Add("  " + l.Trim());
+                    else
+                        lines.Add("  (none)");
+                    lines.Add(string.Empty);
+                }
+                return lines;
             }
-            return lines;
-        }
 
-        public static List<string> AnalyzeAll(string dvrBase)
-        {
-            var result = new List<string>();
-            result.Add("=== Firmware Files ===");
-            var firmwareList = Directory.GetDirectories(dvrBase)
-                .SelectMany(dir => Directory.GetFiles(dir, "*.*", SearchOption.AllDirectories)
-                    .Where(f => new[]{".csw",".bin",".pkgstream",".gz",".tar.gz"}
-                        .Any(ext => f.EndsWith(ext, StringComparison.OrdinalIgnoreCase)))
-                    .Select(f => Path.GetRelativePath(dvrBase, f)))
-                .ToList();
-            result.AddRange(firmwareList);
-            result.Add(string.Empty);
-            result.Add("=== XFS Summary ===");
-            result.AddRange(new[] { "(use Probe DVR XFS from UI for details)" });
-            result.Add(string.Empty);
-            result.Add("=== PMS Properties ===");
-            result.AddRange(ParsePmsProperties(dvrBase));
-            result.Add("=== Network Configs ===");
-            result.AddRange(SummarizeNetworkConfigs(dvrBase));
-            return result;
+            public static List<string> SummarizeNetworkConfigs(string dvrBase)
+            {
+                var lines = new List<string>();
+                var netDirs = Directory.GetDirectories(dvrBase, "network", SearchOption.AllDirectories);
+                foreach (var dir in netDirs)
+                {
+                    lines.Add($"Dataset: {Path.GetFileName(Path.GetDirectoryName(dir))} - Network configs:");
+                    foreach (var file in Directory.GetFiles(dir, "*.conf", SearchOption.TopDirectoryOnly))
+                        lines.Add("  " + Path.GetFileName(file));
+                    lines.Add(string.Empty);
+                }
+                return lines;
+            }
+
+            public static List<string> AnalyzeAll(string dvrBase)
+            {
+                var result = new List<string>();
+                result.Add("=== Firmware Files ===");
+                var firmwareList = Directory.GetDirectories(dvrBase)
+                    .SelectMany(dir => Directory.GetFiles(dir, "*.*", SearchOption.AllDirectories)
+                        .Where(f => new[] { ".csw", ".bin", ".pkgstream", ".gz", ".tar.gz" }
+                            .Any(ext => f.EndsWith(ext, StringComparison.OrdinalIgnoreCase)))
+                        .Select(f => Path.GetRelativePath(dvrBase, f)))
+                    .ToList();
+                result.AddRange(firmwareList);
+                result.Add(string.Empty);
+                result.Add("=== XFS Summary ===");
+                result.AddRange(new[] { "(use Probe DVR XFS from UI for details)" });
+                result.Add(string.Empty);
+                result.Add("=== PMS Properties ===");
+                result.AddRange(ParsePmsProperties(dvrBase));
+                result.Add("=== Network Configs ===");
+                result.AddRange(SummarizeNetworkConfigs(dvrBase));
+                return result;
+            }
         }
     }
 }
