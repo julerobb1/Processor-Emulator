@@ -113,6 +113,8 @@ namespace ProcessorEmulator
                 "Mount ISO Filesystem",
                 "Mount EXT Filesystem",
                 "Simulate SWM LNB",
+                "Boot Firmware in QEMU",
+                "Boot Firmware in Homebrew Emulator",
                 "Analyze Folder Contents"
             };
             string mainChoice = PromptUserForChoice("What would you like to do?", mainOptions);
@@ -170,6 +172,12 @@ namespace ProcessorEmulator
                     break;
                 case "Simulate SWM LNB":
                     await HandleSwmLnbSimulation();
+                    break;
+                case "Boot Firmware in QEMU":
+                    await HandleBootFirmwareInQemu();
+                    break;
+                case "Boot Firmware in Homebrew Emulator":
+                    await HandleBootFirmwareInHomebrew();
                     break;
                 case "Analyze Folder Contents":
                     await HandleFolderAnalysis();
@@ -1207,6 +1215,56 @@ namespace ProcessorEmulator
             {
                 MessageBox.Show($"Folder analysis error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 StatusBarText("Folder analysis failed.");
+            }
+            await Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Boots a firmware image in QEMU for rapid hardware testing.
+        /// </summary>
+        private async Task HandleBootFirmwareInQemu()
+        {
+            var dlg = new OpenFileDialog { Filter = "Firmware Images (*.bin;*.img)|*.bin;*.img|All Files (*.*)|*.*" };
+            if (dlg.ShowDialog() != true) return;
+            string path = dlg.FileName;
+            // Detect architecture from user prompt or file extension
+            string arch = PromptUserForChoice("Select CPU Architecture:", new List<string> { "MIPS32", "MIPS64", "ARM", "ARM64", "PowerPC", "x86", "x86-64", "RISC-V" });
+            if (string.IsNullOrEmpty(arch)) return;
+            try
+            {
+                QemuManager.Launch(path, arch);
+                StatusBarText($"Launched QEMU for {Path.GetFileName(path)} ({arch})");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"QEMU launch error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusBarText("QEMU launch failed.");
+            }
+            await Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Boots a firmware image using the homegrown emulator loop.
+        /// </summary>
+        private async Task HandleBootFirmwareInHomebrew()
+        {
+            var dlg = new OpenFileDialog { Filter = "Firmware Images (*.bin;*.img)|*.bin;*.img|All Files (*.*)|*.*" };
+            if (dlg.ShowDialog() != true) return;
+            string path = dlg.FileName;
+            try
+            {
+                byte[] data = File.ReadAllBytes(path);
+                // Load into instruction dispatcher memory region starting at 0
+                dispatcher.Memory.Clear(); // assuming dispatcher exposes Memory
+                dispatcher.Memory.Write(0, data);
+                dispatcher.PC = 0;
+                dispatcher.Run(); // assuming Run starts emulation loop
+                StatusBarText($"Homebrew emulation started for {Path.GetFileName(path)}");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Homebrew emulation error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusBarText("Homebrew emulation failed.");
             }
             await Task.CompletedTask;
         }
