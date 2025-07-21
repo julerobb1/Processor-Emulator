@@ -12,15 +12,15 @@ namespace ProcessorEmulator.Emulation
         public string FilesystemType { get; set; } // Custom filesystem type
         public string DeviceModel { get; set; }   // XG1V4, X1, etc.
         
-        // ARRIS XG1V4 specific configuration
+        // ARRIS XG1V4 specific configuration (ARM Cortex-A15 based)
         public static RDKVPlatformConfig CreateArrisXG1V4Config()
         {
             return new RDKVPlatformConfig
             {
                 PlatformName = "Comcast",
                 DeviceModel = "ARRIS XG1V4",
-                ProcessorType = "ARM",
-                MemorySize = 1024 * 1024 * 512, // 512MB typical for XG1V4
+                ProcessorType = "ARM", // Broadcom BCM7445 - ARM Cortex-A15 quad-core
+                MemorySize = 1024 * 1024 * 1024, // 1GB RAM (XG1V4 has 1GB)
                 IsDVR = true,
                 FilesystemType = "SquashFS/UBIFS"
             };
