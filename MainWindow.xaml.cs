@@ -517,7 +517,7 @@ namespace ProcessorEmulator
         // Core feature handlers
 
         /// <summary>
-        /// Emulates an RDK-V set-top box using QEMU.
+        /// Emulates an RDK-V set-top box using built-in emulator with display.
         /// </summary>
         private async Task HandleRdkVEmulation()
         {
@@ -525,13 +525,30 @@ namespace ProcessorEmulator
             if (dlg.ShowDialog() != true) return;
             string path = dlg.FileName;
             StatusBarText($"Launching RDK-V emulator for {Path.GetFileName(path)}...");
-            var bin = File.ReadAllBytes(path);
-            // Force ARM architecture for RDK-V hardware
-            var arch = "ARM";
-            Debug.WriteLine("Forcing architecture to ARM for RDK-V hardware.");
-            StatusBarText("Forcing ARM architecture for RDK-V hardware.");
-            try { EmulatorLauncher.Launch(path, arch, platform: "RDK-V"); StatusBarText("RDK-V emulation started."); }
-            catch (Exception ex) { MessageBox.Show($"RDK-V error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error); StatusBarText("RDK-V emulation failed."); }
+            
+            try 
+            {
+                var bin = File.ReadAllBytes(path);
+                Debug.WriteLine($"Loaded RDK-V firmware: {bin.Length} bytes");
+                StatusBarText($"Loaded RDK-V firmware: {bin.Length} bytes");
+                
+                // Configure for ARRIS XG1V4 (common Comcast RDK-V device)
+                var config = RDKVPlatformConfig.CreateArrisXG1V4Config();
+                Debug.WriteLine($"Using {config.DeviceModel} configuration: {config.ProcessorType}, {config.MemorySize / 1024 / 1024}MB");
+                StatusBarText($"Configured for {config.DeviceModel} ({config.ProcessorType}, {config.MemorySize / 1024 / 1024}MB)");
+                
+                // Use HomebrewEmulator for RDK-V with display
+                var emulator = new HomebrewEmulator();
+                emulator.LoadBinary(bin);
+                emulator.Run(); // This will open the EmulatorWindow with display
+                
+                StatusBarText("RDK-V emulation started with display window.");
+            }
+            catch (Exception ex) 
+            { 
+                MessageBox.Show($"RDK-V error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error); 
+                StatusBarText("RDK-V emulation failed."); 
+            }
             await Task.CompletedTask;
         }
 
@@ -1211,8 +1228,31 @@ namespace ProcessorEmulator
             StatusBarText($"Analyzing folder: {folderPath}...");
             try
             {
-                // Launch the new folder analysis window (code-only)
-                var window = new FolderAnalysisWindow(folderPath)
+                // Create file records from folder
+                var fileRecords = new List<ProcessorEmulator.FileRecord>();
+                if (Directory.Exists(folderPath))
+                {
+                    var files = Directory.GetFiles(folderPath, "*.*", SearchOption.AllDirectories);
+                    foreach (var file in files)
+                    {
+                        var info = new FileInfo(file);
+                        byte[] preview = new byte[Math.Min(16, info.Length)];
+                        if (info.Length > 0)
+                        {
+                            using (var fs = File.OpenRead(file))
+                                fs.Read(preview, 0, preview.Length);
+                        }
+                        fileRecords.Add(new ProcessorEmulator.FileRecord
+                        {
+                            FilePath = file,
+                            Size = info.Length,
+                            HexPreview = BitConverter.ToString(preview).Replace("-", " ")
+                        });
+                    }
+                }
+                
+                // Launch the XAML folder analysis window 
+                var window = new FolderAnalysisWindow(fileRecords)
                 {
                     Owner = this
                 };
