@@ -112,6 +112,7 @@ namespace ProcessorEmulator
                 "Mount YAFFS Filesystem",
                 "Mount ISO Filesystem",
                 "Mount EXT Filesystem",
+                "Simulate SWM LNB",
                 "Analyze Folder Contents"
             };
             string mainChoice = PromptUserForChoice("What would you like to do?", mainOptions);
@@ -166,6 +167,9 @@ namespace ProcessorEmulator
                     break;
                 case "Mount EXT Filesystem":
                     await HandleExtMount();
+                    break;
+                case "Simulate SWM LNB":
+                    await HandleSwmLnbSimulation();
                     break;
                 case "Analyze Folder Contents":
                     await HandleFolderAnalysis();
@@ -945,39 +949,29 @@ namespace ProcessorEmulator
         }
 
         /// <summary>
-        /// Simulates DirecTV SWM switches and/or LNBs.
-        /// Currently a stub; intended for future simulation and testing.
+        /// Simulates a DirecTV SWM LNB with default band settings.
         /// </summary>
         private async Task HandleSwmLnbSimulation()
         {
-            var openFileDialog = new OpenFileDialog {
-                Filter = "SWM Switch/LNB Firmware (*.bin;*.img)|*.bin;*.img|All Files (*.*)|*.*"
+            // Default 5-band frequencies in MHz
+            var bands = new Dictionary<int, int>
+            {
+                {1, 1150}, {2, 1250}, {3, 1350}, {4, 1450}, {5, 1550}
             };
-            if (openFileDialog.ShowDialog() != true) return;
-
-            string filePath = openFileDialog.FileName;
-            StatusBarText("Loading SWM Switch/LNB firmware...");
-            byte[] firmware = File.ReadAllBytes(filePath);
-            StatusBarText("Simulating SWM LNB...");
-
-            var output = new List<string>();
-            try
+            var emulator = new ProcessorEmulator.Tools.SwmLnbEmulator();
+            bool ok = emulator.Initialize(bands.Count, bands, null);
+            if (!ok)
             {
-                SwmLnbEmulator.SimulateReceiverRequest(firmware);
-                output.Add("SimulateReceiverRequest completed.");
-                SwmLnbEmulator.SendChannelMap();
-                output.Add("SendChannelMap completed.");
-                SwmLnbEmulator.EmulateKeepAlive();
-                output.Add("EmulateKeepAlive completed.");
+                MessageBox.Show("Failed to initialize SWM LNB emulator.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
             }
-            catch (Exception ex)
+            // Show initial state
+            var info = new List<string>
             {
-                output.Add($"Error during simulation: {ex.Message}");
-            }
-
-            StatusBarText("SWM LNB simulation complete.");
-            ShowTextWindow("SWM LNB Simulation Output", output);
-
+                $"SWM LNB initialized with {bands.Count} bands",
+                $"Current IF: {emulator.GetCurrentIf()} MHz"
+            };
+            ShowTextWindow("SWM LNB Emulator", info);
             await Task.CompletedTask;
         }
 
