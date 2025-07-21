@@ -543,7 +543,7 @@ namespace ProcessorEmulator
             string path = dlg.FileName;
             StatusBarText($"Probing filesystem in {Path.GetFileName(path)}...");
             var data = File.ReadAllBytes(path);
-            var parts = partitionAnalyzer.Analyze(data);
+            var parts = ArchitectureDetector.PartitionAnalyzer.Analyze(data);
             ShowTextWindow("Partition Analysis", parts);
             StatusBarText("Filesystem probe complete.");
             await Task.CompletedTask;
