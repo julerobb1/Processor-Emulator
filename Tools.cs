@@ -70,9 +70,8 @@ namespace ProcessorEmulator.Tools
                 };
             }
             // Add more format checks as needed
-            return "Unknown";
-        }
-// Removed premature namespace closure to include all classes in ProcessorEmulator.Tools
+                return "Unknown";
+            }
 
     // Filesystem and partition analysis/mounting
     public class PartitionAnalyzer
@@ -89,6 +88,7 @@ namespace ProcessorEmulator.Tools
                     if (type != 0)
                         partitions.Add($"MBR Partition Type: 0x{type:X2}");
                 }
+            }
             // GPT: check for 'EFI PART' at offset 512
             if (diskImage.Length > 520 && Encoding.ASCII.GetString(diskImage, 512, 8) == "EFI PART")
             {
@@ -226,6 +226,8 @@ namespace ProcessorEmulator.Tools
         /// <summary>
         /// Downloads a file from the specified URL to the output directory and returns the local file path.
         /// </summary>
+        }
+    }
         public static async Task<string> DownloadFileAsync(string url, string outputDir)
         {
             Directory.CreateDirectory(outputDir);
