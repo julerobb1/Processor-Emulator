@@ -225,9 +225,7 @@ namespace ProcessorEmulator.Tools
         private static readonly HttpClient httpClient = new HttpClient();
         /// <summary>
         /// Downloads a file from the specified URL to the output directory and returns the local file path.
-        /// </summary>
-        }
-    }
+    /// </summary>
         public static async Task<string> DownloadFileAsync(string url, string outputDir)
         {
             Directory.CreateDirectory(outputDir);
@@ -322,3 +320,4 @@ namespace ProcessorEmulator.Tools
         }
     }
 } // end of ProcessorEmulator.Tools namespace
+}
