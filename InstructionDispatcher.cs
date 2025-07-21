@@ -43,5 +43,10 @@ namespace ProcessorEmulator.Emulation
                 // Example: Translate MIPS instruction to x86 and execute
             }
         }
+
+        internal void Start()
+        {
+            throw new NotImplementedException();
+        }
     }
 }
