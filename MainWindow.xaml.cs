@@ -1079,24 +1079,27 @@ namespace ProcessorEmulator
         /// </summary>
         private async Task HandleYaffsMount()
         {
-            var dlg = new Microsoft.Win32.OpenFileDialog
+            var dlg = new OpenFileDialog
             {
                 Filter = "YAFFS Images (*.img;*.yaffs)|*.img;*.yaffs|All Files (*.*)|*.*"
             };
             if (dlg.ShowDialog() != true) return;
             string path = dlg.FileName;
-            StatusBarText($"Mounting YAFFS image {System.IO.Path.GetFileName(path)}...");
+            StatusBarText($"Extracting YAFFS image {Path.GetFileName(path)}...");
             try
             {
-                string mountPoint = "/";
-                fsManager.MountYAFFS(path, mountPoint);
-                StatusBarText("YAFFS image mounted.");
-                ShowTextWindow("YAFFS Mount", new List<string> { $"Mounted {System.IO.Path.GetFileName(path)} at {mountPoint}" });
+                string outDir = Path.Combine(Path.GetDirectoryName(path), Path.GetFileNameWithoutExtension(path) + "_yaffs");
+                YaffsExtractor.ExtractYaffs(path, outDir);
+                var entries = Directory.GetFiles(outDir, "*", SearchOption.AllDirectories)
+                                        .Select(f => Path.GetRelativePath(outDir, f))
+                                        .ToList();
+                ShowTextWindow("YAFFS Extraction", entries);
+                StatusBarText("YAFFS extraction complete.");
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"YAFFS mount error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                StatusBarText("YAFFS mount failed.");
+                MessageBox.Show($"YAFFS extraction error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusBarText("YAFFS extraction failed.");
             }
             await Task.CompletedTask;
         }
