@@ -65,5 +65,36 @@ namespace ProcessorEmulator.Tools
             bandFrequencies.TryGetValue(currentBand, out var freq) ? freq : 0;
 
         public Stream GetSignalStream() => signalStream;
+
+        // Event raised when signal data is available for the selected band
+        public event Action<byte[]> OnSignalData;
+
+        /// <summary>
+        /// Begin streaming the satellite signal and raising OnSignalData events.
+        /// </summary>
+        public void StartStreaming()
+        {
+            // Simple stub: read entire stream synchronously and invoke event
+            if (signalStream != null)
+            {
+                byte[] buffer = new byte[4096];
+                int bytesRead;
+                while ((bytesRead = signalStream.Read(buffer, 0, buffer.Length)) > 0)
+                {
+                    var data = new byte[bytesRead];
+                    Array.Copy(buffer, data, bytesRead);
+                    OnSignalData?.Invoke(data);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Stop streaming the signal.
+        /// </summary>
+        public void StopStreaming()
+        {
+            // TODO: implement stop logic if using asynchronous streaming
+            // For stub, nothing to clean up
+        }
     }
 }
