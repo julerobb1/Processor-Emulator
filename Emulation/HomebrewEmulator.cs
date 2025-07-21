@@ -49,6 +49,221 @@ namespace ProcessorEmulator.Emulation
         public void Run()
         {
             // Auto-detect architecture from original binary
+            string arch = ArchitectureDetector.Detect(originalBinary);
+            
+            MessageBox.Show($"Starting emulation for architecture: {arch}", "Emulator Starting");
+            
+            // Initialize display window
+            var displayWindow = new EmulatorWindow(640, 480);
+            displayWindow.Show();
+            
+            // Main emulation loop
+            bool running = true;
+            int cycles = 0;
+            
+            try
+            {
+                while (running && cycles < 10000) // Limit cycles for demo
+                {
+                    // Fetch instruction
+                    if (pc + 4 > memory.Length)
+                    {
+                        MessageBox.Show("Program counter exceeded memory bounds", "Emulation Complete");
+                        break;
+                    }
+                    
+                    uint instruction = BitConverter.ToUInt32(memory, (int)pc);
+                    
+                    // Execute based on architecture
+                    switch (arch)
+                    {
+                        case "MIPS32":
+                        case "MIPS64":
+                            running = ExecuteMipsInstruction(instruction);
+                            break;
+                        case "ARM":
+                        case "ARM64":
+                            running = ExecuteArmInstruction(instruction);
+                            break;
+                        case "x86":
+                        case "AMD64":
+                            running = ExecuteX86Instruction(instruction);
+                            break;
+                        default:
+                            MessageBox.Show($"Architecture {arch} not supported for native emulation", "Emulation Error");
+                            running = false;
+                            break;
+                    }
+                    
+                    cycles++;
+                    
+                    // Update display every 100 cycles
+                    if (cycles % 100 == 0)
+                    {
+                        UpdateDisplay(displayWindow);
+                    }
+                    
+                    // Small delay to make it visible
+                    System.Threading.Thread.Sleep(1);
+                }
+                
+                MessageBox.Show($"Emulation completed after {cycles} cycles", "Emulation Complete");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Emulation error: {ex.Message}", "Emulation Error");
+            }
+        }
+        
+        private bool ExecuteMipsInstruction(uint instruction)
+        {
+            // Basic MIPS instruction decoding
+            uint opcode = (instruction >> 26) & 0x3F;
+            uint rs = (instruction >> 21) & 0x1F;
+            uint rt = (instruction >> 16) & 0x1F;
+            uint rd = (instruction >> 11) & 0x1F;
+            uint shamt = (instruction >> 6) & 0x1F;
+            uint funct = instruction & 0x3F;
+            
+            switch (opcode)
+            {
+                case 0x00: // R-type instructions
+                    switch (funct)
+                    {
+                        case 0x20: // ADD
+                            regs[rd] = regs[rs] + regs[rt];
+                            break;
+                        case 0x22: // SUB
+                            regs[rd] = regs[rs] - regs[rt];
+                            break;
+                        case 0x24: // AND
+                            regs[rd] = regs[rs] & regs[rt];
+                            break;
+                        case 0x25: // OR
+                            regs[rd] = regs[rs] | regs[rt];
+                            break;
+                        case 0x08: // JR
+                            pc = regs[rs];
+                            return true;
+                        default:
+                            // Unknown instruction - just advance PC
+                            break;
+                    }
+                    break;
+                case 0x08: // ADDI
+                    short imm = (short)(instruction & 0xFFFF);
+                    regs[rt] = regs[rs] + (uint)imm;
+                    break;
+                case 0x04: // BEQ
+                    if (regs[rs] == regs[rt])
+                    {
+                        short offset = (short)(instruction & 0xFFFF);
+                        pc += (uint)(offset * 4);
+                        return true;
+                    }
+                    break;
+                case 0x02: // J
+                    uint target = instruction & 0x3FFFFFF;
+                    pc = (pc & 0xF0000000) | (target << 2);
+                    return true;
+                default:
+                    // Unknown instruction - just advance PC
+                    break;
+            }
+            
+            pc += 4;
+            return true;
+        }
+        
+        private bool ExecuteArmInstruction(uint instruction)
+        {
+            // Basic ARM instruction decoding
+            uint cond = (instruction >> 28) & 0xF;
+            uint opcode = (instruction >> 21) & 0xF;
+            
+            // Simple ARM instruction simulation
+            switch (opcode)
+            {
+                case 0x4: // ADD
+                    uint rn = (instruction >> 16) & 0xF;
+                    uint rd = (instruction >> 12) & 0xF;
+                    uint rm = instruction & 0xF;
+                    if (rd < regs.Length && rn < regs.Length && rm < regs.Length)
+                        regs[rd] = regs[rn] + regs[rm];
+                    break;
+                case 0x2: // SUB
+                    rn = (instruction >> 16) & 0xF;
+                    rd = (instruction >> 12) & 0xF;
+                    rm = instruction & 0xF;
+                    if (rd < regs.Length && rn < regs.Length && rm < regs.Length)
+                        regs[rd] = regs[rn] - regs[rm];
+                    break;
+                default:
+                    // Unknown instruction
+                    break;
+            }
+            
+            pc += 4;
+            return true;
+        }
+        
+        private bool ExecuteX86Instruction(uint instruction)
+        {
+            // Very basic x86 simulation (this is extremely simplified)
+            byte opcode = (byte)(instruction & 0xFF);
+            
+            switch (opcode)
+            {
+                case 0x90: // NOP
+                    break;
+                case 0xC3: // RET
+                    return false; // End execution
+                default:
+                    // Unknown instruction
+                    break;
+            }
+            
+            pc += 1; // x86 has variable length instructions
+            return true;
+        }
+        
+        private void UpdateDisplay(EmulatorWindow window)
+        {
+            // Create a simple test pattern based on registers and memory
+            int width = 640;
+            int height = 480;
+            byte[] pixelData = new byte[width * height * 4]; // BGR32 format
+            
+            // Create a pattern based on register values
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    int offset = (y * width + x) * 4;
+                    
+                    // Use register values to create colors
+                    byte r = (byte)(regs[0] % 256);
+                    byte g = (byte)(regs[1] % 256);
+                    byte b = (byte)(regs[2] % 256);
+                    
+                    // Add some pattern
+                    r = (byte)((r + x + y) % 256);
+                    g = (byte)((g + x * 2) % 256);
+                    b = (byte)((b + y * 2) % 256);
+                    
+                    pixelData[offset] = b;     // Blue
+                    pixelData[offset + 1] = g; // Green
+                    pixelData[offset + 2] = r; // Red
+                    pixelData[offset + 3] = 255; // Alpha
+                }
+            }
+            
+            // Update display on UI thread
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                window.UpdateFrame(pixelData);
+            });
+        }
             var detectedArch = ArchitectureDetector.Detect(originalBinary);
             Debug.WriteLine($"HomebrewEmulator: auto-detected architecture: {detectedArch}");
             // Dispatch by detected architecture
