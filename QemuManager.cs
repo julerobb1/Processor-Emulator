@@ -62,19 +62,42 @@ namespace ProcessorEmulator.Tools
 
         private static string GetQemuArgs(string imagePath, string architecture)
         {
-            // Select machine type based on architecture: malta for MIPS, virt for ARM
+            // Select machine type based on architecture
             string machine = null;
-            if (architecture.StartsWith("MIPS", StringComparison.OrdinalIgnoreCase)) machine = "malta";
-            else if (architecture.StartsWith("ARM", StringComparison.OrdinalIgnoreCase)) machine = "virt";
+            string extraArgs = "";
+            
+            if (architecture.StartsWith("MIPS", StringComparison.OrdinalIgnoreCase)) 
+            {
+                machine = "malta";
+            }
+            else if (architecture.StartsWith("ARM", StringComparison.OrdinalIgnoreCase)) 
+            {
+                machine = "virt";
+            }
+            else if (architecture.Equals("PowerPC", StringComparison.OrdinalIgnoreCase))
+            {
+                machine = "g3beige"; // Classic PowerPC machine with OpenBIOS
+                extraArgs = "-boot order=cd"; // Boot from CD/firmware
+            }
+            
             string machineArg = string.IsNullOrEmpty(machine) ? string.Empty : $"-machine {machine}";
+            
             // If this is a raw firmware blob, boot it as a kernel with serial console
             var ext = Path.GetExtension(imagePath).ToLowerInvariant();
             if (ext == ".bin")
             {
-                return $"{machineArg} -m 256 -kernel \"{imagePath}\" -serial stdio";
+                if (architecture.Equals("PowerPC", StringComparison.OrdinalIgnoreCase))
+                {
+                    // PowerPC firmware - load as BIOS/bootloader
+                    return $"{machineArg} -m 256 -bios \"{imagePath}\" -serial stdio -monitor stdio {extraArgs}";
+                }
+                else
+                {
+                    return $"{machineArg} -m 256 -kernel \"{imagePath}\" -serial stdio {extraArgs}";
+                }
             }
             // Otherwise boot from image drive with VGA display
-            return $"{machineArg} -m 256 -drive file=\"{imagePath}\",format=raw -boot order=c -vga std -display sdl";
+            return $"{machineArg} -m 256 -drive file=\"{imagePath}\",format=raw -boot order=c -vga std -display sdl {extraArgs}";
         }
 
         public static void Launch(string imagePath, string architecture)
