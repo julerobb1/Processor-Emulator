@@ -1355,5 +1355,17 @@ namespace ProcessorEmulator
             }
             ShowTextWindow("DVR XFS Probe", lines);
         }
+
+        private void AnalyzeAllDvrData_Click(object sender, RoutedEventArgs e)
+        {
+            string baseDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data", "DVR");
+            if (!Directory.Exists(baseDir))
+            {
+                ShowTextWindow("DVR Full Analysis", new List<string> { "Data\\DVR directory not found." });
+                return;
+            }
+            var report = ProcessorEmulator.Tools.DvrDataAnalyzer.AnalyzeAll(baseDir);
+            ShowTextWindow("DVR Full Analysis", report);
+        }
     }
 }
