@@ -320,3 +320,4 @@ namespace ProcessorEmulator.Tools
         }
     }
 } // end of ProcessorEmulator.Tools namespace
+}
