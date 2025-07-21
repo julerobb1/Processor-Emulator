@@ -40,11 +40,6 @@ namespace ProcessorEmulator
 
     public partial class MainWindow : Window, IMainWindow
     {
-
-    // Stub for generated XAML initialization
-    private void InitializeComponent() { }
-    // Stub for named control in XAML
-    private TextBox FirmwarePathTextBox;
         
     private IEmulator currentEmulator;
 
@@ -64,11 +59,7 @@ namespace ProcessorEmulator
             this.currentEmulator = currentEmulator;
         }
 
-        private ArchitectureDetector archDetector = new();
-        private ArchitectureDetector.PartitionAnalyzer partitionAnalyzer = new();
-        // Disassembler is a static class; do not instantiate
-        // private ProcessorEmulator.Tools.Disassembler disassembler = new();
-        private Recompiler recompiler = new();
+        // All Tools classes are static - no need to instantiate
         private ExoticFilesystemManager fsManager = new();
         private InstructionDispatcher dispatcher = new();
 
