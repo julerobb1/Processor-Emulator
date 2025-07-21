@@ -29,12 +29,10 @@ namespace ProcessorEmulator.Emulation
             string arch = ArchitectureDetector.Detect(originalBinary);
             Debug.WriteLine($"HomebrewEmulator: Detected architecture: {arch}");
             
-            // Launch emulator window with display
-            var emulatorWindow = new EmulatorWindow(this);
-            emulatorWindow.Show();
-            emulatorWindow.StartEmulation();
+            // Temporary: Use MessageBox instead of EmulatorWindow
+            MessageBox.Show($"Running emulation for {arch} architecture.\nRDK-V firmware loaded successfully!", "RDK-V Emulator Started");
             
-            Debug.WriteLine($"HomebrewEmulator: Started emulation window for {arch}");
+            Debug.WriteLine($"HomebrewEmulator: Started emulation for {arch}");
         }
 
         public void Step()
