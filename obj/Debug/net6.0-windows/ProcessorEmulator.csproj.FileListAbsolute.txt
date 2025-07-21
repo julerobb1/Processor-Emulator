@@ -50,3 +50,5 @@ c:\Users\juler\Documents\GitHub\Processor-Emulator\bin\Debug\net6.0-windows\runt
 c:\Users\juler\Documents\GitHub\Processor-Emulator\bin\Debug\net6.0-windows\runtimes\osx-x64\native\libunicorn.dylib
 c:\Users\juler\Documents\GitHub\Processor-Emulator\bin\Debug\net6.0-windows\runtimes\win-x64\native\unicorn.dll
 c:\Users\juler\Documents\GitHub\Processor-Emulator\bin\Debug\net6.0-windows\runtimes\win-x86\native\unicorn.dll
+C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Debug\net6.0-windows\Emulation\EmulatorWindow.baml
+C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Debug\net6.0-windows\Emulation\EmulatorWindow.g.cs
