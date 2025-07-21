@@ -72,9 +72,11 @@ namespace ProcessorEmulator.Tools
             // Add more format checks as needed
             return "Unknown";
         }
-        // Filesystem and partition analysis/mounting
-        public class PartitionAnalyzer
-        {
+    }
+
+    // Filesystem and partition analysis/mounting
+    public class PartitionAnalyzer
+    {
             public static List<string> Analyze(byte[] diskImage)
             {
                 var partitions = new List<string>();
@@ -97,10 +99,11 @@ namespace ProcessorEmulator.Tools
                 return partitions;
             }
         }
+    }
 
-        // Disassembler and decompiler stub (MIPS/ARM minimal example)
-        public class Disassembler
-        {
+    // Disassembler and decompiler stub (MIPS/ARM minimal example)
+    public class Disassembler
+    {
             public static List<string> Disassemble(byte[] binary, string architecture)
             {
                 var result = new List<string>();
@@ -154,10 +157,11 @@ namespace ProcessorEmulator.Tools
                 return result;
             }
         }
+    }
 
-        // Recompiler/binary translator stub
-        public class Recompiler
-        {
+    // Recompiler/binary translator stub
+    public class Recompiler
+    {
             public static void Recompile(byte[] binary, string sourceArch, string targetArch)
             {
                 if (!SupportedArchitectures.All.Contains(sourceArch) || !SupportedArchitectures.All.Contains(targetArch))
@@ -171,9 +175,10 @@ namespace ProcessorEmulator.Tools
                 throw new NotImplementedException("Universal binary translation not implemented.");
             }
         }
+    }
 
-        public static class SupportedArchitectures
-        {
+    public static class SupportedArchitectures
+    {
             public static readonly List<string> All = new()
         {
             "TargetHost", // 0x0001
@@ -216,10 +221,10 @@ namespace ProcessorEmulator.Tools
             "LoongArch32", // 0x6232
             "LoongArch64" // 0x6264
         };
-        }
+    }
 
-        public static class FirmwareDownloader
-        {
+    public static class FirmwareDownloader
+    {
             private static readonly HttpClient httpClient = new HttpClient();
             public static async Task<string> DownloadFileAsync(string url, string outputDir)
             {
