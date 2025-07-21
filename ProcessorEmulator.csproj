@@ -14,26 +14,26 @@
   <Target Name="EnsureNoRunningInstance" BeforeTargets="BeforeBuild">
     <!-- Attempt to terminate any running ProcessorEmulator process -->
   <!-- Attempt to terminate any running ProcessorEmulator process; suppress warnings -->
-  <Exec Command="taskkill /F /IM ProcessorEmulator.exe >nul 2&gt;&amp;1" ContinueOnError="true" />
+  <!-- Terminate any running instance to avoid file locks -->
+    <Exec Command="taskkill /F /IM ProcessorEmulator.exe >nul 2&gt;&amp;1" ContinueOnError="true" />
+  
+  
   </Target>
   <!-- Using stub Unicorn definitions in Tools/BinaryTranslator.cs; no external package required -->
   <ItemGroup>
     <PackageReference Include="SharpCompress" Version="0.30.0" />
 
     <!-- DiscUtils for partition & filesystem support; latest available version -->
-  <PackageReference Include="DiscUtils.Core" Version="0.16.13" />
   <!-- FAT filesystem support -->
   <PackageReference Include="DiscUtils.Fat" Version="0.16.13" />
   <!-- SquashFS filesystem support -->
   <PackageReference Include="DiscUtils.SquashFs" Version="0.16.13" />
-  <!-- YAFFS filesystem support -->
-  <PackageReference Include="DiscUtils.Yaffs" Version="0.16.13" />
   <!-- ISO9660 filesystem support -->
   <PackageReference Include="DiscUtils.Iso9660" Version="0.16.13" />
   <!-- EXT filesystem support (ext2/3/4) -->
   <PackageReference Include="DiscUtils.Ext" Version="0.16.13" />
   <!-- Real Unicorn binding for firmware emulation -->
-  <PackageReference Include="UnicornEngine.Unicorn" Version="1.0.1" />
+  <PackageReference Include="UnicornEngine.Unicorn" Version="2.1.0" />
     <!-- Exclude duplicate console entry-point file -->
     <Compile Remove="Program.cs" />
   </ItemGroup>
