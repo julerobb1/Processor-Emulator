@@ -23,7 +23,7 @@ namespace ProcessorEmulator
     public interface IMainWindow
     {
         TextBlock StatusBar { get; set; }
-        ArchitectureDetector.PartitionAnalyzer PartitionAnalyzer { get; set; }
+        PartitionAnalyzer PartitionAnalyzer { get; set; }
         InstructionDispatcher Dispatcher1 { get; set; }
 
         bool Equals(object obj);
@@ -64,9 +64,9 @@ namespace ProcessorEmulator
         private InstructionDispatcher dispatcher = new();
 
         public TextBlock StatusBar { get; set; } = new TextBlock();
-        public ProcessorEmulator.Tools.ArchitectureDetector.PartitionAnalyzer PartitionAnalyzer { get => partitionAnalyzer; set => partitionAnalyzer = value; }
+        public PartitionAnalyzer PartitionAnalyzer { get; set; } = null; // Static class, no instantiation needed
         public InstructionDispatcher Dispatcher1 { get => dispatcher; set => dispatcher = value; }
-        ArchitectureDetector.PartitionAnalyzer IMainWindow.PartitionAnalyzer { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
+        PartitionAnalyzer IMainWindow.PartitionAnalyzer { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
 
         private void StatusBarText(string text)
         {
@@ -534,7 +534,7 @@ namespace ProcessorEmulator
             string path = dlg.FileName;
             StatusBarText($"Probing filesystem in {Path.GetFileName(path)}...");
             var data = File.ReadAllBytes(path);
-            var parts = ArchitectureDetector.PartitionAnalyzer.Analyze(data);
+            var parts = PartitionAnalyzer.Analyze(data);
             ShowTextWindow("Partition Analysis", parts);
             StatusBarText("Filesystem probe complete.");
             await Task.CompletedTask;
@@ -1430,6 +1430,27 @@ namespace ProcessorEmulator
                 output.Add(string.Empty);
             }
             ShowTextWindow("DVR Data Summary", output);
+        }
+
+        // Filesystem mounting event handlers
+        private void MountFat_Click(object sender, RoutedEventArgs e)
+        {
+            MessageBox.Show("FAT filesystem mounting not yet implemented.", "Mount FAT");
+        }
+
+        private void MountIso_Click(object sender, RoutedEventArgs e)
+        {
+            MessageBox.Show("ISO filesystem mounting not yet implemented.", "Mount ISO");
+        }
+
+        private void MountExt_Click(object sender, RoutedEventArgs e)
+        {
+            MessageBox.Show("EXT filesystem mounting not yet implemented.", "Mount EXT");
+        }
+
+        private void MountSquashFs_Click(object sender, RoutedEventArgs e)
+        {
+            MessageBox.Show("SquashFS filesystem mounting not yet implemented.", "Mount SquashFS");
         }
     }
 }
