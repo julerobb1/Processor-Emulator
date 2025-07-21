@@ -15,6 +15,7 @@ using System.Threading.Tasks;
 using DiscUtils.Iso9660;
 // YAFFS handled by ExoticFilesystemManager
 using DiscUtils.Setup;
+using static ProcessorEmulator.Tools.ArchitectureDetector;
 // Removed UFS support
 
 namespace ProcessorEmulator
@@ -22,7 +23,7 @@ namespace ProcessorEmulator
     public interface IMainWindow
     {
         TextBlock StatusBar { get; set; }
-        PartitionAnalyzer PartitionAnalyzer { get; set; }
+        ArchitectureDetector.PartitionAnalyzer PartitionAnalyzer { get; set; }
         InstructionDispatcher Dispatcher1 { get; set; }
 
         bool Equals(object obj);
@@ -58,7 +59,7 @@ namespace ProcessorEmulator
         }
 
         private ArchitectureDetector archDetector = new();
-        private PartitionAnalyzer partitionAnalyzer = new();
+        private ArchitectureDetector.PartitionAnalyzer partitionAnalyzer = new();
         private Disassembler disassembler = new();
         private Recompiler recompiler = new();
         private ExoticFilesystemManager fsManager = new();
@@ -67,6 +68,7 @@ namespace ProcessorEmulator
         public TextBlock StatusBar { get; set; } = new TextBlock();
         public PartitionAnalyzer PartitionAnalyzer { get => partitionAnalyzer; set => partitionAnalyzer = value; }
         public InstructionDispatcher Dispatcher1 { get => dispatcher; set => dispatcher = value; }
+        ArchitectureDetector.PartitionAnalyzer IMainWindow.PartitionAnalyzer { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
 
         private void StatusBarText(string text)
         {
@@ -1253,7 +1255,7 @@ namespace ProcessorEmulator
                 // Load into instruction dispatcher memory region starting at 0
                 dispatcher.LoadBinary(data); // Use a method to load binary data
                 dispatcher.PC = 0;
-                dispatcher.Run(); // begins emulation loop
+                dispatcher.Start(); // begins emulation loop
                 StatusBarText($"Homebrew emulation started for {Path.GetFileName(path)}");
             }
             catch (Exception ex)
@@ -1359,7 +1361,7 @@ namespace ProcessorEmulator
                 ShowTextWindow("DVR Full Analysis", new List<string> { "Data\\DVR directory not found." });
                 return;
             }
-            var report = ProcessorEmulator.Tools.DvrDataAnalyzer.AnalyzeAll(baseDir);
+            var report = DvrDataAnalyzer.AnalyzeAll(baseDir);
             ShowTextWindow("DVR Full Analysis", report);
         }
     }
