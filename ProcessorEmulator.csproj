@@ -1,17 +1,31 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <Compile Include="*.cs" />
+    <Compile Include="*.cs" Exclude="FolderAnalysisWindow.cs" />
     <Compile Include="Tools\*.cs" />
     <Compile Include="Emulation\SparcEmulator.cs" />
     <Compile Include="Emulation\StubEmulators.cs" />
-    <Compile Include="Emulation\HomebrewEmulatorFixed.cs" />
-    <Compile Remove="FolderAnalysisWindow.cs" />
-    <Page Include="App.xaml" />
-    <Page Include="MainWindow.xaml" />
-    <Page Include="ClassicStyle.xaml" />
-    <Page Include="Emulation\EmulatorWindow.xaml" />
-    <Page Include="FolderAnalysisWindow.xaml" />
+    <Compile Include="Emulation\HomebrewEmulator.cs" />
+    <Page Include="App.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="MainWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="ClassicStyle.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Emulation\EmulatorWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="FolderAnalysisWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
   </ItemGroup>
 
   <PropertyGroup>
