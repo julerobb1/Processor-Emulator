@@ -40,7 +40,7 @@ namespace ProcessorEmulator.Tools
         }
     }
 
-    internal static class Disassembler
+    internal static class BinaryDisassembler
     {
         public static string[] Disassemble(byte[] data, string arch)
         {
