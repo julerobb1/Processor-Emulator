@@ -1,7 +1,5 @@
 using System;
-using ProcessorEmulator.Tools;
 using System.IO;
-using Unicorn;
 
 namespace ProcessorEmulator.Tools
 {
