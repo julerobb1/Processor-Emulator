@@ -10,11 +10,11 @@ none
 false
 TRACE;DEBUG;NET;NET6_0;NETCOREAPP;WINDOWS;WINDOWS7_0;NET5_0_OR_GREATER;NET6_0_OR_GREATER;NETCOREAPP3_0_OR_GREATER;NETCOREAPP3_1_OR_GREATER;WINDOWS7_0_OR_GREATER
 C:\Users\juler\Documents\GitHub\Processor-Emulator\App.xaml
-2-826070488
+3694765129
 
 461847962263
 2121164733189
-ClassicStyle.xaml;MainWindow.xaml;
+ClassicStyle.xaml;Emulation\EmulatorWindow.xaml;MainWindow.xaml;
 
 False
 
