@@ -10,6 +10,21 @@ namespace ProcessorEmulator.Emulation
         public uint MemorySize { get; set; }
         public bool IsDVR { get; set; }
         public string FilesystemType { get; set; } // Custom filesystem type
+        public string DeviceModel { get; set; }   // XG1V4, X1, etc.
+        
+        // ARRIS XG1V4 specific configuration
+        public static RDKVPlatformConfig CreateArrisXG1V4Config()
+        {
+            return new RDKVPlatformConfig
+            {
+                PlatformName = "Comcast",
+                DeviceModel = "ARRIS XG1V4",
+                ProcessorType = "ARM",
+                MemorySize = 1024 * 1024 * 512, // 512MB typical for XG1V4
+                IsDVR = true,
+                FilesystemType = "SquashFS/UBIFS"
+            };
+        }
     }
 
     public class RDKVEmulator
