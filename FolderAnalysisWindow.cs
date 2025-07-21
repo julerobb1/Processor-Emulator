@@ -5,6 +5,8 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.IO;
 using System.Linq;
+using System.Windows.Media.Imaging;
+using System.Windows.Media;
 
 namespace ProcessorEmulator
 {
@@ -28,11 +30,15 @@ namespace ProcessorEmulator
             summary.Children.Add(new TextBlock { Text = $"Total Size: {totalSize} bytes" });
             DockPanel.SetDock(summary, Dock.Top);
             dock.Children.Add(summary);
-            // Hex preview box
+            // Hex preview box and Image viewer
             var previewBox = new TextBox { IsReadOnly = true, TextWrapping = TextWrapping.Wrap, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-            DockPanel.SetDock(previewBox, Dock.Bottom);
-            previewBox.Height = 150;
-            dock.Children.Add(previewBox);
+            var imageViewer = new Image { Visibility = Visibility.Collapsed, Stretch = Stretch.Uniform };
+            // Container for preview controls
+            var previewGrid = new Grid { Height = 150 };
+            previewGrid.Children.Add(previewBox);
+            previewGrid.Children.Add(imageViewer);
+            DockPanel.SetDock(previewGrid, Dock.Bottom);
+            dock.Children.Add(previewGrid);
             // Tree view
             var tree = new TreeView();
             DockPanel.SetDock(tree, Dock.Top);
@@ -66,6 +72,19 @@ namespace ProcessorEmulator
             {
                 if (tree.SelectedItem is TreeViewItem item && item.Tag is string path)
                 {
+                    var ext = Path.GetExtension(path).ToLowerInvariant();
+                    var imageExts = new[] { ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tga" };
+                    if (imageExts.Contains(ext))
+                    {
+                        // Show image preview
+                        imageViewer.Source = new BitmapImage(new Uri(path));
+                        imageViewer.Visibility = Visibility.Visible;
+                        previewBox.Visibility = Visibility.Collapsed;
+                        return;
+                    }
+                    // Fallback to hex preview
+                    previewBox.Visibility = Visibility.Visible;
+                    imageViewer.Visibility = Visibility.Collapsed;
                     var info = new FileInfo(path);
                     int len = (int)Math.Min(256, info.Length);
                     byte[] buf = new byte[len];
