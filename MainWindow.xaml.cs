@@ -1,26 +1,29 @@
 using ProcessorEmulator.Emulation;
 using ProcessorEmulator.Tools;
 using ProcessorEmulator.Network;
-using System.Windows;
-using DiscUtils.Fat;
-using DiscUtils.Setup;
-using Microsoft.Win32;
-using System.Threading.Tasks;
+using ProcessorEmulator; // Add this if PartitionAnalyzer is in the root namespace
+using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System;
+using System.Windows;
 using System.Windows.Controls;
-using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using System.Diagnostics;
-using DiscUtils.SquashFS;
+using Microsoft.Win32;
+using System.Threading.Tasks;
+using DiscUtils.Iso9660;
+// YAFFS handled by ExoticFilesystemManager
+using DiscUtils.Setup;
+using static ProcessorEmulator.Tools.ArchitectureDetector;
+// Removed UFS support
 
 namespace ProcessorEmulator
 {
     public interface IMainWindow
     {
         TextBlock StatusBar { get; set; }
-        PartitionAnalyzer PartitionAnalyzer { get; set; }
+        ArchitectureDetector.PartitionAnalyzer PartitionAnalyzer { get; set; }
         InstructionDispatcher Dispatcher1 { get; set; }
 
         bool Equals(object obj);
@@ -56,8 +59,9 @@ namespace ProcessorEmulator
         }
 
         private ArchitectureDetector archDetector = new();
-        private PartitionAnalyzer partitionAnalyzer = new();
-        private Disassembler disassembler = new();
+        private ArchitectureDetector.PartitionAnalyzer partitionAnalyzer = new();
+        // Disassembler is a static class; do not instantiate
+        // private ProcessorEmulator.Tools.Disassembler disassembler = new();
         private Recompiler recompiler = new();
         private ExoticFilesystemManager fsManager = new();
         private InstructionDispatcher dispatcher = new();
@@ -65,6 +69,7 @@ namespace ProcessorEmulator
         public TextBlock StatusBar { get; set; } = new TextBlock();
         public PartitionAnalyzer PartitionAnalyzer { get => partitionAnalyzer; set => partitionAnalyzer = value; }
         public InstructionDispatcher Dispatcher1 { get => dispatcher; set => dispatcher = value; }
+        ArchitectureDetector.PartitionAnalyzer IMainWindow.PartitionAnalyzer { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
 
         private void StatusBarText(string text)
         {
@@ -104,7 +109,11 @@ namespace ProcessorEmulator
                 "Cross-Compile Binary",
                 "Mount CE Filesystem",
                 "Mount YAFFS Filesystem",
-                "Mount SquashFS Filesystem",
+                "Mount ISO Filesystem",
+                "Mount EXT Filesystem",
+                "Simulate SWM LNB",
+                "Boot Firmware in QEMU",
+                "Boot Firmware in Homebrew Emulator",
                 "Analyze Folder Contents"
             };
             string mainChoice = PromptUserForChoice("What would you like to do?", mainOptions);
@@ -154,8 +163,20 @@ namespace ProcessorEmulator
                 case "Mount YAFFS Filesystem":
                     await HandleYaffsMount();
                     break;
-                case "Mount SquashFS Filesystem":
-                    await HandleSquashFsMount();
+                case "Mount ISO Filesystem":
+                    await HandleIsoMount();
+                    break;
+                case "Mount EXT Filesystem":
+                    await HandleExtMount();
+                    break;
+                case "Simulate SWM LNB":
+                    await HandleSwmLnbSimulation();
+                    break;
+                case "Boot Firmware in QEMU":
+                    await HandleBootFirmwareInQemu();
+                    break;
+                case "Boot Firmware in Homebrew Emulator":
+                    await HandleBootFirmwareInHomebrew();
                     break;
                 case "Analyze Folder Contents":
                     await HandleFolderAnalysis();
@@ -483,7 +504,7 @@ namespace ProcessorEmulator
             StatusBarText("Azeria ARM emulation stub complete.");
             await Task.CompletedTask;
         }
-        
+    
         // Core feature handlers
 
         /// <summary>
@@ -622,8 +643,8 @@ namespace ProcessorEmulator
             // More detailed PE header checks would go here
             return true;
         }
-        
-        
+    
+    
         /// <summary>
         /// Emulates an RDK-B broadband gateway using QEMU.
         /// </summary>
@@ -935,39 +956,29 @@ namespace ProcessorEmulator
         }
 
         /// <summary>
-        /// Simulates DirecTV SWM switches and/or LNBs.
-        /// Currently a stub; intended for future simulation and testing.
+        /// Simulates a DirecTV SWM LNB with default band settings.
         /// </summary>
         private async Task HandleSwmLnbSimulation()
         {
-            var openFileDialog = new OpenFileDialog {
-                Filter = "SWM Switch/LNB Firmware (*.bin;*.img)|*.bin;*.img|All Files (*.*)|*.*"
+            // Default 5-band frequencies in MHz
+            var bands = new Dictionary<int, int>
+            {
+                {1, 1150}, {2, 1250}, {3, 1350}, {4, 1450}, {5, 1550}
             };
-            if (openFileDialog.ShowDialog() != true) return;
-
-            string filePath = openFileDialog.FileName;
-            StatusBarText("Loading SWM Switch/LNB firmware...");
-            byte[] firmware = File.ReadAllBytes(filePath);
-            StatusBarText("Simulating SWM LNB...");
-
-            var output = new List<string>();
-            try
+            var emulator = new ProcessorEmulator.Tools.SwmLnbEmulator();
+            bool ok = emulator.Initialize(bands.Count, bands, null);
+            if (!ok)
             {
-                SwmLnbEmulator.SimulateReceiverRequest(firmware);
-                output.Add("SimulateReceiverRequest completed.");
-                SwmLnbEmulator.SendChannelMap();
-                output.Add("SendChannelMap completed.");
-                SwmLnbEmulator.EmulateKeepAlive();
-                output.Add("EmulateKeepAlive completed.");
+                MessageBox.Show("Failed to initialize SWM LNB emulator.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
             }
-            catch (Exception ex)
+            // Show initial state
+            var info = new List<string>
             {
-                output.Add($"Error during simulation: {ex.Message}");
-            }
-
-            StatusBarText("SWM LNB simulation complete.");
-            ShowTextWindow("SWM LNB Simulation Output", output);
-
+                $"SWM LNB initialized with {bands.Count} bands",
+                $"Current IF: {emulator.GetCurrentIf()} MHz"
+            };
+            ShowTextWindow("SWM LNB Emulator", info);
             await Task.CompletedTask;
         }
 
@@ -1069,24 +1080,27 @@ namespace ProcessorEmulator
         /// </summary>
         private async Task HandleYaffsMount()
         {
-            var dlg = new Microsoft.Win32.OpenFileDialog
+            var dlg = new OpenFileDialog
             {
                 Filter = "YAFFS Images (*.img;*.yaffs)|*.img;*.yaffs|All Files (*.*)|*.*"
             };
             if (dlg.ShowDialog() != true) return;
             string path = dlg.FileName;
-            StatusBarText($"Mounting YAFFS image {System.IO.Path.GetFileName(path)}...");
+            StatusBarText($"Extracting YAFFS image {Path.GetFileName(path)}...");
             try
             {
-                string mountPoint = "/";
-                fsManager.MountYAFFS(path, mountPoint);
-                StatusBarText("YAFFS image mounted.");
-                ShowTextWindow("YAFFS Mount", new List<string> { $"Mounted {System.IO.Path.GetFileName(path)} at {mountPoint}" });
+                string outDir = Path.Combine(Path.GetDirectoryName(path), Path.GetFileNameWithoutExtension(path) + "_yaffs");
+                YaffsExtractor.ExtractYaffs(path, outDir);
+                var entries = Directory.GetFiles(outDir, "*", SearchOption.AllDirectories)
+                                        .Select(f => Path.GetRelativePath(outDir, f))
+                                        .ToList();
+                ShowTextWindow("YAFFS Extraction", entries);
+                StatusBarText("YAFFS extraction complete.");
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"YAFFS mount error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                StatusBarText("YAFFS mount failed.");
+                MessageBox.Show($"YAFFS extraction error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusBarText("YAFFS extraction failed.");
             }
             await Task.CompletedTask;
         }
@@ -1103,13 +1117,13 @@ namespace ProcessorEmulator
             try
             {
                 using var stream = File.OpenRead(path);
-                DiscUtils.Setup.SetupHelper.RegisterAssembly(typeof(DiscUtils.SquashFS.SquashFileSystem).Assembly);
-                var fs = new DiscUtils.SquashFS.SquashFileSystem(stream);
+                // Register the SquashFs assembly
+                SetupHelper.RegisterAssembly(typeof(DiscUtils.SquashFs.SquashFileSystemReader).Assembly);
+                // Create a SquashFS filesystem
+                var fs = new DiscUtils.SquashFs.SquashFileSystemReader(stream);
                 var entries = new List<string> { $"Mounted SquashFS: {Path.GetFileName(path)}" };
                 foreach (var entry in fs.GetFiles("", "*", SearchOption.AllDirectories))
-                {
                     entries.Add(entry);
-                }
                 ShowTextWindow("SquashFS Mount", entries);
                 StatusBarText("SquashFS mount complete.");
             }
@@ -1117,6 +1131,62 @@ namespace ProcessorEmulator
             {
                 MessageBox.Show($"SquashFS mount error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 StatusBarText("SquashFS mount failed.");
+            }
+            await Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Mounts an ISO9660 image and lists all files.
+        /// </summary>
+        private async Task HandleIsoMount()
+        {
+            var dlg = new OpenFileDialog { Filter = "ISO Images (*.iso)|*.iso|All Files (*.*)|*.*" };
+            if (dlg.ShowDialog() != true) return;
+            string path = dlg.FileName;
+            StatusBarText($"Mounting ISO image {Path.GetFileName(path)}...");
+            try
+            {
+                using var stream = File.OpenRead(path);
+                SetupHelper.RegisterAssembly(typeof(CDReader).Assembly);
+                var fs = new CDReader(stream, true);
+                var entries = new List<string> { $"Mounted ISO: {Path.GetFileName(path)}" };
+                foreach (var entry in fs.GetFiles("", "*", SearchOption.AllDirectories))
+                    entries.Add(entry);
+                ShowTextWindow("ISO Filesystem Mount", entries);
+                StatusBarText("ISO mount complete.");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"ISO mount error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusBarText("ISO mount failed.");
+            }
+            await Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Mounts an ext2/3/4 filesystem image and lists all files.
+        /// </summary>
+        private async Task HandleExtMount()
+        {
+            var dlg = new OpenFileDialog { Filter = "EXT Images (*.img;*.ext2;*.ext3;*.ext4)|*.img;*.ext2;*.ext3;*.ext4|All Files (*.*)|*.*" };
+            if (dlg.ShowDialog() != true) return;
+            string path = dlg.FileName;
+            StatusBarText($"Mounting EXT image {Path.GetFileName(path)}...");
+            try
+            {
+                using var stream = File.OpenRead(path);
+                SetupHelper.RegisterAssembly(typeof(DiscUtils.Ext.ExtFileSystem).Assembly);
+                var fs = new DiscUtils.Ext.ExtFileSystem(stream);
+                var entries = new List<string> { $"Mounted EXT: {Path.GetFileName(path)}" };
+                foreach (var entry in fs.GetFiles("", "*", SearchOption.AllDirectories))
+                    entries.Add(entry);
+                ShowTextWindow("EXT Filesystem Mount", entries);
+                StatusBarText("EXT mount complete.");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"EXT mount error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusBarText("EXT mount failed.");
             }
             await Task.CompletedTask;
         }
@@ -1132,20 +1202,12 @@ namespace ProcessorEmulator
             StatusBarText($"Analyzing folder: {folderPath}...");
             try
             {
-                // Recursively gather all files
-                var files = Directory.GetFiles(folderPath, "*.*", SearchOption.AllDirectories);
-                var output = new List<string> { $"Folder: {folderPath}", $"Total files: {files.Length}" };
-                foreach (var file in files)
+                // Launch the new folder analysis window (code-only)
+                var window = new FolderAnalysisWindow(folderPath)
                 {
-                    var info = new FileInfo(file);
-                    // Read up to first 16 bytes
-                    byte[] buffer = new byte[Math.Min(16, info.Length > int.MaxValue ? 16 : (int)info.Length)];
-                    using (var fs = File.OpenRead(file))
-                        fs.Read(buffer, 0, buffer.Length);
-                    string hex = BitConverter.ToString(buffer).Replace("-", " ");
-                    output.Add($"{file} ({info.Length} bytes): {hex}");
-                }
-                ShowTextWindow("Folder Analysis", output);
+                    Owner = this
+                };
+                window.Show();
                 StatusBarText("Folder analysis complete.");
             }
             catch (Exception ex)
@@ -1154,6 +1216,154 @@ namespace ProcessorEmulator
                 StatusBarText("Folder analysis failed.");
             }
             await Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Boots a firmware image in QEMU for rapid hardware testing.
+        /// </summary>
+        private async Task HandleBootFirmwareInQemu()
+        {
+            var dlg = new OpenFileDialog { Filter = "Firmware Images (*.bin;*.img)|*.bin;*.img|All Files (*.*)|*.*" };
+            if (dlg.ShowDialog() != true) return;
+            string path = dlg.FileName;
+            // Detect architecture from user prompt or file extension
+            string arch = PromptUserForChoice("Select CPU Architecture:", new List<string> { "MIPS32", "MIPS64", "ARM", "ARM64", "PowerPC", "x86", "x86-64", "RISC-V" });
+            if (string.IsNullOrEmpty(arch)) return;
+            try
+            {
+                QemuManager.Launch(path, arch);
+                StatusBarText($"Launched QEMU for {Path.GetFileName(path)} ({arch})");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"QEMU launch error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusBarText("QEMU launch failed.");
+            }
+            await Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Boots a firmware image using the homegrown emulator loop.
+        /// </summary>
+        private async Task HandleBootFirmwareInHomebrew()
+        {
+            var dlg = new OpenFileDialog { Filter = "Firmware Images (*.bin;*.img)|*.bin;*.img|All Files (*.*)|*.*" };
+            if (dlg.ShowDialog() != true) return;
+            string path = dlg.FileName;
+            try
+            {
+                byte[] data = File.ReadAllBytes(path);
+                // Load into instruction dispatcher memory region starting at 0
+                dispatcher.LoadBinary(data); // Use a method to load binary data
+                dispatcher.PC = 0;
+                dispatcher.Start(); // begins emulation loop
+                StatusBarText($"Homebrew emulation started for {Path.GetFileName(path)}");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Homebrew emulation error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusBarText("Homebrew emulation failed.");
+            }
+            await Task.CompletedTask;
+        }
+
+        private void ScanDvrData_Click(object sender, RoutedEventArgs e)
+        {
+            string baseDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data", "DVR");
+            if (!Directory.Exists(baseDir))
+            {
+                ShowTextWindow("DVR Scan", new List<string> { "Data\\DVR directory not found." });
+                return;
+            }
+            var summary = new List<string>();
+            foreach (var dir in Directory.GetDirectories(baseDir))
+            {
+                var name = Path.GetFileName(dir);
+                summary.Add($"Dataset: {name}");
+                var files = Directory.GetFiles(dir, "*.*", SearchOption.AllDirectories);
+                int firmwareCount = files.Count(f => new[] { ".csw", ".bin", ".pkgstream", ".gz", ".tar.gz" }
+                                            .Any(ext => f.EndsWith(ext, StringComparison.OrdinalIgnoreCase)));
+                int logCount = files.Count(f => new[] { ".log", ".log.*", ".dump" }
+                                    .Any(ext => f.IndexOf(ext, StringComparison.OrdinalIgnoreCase) >= 0));
+                int rawCount = files.Count(f => f.EndsWith(".raw", StringComparison.OrdinalIgnoreCase));
+                summary.Add($"  Firmware files: {firmwareCount}");
+                summary.Add($"  Log files: {logCount}");
+                summary.Add($"  Raw partitions: {rawCount}");
+                summary.Add(string.Empty);
+            }
+            ShowTextWindow("DVR Data Scan", summary);
+        }
+
+        private void ListDvrFirmware_Click(object sender, RoutedEventArgs e)
+        {
+            string baseDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data", "DVR");
+            if (!Directory.Exists(baseDir))
+            {
+                ShowTextWindow("DVR Firmware List", new List<string> { "Data\\DVR directory not found." });
+                return;
+            }
+            var result = new List<string>();
+            var firmwareExts = new[] { ".csw", ".bin", ".pkgstream", ".gz", ".tar.gz" };
+            foreach (var dir in Directory.GetDirectories(baseDir))
+            {
+                string dataset = Path.GetFileName(dir);
+                result.Add($"Dataset: {dataset}");
+                var allFiles = Directory.GetFiles(dir, "*.*", SearchOption.AllDirectories);
+                var fwFiles = allFiles.Where(f => firmwareExts.Any(ext => f.EndsWith(ext, StringComparison.OrdinalIgnoreCase))).ToList();
+                if (fwFiles.Count == 0)
+                {
+                    result.Add("  (no firmware files found)");
+                }
+                else
+                {
+                    foreach (var file in fwFiles)
+                        result.Add("  " + file.Substring(baseDir.Length + 1));
+                }
+                result.Add(string.Empty);
+            }
+            ShowTextWindow("DVR Firmware List", result);
+        }
+
+        private void ProbeDvrXfs_Click(object sender, RoutedEventArgs e)
+        {
+            string baseDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data", "DVR");
+            if (!Directory.Exists(baseDir))
+            {
+                ShowTextWindow("DVR XFS Probe", new List<string> { "Data\\DVR directory not found." });
+                return;
+            }
+            var lines = new List<string>();
+            var xfsDirs = Directory.GetDirectories(baseDir, "XFS", SearchOption.AllDirectories);
+            if (xfsDirs.Length == 0)
+            {
+                lines.Add("No XFS directories found in DVR datasets.");
+            }
+            foreach (var xfs in xfsDirs)
+            {
+                string parent = Path.GetDirectoryName(xfs);
+                string dataset = Path.GetFileName(parent);
+                lines.Add($"Dataset: {dataset} - XFS at {xfs}");
+                var subDirs = Directory.GetDirectories(xfs);
+                lines.Add("  Subdirectories:");
+                foreach (var d in subDirs)
+                    lines.Add("    " + Path.GetFileName(d));
+                int fileCount = Directory.GetFiles(xfs, "*.*", SearchOption.AllDirectories).Length;
+                lines.Add($"  Total files: {fileCount}");
+                lines.Add(string.Empty);
+            }
+            ShowTextWindow("DVR XFS Probe", lines);
+        }
+
+        private void AnalyzeAllDvrData_Click(object sender, RoutedEventArgs e)
+        {
+            string baseDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data", "DVR");
+            if (!Directory.Exists(baseDir))
+            {
+                ShowTextWindow("DVR Full Analysis", new List<string> { "Data\\DVR directory not found." });
+                return;
+            }
+            var report = DvrDataAnalyzer.AnalyzeAll(baseDir);
+            ShowTextWindow("DVR Full Analysis", report);
         }
     }
 }

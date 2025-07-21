@@ -44,11 +44,15 @@
         "net6.0-windows7.0": {
           "targetAlias": "net6.0-windows",
           "dependencies": {
-            "DiscUtils.Core": {
+            "DiscUtils.Ext": {
               "target": "Package",
               "version": "[0.16.13, )"
             },
             "DiscUtils.Fat": {
+              "target": "Package",
+              "version": "[0.16.13, )"
+            },
+            "DiscUtils.Iso9660": {
               "target": "Package",
               "version": "[0.16.13, )"
             },
@@ -60,9 +64,9 @@
               "target": "Package",
               "version": "[0.30.0, )"
             },
-            "Unicorn.NET": {
+            "UnicornEngine.Unicorn": {
               "target": "Package",
-              "version": "[1.0.3, )"
+              "version": "[2.1.0, )"
             }
           },
           "imports": [

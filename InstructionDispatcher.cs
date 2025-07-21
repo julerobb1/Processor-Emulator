@@ -15,6 +15,8 @@ namespace ProcessorEmulator.Emulation
             armEmu = new ArmCpuEmulator();
         }
 
+        public int PC { get; internal set; }
+
         public void Dispatch(uint instruction, string sourceArch, string targetArch)
         {
             if (sourceArch == targetArch)
@@ -42,6 +44,21 @@ namespace ProcessorEmulator.Emulation
                 // Placeholder: Implement translation and dispatch to target emulator
                 // Example: Translate MIPS instruction to x86 and execute
             }
+        }
+
+        internal void LoadBinary(byte[] data)
+        {
+            throw new NotImplementedException();
+        }
+
+        internal void Run()
+        {
+            throw new NotImplementedException();
+        }
+
+        internal void Start()
+        {
+            throw new NotImplementedException();
         }
     }
 }
