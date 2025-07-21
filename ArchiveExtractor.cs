@@ -4,8 +4,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using SharpCompress.Archives;
-using SharpCompress.Common;
 using Microsoft.Win32;
 using ProcessorEmulator.Tools;
 
@@ -58,9 +56,9 @@ namespace ProcessorEmulator
         {
             Directory.CreateDirectory(outputDir);
             var ext = Path.GetExtension(archivePath);
-            // For raw binaries, use binwalk or fallback carving
             if (string.IsNullOrEmpty(ext) || ext.Equals(".bin", StringComparison.OrdinalIgnoreCase))
             {
+                // Use binwalk for extraction if available
                 try
                 {
                     var binwalk = new ProcessStartInfo("binwalk", $"-eM \"{archivePath}\" -C \"{outputDir}\"")
@@ -76,42 +74,30 @@ namespace ProcessorEmulator
                     Console.Error.WriteLine(bw.StandardError.ReadToEnd());
                     return;
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // binwalk not available, fallback to partition and signature carving
+                    Console.WriteLine($"[ArchiveExtractor] binwalk extraction failed: {ex.Message}");
                 }
+
+                // Fallback: partition split and signature carving
                 ExtractPartitions(archivePath, outputDir);
                 ExtractFirmwareSections(archivePath, outputDir);
                 return;
             }
-            // Try SharpCompress for common archive formats
-            try
-            {
-                using var archive = ArchiveFactory.Open(archivePath);
-                var options = new ExtractionOptions { ExtractFullPath = true, Overwrite = true };
-                foreach (var entry in archive.Entries.Where(e => !e.IsDirectory))
-                {
-                    entry.WriteToDirectory(outputDir, options);
-                }
-                return;
-            }
-            catch
-            {
-                // SharpCompress failed or unsupported format, fallback to 7-Zip
-            }
-            // Fallback to 7z
-            var exe7z = Resolve7zExecutable();
+
+            string exe7z = Resolve7zExecutable();
             if (string.IsNullOrEmpty(exe7z))
                 throw new InvalidOperationException("7z.exe not found. Please install 7-Zip.");
-            var psi7z = new ProcessStartInfo(exe7z, $"x -y -o\"{outputDir}\" \"{archivePath}\"")
+
+            var psi = new ProcessStartInfo(exe7z, $"x -y -o\"{outputDir}\" \"{archivePath}\"")
             {
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 CreateNoWindow = true
             };
-            using var p7 = Process.Start(psi7z);
-            p7.WaitForExit();
+            using var proc = Process.Start(psi);
+            proc.WaitForExit();
             Sanitize(outputDir);
         }
 

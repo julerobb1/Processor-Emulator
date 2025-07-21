@@ -15,12 +15,7 @@ jobs:
       - uses: actions/setup-dotnet@v3
         with:
           dotnet-version: '6.0.x'
-      # Restore NuGet packages before building
-      - name: Restore packages
-        run: dotnet restore ProcessorEmulator.csproj
-      # Build project without implicit restore
-      - name: Build (Debug)
-        run: dotnet build ProcessorEmulator.csproj --configuration Debug --no-restore
+      - run: dotnet build ProcessorEmulator.csproj --configuration Debug
 
   build-release:
     name: build (Release)
@@ -30,9 +25,4 @@ jobs:
       - uses: actions/setup-dotnet@v3
         with:
           dotnet-version: '6.0.x'
-      # Restore NuGet packages before building
-      - name: Restore packages
-        run: dotnet restore ProcessorEmulator.csproj
-      # Build project without implicit restore
-      - name: Build (Release)
-        run: dotnet build ProcessorEmulator.csproj --configuration Release --no-restore
+      - run: dotnet build ProcessorEmulator.csproj --configuration Release
