@@ -37,7 +37,7 @@ namespace ProcessorEmulator.Emulation
                 {
                     byte[] dtb = new byte[binary.Length - off];
                     Array.Copy(memory, off, dtb, 0, dtb.Length);
-                    deviceTree = Tools.DeviceTreeManager.Load(dtb);
+                    deviceTree = DeviceTreeManager.Load(dtb);
                     break;
                 }
             }

@@ -16,9 +16,10 @@ namespace ProcessorEmulator.Tools
             // Detect Broadcom BCM7346 firmware marker (e.g. DTB or header) in initial region
             try
             {
-                var header = System.Text.Encoding.ASCII.GetString(binaryOrImage, 0, Math.Min(binaryOrImage.Length, 256));
+                var header = Encoding.ASCII.GetString(binaryOrImage, 0, Math.Min(binaryOrImage.Length, 256));
                 if (header.Contains("BCM7346"))
                     return "MIPS32-BCM7346";
+            }
             }
             catch { }
             // ELF magic: 0x7F 'E' 'L' 'F'
@@ -67,7 +68,10 @@ namespace ProcessorEmulator.Tools
                     0x6232 => "LoongArch32",
                     0x6264 => "LoongArch64",
                     _ => "Unknown",
-                };
+public class PartitionAnalyzer
+        {
+        }
+    };
             }
             // Add more format checks as needed
                 return "Unknown";
