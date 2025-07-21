@@ -60,7 +60,8 @@ namespace ProcessorEmulator
 
         private ArchitectureDetector archDetector = new();
         private ArchitectureDetector.PartitionAnalyzer partitionAnalyzer = new();
-        private Disassembler disassembler = new();
+        // Disassembler is a static class; do not instantiate
+        // private ProcessorEmulator.Tools.Disassembler disassembler = new();
         private Recompiler recompiler = new();
         private ExoticFilesystemManager fsManager = new();
         private InstructionDispatcher dispatcher = new();
