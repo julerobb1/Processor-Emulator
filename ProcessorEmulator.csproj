@@ -1,6 +1,17 @@
-<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <Compile Include="*.cs" />
+    <Compile Include="Tools\*.cs" />
+    <Compile Include="Emulation\SparcEmulator.cs" />
+    <Compile Include="Emulation\StubEmulators.cs" />
+    <Compile Include="Emulation\HomebrewEmulatorFixed.cs" />
+    <Page Include="*.xaml" />
+    <Page Include="Emulation\*.xaml" />
+  </ItemGroup>
 
   <PropertyGroup>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net6.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
