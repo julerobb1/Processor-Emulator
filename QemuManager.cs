@@ -46,14 +46,16 @@ namespace ProcessorEmulator.Tools
             var exe = architecture switch
             {
                 "MIPS32" => "qemu-system-mips.exe",
-                "MIPS64" => "qemu-system-mips64.exe",
+                "MIPS32-BCM7346" => "qemu-system-mips.exe",
+                "MIPS64" => "qemu-system-mips64.exe", 
                 "ARM" => "qemu-system-arm.exe",
                 "ARM64" => "qemu-system-aarch64.exe",
                 "PowerPC" => "qemu-system-ppc.exe",
                 "x86" => "qemu-system-i386.exe",
                 "x86-64" => "qemu-system-x86_64.exe",
                 "RISC-V" => "qemu-system-riscv64.exe",
-                _ => "qemu-system-mips.exe",
+                "Unknown" => throw new ArgumentException($"Cannot determine QEMU executable for unknown architecture. Please select an architecture manually."),
+                _ => throw new ArgumentException($"Unsupported architecture: {architecture}. Supported: MIPS32, MIPS64, ARM, ARM64, PowerPC, x86, x86-64, RISC-V"),
             };
             return LocateExecutable(exe);
         }
