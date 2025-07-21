@@ -20,7 +20,6 @@ namespace ProcessorEmulator.Tools
         public static void ScanDirectory(string directory)
         {
             var detector = new ArchitectureDetector();
-            var disassembler = new Disassembler();
             var files = Directory.GetFiles(directory, "*", SearchOption.AllDirectories);
             foreach (var file in files)
             {
@@ -31,7 +30,7 @@ namespace ProcessorEmulator.Tools
                     if (arch != "Unknown")
                     {
                         Console.WriteLine($"{file}: {arch}");
-                        var disasm = Disassembler.Disassemble(data, arch);
+                        var disasm = ProcessorEmulator.Tools.Disassembler.Disassemble(data, arch);
                         foreach (var line in disasm.Take(5)) // Preview first 5 lines
                             Console.WriteLine("    " + line);
                     }
