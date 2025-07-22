@@ -13,9 +13,9 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\BoltDemo.csproj",
-      "projectName": "BoltDemo",
-      "projectPath": "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\BoltDemo.csproj",
+      "projectUniqueName": "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\StandaloneBoltDemo.csproj",
+      "projectName": "StandaloneBoltDemo",
+      "projectPath": "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\StandaloneBoltDemo.csproj",
       "packagesPath": "C:\\Users\\juler\\.nuget\\packages\\",
       "outputPath": "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\obj\\",
       "projectStyle": "PackageReference",
