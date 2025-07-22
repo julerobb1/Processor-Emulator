@@ -1586,5 +1586,206 @@ namespace ProcessorEmulator.Emulation
             Debug.WriteLine($"    🖥️ Framebuffer writes detected: {framebufferWriteDetected}");
             Debug.WriteLine($"    🖼️ Display pipeline active: {(pxRenderer?.IsInitialized == true ? "YES" : "NO")}");
         }
+        
+        /// <summary>
+        /// Decode ARM instruction into human-readable format
+        /// </summary>
+        private string DecodeArmInstruction(uint instruction)
+        {
+            uint condition = (instruction >> 28) & 0xF;
+            uint instrType = (instruction >> 25) & 0x7;
+            
+            string condStr = GetConditionString(condition);
+            
+            switch (instrType)
+            {
+                case 0x0:
+                case 0x1: // Data processing
+                    uint opcode = (instruction >> 21) & 0xF;
+                    uint rd = (instruction >> 12) & 0xF;
+                    uint rn = (instruction >> 16) & 0xF;
+                    uint immediate = (instruction >> 25) & 0x1;
+                    
+                    string operation = GetDataProcessingOperation(opcode);
+                    if (immediate == 1)
+                    {
+                        uint imm = instruction & 0xFF;
+                        uint rotate = (instruction >> 8) & 0xF;
+                        return $"{operation}{condStr} r{rd}, r{rn}, #{imm}<<{rotate * 2}";
+                    }
+                    else
+                    {
+                        uint rm = instruction & 0xF;
+                        return $"{operation}{condStr} r{rd}, r{rn}, r{rm}";
+                    }
+                    
+                case 0x2:
+                case 0x3: // Load/Store
+                    uint loadStore = (instruction >> 20) & 0x1;
+                    uint baseReg = (instruction >> 16) & 0xF;
+                    uint destReg = (instruction >> 12) & 0xF;
+                    string operation2 = loadStore == 1 ? "LDR" : "STR";
+                    return $"{operation2}{condStr} r{destReg}, [r{baseReg}]";
+                    
+                case 0x5: // Branch
+                    uint link = (instruction >> 24) & 0x1;
+                    int offset = (int)(instruction & 0xFFFFFF) << 2;
+                    if (offset > 0x1FFFFFF) offset -= 0x4000000; // Sign extend
+                    string branchOp = link == 1 ? "BL" : "B";
+                    return $"{branchOp}{condStr} 0x{offset:X}";
+                    
+                default:
+                    return $"UNKNOWN{condStr} (0x{instruction:X8})";
+            }
+        }
+        
+        private string GetConditionString(uint condition)
+        {
+            return condition switch
+            {
+                0x0 => "EQ",
+                0x1 => "NE", 
+                0x2 => "CS",
+                0x3 => "CC",
+                0x4 => "MI",
+                0x5 => "PL",
+                0x6 => "VS", 
+                0x7 => "VC",
+                0x8 => "HI",
+                0x9 => "LS",
+                0xA => "GE",
+                0xB => "LT", 
+                0xC => "GT",
+                0xD => "LE",
+                0xE => "", // Always execute - no suffix
+                0xF => "NV",
+                _ => $"?{condition:X}"
+            };
+        }
+        
+        private string GetDataProcessingOperation(uint opcode)
+        {
+            return opcode switch
+            {
+                0x0 => "AND",
+                0x1 => "EOR",
+                0x2 => "SUB", 
+                0x3 => "RSB",
+                0x4 => "ADD",
+                0x5 => "ADC",
+                0x6 => "SBC",
+                0x7 => "RSC",
+                0x8 => "TST",
+                0x9 => "TEQ",
+                0xA => "CMP",
+                0xB => "CMN", 
+                0xC => "ORR",
+                0xD => "MOV",
+                0xE => "BIC",
+                0xF => "MVN",
+                _ => $"UNK{opcode:X}"
+            };
+        }
+        
+        /// <summary>
+        /// Detect pxCore initialization patterns in firmware
+        /// </summary>
+        private bool DetectPxCoreInitialization(uint pc, uint instruction)
+        {
+            // Look for common pxCore init patterns:
+            // 1. Specific memory regions being accessed
+            // 2. Function calls to graphics initialization
+            // 3. Register setup for display controllers
+            
+            // Check if we're in known pxCore init memory ranges
+            if ((pc >= 0x10000 && pc < 0x20000) ||  // Common init code range
+                (pc >= 0x40000 && pc < 0x50000))    // Graphics init range
+            {
+                // Check for display-related register accesses
+                uint instrType = (instruction >> 25) & 0x7;
+                if (instrType == 0x2 || instrType == 0x3) // Load/Store
+                {
+                    uint baseReg = (instruction >> 16) & 0xF;
+                    uint offset = instruction & 0xFFF;
+                    
+                    // Check for framebuffer base addresses or display controller registers
+                    if (baseReg < 16)
+                    {
+                        uint targetAddr = regs[(int)baseReg] + offset;
+                        
+                        // Common framebuffer/display memory ranges
+                        if ((targetAddr >= 0x10440000 && targetAddr < 0x10441000) || // Display controller
+                            (targetAddr >= 0x20000000 && targetAddr < 0x21000000) || // Framebuffer memory
+                            (targetAddr >= 0x30000000 && targetAddr < 0x31000000))   // GPU memory
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+            
+            return false;
+        }
+        
+        /// <summary>
+        /// Detect framebuffer write operations
+        /// </summary>
+        private bool DetectFramebufferWrite(uint pc, uint instruction)
+        {
+            uint instrType = (instruction >> 25) & 0x7;
+            
+            // Look for store operations (STR, STRB, etc.)
+            if (instrType == 0x2 || instrType == 0x3)
+            {
+                uint loadStore = (instruction >> 20) & 0x1;
+                if (loadStore == 0) // Store operation
+                {
+                    uint baseReg = (instruction >> 16) & 0xF;
+                    uint offset = instruction & 0xFFF;
+                    
+                    if (baseReg < 16)
+                    {
+                        uint targetAddr = regs[(int)baseReg] + offset;
+                        
+                        // Check if storing to framebuffer memory ranges
+                        if ((targetAddr >= 0x20000000 && targetAddr < 0x25000000) || // Main framebuffer
+                            (targetAddr >= 0x30000000 && targetAddr < 0x35000000))   // GPU framebuffer
+                        {
+                            Debug.WriteLine($"🖥️ FRAMEBUFFER WRITE: Address 0x{targetAddr:X8} from r{baseReg}+{offset}");
+                            return true;
+                        }
+                    }
+                }
+            }
+            
+            return false;
+        }
+        
+        /// <summary>
+        /// Execute ARM instruction with enhanced logging
+        /// </summary>
+        private bool ExecuteRealArmInstructionWithLogging(uint instruction, uint originalPc)
+        {
+            // Store current state for logging
+            uint[] regsBefore = new uint[regs.Length];
+            Array.Copy(regs, regsBefore, regs.Length);
+            
+            // Execute the instruction using existing logic
+            bool result = ExecuteRealArmInstruction(instruction);
+            
+            // Log any register changes for first few instructions
+            if (instructionCount < 10)
+            {
+                for (int i = 0; i < Math.Min(16, regs.Length); i++)
+                {
+                    if (regsBefore[i] != regs[i])
+                    {
+                        Debug.WriteLine($"    📝 REG CHANGE: R{i} = 0x{regsBefore[i]:X8} -> 0x{regs[i]:X8}");
+                    }
+                }
+            }
+            
+            return result;
+        }
     }
 }
