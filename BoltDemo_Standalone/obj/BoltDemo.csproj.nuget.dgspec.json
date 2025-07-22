@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "c:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\BoltDemo_Standalone\\BoltDemo.csproj": {}
+    "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\BoltDemo_Standalone\\BoltDemo.csproj": {}
   },
   "projects": {
-    "c:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\BoltDemo_Standalone\\BoltDemo.csproj": {
+    "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\BoltDemo_Standalone\\BoltDemo.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "c:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\BoltDemo_Standalone\\BoltDemo.csproj",
+        "projectUniqueName": "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\BoltDemo_Standalone\\BoltDemo.csproj",
         "projectName": "BoltDemo",
-        "projectPath": "c:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\BoltDemo_Standalone\\BoltDemo.csproj",
+        "projectPath": "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\BoltDemo_Standalone\\BoltDemo.csproj",
         "packagesPath": "C:\\Users\\juler\\.nuget\\packages\\",
-        "outputPath": "c:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\BoltDemo_Standalone\\obj\\",
+        "outputPath": "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\BoltDemo_Standalone\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\juler\\AppData\\Roaming\\NuGet\\NuGet.Config"
