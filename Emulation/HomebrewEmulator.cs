@@ -1369,5 +1369,63 @@ namespace ProcessorEmulator.Emulation
                 Debug.WriteLine($"[RDK-V] DOCSIS boot simulation failed: {ex.Message}");
             }
         }
+
+        /// <summary>
+        /// Start emulation with specified architecture (called by BOLT bridge)
+        /// </summary>
+        public void StartEmulation(string architecture)
+        {
+            try
+            {
+                Debug.WriteLine($"HomebrewEmulator: Starting emulation for {architecture}");
+                
+                // Set architecture-specific parameters
+                switch (architecture.ToUpper())
+                {
+                    case "ARM":
+                        // ARM Cortex-A15 configuration
+                        pc = 0x8000; // Standard ARM kernel entry point
+                        Debug.WriteLine("HomebrewEmulator: ARM Cortex-A15 mode initialized");
+                        break;
+                        
+                    case "MIPS":
+                        pc = 0x80000000;
+                        Debug.WriteLine("HomebrewEmulator: MIPS mode initialized");
+                        break;
+                        
+                    case "POWERPC":
+                        pc = 0x00000100;
+                        Debug.WriteLine("HomebrewEmulator: PowerPC mode initialized");
+                        break;
+                        
+                    default:
+                        Debug.WriteLine($"HomebrewEmulator: Unknown architecture {architecture}, defaulting to ARM");
+                        pc = 0x8000;
+                        break;
+                }
+                
+                // Initialize registers
+                for (int i = 0; i < regs.Length; i++)
+                {
+                    regs[i] = 0;
+                }
+                
+                // Setup stack pointer (ARM convention)
+                if (architecture.ToUpper() == "ARM")
+                {
+                    regs[13] = 0x07F00000; // Stack at end of RAM
+                }
+                
+                Debug.WriteLine($"HomebrewEmulator: Emulation started at PC=0x{pc:X8}");
+                
+                // Start the main emulation loop
+                _ = Task.Run(() => ExecuteRealFirmware(architecture));
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"HomebrewEmulator: StartEmulation failed: {ex.Message}");
+                throw;
+            }
+        }
     }
 }
