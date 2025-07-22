@@ -77,32 +77,32 @@ namespace ProcessorEmulator.Emulation.SoC
             {
                 case CRYPTO_CONTROL_REG:
                     // Crypto engine control and enable
-                    value = cryptoEnabled ? 0x00000001 : 0x00000000;
-                    value |= 0x00000100; // Hardware ready
-                    value |= 0x00000200; // Clock stable
-                    value |= 0x00000400; // Self-test passed
+                    value = cryptoEnabled ? 0x00000001u : 0x00000000u;
+                    value |= 0x00000100u; // Hardware ready
+                    value |= 0x00000200u; // Clock stable
+                    value |= 0x00000400u; // Self-test passed
                     break;
                     
                 case CRYPTO_STATUS_REG:
                     // Overall crypto engine status
                     value = GetStatusRegister(ready: true, error: false, busy: operationInProgress);
-                    if (keysLoaded) value |= 0x00000010; // Keys loaded
-                    if (cryptoEnabled) value |= 0x00000020; // Engine enabled
+                    if (keysLoaded) value |= 0x00000010u; // Keys loaded
+                    if (cryptoEnabled) value |= 0x00000020u; // Engine enabled
                     value |= (currentOperation << 8); // Current operation type
                     break;
                     
                 case CRYPTO_COMMAND_REG:
                     // Last command status
-                    value = operationInProgress ? 0x00000001 : 0x00000000;
-                    value |= 0x00000100; // Command queue ready
+                    value = operationInProgress ? 0x00000001u : 0x00000000u;
+                    value |= 0x00000100u; // Command queue ready
                     break;
                     
                 case CRYPTO_KEY_STATUS_REG:
                     // Cryptographic key status
-                    value = keysLoaded ? 0x12345678 : 0x00000000;
+                    value = keysLoaded ? 0x12345678u : 0x00000000u;
                     if (keysLoaded)
                     {
-                        value |= 0x00000001; // AES keys loaded
+                        value |= 0x00000001u; // AES keys loaded
                         value |= 0x00000002; // DES keys loaded  
                         value |= 0x00000004; // RSA keys loaded
                         value |= 0x00000008; // HDCP keys loaded
