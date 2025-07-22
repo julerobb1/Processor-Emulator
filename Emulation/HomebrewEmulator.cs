@@ -401,14 +401,6 @@ namespace ProcessorEmulator.Emulation
             amount %= 32;
             return (value >> amount) | (value << (32 - amount));
         }
-        {
-            Debug.WriteLine($"HomebrewEmulator: Starting emulation loop for {arch}");
-            
-            // Initialize BCM7449 SoC peripherals
-            socManager = new Bcm7449SoCManager();
-            
-            // Initialize RDK-V specific setup
-            InitializeRdkVEnvironment();
             
             if (arch == "ARM" || arch == "ARM64")
             {
