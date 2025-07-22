@@ -28,6 +28,42 @@ namespace ProcessorEmulator.Emulation
         public uint CurrentInstruction => currentInstruction;
         public uint[] RegisterState => regs;
         public byte[] MemoryState => memory;
+        
+        // IChipsetEmulator implementation
+        public string ChipsetName => "BCM7449SBUKFSBB1G";
+        
+        public bool Initialize(string configPath)
+        {
+            try
+            {
+                // Initialize BCM7449 SoC simulation
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+        
+        public byte[] ReadRegister(uint address)
+        {
+            // Read from BCM7449 SoC registers
+            var result = new byte[4];
+            if (address < memory.Length - 3)
+            {
+                Array.Copy(memory, address, result, 0, 4);
+            }
+            return result;
+        }
+        
+        public void WriteRegister(uint address, byte[] data)
+        {
+            // Write to BCM7449 SoC registers
+            if (address < memory.Length - data.Length + 1)
+            {
+                Array.Copy(data, 0, memory, address, data.Length);
+            }
+        }
 
         public void LoadBinary(byte[] binary)
         {
