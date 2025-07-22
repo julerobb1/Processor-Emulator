@@ -39,16 +39,6 @@ namespace ProcessorEmulator.Emulation
         // ...existing code...
     }
 
-    // Universal ISA interface
-    public interface IEmulator
-    {
-        void LoadBinary(byte[] binary);
-        void Step();
-        void Run();
-        void Decompile();
-        void Recompile(string targetArch);
-    }
-
     // Basic MIPS instruction decoder and interpreter skeleton
     public class MipsEmulator
     {
@@ -76,6 +66,13 @@ namespace ProcessorEmulator.Emulation
         public void Run() { /* TODO */ }
         public void Decompile() { /* TODO */ }
         public void Recompile(string targetArch) { /* TODO */ }
+        
+        // IEmulator properties
+        public uint ProgramCounter { get; private set; } = 0;
+        public int InstructionCount { get; private set; } = 0;
+        public uint CurrentInstruction { get; private set; } = 0;
+        public uint[] RegisterState { get; private set; } = new uint[32];
+        public byte[] MemoryState { get; private set; } = new byte[1024];
     }
 
     // ARM emulator stub
@@ -86,6 +83,13 @@ namespace ProcessorEmulator.Emulation
         public void Run() { /* TODO */ }
         public void Decompile() { /* TODO */ }
         public void Recompile(string targetArch) { /* TODO */ }
+        
+        // IEmulator properties
+        public uint ProgramCounter { get; private set; } = 0;
+        public int InstructionCount { get; private set; } = 0;
+        public uint CurrentInstruction { get; private set; } = 0;
+        public uint[] RegisterState { get; private set; } = new uint[16];
+        public byte[] MemoryState { get; private set; } = new byte[1024];
     }
 
     // ARM64 emulator stub
@@ -96,6 +100,13 @@ namespace ProcessorEmulator.Emulation
         public void Run() { /* TODO */ }
         public void Decompile() { /* TODO */ }
         public void Recompile(string targetArch) { /* TODO */ }
+        
+        // IEmulator properties
+        public uint ProgramCounter { get; private set; } = 0;
+        public int InstructionCount { get; private set; } = 0;
+        public uint CurrentInstruction { get; private set; } = 0;
+        public uint[] RegisterState { get; private set; } = new uint[32];
+        public byte[] MemoryState { get; private set; } = new byte[1024];
     }
 
     // MIPS64 emulator stub
@@ -106,6 +117,13 @@ namespace ProcessorEmulator.Emulation
         public void Run() { /* TODO */ }
         public void Decompile() { /* TODO */ }
         public void Recompile(string targetArch) { /* TODO */ }
+        
+        // IEmulator properties
+        public uint ProgramCounter { get; private set; } = 0;
+        public int InstructionCount { get; private set; } = 0;
+        public uint CurrentInstruction { get; private set; } = 0;
+        public uint[] RegisterState { get; private set; } = new uint[32];
+        public byte[] MemoryState { get; private set; } = new byte[1024];
     }
 
     // PowerPC emulator stub
@@ -116,6 +134,13 @@ namespace ProcessorEmulator.Emulation
         public void Run() { /* TODO */ }
         public void Decompile() { /* TODO */ }
         public void Recompile(string targetArch) { /* TODO */ }
+        
+        // IEmulator properties
+        public uint ProgramCounter { get; private set; } = 0;
+        public int InstructionCount { get; private set; } = 0;
+        public uint CurrentInstruction { get; private set; } = 0;
+        public uint[] RegisterState { get; private set; } = new uint[32];
+        public byte[] MemoryState { get; private set; } = new byte[1024];
     }
 
     // x86 emulator stub
@@ -126,6 +151,13 @@ namespace ProcessorEmulator.Emulation
         public void Run() { /* TODO */ }
         public void Decompile() { /* TODO */ }
         public void Recompile(string targetArch) { /* TODO */ }
+        
+        // IEmulator properties
+        public uint ProgramCounter { get; private set; } = 0;
+        public int InstructionCount { get; private set; } = 0;
+        public uint CurrentInstruction { get; private set; } = 0;
+        public uint[] RegisterState { get; private set; } = new uint[8];
+        public byte[] MemoryState { get; private set; } = new byte[1024];
     }
 
     // x86-64 emulator stub
@@ -136,6 +168,13 @@ namespace ProcessorEmulator.Emulation
         public void Run() { /* TODO */ }
         public void Decompile() { /* TODO */ }
         public void Recompile(string targetArch) { /* TODO */ }
+        
+        // IEmulator properties
+        public uint ProgramCounter { get; private set; } = 0;
+        public int InstructionCount { get; private set; } = 0;
+        public uint CurrentInstruction { get; private set; } = 0;
+        public uint[] RegisterState { get; private set; } = new uint[16];
+        public byte[] MemoryState { get; private set; } = new byte[1024];
     }
 
     // Device models for real-time emulation
@@ -220,5 +259,12 @@ namespace ProcessorEmulator.Emulation
         public void Run() { while (true) Step(); }
         public void Decompile() { /* TODO */ }
         public void Recompile(string targetArch) { /* TODO */ }
+        
+        // IEmulator properties
+        public uint ProgramCounter { get; private set; } = 0;
+        public int InstructionCount { get; private set; } = 0;
+        public uint CurrentInstruction { get; private set; } = 0;
+        public uint[] RegisterState { get; private set; } = new uint[32];
+        public byte[] MemoryState { get; private set; } = new byte[1024];
     }
 }
