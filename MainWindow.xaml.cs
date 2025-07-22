@@ -45,6 +45,10 @@ namespace ProcessorEmulator
         // Store selected firmware path and platform
         private string firmwarePath;
         private string selectedPlatform;
+        
+        // BOLT Bootloader Integration
+        private BoltEmulatorBridge boltBridge;
+        private bool boltInitialized;
 
         // Add default constructor for XAML
         public MainWindow()
@@ -1893,6 +1897,303 @@ namespace ProcessorEmulator
             {
                 firmwarePath = dialog.FileName;
                 StatusBarText($"Firmware selected: {System.IO.Path.GetFileName(firmwarePath)}");
+            }
+        }
+
+        // BOLT Bootloader Event Handlers
+        private async void InitBoltButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (boltBridge == null)
+                {
+                    boltBridge = new BoltEmulatorBridge();
+                }
+
+                var initButton = sender as Button;
+                initButton.IsEnabled = false;
+                initButton.Content = "Initializing...";
+
+                bool success = await boltBridge.InitializeBolt();
+                
+                if (success)
+                {
+                    boltInitialized = true;
+                    UpdateBoltStatus("BOLT: Initialized and ready");
+                    initButton.Content = "BOLT Initialized ✓";
+                    initButton.Foreground = System.Windows.Media.Brushes.Green;
+                    
+                    // Enable other BOLT buttons
+                    EnableBoltButtons(true);
+                    
+                    MessageBox.Show("BOLT bootloader initialized successfully!\n\nBCM7449 SoC simulation ready.", 
+                        "BOLT Status", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                else
+                {
+                    UpdateBoltStatus("BOLT: Initialization failed");
+                    initButton.Content = "Initialize BOLT";
+                    initButton.IsEnabled = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"BOLT initialization error: {ex.Message}", "BOLT Error", 
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                var initButton = sender as Button;
+                initButton.Content = "Initialize BOLT";
+                initButton.IsEnabled = true;
+            }
+        }
+
+        private void BoltCliButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (!boltInitialized)
+            {
+                MessageBox.Show("Please initialize BOLT first.", "BOLT CLI", 
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            // Show BOLT CLI window
+            var cliWindow = new Window
+            {
+                Title = "BOLT Command Line Interface",
+                Width = 700,
+                Height = 500,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = this
+            };
+
+            var grid = new Grid();
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            // Output area
+            var outputBox = new TextBox
+            {
+                IsReadOnly = true,
+                FontFamily = new System.Windows.Media.FontFamily("Consolas"),
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Text = boltBridge.GetBoltStatus() + "\n\nBOLT> help\n" + boltBridge.ExecuteBoltCommand("help") + "\n\nBOLT> "
+            };
+            Grid.SetRow(outputBox, 0);
+
+            // Input area
+            var inputPanel = new DockPanel { Margin = new Thickness(5) };
+            var promptLabel = new Label { Content = "BOLT> ", FontFamily = new System.Windows.Media.FontFamily("Consolas") };
+            var inputBox = new TextBox { FontFamily = new System.Windows.Media.FontFamily("Consolas") };
+            
+            DockPanel.SetDock(promptLabel, Dock.Left);
+            inputPanel.Children.Add(promptLabel);
+            inputPanel.Children.Add(inputBox);
+            Grid.SetRow(inputPanel, 1);
+
+            // Handle command input
+            inputBox.KeyDown += (s, args) =>
+            {
+                if (args.Key == System.Windows.Input.Key.Enter)
+                {
+                    string command = inputBox.Text.Trim();
+                    if (!string.IsNullOrEmpty(command))
+                    {
+                        string result = boltBridge.ExecuteBoltCommand(command);
+                        outputBox.Text += command + "\n" + result + "\n\nBOLT> ";
+                        outputBox.ScrollToEnd();
+                        inputBox.Clear();
+                        
+                        if (command.ToLower() == "exit")
+                        {
+                            cliWindow.Close();
+                        }
+                    }
+                }
+            };
+
+            grid.Children.Add(outputBox);
+            grid.Children.Add(inputPanel);
+            cliWindow.Content = grid;
+            
+            cliWindow.Show();
+            inputBox.Focus();
+        }
+
+        private async void LoadFirmwareButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (!boltInitialized)
+            {
+                MessageBox.Show("Please initialize BOLT first.", "BOLT Boot", 
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            string firmwareToLoad = GetBoltFirmwarePath();
+            if (string.IsNullOrEmpty(firmwareToLoad))
+            {
+                MessageBox.Show("Please select a firmware file first.", "BOLT Boot", 
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            try
+            {
+                var button = sender as Button;
+                button.IsEnabled = false;
+                button.Content = "Booting...";
+
+                bool success = await boltBridge.BootFirmware(firmwareToLoad, "ARM");
+                
+                if (success)
+                {
+                    button.Content = "Firmware Booted ✓";
+                    button.Foreground = System.Windows.Media.Brushes.Green;
+                    UpdateBoltStatus("BOLT: Firmware booted successfully");
+                    
+                    MessageBox.Show($"Firmware booted successfully!\n\nFile: {Path.GetFileName(firmwareToLoad)}\nEmulator handoff complete.", 
+                        "BOLT Boot Success", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                else
+                {
+                    button.Content = "Load Firmware via BOLT";
+                    button.IsEnabled = true;
+                    MessageBox.Show("Firmware boot failed. Check the console for details.", 
+                        "BOLT Boot Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"BOLT boot error: {ex.Message}", "BOLT Error", 
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                var button = sender as Button;
+                button.Content = "Load Firmware via BOLT";
+                button.IsEnabled = true;
+            }
+        }
+
+        private void BoltBrowseFirmwareButton_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new OpenFileDialog
+            {
+                Title = "Select Firmware for BOLT",
+                Filter = "All Firmware Files|*.bin;*.elf;*.img;*.itb;*.fit|ELF Files (*.elf)|*.elf|Binary Files (*.bin)|*.bin|Image Files (*.img)|*.img|FIT Images (*.itb;*.fit)|*.itb;*.fit|All Files (*.*)|*.*"
+            };
+
+            if (dialog.ShowDialog() == true)
+            {
+                SetBoltFirmwarePath(dialog.FileName);
+                StatusBarText($"BOLT firmware: {Path.GetFileName(dialog.FileName)}");
+            }
+        }
+
+        private void MemTestButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (!boltInitialized)
+            {
+                MessageBox.Show("Please initialize BOLT first.", "Memory Test", 
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            string result = boltBridge.ExecuteBoltCommand("memtest");
+            ShowTextWindow("BOLT Memory Test", new List<string> { result });
+        }
+
+        private void ShowDtbButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (!boltInitialized)
+            {
+                MessageBox.Show("Please initialize BOLT first.", "Device Tree", 
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            string result = boltBridge.ExecuteBoltCommand("dt show");
+            ShowTextWindow("BOLT Device Tree", new List<string> { result });
+        }
+
+        private void DumpMemoryButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (!boltInitialized)
+            {
+                MessageBox.Show("Please initialize BOLT first.", "Memory Dump", 
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            // Dump a small section of memory for demonstration
+            string result = boltBridge.ExecuteBoltCommand("dump 0x00008000 0x100");
+            ShowTextWindow("BOLT Memory Dump", new List<string> { result });
+        }
+
+        // BOLT Helper Methods
+        private void UpdateBoltStatus(string status)
+        {
+            // Find the BoltStatusText element and update it
+            try
+            {
+                var statusElement = FindName("BoltStatusText") as TextBlock;
+                if (statusElement != null)
+                {
+                    statusElement.Text = status;
+                    statusElement.Foreground = boltInitialized ? 
+                        System.Windows.Media.Brushes.Green : 
+                        System.Windows.Media.Brushes.Red;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"UpdateBoltStatus error: {ex.Message}");
+            }
+        }
+
+        private void EnableBoltButtons(bool enabled)
+        {
+            try
+            {
+                var boltCliButton = FindName("BoltCliButton") as Button;
+                var loadFirmwareButton = FindName("LoadFirmwareButton") as Button;
+                var memTestButton = FindName("MemTestButton") as Button;
+                var showDtbButton = FindName("ShowDtbButton") as Button;
+                var dumpMemoryButton = FindName("DumpMemoryButton") as Button;
+
+                if (boltCliButton != null) boltCliButton.IsEnabled = enabled;
+                if (loadFirmwareButton != null) loadFirmwareButton.IsEnabled = enabled;
+                if (memTestButton != null) memTestButton.IsEnabled = enabled;
+                if (showDtbButton != null) showDtbButton.IsEnabled = enabled;
+                if (dumpMemoryButton != null) dumpMemoryButton.IsEnabled = enabled;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"EnableBoltButtons error: {ex.Message}");
+            }
+        }
+
+        private string GetBoltFirmwarePath()
+        {
+            try
+            {
+                var textBox = FindName("BoltFirmwarePathTextBox") as TextBox;
+                return textBox?.Text ?? string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        private void SetBoltFirmwarePath(string path)
+        {
+            try
+            {
+                var textBox = FindName("BoltFirmwarePathTextBox") as TextBox;
+                if (textBox != null)
+                {
+                    textBox.Text = path;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"SetBoltFirmwarePath error: {ex.Message}");
             }
         }
     }
