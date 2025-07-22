@@ -120,11 +120,12 @@ namespace ProcessorEmulator
                 // Initialize emulator with BOLT's memory state
                 await Task.Run(() => 
                 {
-                    // Here you would integrate with HomebrewEmulator's memory system
-                    // For now, we'll simulate the handoff
                     ShowTextWindow($"Emulator: Received memory map from BOLT", "Emulator");
                     ShowTextWindow($"Emulator: Starting {architecture} emulation at 0x{entryPoint:X8}", "Emulator");
                     ShowTextWindow($"Emulator: Device tree available at 0x{dtbAddress:X8}", "Emulator");
+                    
+                    // 🔥 CRITICAL: Transfer BOLT's loaded firmware to HomebrewEmulator
+                    TransferFirmwareToEmulator(memoryMap, entryPoint);
                     
                     // Start the actual emulation
                     emulator.StartEmulation(architecture);
@@ -136,6 +137,49 @@ namespace ProcessorEmulator
             {
                 ShowTextWindow($"Emulator handoff failed: {ex.Message}", "Emulator Error");
                 return false;
+            }
+        }
+        
+        /// <summary>
+        /// Transfer firmware memory from BOLT to HomebrewEmulator
+        /// </summary>
+        private void TransferFirmwareToEmulator(Dictionary<uint, uint> memoryMap, uint entryPoint)
+        {
+            try
+            {
+                // Convert BOLT's memory map to byte array for HomebrewEmulator
+                const uint maxMemorySize = 0x8000000; // 128MB
+                byte[] firmwareMemory = new byte[maxMemorySize];
+                
+                int transferredBytes = 0;
+                
+                foreach (var kvp in memoryMap)
+                {
+                    uint address = kvp.Key;
+                    uint value = kvp.Value;
+                    
+                    // Only transfer memory that contains actual firmware (non-zero)
+                    if (value != 0 && address < maxMemorySize - 4)
+                    {
+                        // Convert uint to little-endian bytes
+                        byte[] valueBytes = BitConverter.GetBytes(value);
+                        Array.Copy(valueBytes, 0, firmwareMemory, address, 4);
+                        transferredBytes += 4;
+                    }
+                }
+                
+                ShowTextWindow($"Memory Transfer: {transferredBytes} bytes of firmware data", "BOLT->Emulator");
+                ShowTextWindow($"Entry Point: 0x{entryPoint:X8}", "Firmware Info");
+                
+                // Load the firmware into HomebrewEmulator
+                emulator.LoadBinary(firmwareMemory);
+                
+                ShowTextWindow("✅ Firmware transfer complete - emulator ready!", "BOLT Handoff");
+            }
+            catch (Exception ex)
+            {
+                ShowTextWindow($"Firmware transfer failed: {ex.Message}", "Transfer Error");
+                throw;
             }
         }
 
