@@ -12,10 +12,10 @@ namespace ProcessorEmulator.Emulation
     {
         private WriteableBitmap framebuffer;
         private Timer displayTimer;
-        private IEmulator emulator;
+        private HomebrewEmulator emulator;
         private volatile bool isRunning = false;
         
-        public EmulatorWindow(IEmulator emulator)
+        public EmulatorWindow(HomebrewEmulator emulator)
         {
             InitializeComponent();
             this.emulator = emulator;
@@ -66,10 +66,10 @@ namespace ProcessorEmulator.Emulation
             var pixels = new byte[640 * 480 * 4];
             
             // Check if emulator has real framebuffer data
-            if (emulator != null && emulator is HomebrewEmulator homebrewEmulator)
+            if (emulator != null)
             {
                 // Try to get actual video memory from the emulator
-                var videoMemory = GetEmulatorVideoMemory(homebrewEmulator);
+                var videoMemory = GetEmulatorVideoMemory(emulator);
                 if (videoMemory != null && videoMemory.Length > 0)
                 {
                     // Convert emulator video memory to display format
@@ -131,16 +131,15 @@ namespace ProcessorEmulator.Emulation
         
         private ExecutionInfo GetExecutionInfo()
         {
-            if (emulator is HomebrewEmulator homebrewEmulator)
+            if (emulator != null)
             {
-                // TODO: Expose these properties from HomebrewEmulator
                 return new ExecutionInfo
                 {
-                    ProgramCounter = GetProgramCounter(homebrewEmulator),
-                    InstructionCount = GetInstructionCount(homebrewEmulator),
-                    CurrentInstruction = GetCurrentInstruction(homebrewEmulator),
-                    RegisterState = GetRegisterState(homebrewEmulator),
-                    MemoryState = GetMemorySnapshot(homebrewEmulator)
+                    ProgramCounter = emulator.ProgramCounter,
+                    InstructionCount = emulator.InstructionCount,
+                    CurrentInstruction = emulator.CurrentInstruction,
+                    RegisterState = emulator.RegisterState,
+                    MemoryState = GetMemorySnapshot(emulator)
                 };
             }
             
@@ -213,7 +212,7 @@ namespace ProcessorEmulator.Emulation
             {
                 for (int px = 0; px < 8; px++)
                 {
-                    if (charPattern[py] & (1 << (7 - px)))
+                    if ((charPattern[py] & (1 << (7 - px))) != 0)
                     {
                         int pixelX = x + px;
                         int pixelY = y + py;
@@ -257,26 +256,6 @@ namespace ProcessorEmulator.Emulation
         }
         
         // Helper methods to extract execution state from emulator
-        private uint GetProgramCounter(HomebrewEmulator emulator)
-        {
-            return emulator.ProgramCounter;
-        }
-        
-        private int GetInstructionCount(HomebrewEmulator emulator)
-        {
-            return emulator.InstructionCount;
-        }
-        
-        private uint GetCurrentInstruction(HomebrewEmulator emulator)
-        {
-            return emulator.CurrentInstruction;
-        }
-        
-        private uint[] GetRegisterState(HomebrewEmulator emulator)
-        {
-            return emulator.RegisterState ?? new uint[16];
-        }
-        
         private uint[] GetMemorySnapshot(HomebrewEmulator emulator)
         {
             var memory = emulator.MemoryState;
