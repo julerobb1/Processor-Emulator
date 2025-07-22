@@ -40,8 +40,11 @@ namespace ProcessorEmulator
 
     public partial class MainWindow : Window, IMainWindow
     {
-        
-    private IEmulator currentEmulator;
+        private IEmulator currentEmulator;
+
+        // Store selected firmware path and platform
+        private string firmwarePath;
+        private string selectedPlatform;
 
         // Add default constructor for XAML
         public MainWindow()
@@ -51,11 +54,11 @@ namespace ProcessorEmulator
             // Initialize drag-and-drop for file support
             this.AllowDrop = true;
             this.Drop += MainWindow_Drop;
-            
+
             // Initialize real-time emulation log panel
             InitializeLogPanel();
         }
-        
+
         public MainWindow(IEmulator currentEmulator)
         {
             InitializeComponent();
@@ -71,13 +74,13 @@ namespace ProcessorEmulator
             try
             {
                 logPanel = new EmulationLogPanel();
-                
+
                 // TODO: Find the log panel container in XAML and add our log panel
                 // if (LogPanelContainer != null)
                 // {
                 //     LogPanelContainer.Child = logPanel;
                 // }
-                
+
                 Debug.WriteLine("[MainWindow] Log panel initialized successfully");
             }
             catch (Exception ex)
@@ -89,7 +92,7 @@ namespace ProcessorEmulator
         // All Tools classes are static - no need to instantiate
         private ExoticFilesystemManager fsManager = new();
         private InstructionDispatcher dispatcher = new();
-        
+
         // Real-time emulation logging
         private EmulationLogPanel logPanel;
 
@@ -242,11 +245,11 @@ namespace ProcessorEmulator
             StatusBarText($"Launching emulation for {Path.GetFileName(filePath)}...");
             byte[] binary = File.ReadAllBytes(filePath);
             string arch = ArchitectureDetector.Detect(binary);
-            
+
             // If architecture is unknown, prompt user to select one
             if (arch == "Unknown")
             {
-                arch = PromptUserForChoice("Architecture detection failed. Please select CPU Architecture:", 
+                arch = PromptUserForChoice("Architecture detection failed. Please select CPU Architecture:",
                     new List<string> { "MIPS32", "MIPS64", "ARM", "ARM64", "PowerPC", "x86", "x86-64", "RISC-V" });
                 if (string.IsNullOrEmpty(arch))
                 {
@@ -547,7 +550,7 @@ namespace ProcessorEmulator
             StatusBarText("Azeria ARM emulation stub complete.");
             await Task.CompletedTask;
         }
-    
+
         // Core feature handlers
 
         /// <summary>
@@ -555,55 +558,48 @@ namespace ProcessorEmulator
         /// </summary>
         private async Task HandleRdkVEmulation()
         {
-            var dlg = new OpenFileDialog { Filter = "RDK-V Firmware Images (*.bin;*.tar;*.gz;*.img;*.ubi)|*.bin;*.tar;*.gz;*.img;*.ubi|All Files (*.*)|*.*" };
-            if (dlg.ShowDialog() != true) return;
-            string path = dlg.FileName;
-            StatusBarText($"Analyzing RDK-V firmware: {Path.GetFileName(path)}...");
-            
-            try 
+            if (string.IsNullOrEmpty(firmwarePath))
             {
-                var bin = File.ReadAllBytes(path);
+                MessageBox.Show("Please select a firmware file first.", "No Firmware Selected", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            string path = firmwarePath;
+            StatusBarText($"Analyzing RDK-V firmware: {System.IO.Path.GetFileName(path)}...");
+
+            try
+            {
+                var bin = System.IO.File.ReadAllBytes(path);
                 Debug.WriteLine($"Loaded RDK-V firmware: {bin.Length} bytes from {path}");
                 StatusBarText($"Loaded RDK-V firmware: {bin.Length} bytes");
-                
+
                 // Configure for ARRIS XG1V4 (ARM Cortex-A15 based)
                 var config = RDKVPlatformConfig.CreateArrisXG1V4Config();
                 Debug.WriteLine($"Using {config.DeviceModel} configuration: {config.ProcessorType}, {config.MemorySize / 1024 / 1024}MB");
                 StatusBarText($"Configured for {config.DeviceModel} (ARM Cortex-A15, {config.MemorySize / 1024 / 1024}MB)");
-                
+
                 // Force ARM architecture detection for RDK-V (all RDK-V devices are ARM-based)
                 string detectedArch = Tools.ArchitectureDetector.Detect(bin);
                 string arch = "ARM"; // Override - RDK-V is always ARM-based
-                
+
                 if (detectedArch != "ARM" && detectedArch != "Unknown")
                 {
                     Debug.WriteLine($"Note: Detected {detectedArch} but forcing ARM for RDK-V compatibility");
                 }
-                
-                // Show firmware analysis
-                MessageBox.Show($"RDK-V Firmware Analysis:\n\n" +
-                               $"File: {Path.GetFileName(path)}\n" +
-                               $"Size: {bin.Length:N0} bytes\n" +
-                               $"Detected: {detectedArch}\n" +
-                               $"Using: {arch} (RDK-V standard)\n" +
-                               $"Platform: {config.DeviceModel}\n" +
-                               $"SoC: Broadcom BCM7445 (ARM Cortex-A15)\n\n" +
-                               $"Starting ARM emulation...", 
-                               "RDK-V Firmware Loaded", MessageBoxButton.OK, MessageBoxImage.Information);
+
+                StatusBarText("Starting RDK-V ARM emulation...");
                 
                 // Always use HomebrewEmulator for RDK-V (never QEMU)
                 var emulator = new HomebrewEmulator();
                 emulator.LoadBinary(bin);
-                StatusBarText("Starting RDK-V ARM emulation...");
                 emulator.Run(); // This will start actual ARM emulation loop
-                
+
                 StatusBarText("RDK-V ARM emulation started successfully.");
             }
-            catch (Exception ex) 
-            { 
-                MessageBox.Show($"RDK-V emulation error:\n\n{ex.Message}\n\nCheck that the firmware file is valid and accessible.", 
-                               "RDK-V Emulation Error", MessageBoxButton.OK, MessageBoxImage.Error); 
-                StatusBarText("RDK-V emulation failed."); 
+            catch (Exception ex)
+            {
+                MessageBox.Show($"RDK-V emulation error:\n\n{ex.Message}\n\nCheck that the firmware file is valid and accessible.",
+                               "RDK-V Emulation Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusBarText("RDK-V emulation failed.");
             }
             await Task.CompletedTask;
         }
@@ -725,8 +721,8 @@ namespace ProcessorEmulator
             // More detailed PE header checks would go here
             return true;
         }
-    
-    
+
+
         /// <summary>
         /// Emulates an RDK-B broadband gateway using QEMU.
         /// </summary>
@@ -759,11 +755,11 @@ namespace ProcessorEmulator
         /// </summary>
         private async Task HandlePowerPCBootloaderDemo()
         {
-            var choice = PromptUserForChoice("PowerPC Bootloader Demo", 
+            var choice = PromptUserForChoice("PowerPC Bootloader Demo",
                 new List<string> { "Create Bootloader Only", "Load Firmware + Bootloader", "Show Bootloader Info" });
-            
+
             if (string.IsNullOrEmpty(choice)) return;
-            
+
             try
             {
                 switch (choice)
@@ -773,11 +769,11 @@ namespace ProcessorEmulator
                         PowerPCBootloaderManager.LaunchPowerPCWithBootloader(null);
                         StatusBarText("PowerPC bootloader demo started.");
                         break;
-                        
+
                     case "Load Firmware + Bootloader":
-                        var dlg = new OpenFileDialog 
-                        { 
-                            Filter = "PowerPC Firmware (*.bin;*.img;*.elf)|*.bin;*.img;*.elf|All Files (*.*)|*.*" 
+                        var dlg = new OpenFileDialog
+                        {
+                            Filter = "PowerPC Firmware (*.bin;*.img;*.elf)|*.bin;*.img;*.elf|All Files (*.*)|*.*"
                         };
                         if (dlg.ShowDialog() == true)
                         {
@@ -786,7 +782,7 @@ namespace ProcessorEmulator
                             StatusBarText("PowerPC emulation with firmware started.");
                         }
                         break;
-                        
+
                     case "Show Bootloader Info":
                         PowerPCBootloaderManager.ShowBootloaderInfo();
                         StatusBarText("Displayed PowerPC bootloader information.");
@@ -795,7 +791,7 @@ namespace ProcessorEmulator
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"PowerPC bootloader error: {ex.Message}", "PowerPC Error", 
+                MessageBox.Show($"PowerPC bootloader error: {ex.Message}", "PowerPC Error",
                                MessageBoxButton.OK, MessageBoxImage.Error);
                 StatusBarText("PowerPC bootloader demo failed.");
             }
@@ -874,16 +870,16 @@ namespace ProcessorEmulator
             // 🧠 PLATFORM AUTODETECTION - Analyze firmware to suggest platform
             StatusBarText("Analyzing firmware for platform detection...");
             var detectionResult = PlatformDetector.DetectPlatform(imagePath);
-            
+
             // 🗂 REGION AWARENESS - Analyze firmware regions for boot logic
             StatusBarText("Analyzing firmware regions...");
             var regionResult = FirmwareRegionAnalyzer.AnalyzeFirmware(imagePath);
-            
+
             if (detectionResult.Success && detectionResult.DetectedPlatform != null)
             {
                 var platform = detectionResult.DetectedPlatform;
                 StatusBarText($"Platform detected: {platform.Name} (confidence: {detectionResult.Confidence:P1})");
-                
+
                 // Show detection results and recommendations
                 var resultMessage = $"🎯 Platform Detection & Region Analysis Results:\n\n";
                 resultMessage += $"Platform: {platform.Name}\n";
@@ -891,7 +887,7 @@ namespace ProcessorEmulator
                 resultMessage += $"Architecture: {platform.Architecture}\n";
                 resultMessage += $"SoC Family: {platform.SocFamily}\n";
                 resultMessage += $"Recommended Emulator: {platform.EmulatorType}\n\n";
-                
+
                 // Add region analysis results
                 if (regionResult.Success && regionResult.DetectedRegions.Any())
                 {
@@ -903,7 +899,7 @@ namespace ProcessorEmulator
                     }
                     resultMessage += "\n";
                 }
-                
+
                 if (detectionResult.Recommendations.Any())
                 {
                     resultMessage += "� Platform Recommendations:\n";
@@ -911,7 +907,7 @@ namespace ProcessorEmulator
                         resultMessage += $"• {rec}\n";
                     resultMessage += "\n";
                 }
-                
+
                 // Add boot sequence recommendations
                 if (regionResult.Success && regionResult.BootSequence.Any())
                 {
@@ -919,22 +915,22 @@ namespace ProcessorEmulator
                     foreach (var step in regionResult.BootSequence.Take(6))
                         resultMessage += $"{step}\n";
                 }
-                
-                MessageBox.Show(resultMessage, "Platform & Region Analysis Results", 
+
+                MessageBox.Show(resultMessage, "Platform & Region Analysis Results",
                                MessageBoxButton.OK, MessageBoxImage.Information);
-                
+
                 // Auto-configure emulator type based on detection
                 ConfigureEmulatorFromDetection(platform);
-                
+
                 // Log platform and region information to emulation log
                 if (logPanel != null)
                 {
-                    logPanel.LogPeripheralTrap("ANALYZER", "Platform Detection", 
+                    logPanel.LogPeripheralTrap("ANALYZER", "Platform Detection",
                         $"Detected {platform.Name} with {detectionResult.Confidence:P1} confidence");
-                    
+
                     if (regionResult.Success)
                     {
-                        logPanel.LogPeripheralTrap("ANALYZER", "Region Analysis", 
+                        logPanel.LogPeripheralTrap("ANALYZER", "Region Analysis",
                             $"Found {regionResult.DetectedRegions.Count} firmware regions");
                     }
                 }
@@ -944,7 +940,7 @@ namespace ProcessorEmulator
                 StatusBarText("Platform detection failed - proceeding with manual configuration");
                 if (!string.IsNullOrEmpty(detectionResult.Error))
                 {
-                    MessageBox.Show($"Platform detection failed: {detectionResult.Error}\n\nProceeding with manual configuration.", 
+                    MessageBox.Show($"Platform detection failed: {detectionResult.Error}\n\nProceeding with manual configuration.",
                                    "Platform Detection", MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
             }
@@ -1492,7 +1488,7 @@ namespace ProcessorEmulator
                         });
                     }
                 }
-                
+
                 // Launch the XAML folder analysis window 
                 var window = new FolderAnalysisWindow(fileRecords)
                 {
@@ -1520,19 +1516,19 @@ namespace ProcessorEmulator
             var dlg = new OpenFileDialog { Filter = "Firmware Images (*.bin;*.img)|*.bin;*.img|All Files (*.*)|*.*" };
             if (dlg.ShowDialog() != true) return;
             string path = dlg.FileName;
-            
+
             try
             {
                 byte[] binary = File.ReadAllBytes(path);
                 string detectedArch = Tools.ArchitectureDetector.Detect(binary);
-                
+
                 // Prompt for architecture if unknown or to override detection
-                string arch = PromptUserForChoice($"Detected: {detectedArch}. Select CPU Architecture:", 
+                string arch = PromptUserForChoice($"Detected: {detectedArch}. Select CPU Architecture:",
                     new List<string> { "MIPS32", "MIPS64", "ARM", "ARM64", "PowerPC", "x86", "x86-64", "RISC-V" });
                 if (string.IsNullOrEmpty(arch)) return;
-                
+
                 StatusBarText($"Launching emulation for {Path.GetFileName(path)} ({arch})...");
-                
+
                 try
                 {
                     // First attempt: HomebrewEmulator
@@ -1545,7 +1541,7 @@ namespace ProcessorEmulator
                 {
                     Debug.WriteLine($"HomebrewEmulator failed: {homebrewEx.Message}");
                     StatusBarText("HomebrewEmulator failed, falling back to QEMU...");
-                    
+
                     // Fallback: QEMU
                     try
                     {
@@ -1704,108 +1700,129 @@ namespace ProcessorEmulator
             var dlg = new OpenFileDialog { Filter = "Firmware Images|*.bin;*.img;*.exe;*.fw;*.csw;*.pkgstream|All Files|*.*" };
             if (dlg.ShowDialog() == true)
             {
-                // TODO: Fix XAML control binding - FirmwarePathTextBox not accessible
-                // FirmwarePathTextBox.Text = dlg.FileName;
+                // Store firmware path for later use
+                firmwarePath = dlg.FileName;
                 
-                // For now, directly trigger firmware loading
-                LoadFirmwareImage(dlg.FileName, "");
+                // Update UI to show selected file
+                try
+                {
+                    FirmwarePathTextBox.Text = dlg.FileName;
+                }
+                catch
+                {
+                    // Fallback if TextBox not accessible
+                    StatusBarText($"Firmware selected: {System.IO.Path.GetFileName(dlg.FileName)}");
+                }
+                
+                StatusBarText($"Firmware loaded: {System.IO.Path.GetFileName(dlg.FileName)}");
             }
         }
 
         private async void StartEmulationButton_Click(object sender, RoutedEventArgs e)
         {
-            // TODO: Fix XAML control binding - FirmwarePathTextBox not accessible
-            // string imagePath = FirmwarePathTextBox.Text;
-            
-            // For now, show file dialog
-            var dlg = new OpenFileDialog { Filter = "Firmware Images|*.bin;*.img;*.exe;*.fw;*.csw;*.pkgstream|All Files|*.*" };
-            if (dlg.ShowDialog() != true) return;
-            
-            string imagePath = dlg.FileName;
-            if (string.IsNullOrEmpty(imagePath) || !File.Exists(imagePath))
+            // Check if firmware is selected
+            if (string.IsNullOrEmpty(firmwarePath) || !File.Exists(firmwarePath))
             {
-                MessageBox.Show("Please select a valid firmware image.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show("Please select a firmware file first using the Browse button.", "No Firmware Selected", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
+            // Determine selected platform
+            selectedPlatform = "Generic"; // Default
             try
             {
-                var bytes = File.ReadAllBytes(imagePath);
-                string arch = ArchitectureDetector.Detect(bytes);
-                
-                // If architecture is unknown, prompt user to select one
-                if (arch == "Unknown")
-                {
-                    arch = PromptUserForChoice("Architecture detection failed. Please select CPU Architecture:", 
-                        new List<string> { "MIPS32", "MIPS64", "ARM", "ARM64", "PowerPC", "x86", "x86-64", "RISC-V" });
-                    if (string.IsNullOrEmpty(arch))
-                    {
-                        StatusBarText("Emulation cancelled - no architecture selected.");
-                        return;
-                    }
-                }
+                if (RdkVPlatformRadio.IsChecked == true)
+                    selectedPlatform = "RDK-V";
+                else if (GenericPlatformRadio.IsChecked == true)
+                    selectedPlatform = "Generic";
+            }
+            catch
+            {
+                // Fallback if radio buttons not accessible
+                selectedPlatform = "RDK-V"; // Assume RDK-V since that's the main focus
+            }
 
-                // Determine emulator type from radio buttons
-                string emulatorType = GetSelectedEmulatorType();
-                string platformType = GetSelectedPlatformType();
+            StatusBarText($"Starting {selectedPlatform} emulation for {System.IO.Path.GetFileName(firmwarePath)}...");
+
+            // Route to appropriate emulation handler based on platform
+            switch (selectedPlatform)
+            {
+                case "RDK-V":
+                    await HandleRdkVEmulation();
+                    break;
+                default:
+                    await HandleGenericEmulation();
+                    break;
+            }
+        }
+
+        private async Task HandleGenericEmulation()
+        {
+            try
+            {
+                StatusBarText("Starting generic firmware emulation...");
                 
-                StatusBarText($"Starting {emulatorType} emulation for {Path.GetFileName(imagePath)} ({arch}) on {platformType}...");
+                var binary = File.ReadAllBytes(firmwarePath);
+                var arch = Tools.ArchitectureDetector.Detect(binary);
                 
-                // Route to appropriate emulator
-                switch (emulatorType)
-                {
-                    case "HomebrewEmulator":
-                        if (platformType == "RDK-V")
-                        {
-                            await HandleRdkVEmulation();
-                        }
-                        else
-                        {
-                            await HandleBootFirmwareHomebrewFirst();
-                        }
-                        break;
-                        
-                    case "QEMU":
-                        QemuManager.Launch(imagePath, arch);
-                        StatusBarText($"QEMU launched for {Path.GetFileName(imagePath)} ({arch}).");
-                        break;
-                        
-                    case "RetDec":
-                        HandleRetDecTranslation(imagePath, bytes, arch);
-                        break;
-                        
-                    default:
-                        MessageBox.Show("Please select an emulator type.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
-                        break;
-                }
+                MessageBox.Show($"Generic Firmware Analysis:\n\n" +
+                               $"File: {System.IO.Path.GetFileName(firmwarePath)}\n" +
+                               $"Size: {binary.Length:N0} bytes\n" +
+                               $"Architecture: {arch}\n\n" +
+                               $"Starting emulation...", 
+                               "Generic Firmware", MessageBoxButton.OK, MessageBoxImage.Information);
+                
+                // Use HomebrewEmulator for generic emulation too
+                var emulator = new HomebrewEmulator();
+                emulator.LoadBinary(binary);
+                emulator.Run();
+                
+                StatusBarText("Generic emulation started successfully.");
             }
             catch (Exception ex)
             {
-                ShowTextWindow("Emulation Error", new List<string> { ex.Message });
+                MessageBox.Show($"Generic emulation error:\n\n{ex.Message}", "Emulation Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusBarText("Generic emulation failed.");
             }
+            
+            await Task.CompletedTask;
         }
-        
+
+        // Helper methods for UI control access with fallbacks
         private string GetSelectedEmulatorType()
         {
-            // TODO: Implement radio button logic after XAML rebuild
-            // if (HomebrewEmulatorRadio?.IsChecked == true) return "HomebrewEmulator";
-            // if (QemuEmulatorRadio?.IsChecked == true) return "QEMU";
-            // if (RetDecTranslatorRadio?.IsChecked == true) return "RetDec";
-            return "HomebrewEmulator"; // Default for now
+            try
+            {
+                if (HomebrewEmulatorRadio?.IsChecked == true) return "HomebrewEmulator";
+                if (QemuEmulatorRadio?.IsChecked == true) return "QEMU";
+                if (RetDecTranslatorRadio?.IsChecked == true) return "RetDec";
+            }
+            catch
+            {
+                // Fallback if UI controls not accessible
+            }
+            return "HomebrewEmulator"; // Default
         }
-        
+
         private string GetSelectedPlatformType()
         {
-            // TODO: Implement radio button logic after XAML rebuild
-            // if (RdkVPlatformRadio?.IsChecked == true) return "RDK-V";
-            return "Generic"; // Default for now
+            try
+            {
+                if (RdkVPlatformRadio?.IsChecked == true) return "RDK-V";
+                if (GenericPlatformRadio?.IsChecked == true) return "Generic";
+            }
+            catch
+            {
+                // Fallback if UI controls not accessible
+            }
+            return "Generic"; // Default
         }
-        
+
         private void HandleRetDecTranslation(string imagePath, byte[] bytes, string arch)
         {
-            var result = MessageBox.Show($"Use RetDec to translate {arch} firmware to x86?\n\nThis will decompile and translate the binary for analysis.", 
+            var result = MessageBox.Show($"Use RetDec to translate {arch} firmware to x86?\n\nThis will decompile and translate the binary for analysis.",
                                        "RetDec Translation", MessageBoxButton.YesNo, MessageBoxImage.Question);
-            
+
             if (result == MessageBoxResult.Yes)
             {
                 try
@@ -1815,18 +1832,18 @@ namespace ProcessorEmulator
                     {
                         string outputPath = Path.ChangeExtension(imagePath, ".translated.bin");
                         File.WriteAllBytes(outputPath, translated);
-                        MessageBox.Show($"Translation completed!\nOutput saved to: {outputPath}", 
+                        MessageBox.Show($"Translation completed!\nOutput saved to: {outputPath}",
                                       "RetDec Success", MessageBoxButton.OK, MessageBoxImage.Information);
                     }
                     else
                     {
-                        MessageBox.Show("RetDec translation failed - no output generated.", 
+                        MessageBox.Show("RetDec translation failed - no output generated.",
                                       "RetDec Error", MessageBoxButton.OK, MessageBoxImage.Error);
                     }
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"RetDec translation error: {ex.Message}", 
+                    MessageBox.Show($"RetDec translation error: {ex.Message}",
                                   "RetDec Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
@@ -1877,6 +1894,17 @@ namespace ProcessorEmulator
         private void MountSquashFs_Click(object sender, RoutedEventArgs e)
         {
             MessageBox.Show("SquashFS filesystem mounting not yet implemented.", "Mount SquashFS");
+        }
+
+        // Button click to select firmware once
+        private void SelectFirmware_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "Firmware Images (*.bin;*.img)|*.bin;*.img|All Files (*.*)|*.*" };
+            if (dialog.ShowDialog() == true)
+            {
+                firmwarePath = dialog.FileName;
+                StatusBarText($"Firmware selected: {System.IO.Path.GetFileName(firmwarePath)}");
+            }
         }
     }
 }
