@@ -92,22 +92,22 @@ namespace ProcessorEmulator.Emulation.SoC
                     
                 case CCARD_INTERFACE_REG:
                     // Physical interface status
-                    value = cardInserted ? 0x00000001 : 0x00000000; // Card detect
-                    value |= 0x00000002; // Interface ready
-                    value |= 0x00000004; // Clock stable
-                    value |= 0x00000008; // Power good
-                    value |= 0x00000100; // PCMCIA interface
+                    value = cardInserted ? 0x00000001u : 0x00000000u; // Card detect
+                    value |= 0x00000002u; // Interface ready
+                    value |= 0x00000004u; // Clock stable
+                    value |= 0x00000008u; // Power good
+                    value |= 0x00000100u; // PCMCIA interface
                     break;
                     
                 case CCARD_AUTH_STATUS_REG:
                     // Authentication and security status
-                    value = cardAuthenticated ? 0x12345678 : 0x00000000;
+                    value = cardAuthenticated ? 0x12345678u : 0x00000000u;
                     if (cardAuthenticated)
                     {
-                        value |= 0x00000001; // Initial authentication complete
-                        value |= 0x00000002; // Periodic authentication OK
-                        value |= 0x00000004; // Certificate chain valid
-                        value |= 0x00000008; // Security level approved
+                        value |= 0x00000001u; // Initial authentication complete
+                        value |= 0x00000002u; // Periodic authentication OK
+                        value |= 0x00000004u; // Certificate chain valid
+                        value |= 0x00000008u; // Security level approved
                     }
                     break;
                     
@@ -153,12 +153,12 @@ namespace ProcessorEmulator.Emulation.SoC
                     
                 case CCARD_PAIRING_REG:
                     // Host-CableCARD pairing status
-                    value = hostPaired ? 0x50410123 : 0x00000000; // Pairing signature
+                    value = hostPaired ? 0x50410123u : 0x00000000u; // Pairing signature
                     if (hostPaired)
                     {
-                        value |= 0x00000001; // Pairing established
-                        value |= 0x00000002; // Pairing verified
-                        value |= 0x00000004; // Copy protection negotiated
+                        value |= 0x00000001u; // Pairing established
+                        value |= 0x00000002u; // Pairing verified
+                        value |= 0x00000004u; // Copy protection negotiated
                     }
                     break;
                     
