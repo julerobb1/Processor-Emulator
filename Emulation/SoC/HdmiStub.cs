@@ -58,25 +58,25 @@ namespace ProcessorEmulator.Emulation.SoC
             {
                 case HDMI_CONTROL_REG:
                     // HDMI control and enable
-                    value = hdmiEnabled ? 0x00000001 : 0x00000000;
-                    value |= 0x00000100; // Controller ready
-                    value |= 0x00000200; // Clock stable
+                    value = hdmiEnabled ? 0x00000001u : 0x00000000u;
+                    value |= 0x00000100u; // Controller ready
+                    value |= 0x00000200u; // Clock stable
                     break;
                     
                 case HDMI_STATUS_REG:
                     // Overall HDMI status
                     value = GetStatusRegister(ready: true, error: false, busy: false);
-                    if (displayConnected) value |= 0x00000010; // Display connected
-                    if (hdmiEnabled) value |= 0x00000020; // HDMI active
-                    if (hdcpAuthenticated) value |= 0x00000040; // HDCP authenticated
-                    if (audioEnabled) value |= 0x00000080; // Audio active
+                    if (displayConnected) value |= 0x00000010u; // Display connected
+                    if (hdmiEnabled) value |= 0x00000020u; // HDMI active
+                    if (hdcpAuthenticated) value |= 0x00000040u; // HDCP authenticated
+                    if (audioEnabled) value |= 0x00000080u; // Audio active
                     break;
                     
                 case HDMI_HOTPLUG_REG:
                     // Hotplug detection and display presence
-                    value = displayConnected ? 0x00000001 : 0x00000000;
-                    value |= 0x00000100; // Hotplug interrupt capable
-                    value |= 0x00001000; // +5V present (display powered)
+                    value = displayConnected ? 0x00000001u : 0x00000000u;
+                    value |= 0x00000100u; // Hotplug interrupt capable
+                    value |= 0x00001000u; // +5V present (display powered)
                     break;
                     
                 case HDMI_RESOLUTION_REG:
@@ -86,56 +86,56 @@ namespace ProcessorEmulator.Emulation.SoC
                     
                 case HDMI_AUDIO_REG:
                     // Audio configuration and status
-                    value = audioEnabled ? 0x00000001 : 0x00000000;
-                    value |= 0x00000002; // PCM support
-                    value |= 0x00000004; // Dolby Digital support
-                    value |= 0x00000008; // DTS support
-                    value |= 0x00000010; // Audio return channel (ARC)
-                    value |= 0x00000020; // Enhanced ARC (eARC)
+                    value = audioEnabled ? 0x00000001u : 0x00000000u;
+                    value |= 0x00000002u; // PCM support
+                    value |= 0x00000004u; // Dolby Digital support
+                    value |= 0x00000008u; // DTS support
+                    value |= 0x00000010u; // Audio return channel (ARC)
+                    value |= 0x00000020u; // Enhanced ARC (eARC)
                     break;
                     
                 case HDMI_HDCP_STATUS_REG:
                     // HDCP status and authentication
-                    value = hdcpEnabled ? 0x00000001 : 0x00000000;
+                    value = hdcpEnabled ? 0x00000001u : 0x00000000u;
                     if (hdcpAuthenticated)
                     {
-                        value |= 0x00000002; // Authentication complete
-                        value |= 0x00000004; // Encryption active
-                        value |= 0x00000008; // Repeater check passed
+                        value |= 0x00000002u; // Authentication complete
+                        value |= 0x00000004u; // Encryption active
+                        value |= 0x00000008u; // Repeater check passed
                     }
                     value |= (hdcpVersion << 8); // HDCP version (2.2)
                     break;
                     
                 case HDMI_HDCP_CONTROL_REG:
                     // HDCP control and configuration
-                    value = hdcpEnabled ? 0x00000001 : 0x00000000;
-                    value |= 0x00000010; // HDCP 1.4 support
-                    value |= 0x00000020; // HDCP 2.2 support
-                    value |= 0x00000040; // Content type 0 (movie)
-                    value |= 0x00000080; // Content type 1 (no restriction)
+                    value = hdcpEnabled ? 0x00000001u : 0x00000000u;
+                    value |= 0x00000010u; // HDCP 1.4 support
+                    value |= 0x00000020u; // HDCP 2.2 support
+                    value |= 0x00000040u; // Content type 0 (movie)
+                    value |= 0x00000080u; // Content type 1 (no restriction)
                     break;
                     
                 case HDMI_CEC_STATUS_REG:
                     // Consumer Electronics Control status
-                    value = cecEnabled ? 0x00000001 : 0x00000000;
-                    value |= 0x00000002; // Logical address assigned
-                    value |= 0x00000004; // Bus available
-                    value |= 0x00000100; // CEC 2.0 support
+                    value = cecEnabled ? 0x00000001u : 0x00000000u;
+                    value |= 0x00000002u; // Logical address assigned
+                    value |= 0x00000004u; // Bus available
+                    value |= 0x00000100u; // CEC 2.0 support
                     break;
                     
                 case HDMI_CEC_CONTROL_REG:
                     // CEC control and addressing
-                    value = cecEnabled ? 0x00000001 : 0x00000000;
-                    value |= 0x00000004; // Logical address: Tuner (4)
-                    value |= 0x00000100; // Physical address available
+                    value = cecEnabled ? 0x00000001u : 0x00000000u;
+                    value |= 0x00000004u; // Logical address: Tuner (4)
+                    value |= 0x00000100u; // Physical address available
                     break;
                     
                 case HDMI_INFOFRAME_REG:
                     // Video/audio infoframe status
-                    value = 0x12345678; // Infoframe signature
-                    value |= 0x00000001; // AVI infoframe sent
-                    value |= 0x00000002; // Audio infoframe sent
-                    value |= 0x00000004; // Vendor specific infoframe
+                    value = 0x12345678u; // Infoframe signature
+                    value |= 0x00000001u; // AVI infoframe sent
+                    value |= 0x00000002u; // Audio infoframe sent
+                    value |= 0x00000004u; // Vendor specific infoframe
                     break;
                     
                 case HDMI_DEEP_COLOR_REG:
