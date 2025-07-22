@@ -233,67 +233,6 @@ namespace ProcessorEmulator
             await Task.CompletedTask;
         }
 
-        private async Task HandleGenericEmulation()
-        {
-            var openFileDialog = new OpenFileDialog
-            {
-                Filter = "All Binaries and Executables (*.bin;*.img;*.exe;*.fw)|*.bin;*.img;*.exe;*.fw|All Files (*.*)|*.*"
-            };
-            if (openFileDialog.ShowDialog() != true) return;
-
-            string filePath = openFileDialog.FileName;
-            StatusBarText($"Launching emulation for {Path.GetFileName(filePath)}...");
-            byte[] binary = File.ReadAllBytes(filePath);
-            string arch = ArchitectureDetector.Detect(binary);
-
-            // If architecture is unknown, prompt user to select one
-            if (arch == "Unknown")
-            {
-                arch = PromptUserForChoice("Architecture detection failed. Please select CPU Architecture:",
-                    new List<string> { "MIPS32", "MIPS64", "ARM", "ARM64", "PowerPC", "x86", "x86-64", "RISC-V" });
-                if (string.IsNullOrEmpty(arch))
-                {
-                    StatusBarText("Emulation cancelled - no architecture selected.");
-                    return;
-                }
-            }
-
-            try
-            {
-                // First attempt homebrew emulation
-                var home = new HomebrewEmulator();
-                home.LoadBinary(binary);
-                home.Run();
-                StatusBarText("Homebrew emulation complete.");
-            }
-            catch (NotImplementedException)
-            {
-                // Fallback to QEMU with optional extra CLI options
-                StatusBarText("Homebrew emulator not implemented for this architecture, falling back to QEMU...");
-                // Prompt user for extra QEMU command-line options using a detailed dialog
-                string extraArgs = PromptForQemuOptions();
-                try
-                {
-                    if (!string.IsNullOrEmpty(extraArgs))
-                    {
-                        // Use QemuManager directly for extra arguments
-                        ProcessorEmulator.Tools.QemuManager.LaunchWithArgs(filePath, arch, extraArgs);
-                    }
-                    else
-                    {
-                        EmulatorLauncher.Launch(filePath, arch);
-                    }
-                    StatusBarText("QEMU emulation started.");
-                }
-                catch (Exception qex)
-                {
-                    MessageBox.Show($"QEMU error: {qex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                    StatusBarText("Emulation failed.");
-                }
-            }
-            await Task.CompletedTask;
-        }
-
         private async Task HandleDishVxWorksAnalysis()
         {
             var openFileDialog = new OpenFileDialog
