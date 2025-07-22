@@ -26,6 +26,13 @@ namespace ProcessorEmulator.Emulation
         { 
             Console.WriteLine("Sparc64Emulator: Recompile called with code: " + code); 
         }
+        
+        // IEmulator properties
+        public uint ProgramCounter { get; private set; } = 0;
+        public int InstructionCount { get; private set; } = 0;
+        public uint CurrentInstruction { get; private set; } = 0;
+        public uint[] RegisterState { get; private set; } = new uint[32];
+        public byte[] MemoryState { get; private set; } = new byte[1024];
     }
     public class AlphaEmulator : IEmulator
     {
