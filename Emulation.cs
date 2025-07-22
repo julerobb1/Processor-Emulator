@@ -49,12 +49,12 @@ namespace ProcessorEmulator.Emulation
 
         public static void Step()
         {
-            // TODO: Decode and execute one instruction
+            // TODO: Execute one MIPS instruction
         }
 
         public static void Run()
         {
-            // TODO: Main emulation loop
+            // TODO: Execute full MIPS program
         }
     }
 
@@ -187,32 +187,37 @@ namespace ProcessorEmulator.Emulation
 
     public class GraphicsDevice : IDevice
     {
-        public void Initialize() { /* TODO */ }
-        public void Reset() { /* TODO */ }
-        public void Tick() { /* TODO */ }
-    }
-
-    public class NetworkDevice : IDevice
-    {
-        public void Initialize() { /* TODO */ }
-        public void Reset() { /* TODO */ }
-        public void Tick() { /* TODO */ }
+        public void Initialize() { /* TODO: Initialize graphics hardware */ }
+        public void Reset() { /* TODO: Reset graphics state */ }
+        public void Tick() { /* TODO: Process one graphics cycle */ }
     }
 
     public class StorageDevice : IDevice
     {
-        public void Initialize() { /* TODO */ }
-        public void Reset() { /* TODO */ }
-        public void Tick() { /* TODO */ }
+        public void Initialize() { /* TODO: Initialize storage */ }
+        public void Reset() { /* TODO: Reset storage */ }
+        public void Tick() { /* TODO: Process one storage operation */ }
     }
 
-    // Loader for OS images and applications
-    public class OsImageLoader
+    public class NetworkDevice : IDevice
     {
-        public static void LoadImage(string path)
-        {
-            // TODO: Load and parse OS image or application binary
-        }
+        public void Initialize() { /* TODO: Initialize network interface */ }
+        public void Reset() { /* TODO: Reset network */ }
+        public void Tick() { /* TODO: Process network packets */ }
+    }
+
+    public class AudioDevice : IDevice
+    {
+        public void Initialize() { /* TODO: Initialize audio hardware */ }
+        public void Reset() { /* TODO: Reset audio */ }
+        public void Tick() { /* TODO: Process audio samples */ }
+    }
+
+    public class InputDevice : IDevice
+    {
+        public void Initialize() { /* TODO: Initialize input devices */ }
+        public void Reset() { /* TODO: Reset input */ }
+        public void Tick() { /* TODO: Poll for input */ }
     }
 
     // CPU model interface and stubs
