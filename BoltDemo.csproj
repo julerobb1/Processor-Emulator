@@ -10,9 +10,8 @@
 
   <ItemGroup>
     <Compile Include="Emulation\BoltBootloader.cs" />
-    <Compile Include="BoltEmulatorBridge.cs" />
+    <Compile Include="Emulation\SimpleBoltBridge.cs" />
     <Compile Include="BoltDemo.cs" />
-    <Compile Include="Emulation\HomebrewEmulator.cs" />
   </ItemGroup>
 
 </Project>
