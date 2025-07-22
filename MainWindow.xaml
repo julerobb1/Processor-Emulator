@@ -95,6 +95,58 @@
                     </StackPanel>
                 </TabItem>
                 
+                <!-- BOLT Bootloader Tab -->
+                <TabItem Header="BOLT Bootloader">
+                    <StackPanel Margin="10">
+                        <TextBlock FontWeight="Bold" Text="BOLT Bootloader Simulation" FontSize="14" Margin="0,0,0,10"/>
+                        
+                        <!-- BOLT Status -->
+                        <GroupBox Header="BOLT Status" Margin="0,0,0,10">
+                            <TextBlock x:Name="BoltStatusText" Text="BOLT: Not initialized" 
+                                       FontFamily="Consolas" Margin="5" Foreground="Red"/>
+                        </GroupBox>
+                        
+                        <!-- BOLT Actions -->
+                        <GroupBox Header="BOLT Actions" Margin="0,0,0,10">
+                            <StackPanel Margin="5">
+                                <Button x:Name="InitBoltButton" Content="Initialize BOLT" Width="150" 
+                                        Height="30" Margin="0,5" Click="InitBoltButton_Click"
+                                        ToolTip="Initialize BCM7449 SoC and BOLT bootloader"/>
+                                <Button x:Name="BoltCliButton" Content="BOLT CLI" Width="150" 
+                                        Height="30" Margin="0,5" Click="BoltCliButton_Click"
+                                        ToolTip="Open BOLT command line interface"/>
+                                <Button x:Name="LoadFirmwareButton" Content="Load Firmware via BOLT" Width="150" 
+                                        Height="30" Margin="0,5" Click="LoadFirmwareButton_Click"
+                                        ToolTip="Load and boot firmware through BOLT"/>
+                            </StackPanel>
+                        </GroupBox>
+                        
+                        <!-- Firmware Path for BOLT -->
+                        <GroupBox Header="Firmware Selection" Margin="0,0,0,10">
+                            <DockPanel Margin="5">
+                                <TextBox x:Name="BoltFirmwarePathTextBox" Width="400"/>
+                                <Button x:Name="BoltBrowseFirmwareButton" Content="Browse..." Width="75" 
+                                        Margin="5,0,0,0" Click="BoltBrowseFirmwareButton_Click"/>
+                            </DockPanel>
+                        </GroupBox>
+                        
+                        <!-- Quick Boot Options -->
+                        <GroupBox Header="Quick Boot Options" Margin="0,0,0,10">
+                            <StackPanel Orientation="Horizontal" Margin="5">
+                                <Button x:Name="MemTestButton" Content="Memory Test" Width="100" 
+                                        Height="25" Margin="0,0,10,0" Click="MemTestButton_Click"
+                                        ToolTip="Run BOLT memory test"/>
+                                <Button x:Name="ShowDtbButton" Content="Show DTB" Width="100" 
+                                        Height="25" Margin="0,0,10,0" Click="ShowDtbButton_Click"
+                                        ToolTip="Display device tree blob"/>
+                                <Button x:Name="DumpMemoryButton" Content="Dump Memory" Width="100" 
+                                        Height="25" Margin="0,0,10,0" Click="DumpMemoryButton_Click"
+                                        ToolTip="Dump memory contents"/>
+                            </StackPanel>
+                        </GroupBox>
+                    </StackPanel>
+                </TabItem>
+                
                 <!-- Real-Time Emulation Log Tab -->
                 <TabItem Header="Emulation Log">
                     <Grid>
