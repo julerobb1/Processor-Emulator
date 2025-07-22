@@ -362,17 +362,195 @@ namespace BoltDemo
 
         private static async Task SimulateEmulation(uint entryPoint)
         {
-            Console.WriteLine("Starting ARM emulation...");
+            Console.WriteLine("🚀 Starting detailed ARM emulation simulation...");
+            Console.WriteLine($"📍 Entry point: 0x{entryPoint:X8}");
+            Console.WriteLine();
             
-            for (int i = 0; i < 10; i++)
+            // Simulate register state
+            uint[] registers = new uint[16];
+            registers[13] = 0x07F00000; // Stack pointer
+            registers[14] = 0x00000000; // Link register
+            registers[15] = entryPoint;  // Program counter
+            
+            // Simulate the first 10 instructions with decoding
+            var instructions = new uint[]
+            {
+                0xE3A01001, // mov r1, #1
+                0xE3A02002, // mov r2, #2  
+                0xE0813000, // add r3, r1, r0
+                0xE3A04004, // mov r4, #4
+                0xE3415000, // movt r5, #0x1044 (simulated)
+                0xE3855040, // orr r5, r5, #0x40
+                0xE3A06001, // mov r6, #1
+                0xE5856000, // str r6, [r5]
+                0xE3407002, // movt r7, #0x2000 (simulated)
+                0xEAFFFFFE  // b . (halt)
+            };
+            
+            Console.WriteLine("🔍 DETAILED INSTRUCTION TRACE:");
+            Console.WriteLine("==================================================");
+            
+            for (int i = 0; i < Math.Min(10, instructions.Length); i++)
             {
                 uint pc = entryPoint + (uint)(i * 4);
-                Console.WriteLine($"Executing instruction {i + 1}/10 at PC=0x{pc:X8}");
-                await Task.Delay(300); // Simulate execution time
+                uint instruction = instructions[i];
+                
+                Console.WriteLine($"[{i + 1:D2}] PC=0x{pc:X8}: 0x{instruction:X8}");
+                
+                // Decode the instruction
+                string decoded = DecodeInstruction(instruction);
+                Console.WriteLine($"     Decoded: {decoded}");
+                
+                // Show register state
+                Console.WriteLine($"     Registers: R0=0x{registers[0]:X8} R1=0x{registers[1]:X8} R2=0x{registers[2]:X8} R3=0x{registers[3]:X8}");
+                Console.WriteLine($"                SP=0x{registers[13]:X8} LR=0x{registers[14]:X8}");
+                
+                // Simulate execution
+                SimulateInstructionExecution(instruction, registers);
+                
+                // Check for special conditions
+                if (IsDisplayControllerAccess(instruction, registers))
+                {
+                    Console.WriteLine("     🎯 DISPLAY CONTROLLER ACCESS DETECTED!");
+                }
+                
+                if (IsFramebufferWrite(instruction, registers))
+                {
+                    Console.WriteLine("     🖥️ FRAMEBUFFER WRITE DETECTED!");
+                }
+                
+                Console.WriteLine();
+                await Task.Delay(500); // Simulate execution time
+                
+                // Break on halt instruction
+                if (instruction == 0xEAFFFFFE)
+                {
+                    Console.WriteLine("     🔴 HALT INSTRUCTION - Emulation complete");
+                    break;
+                }
             }
             
-            Console.WriteLine("ARM emulation completed - reached halt instruction");
-            Console.WriteLine("🎉 BOLT -> Emulator handoff successful!");
+            Console.WriteLine("==================================================");
+            Console.WriteLine("🎉 ARM emulation simulation completed successfully!");
+            Console.WriteLine($"✅ Instructions executed: {Math.Min(10, instructions.Length)}");
+            Console.WriteLine($"✅ Final PC: 0x{entryPoint + (uint)(Math.Min(10, instructions.Length) * 4):X8}");
+        }
+        
+        private static string DecodeInstruction(uint instruction)
+        {
+            uint condition = (instruction >> 28) & 0xF;
+            uint instrType = (instruction >> 25) & 0x7;
+            
+            string condStr = condition == 0xE ? "" : $"(cond:{condition:X})";
+            
+            switch (instrType)
+            {
+                case 0x0:
+                case 0x1: // Data processing
+                    uint opcode = (instruction >> 21) & 0xF;
+                    uint rd = (instruction >> 12) & 0xF;
+                    uint rn = (instruction >> 16) & 0xF;
+                    uint immediate = (instruction >> 25) & 0x1;
+                    
+                    string operation = GetOperation(opcode);
+                    if (immediate == 1)
+                    {
+                        uint imm = instruction & 0xFF;
+                        return $"{operation}{condStr} r{rd}, r{rn}, #{imm}";
+                    }
+                    else
+                    {
+                        uint rm = instruction & 0xF;
+                        return $"{operation}{condStr} r{rd}, r{rn}, r{rm}";
+                    }
+                    
+                case 0x2:
+                case 0x3: // Load/Store
+                    uint loadStore = (instruction >> 20) & 0x1;
+                    uint baseReg = (instruction >> 16) & 0xF;
+                    uint destReg = (instruction >> 12) & 0xF;
+                    string op = loadStore == 1 ? "LDR" : "STR";
+                    return $"{op}{condStr} r{destReg}, [r{baseReg}]";
+                    
+                case 0x5: // Branch
+                    if (instruction == 0xEAFFFFFE)
+                        return $"B{condStr} . (infinite loop/halt)";
+                    return $"B{condStr} <offset>";
+                    
+                default:
+                    return $"UNKNOWN{condStr}";
+            }
+        }
+        
+        private static string GetOperation(uint opcode)
+        {
+            return opcode switch
+            {
+                0x0 => "AND",
+                0x4 => "ADD",
+                0xD => "MOV",
+                0xC => "ORR",
+                _ => $"OP{opcode:X}"
+            };
+        }
+        
+        private static void SimulateInstructionExecution(uint instruction, uint[] registers)
+        {
+            uint instrType = (instruction >> 25) & 0x7;
+            
+            if (instrType <= 1) // Data processing
+            {
+                uint opcode = (instruction >> 21) & 0xF;
+                uint rd = (instruction >> 12) & 0xF;
+                uint rn = (instruction >> 16) & 0xF;
+                uint immediate = (instruction >> 25) & 0x1;
+                
+                if (opcode == 0xD && immediate == 1 && rd < 16) // MOV immediate
+                {
+                    uint imm = instruction & 0xFF;
+                    registers[rd] = imm;
+                }
+                else if (opcode == 0x4 && rd < 16 && rn < 16) // ADD
+                {
+                    uint rm = instruction & 0xF;
+                    if (rm < 16)
+                        registers[rd] = registers[rn] + registers[rm];
+                }
+            }
+        }
+        
+        private static bool IsDisplayControllerAccess(uint instruction, uint[] registers)
+        {
+            uint instrType = (instruction >> 25) & 0x7;
+            if (instrType == 2 || instrType == 3) // Load/Store
+            {
+                uint baseReg = (instruction >> 16) & 0xF;
+                if (baseReg < 16)
+                {
+                    uint address = registers[baseReg];
+                    return address >= 0x10440000 && address < 0x10441000;
+                }
+            }
+            return false;
+        }
+        
+        private static bool IsFramebufferWrite(uint instruction, uint[] registers)
+        {
+            uint instrType = (instruction >> 25) & 0x7;
+            if (instrType == 2 || instrType == 3) // Load/Store
+            {
+                uint loadStore = (instruction >> 20) & 0x1;
+                if (loadStore == 0) // Store
+                {
+                    uint baseReg = (instruction >> 16) & 0xF;
+                    if (baseReg < 16)
+                    {
+                        uint address = registers[baseReg];
+                        return address >= 0x20000000 && address < 0x25000000;
+                    }
+                }
+            }
+            return false;
         }
     }
 }
