@@ -1,11 +1,585 @@
 {
   "version": 3,
   "targets": {
-    "net6.0": {}
+    "net6.0-windows7.0": {
+      "DiscUtils.Core/0.16.13": {
+        "type": "package",
+        "dependencies": {
+          "DiscUtils.Streams": "0.16.13",
+          "System.Security.AccessControl": "5.0.0"
+        },
+        "compile": {
+          "lib/net5.0/DiscUtils.Core.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net5.0/DiscUtils.Core.dll": {
+            "related": ".xml"
+          }
+        }
+      },
+      "DiscUtils.Ext/0.16.13": {
+        "type": "package",
+        "dependencies": {
+          "DiscUtils.Core": "0.16.13"
+        },
+        "compile": {
+          "lib/net5.0/DiscUtils.Ext.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net5.0/DiscUtils.Ext.dll": {
+            "related": ".xml"
+          }
+        }
+      },
+      "DiscUtils.Fat/0.16.13": {
+        "type": "package",
+        "dependencies": {
+          "DiscUtils.Core": "0.16.13"
+        },
+        "compile": {
+          "lib/net5.0/DiscUtils.Fat.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net5.0/DiscUtils.Fat.dll": {
+            "related": ".xml"
+          }
+        }
+      },
+      "DiscUtils.Iso9660/0.16.13": {
+        "type": "package",
+        "dependencies": {
+          "DiscUtils.Core": "0.16.13"
+        },
+        "compile": {
+          "lib/net5.0/DiscUtils.Iso9660.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net5.0/DiscUtils.Iso9660.dll": {
+            "related": ".xml"
+          }
+        }
+      },
+      "DiscUtils.SquashFs/0.16.13": {
+        "type": "package",
+        "dependencies": {
+          "DiscUtils.Core": "0.16.13"
+        },
+        "compile": {
+          "lib/net5.0/DiscUtils.SquashFs.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net5.0/DiscUtils.SquashFs.dll": {
+            "related": ".xml"
+          }
+        }
+      },
+      "DiscUtils.Streams/0.16.13": {
+        "type": "package",
+        "compile": {
+          "lib/net5.0/DiscUtils.Streams.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net5.0/DiscUtils.Streams.dll": {
+            "related": ".xml"
+          }
+        }
+      },
+      "FSharp.Core/8.0.400": {
+        "type": "package",
+        "compile": {
+          "lib/netstandard2.1/FSharp.Core.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/netstandard2.1/FSharp.Core.dll": {
+            "related": ".xml"
+          }
+        },
+        "resource": {
+          "lib/netstandard2.1/cs/FSharp.Core.resources.dll": {
+            "locale": "cs"
+          },
+          "lib/netstandard2.1/de/FSharp.Core.resources.dll": {
+            "locale": "de"
+          },
+          "lib/netstandard2.1/es/FSharp.Core.resources.dll": {
+            "locale": "es"
+          },
+          "lib/netstandard2.1/fr/FSharp.Core.resources.dll": {
+            "locale": "fr"
+          },
+          "lib/netstandard2.1/it/FSharp.Core.resources.dll": {
+            "locale": "it"
+          },
+          "lib/netstandard2.1/ja/FSharp.Core.resources.dll": {
+            "locale": "ja"
+          },
+          "lib/netstandard2.1/ko/FSharp.Core.resources.dll": {
+            "locale": "ko"
+          },
+          "lib/netstandard2.1/pl/FSharp.Core.resources.dll": {
+            "locale": "pl"
+          },
+          "lib/netstandard2.1/pt-BR/FSharp.Core.resources.dll": {
+            "locale": "pt-BR"
+          },
+          "lib/netstandard2.1/ru/FSharp.Core.resources.dll": {
+            "locale": "ru"
+          },
+          "lib/netstandard2.1/tr/FSharp.Core.resources.dll": {
+            "locale": "tr"
+          },
+          "lib/netstandard2.1/zh-Hans/FSharp.Core.resources.dll": {
+            "locale": "zh-Hans"
+          },
+          "lib/netstandard2.1/zh-Hant/FSharp.Core.resources.dll": {
+            "locale": "zh-Hant"
+          }
+        }
+      },
+      "Microsoft.NETCore.Platforms/5.0.0": {
+        "type": "package",
+        "compile": {
+          "lib/netstandard1.0/_._": {}
+        },
+        "runtime": {
+          "lib/netstandard1.0/_._": {}
+        }
+      },
+      "SharpCompress/0.30.0": {
+        "type": "package",
+        "compile": {
+          "lib/net5.0/SharpCompress.dll": {}
+        },
+        "runtime": {
+          "lib/net5.0/SharpCompress.dll": {}
+        }
+      },
+      "System.Security.AccessControl/5.0.0": {
+        "type": "package",
+        "dependencies": {
+          "Microsoft.NETCore.Platforms": "5.0.0",
+          "System.Security.Principal.Windows": "5.0.0"
+        },
+        "compile": {
+          "ref/netstandard2.0/System.Security.AccessControl.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/netstandard2.0/System.Security.AccessControl.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtimeTargets": {
+          "runtimes/win/lib/netcoreapp2.0/System.Security.AccessControl.dll": {
+            "assetType": "runtime",
+            "rid": "win"
+          }
+        }
+      },
+      "System.Security.Principal.Windows/5.0.0": {
+        "type": "package",
+        "compile": {
+          "ref/netcoreapp3.0/System.Security.Principal.Windows.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/netstandard2.0/System.Security.Principal.Windows.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtimeTargets": {
+          "runtimes/unix/lib/netcoreapp2.1/System.Security.Principal.Windows.dll": {
+            "assetType": "runtime",
+            "rid": "unix"
+          },
+          "runtimes/win/lib/netcoreapp2.1/System.Security.Principal.Windows.dll": {
+            "assetType": "runtime",
+            "rid": "win"
+          }
+        }
+      },
+      "UnicornEngine.Unicorn/2.1.0": {
+        "type": "package",
+        "dependencies": {
+          "FSharp.Core": "8.0.400"
+        },
+        "compile": {
+          "lib/net6.0/UnicornEngine.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net6.0/UnicornEngine.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtimeTargets": {
+          "runtimes/linux-arm64/native/libunicorn.so": {
+            "assetType": "native",
+            "rid": "linux-arm64"
+          },
+          "runtimes/linux-ppc64le/native/libunicorn.so": {
+            "assetType": "native",
+            "rid": "linux-ppc64le"
+          },
+          "runtimes/linux-x64/native/libunicorn.so": {
+            "assetType": "native",
+            "rid": "linux-x64"
+          },
+          "runtimes/osx-x64/native/libunicorn.dylib": {
+            "assetType": "native",
+            "rid": "osx-x64"
+          },
+          "runtimes/win-x64/native/unicorn.dll": {
+            "assetType": "native",
+            "rid": "win-x64"
+          },
+          "runtimes/win-x86/native/unicorn.dll": {
+            "assetType": "native",
+            "rid": "win-x86"
+          }
+        }
+      }
+    }
   },
-  "libraries": {},
+  "libraries": {
+    "DiscUtils.Core/0.16.13": {
+      "sha512": "TU/Ns5RMa3060K7AsSDqG94/H7eaWaz1XoYuCUur40Mg+t0/ubtKqxCffkoiB1e/cFMGvHL0evFoY6uDL9Ocmw==",
+      "type": "package",
+      "path": "discutils.core/0.16.13",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "discutils.core.0.16.13.nupkg.sha512",
+        "discutils.core.nuspec",
+        "lib/net40/DiscUtils.Core.dll",
+        "lib/net40/DiscUtils.Core.xml",
+        "lib/net45/DiscUtils.Core.dll",
+        "lib/net45/DiscUtils.Core.xml",
+        "lib/net5.0/DiscUtils.Core.dll",
+        "lib/net5.0/DiscUtils.Core.xml",
+        "lib/netstandard2.0/DiscUtils.Core.dll",
+        "lib/netstandard2.0/DiscUtils.Core.xml"
+      ]
+    },
+    "DiscUtils.Ext/0.16.13": {
+      "sha512": "eRomHwL21AAtHY9rA1beaN7+dVj9ZKwvGlEk2m0syxok4obLESVJyz5OYwbxxuCNyKmdSMpLOqKIV5ZNxFK7yQ==",
+      "type": "package",
+      "path": "discutils.ext/0.16.13",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "discutils.ext.0.16.13.nupkg.sha512",
+        "discutils.ext.nuspec",
+        "lib/net40/DiscUtils.Ext.dll",
+        "lib/net40/DiscUtils.Ext.xml",
+        "lib/net45/DiscUtils.Ext.dll",
+        "lib/net45/DiscUtils.Ext.xml",
+        "lib/net5.0/DiscUtils.Ext.dll",
+        "lib/net5.0/DiscUtils.Ext.xml",
+        "lib/netstandard2.0/DiscUtils.Ext.dll",
+        "lib/netstandard2.0/DiscUtils.Ext.xml"
+      ]
+    },
+    "DiscUtils.Fat/0.16.13": {
+      "sha512": "Ch29amFF0dMBwHuq4Tuu1ycXzRpNY+8K8BMvGyMjJyrYQaNh0y99MNYEDQJK7lG9f8ih+PEWljLyp5AjR/SDlw==",
+      "type": "package",
+      "path": "discutils.fat/0.16.13",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "discutils.fat.0.16.13.nupkg.sha512",
+        "discutils.fat.nuspec",
+        "lib/net40/DiscUtils.Fat.dll",
+        "lib/net40/DiscUtils.Fat.xml",
+        "lib/net45/DiscUtils.Fat.dll",
+        "lib/net45/DiscUtils.Fat.xml",
+        "lib/net5.0/DiscUtils.Fat.dll",
+        "lib/net5.0/DiscUtils.Fat.xml",
+        "lib/netstandard2.0/DiscUtils.Fat.dll",
+        "lib/netstandard2.0/DiscUtils.Fat.xml"
+      ]
+    },
+    "DiscUtils.Iso9660/0.16.13": {
+      "sha512": "hT0DbN+sIqg5Bu3/sCQUuKLwIrceF9BZvn7AeRe+f2iY0p4mgN9xEmXpFWQshnBBxN9r75364agBHDeb5owiUA==",
+      "type": "package",
+      "path": "discutils.iso9660/0.16.13",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "discutils.iso9660.0.16.13.nupkg.sha512",
+        "discutils.iso9660.nuspec",
+        "lib/net40/DiscUtils.Iso9660.dll",
+        "lib/net40/DiscUtils.Iso9660.xml",
+        "lib/net45/DiscUtils.Iso9660.dll",
+        "lib/net45/DiscUtils.Iso9660.xml",
+        "lib/net5.0/DiscUtils.Iso9660.dll",
+        "lib/net5.0/DiscUtils.Iso9660.xml",
+        "lib/netstandard2.0/DiscUtils.Iso9660.dll",
+        "lib/netstandard2.0/DiscUtils.Iso9660.xml"
+      ]
+    },
+    "DiscUtils.SquashFs/0.16.13": {
+      "sha512": "1ce0l4RSVlzY/YvVkLy9bF3A2Pil2B+qxXG1gjeWINCsgPgNAMRxnzv1pUR5pLZws4+u3cbEY3v9ubSf9jpopA==",
+      "type": "package",
+      "path": "discutils.squashfs/0.16.13",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "discutils.squashfs.0.16.13.nupkg.sha512",
+        "discutils.squashfs.nuspec",
+        "lib/net40/DiscUtils.SquashFs.dll",
+        "lib/net40/DiscUtils.SquashFs.xml",
+        "lib/net45/DiscUtils.SquashFs.dll",
+        "lib/net45/DiscUtils.SquashFs.xml",
+        "lib/net5.0/DiscUtils.SquashFs.dll",
+        "lib/net5.0/DiscUtils.SquashFs.xml",
+        "lib/netstandard2.0/DiscUtils.SquashFs.dll",
+        "lib/netstandard2.0/DiscUtils.SquashFs.xml"
+      ]
+    },
+    "DiscUtils.Streams/0.16.13": {
+      "sha512": "BSrywAX2mmvt6j00u6VQYQLtxc6jDniK2aP4p0q20bbTGXImtW4N26eUZYKfkW9aj6XLaqISFgtWfssKURixeA==",
+      "type": "package",
+      "path": "discutils.streams/0.16.13",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "discutils.streams.0.16.13.nupkg.sha512",
+        "discutils.streams.nuspec",
+        "lib/net40/DiscUtils.Streams.dll",
+        "lib/net40/DiscUtils.Streams.xml",
+        "lib/net45/DiscUtils.Streams.dll",
+        "lib/net45/DiscUtils.Streams.xml",
+        "lib/net5.0/DiscUtils.Streams.dll",
+        "lib/net5.0/DiscUtils.Streams.xml",
+        "lib/netstandard2.0/DiscUtils.Streams.dll",
+        "lib/netstandard2.0/DiscUtils.Streams.xml"
+      ]
+    },
+    "FSharp.Core/8.0.400": {
+      "sha512": "kHMdDDmlZl98tujgHCmL8/HNH9VKbxsRMC9s7wbwr4noR40SSa5D4d00yF8cMK52s8jabVuiLLcrUw9r+PkKDQ==",
+      "type": "package",
+      "path": "fsharp.core/8.0.400",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "Icon.png",
+        "fsharp.core.8.0.400.nupkg.sha512",
+        "fsharp.core.nuspec",
+        "lib/netstandard2.0/FSharp.Core.dll",
+        "lib/netstandard2.0/FSharp.Core.xml",
+        "lib/netstandard2.0/cs/FSharp.Core.resources.dll",
+        "lib/netstandard2.0/de/FSharp.Core.resources.dll",
+        "lib/netstandard2.0/es/FSharp.Core.resources.dll",
+        "lib/netstandard2.0/fr/FSharp.Core.resources.dll",
+        "lib/netstandard2.0/it/FSharp.Core.resources.dll",
+        "lib/netstandard2.0/ja/FSharp.Core.resources.dll",
+        "lib/netstandard2.0/ko/FSharp.Core.resources.dll",
+        "lib/netstandard2.0/pl/FSharp.Core.resources.dll",
+        "lib/netstandard2.0/pt-BR/FSharp.Core.resources.dll",
+        "lib/netstandard2.0/ru/FSharp.Core.resources.dll",
+        "lib/netstandard2.0/tr/FSharp.Core.resources.dll",
+        "lib/netstandard2.0/zh-Hans/FSharp.Core.resources.dll",
+        "lib/netstandard2.0/zh-Hant/FSharp.Core.resources.dll",
+        "lib/netstandard2.1/FSharp.Core.dll",
+        "lib/netstandard2.1/FSharp.Core.xml",
+        "lib/netstandard2.1/cs/FSharp.Core.resources.dll",
+        "lib/netstandard2.1/de/FSharp.Core.resources.dll",
+        "lib/netstandard2.1/es/FSharp.Core.resources.dll",
+        "lib/netstandard2.1/fr/FSharp.Core.resources.dll",
+        "lib/netstandard2.1/it/FSharp.Core.resources.dll",
+        "lib/netstandard2.1/ja/FSharp.Core.resources.dll",
+        "lib/netstandard2.1/ko/FSharp.Core.resources.dll",
+        "lib/netstandard2.1/pl/FSharp.Core.resources.dll",
+        "lib/netstandard2.1/pt-BR/FSharp.Core.resources.dll",
+        "lib/netstandard2.1/ru/FSharp.Core.resources.dll",
+        "lib/netstandard2.1/tr/FSharp.Core.resources.dll",
+        "lib/netstandard2.1/zh-Hans/FSharp.Core.resources.dll",
+        "lib/netstandard2.1/zh-Hant/FSharp.Core.resources.dll"
+      ]
+    },
+    "Microsoft.NETCore.Platforms/5.0.0": {
+      "sha512": "VyPlqzH2wavqquTcYpkIIAQ6WdenuKoFN0BdYBbCWsclXacSOHNQn66Gt4z5NBqEYW0FAPm5rlvki9ZiCij5xQ==",
+      "type": "package",
+      "path": "microsoft.netcore.platforms/5.0.0",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "Icon.png",
+        "LICENSE.TXT",
+        "THIRD-PARTY-NOTICES.TXT",
+        "lib/netstandard1.0/_._",
+        "microsoft.netcore.platforms.5.0.0.nupkg.sha512",
+        "microsoft.netcore.platforms.nuspec",
+        "runtime.json",
+        "useSharedDesignerContext.txt",
+        "version.txt"
+      ]
+    },
+    "SharpCompress/0.30.0": {
+      "sha512": "VIFLOPm+hDSkTd4s1Ftb6BgSMveFqzwiiSvgcWq11I+7tu2qdtkn5dtyK1vr5CPnH8bNYmc4vjr6m7kkTAt9GA==",
+      "type": "package",
+      "path": "sharpcompress/0.30.0",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "lib/net461/SharpCompress.dll",
+        "lib/net5.0/SharpCompress.dll",
+        "lib/netcoreapp3.1/SharpCompress.dll",
+        "lib/netstandard2.0/SharpCompress.dll",
+        "lib/netstandard2.1/SharpCompress.dll",
+        "sharpcompress.0.30.0.nupkg.sha512",
+        "sharpcompress.nuspec"
+      ]
+    },
+    "System.Security.AccessControl/5.0.0": {
+      "sha512": "dagJ1mHZO3Ani8GH0PHpPEe/oYO+rVdbQjvjJkBRNQkX4t0r1iaeGn8+/ybkSLEan3/slM0t59SVdHzuHf2jmw==",
+      "type": "package",
+      "path": "system.security.accesscontrol/5.0.0",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "Icon.png",
+        "LICENSE.TXT",
+        "THIRD-PARTY-NOTICES.TXT",
+        "lib/net46/System.Security.AccessControl.dll",
+        "lib/net461/System.Security.AccessControl.dll",
+        "lib/net461/System.Security.AccessControl.xml",
+        "lib/netstandard1.3/System.Security.AccessControl.dll",
+        "lib/netstandard2.0/System.Security.AccessControl.dll",
+        "lib/netstandard2.0/System.Security.AccessControl.xml",
+        "lib/uap10.0.16299/_._",
+        "ref/net46/System.Security.AccessControl.dll",
+        "ref/net461/System.Security.AccessControl.dll",
+        "ref/net461/System.Security.AccessControl.xml",
+        "ref/netstandard1.3/System.Security.AccessControl.dll",
+        "ref/netstandard1.3/System.Security.AccessControl.xml",
+        "ref/netstandard1.3/de/System.Security.AccessControl.xml",
+        "ref/netstandard1.3/es/System.Security.AccessControl.xml",
+        "ref/netstandard1.3/fr/System.Security.AccessControl.xml",
+        "ref/netstandard1.3/it/System.Security.AccessControl.xml",
+        "ref/netstandard1.3/ja/System.Security.AccessControl.xml",
+        "ref/netstandard1.3/ko/System.Security.AccessControl.xml",
+        "ref/netstandard1.3/ru/System.Security.AccessControl.xml",
+        "ref/netstandard1.3/zh-hans/System.Security.AccessControl.xml",
+        "ref/netstandard1.3/zh-hant/System.Security.AccessControl.xml",
+        "ref/netstandard2.0/System.Security.AccessControl.dll",
+        "ref/netstandard2.0/System.Security.AccessControl.xml",
+        "ref/uap10.0.16299/_._",
+        "runtimes/win/lib/net46/System.Security.AccessControl.dll",
+        "runtimes/win/lib/net461/System.Security.AccessControl.dll",
+        "runtimes/win/lib/net461/System.Security.AccessControl.xml",
+        "runtimes/win/lib/netcoreapp2.0/System.Security.AccessControl.dll",
+        "runtimes/win/lib/netcoreapp2.0/System.Security.AccessControl.xml",
+        "runtimes/win/lib/netstandard1.3/System.Security.AccessControl.dll",
+        "runtimes/win/lib/uap10.0.16299/_._",
+        "system.security.accesscontrol.5.0.0.nupkg.sha512",
+        "system.security.accesscontrol.nuspec",
+        "useSharedDesignerContext.txt",
+        "version.txt"
+      ]
+    },
+    "System.Security.Principal.Windows/5.0.0": {
+      "sha512": "t0MGLukB5WAVU9bO3MGzvlGnyJPgUlcwerXn1kzBRjwLKixT96XV0Uza41W49gVd8zEMFu9vQEFlv0IOrytICA==",
+      "type": "package",
+      "path": "system.security.principal.windows/5.0.0",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "Icon.png",
+        "LICENSE.TXT",
+        "THIRD-PARTY-NOTICES.TXT",
+        "lib/net46/System.Security.Principal.Windows.dll",
+        "lib/net461/System.Security.Principal.Windows.dll",
+        "lib/net461/System.Security.Principal.Windows.xml",
+        "lib/netstandard1.3/System.Security.Principal.Windows.dll",
+        "lib/netstandard2.0/System.Security.Principal.Windows.dll",
+        "lib/netstandard2.0/System.Security.Principal.Windows.xml",
+        "lib/uap10.0.16299/_._",
+        "ref/net46/System.Security.Principal.Windows.dll",
+        "ref/net461/System.Security.Principal.Windows.dll",
+        "ref/net461/System.Security.Principal.Windows.xml",
+        "ref/netcoreapp3.0/System.Security.Principal.Windows.dll",
+        "ref/netcoreapp3.0/System.Security.Principal.Windows.xml",
+        "ref/netstandard1.3/System.Security.Principal.Windows.dll",
+        "ref/netstandard1.3/System.Security.Principal.Windows.xml",
+        "ref/netstandard1.3/de/System.Security.Principal.Windows.xml",
+        "ref/netstandard1.3/es/System.Security.Principal.Windows.xml",
+        "ref/netstandard1.3/fr/System.Security.Principal.Windows.xml",
+        "ref/netstandard1.3/it/System.Security.Principal.Windows.xml",
+        "ref/netstandard1.3/ja/System.Security.Principal.Windows.xml",
+        "ref/netstandard1.3/ko/System.Security.Principal.Windows.xml",
+        "ref/netstandard1.3/ru/System.Security.Principal.Windows.xml",
+        "ref/netstandard1.3/zh-hans/System.Security.Principal.Windows.xml",
+        "ref/netstandard1.3/zh-hant/System.Security.Principal.Windows.xml",
+        "ref/netstandard2.0/System.Security.Principal.Windows.dll",
+        "ref/netstandard2.0/System.Security.Principal.Windows.xml",
+        "ref/uap10.0.16299/_._",
+        "runtimes/unix/lib/netcoreapp2.0/System.Security.Principal.Windows.dll",
+        "runtimes/unix/lib/netcoreapp2.0/System.Security.Principal.Windows.xml",
+        "runtimes/unix/lib/netcoreapp2.1/System.Security.Principal.Windows.dll",
+        "runtimes/unix/lib/netcoreapp2.1/System.Security.Principal.Windows.xml",
+        "runtimes/win/lib/net46/System.Security.Principal.Windows.dll",
+        "runtimes/win/lib/net461/System.Security.Principal.Windows.dll",
+        "runtimes/win/lib/net461/System.Security.Principal.Windows.xml",
+        "runtimes/win/lib/netcoreapp2.0/System.Security.Principal.Windows.dll",
+        "runtimes/win/lib/netcoreapp2.0/System.Security.Principal.Windows.xml",
+        "runtimes/win/lib/netcoreapp2.1/System.Security.Principal.Windows.dll",
+        "runtimes/win/lib/netcoreapp2.1/System.Security.Principal.Windows.xml",
+        "runtimes/win/lib/netstandard1.3/System.Security.Principal.Windows.dll",
+        "runtimes/win/lib/uap10.0.16299/_._",
+        "system.security.principal.windows.5.0.0.nupkg.sha512",
+        "system.security.principal.windows.nuspec",
+        "useSharedDesignerContext.txt",
+        "version.txt"
+      ]
+    },
+    "UnicornEngine.Unicorn/2.1.0": {
+      "sha512": "8fpyT7znmJSK9bK9KJdW6Ouq0GFZjQiJ9GAAWh52c26YBN92sDC/zvhVQCbYhV+/SjXQGyrUuNV5ZBL2Gy/ydA==",
+      "type": "package",
+      "path": "unicornengine.unicorn/2.1.0",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "lib/net6.0/UnicornEngine.dll",
+        "lib/net6.0/UnicornEngine.xml",
+        "runtimes/linux-arm64/native/libunicorn.so",
+        "runtimes/linux-ppc64le/native/libunicorn.so",
+        "runtimes/linux-x64/native/libunicorn.so",
+        "runtimes/osx-x64/native/libunicorn.dylib",
+        "runtimes/win-x64/native/unicorn.dll",
+        "runtimes/win-x86/native/unicorn.dll",
+        "unicornengine.unicorn.2.1.0.nupkg.sha512",
+        "unicornengine.unicorn.nuspec"
+      ]
+    }
+  },
   "projectFileDependencyGroups": {
-    "net6.0": []
+    "net6.0-windows7.0": [
+      "DiscUtils.Ext >= 0.16.13",
+      "DiscUtils.Fat >= 0.16.13",
+      "DiscUtils.Iso9660 >= 0.16.13",
+      "DiscUtils.SquashFs >= 0.16.13",
+      "SharpCompress >= 0.30.0",
+      "UnicornEngine.Unicorn >= 2.1.0"
+    ]
   },
   "packageFolders": {
     "C:\\Users\\juler\\.nuget\\packages\\": {}
@@ -13,9 +587,9 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\StandaloneBoltDemo.csproj",
-      "projectName": "StandaloneBoltDemo",
-      "projectPath": "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\StandaloneBoltDemo.csproj",
+      "projectUniqueName": "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\ProcessorEmulator.csproj",
+      "projectName": "ProcessorEmulator",
+      "projectPath": "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\ProcessorEmulator.csproj",
       "packagesPath": "C:\\Users\\juler\\.nuget\\packages\\",
       "outputPath": "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\obj\\",
       "projectStyle": "PackageReference",
@@ -23,14 +597,14 @@
         "C:\\Users\\juler\\AppData\\Roaming\\NuGet\\NuGet.Config"
       ],
       "originalTargetFrameworks": [
-        "net6.0"
+        "net6.0-windows"
       ],
       "sources": {
         "https://api.nuget.org/v3/index.json": {}
       },
       "frameworks": {
-        "net6.0": {
-          "targetAlias": "net6.0",
+        "net6.0-windows7.0": {
+          "targetAlias": "net6.0-windows",
           "projectReferences": {}
         }
       },
@@ -47,8 +621,34 @@
       "SdkAnalysisLevel": "9.0.300"
     },
     "frameworks": {
-      "net6.0": {
-        "targetAlias": "net6.0",
+      "net6.0-windows7.0": {
+        "targetAlias": "net6.0-windows",
+        "dependencies": {
+          "DiscUtils.Ext": {
+            "target": "Package",
+            "version": "[0.16.13, )"
+          },
+          "DiscUtils.Fat": {
+            "target": "Package",
+            "version": "[0.16.13, )"
+          },
+          "DiscUtils.Iso9660": {
+            "target": "Package",
+            "version": "[0.16.13, )"
+          },
+          "DiscUtils.SquashFs": {
+            "target": "Package",
+            "version": "[0.16.13, )"
+          },
+          "SharpCompress": {
+            "target": "Package",
+            "version": "[0.30.0, )"
+          },
+          "UnicornEngine.Unicorn": {
+            "target": "Package",
+            "version": "[2.1.0, )"
+          }
+        },
         "imports": [
           "net461",
           "net462",
@@ -81,6 +681,9 @@
         "frameworkReferences": {
           "Microsoft.NETCore.App": {
             "privateAssets": "all"
+          },
+          "Microsoft.WindowsDesktop.App": {
+            "privateAssets": "none"
           }
         },
         "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.300\\RuntimeIdentifierGraph.json"
