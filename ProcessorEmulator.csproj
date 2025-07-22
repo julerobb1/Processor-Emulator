@@ -6,7 +6,9 @@
     <Compile Include="Emulation\SparcEmulator.cs" />
     <Compile Include="Emulation\StubEmulators.cs" />
     <Compile Include="Emulation\HomebrewEmulator.cs" />
+    <Compile Include="Emulation\EmulatorWindow.xaml.cs" />
     <Compile Include="Emulation\SoC\*.cs" />
+    <Compile Include="Emulation\SyncEngine\*.cs" />
     <Page Include="App.xaml">
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
