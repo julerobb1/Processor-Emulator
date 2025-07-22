@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("ProcessorEmulator")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+a61061e9032cc53e260131d72f4a29c63a0d0126")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+a7e7a2b41e1436050f7d375e2551870f8e1536f8")]
 [assembly: System.Reflection.AssemblyProductAttribute("ProcessorEmulator")]
 [assembly: System.Reflection.AssemblyTitleAttribute("ProcessorEmulator")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
