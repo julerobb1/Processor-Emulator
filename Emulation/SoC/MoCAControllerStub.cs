@@ -70,8 +70,8 @@ namespace ProcessorEmulator.Emulation.SoC
                 case MOCA_NETWORK_STATUS_REG:
                     // Network topology and health
                     value = networkNodes; // Number of nodes
-                    value |= (networkConnected ? 0x00000100 : 0x00000000); // Network up
-                    value |= 0x00001000; // Good signal quality
+                    value |= (networkConnected ? 0x00000100u : 0x00000000u); // Network up
+                    value |= 0x00001000u; // Good signal quality
                     break;
                     
                 case MOCA_PHY_STATUS_REG:
@@ -96,13 +96,13 @@ namespace ProcessorEmulator.Emulation.SoC
                     
                 case MOCA_BANDWIDTH_REG:
                     // Available bandwidth (Mbps)
-                    value = networkConnected ? 900 : 0; // MoCA 2.0 max ~900 Mbps
+                    value = networkConnected ? 900u : 0u; // MoCA 2.0 max ~900 Mbps
                     break;
                     
                 case MOCA_POWER_REG:
                     // Power management and RF power levels
-                    value = mocaEnabled ? 0x00000080 : 0x00000000; // RF power on/off
-                    value |= 0x00001000; // Power management ready
+                    value = mocaEnabled ? 0x00000080u : 0x00000000u; // RF power on/off
+                    value |= 0x00001000u; // Power management ready
                     break;
                     
                 case MOCA_FREQUENCY_REG:
