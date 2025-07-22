@@ -8,10 +8,4 @@
     <StartupObject>ProcessorEmulator.Demo.BoltDemo</StartupObject>
   </PropertyGroup>
 
-  <ItemGroup>
-    <Compile Include="Emulation\BoltBootloader.cs" />
-    <Compile Include="Emulation\SimpleBoltBridge.cs" />
-    <Compile Include="BoltDemo.cs" />
-  </ItemGroup>
-
 </Project>
