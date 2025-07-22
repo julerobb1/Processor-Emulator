@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net6.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <StartupObject>ProcessorEmulator.Demo.BoltDemo</StartupObject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Emulation\BoltBootloader.cs" />
+    <Compile Include="BoltEmulatorBridge.cs" />
+    <Compile Include="BoltDemo.cs" />
+    <Compile Include="Emulation\HomebrewEmulator.cs" />
+  </ItemGroup>
+
+</Project>
