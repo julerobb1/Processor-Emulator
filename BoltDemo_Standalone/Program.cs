@@ -310,11 +310,11 @@ namespace BoltDemo
 
         private static void CreateDemoFirmware()
         {
-            // Create a simple ARM binary for demonstration
+            // Create a more realistic ARM firmware binary that will demonstrate the logging
             var firmware = new byte[]
             {
                 // ARM reset vector and simple boot code
-                0x00, 0x00, 0x00, 0xEA, // b start (branch to start)
+                0x18, 0x00, 0x00, 0xEA, // b start (branch to start - 0x60 bytes ahead)
                 0x00, 0x00, 0x00, 0x00, // undefined instruction vector
                 0x00, 0x00, 0x00, 0x00, // software interrupt vector  
                 0x00, 0x00, 0x00, 0x00, // prefetch abort vector
@@ -323,21 +323,41 @@ namespace BoltDemo
                 0x00, 0x00, 0x00, 0x00, // IRQ vector
                 0x00, 0x00, 0x00, 0x00, // FIQ vector
                 
-                // start: (at 0x20)
-                0x01, 0x10, 0xA0, 0xE3, // mov r1, #1     ; Set up registers
-                0x02, 0x20, 0xA0, 0xE3, // mov r2, #2
-                0x00, 0x30, 0x81, 0xE0, // add r3, r1, r0 ; Simple arithmetic
-                0xFE, 0xFF, 0xFF, 0xEA, // b . (infinite loop - halt)
+                // Padding to reach the branch target
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 
-                // Padding to make it look more realistic
-                0x00, 0x00, 0x00, 0x00,
-                0x00, 0x00, 0x00, 0x00,
-                0x00, 0x00, 0x00, 0x00,
-                0x00, 0x00, 0x00, 0x00,
+                // start: (at 0x60) - More realistic firmware initialization
+                0x01, 0x10, 0xA0, 0xE3, // mov r1, #1        ; Initialize register r1
+                0x02, 0x20, 0xA0, 0xE3, // mov r2, #2        ; Initialize register r2  
+                0x00, 0x30, 0x81, 0xE0, // add r3, r1, r0    ; Add r1 + r0 -> r3
+                0x04, 0x40, 0xA0, 0xE3, // mov r4, #4        ; Set up r4
+                
+                // Simulate display controller init (store to display memory)
+                0x00, 0x50, 0x41, 0xE3, // movt r5, #0x1044  ; Upper bits for display controller
+                0x40, 0x50, 0x85, 0xE3, // orr r5, r5, #0x40 ; r5 = 0x10440040 (display register)
+                0x01, 0x60, 0xA0, 0xE3, // mov r6, #1        ; Value to write
+                0x00, 0x60, 0x85, 0xE5, // str r6, [r5]      ; Store to display controller
+                
+                // Simulate framebuffer write
+                0x02, 0x70, 0x40, 0xE3, // movt r7, #0x2000  ; Upper bits for framebuffer
+                0xFF, 0x80, 0xA0, 0xE3, // mov r8, #0xFF     ; Pixel data
+                0x00, 0x80, 0x87, 0xE5, // str r8, [r7]      ; Write pixel to framebuffer
+                
+                0xFE, 0xFF, 0xFF, 0xEA, // b . (infinite loop - halt)
             };
 
             File.WriteAllBytes("demo_firmware.bin", firmware);
             Console.WriteLine($"Created demo firmware: demo_firmware.bin ({firmware.Length} bytes)");
+            Console.WriteLine("Firmware includes:");
+            Console.WriteLine("  - ARM reset vectors");
+            Console.WriteLine("  - Register initialization"); 
+            Console.WriteLine("  - Display controller access");
+            Console.WriteLine("  - Framebuffer write simulation");
         }
 
         private static async Task SimulateEmulation(uint entryPoint)
