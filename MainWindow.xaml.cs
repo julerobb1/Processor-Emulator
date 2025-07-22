@@ -1538,7 +1538,7 @@ namespace ProcessorEmulator
                 FirmwarePathTextBox.Text = dlg.FileName;
         }
 
-        private void BootFirmwareButton_Click(object sender, RoutedEventArgs e)
+        private async void StartEmulationButton_Click(object sender, RoutedEventArgs e)
         {
             string imagePath = FirmwarePathTextBox.Text;
             if (string.IsNullOrEmpty(imagePath) || !File.Exists(imagePath))
@@ -1546,11 +1546,11 @@ namespace ProcessorEmulator
                 MessageBox.Show("Please select a valid firmware image.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }
-            string arch;
+
             try
             {
                 var bytes = File.ReadAllBytes(imagePath);
-                arch = ArchitectureDetector.Detect(bytes);
+                string arch = ArchitectureDetector.Detect(bytes);
                 
                 // If architecture is unknown, prompt user to select one
                 if (arch == "Unknown")
@@ -1559,31 +1559,96 @@ namespace ProcessorEmulator
                         new List<string> { "MIPS32", "MIPS64", "ARM", "ARM64", "PowerPC", "x86", "x86-64", "RISC-V" });
                     if (string.IsNullOrEmpty(arch))
                     {
-                        StatusBarText("Boot cancelled - no architecture selected.");
+                        StatusBarText("Emulation cancelled - no architecture selected.");
                         return;
                     }
+                }
+
+                // Determine emulator type from radio buttons
+                string emulatorType = GetSelectedEmulatorType();
+                string platformType = GetSelectedPlatformType();
+                
+                StatusBarText($"Starting {emulatorType} emulation for {Path.GetFileName(imagePath)} ({arch}) on {platformType}...");
+                
+                // Route to appropriate emulator
+                switch (emulatorType)
+                {
+                    case "HomebrewEmulator":
+                        if (platformType == "RDK-V")
+                        {
+                            await HandleRdkVEmulation();
+                        }
+                        else
+                        {
+                            await HandleBootFirmwareHomebrewFirst();
+                        }
+                        break;
+                        
+                    case "QEMU":
+                        QemuManager.Launch(imagePath, arch);
+                        StatusBarText($"QEMU launched for {Path.GetFileName(imagePath)} ({arch}).");
+                        break;
+                        
+                    case "RetDec":
+                        HandleRetDecTranslation(imagePath, bytes, arch);
+                        break;
+                        
+                    default:
+                        MessageBox.Show("Please select an emulator type.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        break;
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Failed to detect architecture: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                return;
-            }
-            try
-            {
-                QemuManager.Launch(imagePath, arch);
-                StatusBarText($"QEMU launched for {Path.GetFileName(imagePath)} ({arch}).");
-            }
-            catch (Exception ex)
-            {
-                ShowTextWindow("QEMU Boot Error", new List<string> { ex.Message });
+                ShowTextWindow("Emulation Error", new List<string> { ex.Message });
             }
         }
-
-        private void StartEmulationButton_Click(object sender, RoutedEventArgs e)
+        
+        private string GetSelectedEmulatorType()
         {
-            // Reuse existing dropdown-based handler
-            StartEmulation_Click(sender, e);
+            // TODO: Implement radio button logic after XAML rebuild
+            // if (HomebrewEmulatorRadio?.IsChecked == true) return "HomebrewEmulator";
+            // if (QemuEmulatorRadio?.IsChecked == true) return "QEMU";
+            // if (RetDecTranslatorRadio?.IsChecked == true) return "RetDec";
+            return "HomebrewEmulator"; // Default for now
+        }
+        
+        private string GetSelectedPlatformType()
+        {
+            // TODO: Implement radio button logic after XAML rebuild
+            // if (RdkVPlatformRadio?.IsChecked == true) return "RDK-V";
+            return "Generic"; // Default for now
+        }
+        
+        private void HandleRetDecTranslation(string imagePath, byte[] bytes, string arch)
+        {
+            var result = MessageBox.Show($"Use RetDec to translate {arch} firmware to x86?\n\nThis will decompile and translate the binary for analysis.", 
+                                       "RetDec Translation", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            
+            if (result == MessageBoxResult.Yes)
+            {
+                try
+                {
+                    var translated = Tools.BinaryTranslator.Translate(arch, "x86", bytes);
+                    if (translated != null && translated.Length > 0)
+                    {
+                        string outputPath = Path.ChangeExtension(imagePath, ".translated.bin");
+                        File.WriteAllBytes(outputPath, translated);
+                        MessageBox.Show($"Translation completed!\nOutput saved to: {outputPath}", 
+                                      "RetDec Success", MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
+                    else
+                    {
+                        MessageBox.Show("RetDec translation failed - no output generated.", 
+                                      "RetDec Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"RetDec translation error: {ex.Message}", 
+                                  "RetDec Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
         }
 
         private void SummarizeDvrData_Click(object sender, RoutedEventArgs e)
