@@ -11,7 +11,7 @@ namespace ProcessorEmulator.Emulation.SoC
     public abstract class Bcm7449PeripheralStub
     {
         protected readonly string PeripheralName;
-        protected bool VerboseLogging { get; set; } = true;
+        public bool VerboseLogging { get; set; } = true;
         
         // BCM7449 known MMIO peripheral addresses (based on Broadcom documentation)
         protected static readonly Dictionary<uint, string> KnownMmioAddresses = new Dictionary<uint, string>
@@ -143,7 +143,7 @@ namespace ProcessorEmulator.Emulation.SoC
         /// <returns>True if address is handled by this peripheral</returns>
         public virtual bool HandlesAddress(uint address)
         {
-            return false;
+            return KnownMmioAddresses.ContainsKey(address);
         }
         
         /// <summary>
