@@ -1750,6 +1750,50 @@ namespace ProcessorEmulator
             await Task.CompletedTask;
         }
 
+        private async Task HandleQemuEmulation()
+        {
+            try
+            {
+                StatusBarText("Starting QEMU emulation...");
+                
+                var binary = File.ReadAllBytes(firmwarePath);
+                var arch = Tools.ArchitectureDetector.Detect(binary);
+                
+                StatusBarText($"Detected architecture: {arch}, launching QEMU...");
+                
+                // Use EmulatorLauncher to start QEMU
+                EmulatorLauncher.Launch(firmwarePath, arch);
+                
+                StatusBarText("QEMU emulation started successfully.");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"QEMU emulation error:\n\n{ex.Message}", "QEMU Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusBarText("QEMU emulation failed.");
+            }
+            
+            await Task.CompletedTask;
+        }
+
+        private async Task HandleRetDecEmulation()
+        {
+            try
+            {
+                StatusBarText("Starting RetDec binary translation...");
+                
+                MessageBox.Show("RetDec binary translator is not yet implemented.", "Not Implemented", MessageBoxButton.OK, MessageBoxImage.Information);
+                
+                StatusBarText("RetDec translation cancelled.");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"RetDec error:\n\n{ex.Message}", "RetDec Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusBarText("RetDec translation failed.");
+            }
+            
+            await Task.CompletedTask;
+        }
+
         // Helper methods for UI control access with fallbacks
         private string GetSelectedEmulatorType()
         {
