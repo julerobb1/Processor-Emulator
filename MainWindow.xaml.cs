@@ -875,38 +875,69 @@ namespace ProcessorEmulator
             StatusBarText("Analyzing firmware for platform detection...");
             var detectionResult = PlatformDetector.DetectPlatform(imagePath);
             
+            // 🗂 REGION AWARENESS - Analyze firmware regions for boot logic
+            StatusBarText("Analyzing firmware regions...");
+            var regionResult = FirmwareRegionAnalyzer.AnalyzeFirmware(imagePath);
+            
             if (detectionResult.Success && detectionResult.DetectedPlatform != null)
             {
                 var platform = detectionResult.DetectedPlatform;
                 StatusBarText($"Platform detected: {platform.Name} (confidence: {detectionResult.Confidence:P1})");
                 
                 // Show detection results and recommendations
-                var resultMessage = $"Platform Detection Results:\n\n";
-                resultMessage += $"🎯 Detected: {platform.Name}\n";
-                resultMessage += $"📊 Confidence: {detectionResult.Confidence:P1}\n";
-                resultMessage += $"🏗️ Architecture: {platform.Architecture}\n";
-                resultMessage += $"🔧 SoC Family: {platform.SocFamily}\n";
-                resultMessage += $"⚡ Recommended Emulator: {platform.EmulatorType}\n\n";
+                var resultMessage = $"🎯 Platform Detection & Region Analysis Results:\n\n";
+                resultMessage += $"Platform: {platform.Name}\n";
+                resultMessage += $"Confidence: {detectionResult.Confidence:P1}\n";
+                resultMessage += $"Architecture: {platform.Architecture}\n";
+                resultMessage += $"SoC Family: {platform.SocFamily}\n";
+                resultMessage += $"Recommended Emulator: {platform.EmulatorType}\n\n";
+                
+                // Add region analysis results
+                if (regionResult.Success && regionResult.DetectedRegions.Any())
+                {
+                    resultMessage += "�️ Detected Firmware Regions:\n";
+                    foreach (var region in regionResult.DetectedRegions.Take(4))
+                    {
+                        resultMessage += $"• {region.Name}: {region.Confidence:P1} confidence\n";
+                        resultMessage += $"  Address: 0x{region.LoadAddress:X8}, Size: ~{region.EstimatedSize / 1024}KB\n";
+                    }
+                    resultMessage += "\n";
+                }
                 
                 if (detectionResult.Recommendations.Any())
                 {
-                    resultMessage += "📋 Recommendations:\n";
-                    foreach (var rec in detectionResult.Recommendations)
+                    resultMessage += "� Platform Recommendations:\n";
+                    foreach (var rec in detectionResult.Recommendations.Take(3))
                         resultMessage += $"• {rec}\n";
+                    resultMessage += "\n";
                 }
                 
-                if (detectionResult.AllCandidates.Any())
+                // Add boot sequence recommendations
+                if (regionResult.Success && regionResult.BootSequence.Any())
                 {
-                    resultMessage += "\n🔍 Other Candidates:\n";
-                    foreach (var candidate in detectionResult.AllCandidates.Take(3))
-                        resultMessage += $"• {candidate.Name}: {candidate.Confidence:P1}\n";
+                    resultMessage += "🚀 Recommended Boot Sequence:\n";
+                    foreach (var step in regionResult.BootSequence.Take(6))
+                        resultMessage += $"{step}\n";
                 }
                 
-                MessageBox.Show(resultMessage, "Platform Detection Results", 
+                MessageBox.Show(resultMessage, "Platform & Region Analysis Results", 
                                MessageBoxButton.OK, MessageBoxImage.Information);
                 
                 // Auto-configure emulator type based on detection
                 ConfigureEmulatorFromDetection(platform);
+                
+                // Log platform and region information to emulation log
+                if (logPanel != null)
+                {
+                    logPanel.LogPeripheralTrap("ANALYZER", "Platform Detection", 
+                        $"Detected {platform.Name} with {detectionResult.Confidence:P1} confidence");
+                    
+                    if (regionResult.Success)
+                    {
+                        logPanel.LogPeripheralTrap("ANALYZER", "Region Analysis", 
+                            $"Found {regionResult.DetectedRegions.Count} firmware regions");
+                    }
+                }
             }
             else
             {
