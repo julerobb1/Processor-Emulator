@@ -53,88 +53,88 @@ namespace ProcessorEmulator.Emulation.SoC
                 case SECBOOT_STATUS_REG:
                     // Overall secure boot status
                     value = GetStatusRegister(ready: true, error: false, busy: false);
-                    if (secureBootEnabled) value |= 0x00000010; // Secure boot active
-                    if (bootChainValid) value |= 0x00000020; // Boot chain valid
-                    if (keysValidated) value |= 0x00000040; // Keys validated
+                    if (secureBootEnabled) value |= 0x00000010u; // Secure boot active
+                    if (bootChainValid) value |= 0x00000020u; // Boot chain valid
+                    if (keysValidated) value |= 0x00000040u; // Keys validated
                     value |= (bootStage << 8); // Boot stage in bits 8-11
                     break;
                     
                 case SECBOOT_CONTROL_REG:
                     // Control register (mostly read-only after boot)
-                    value = secureBootEnabled ? 0x00000001 : 0x00000000;
-                    value |= 0x00000100; // Boot ROM locked
-                    value |= 0x00000200; // Secure mode active
+                    value = secureBootEnabled ? 0x00000001u : 0x00000000u;
+                    value |= 0x00000100u; // Boot ROM locked
+                    value |= 0x00000200u; // Secure mode active
                     break;
                     
                 case SECBOOT_KEY_STATUS_REG:
                     // Cryptographic key status
-                    value = 0x12345678; // Key validation signature
+                    value = 0x12345678u; // Key validation signature
                     if (keysValidated)
                     {
-                        value |= 0x00000001; // Primary keys valid
-                        value |= 0x00000002; // Secondary keys valid
-                        value |= 0x00000004; // DRM keys loaded
-                        value |= 0x00000008; // CableCARD keys ready
+                        value |= 0x00000001u; // Primary keys valid
+                        value |= 0x00000002u; // Secondary keys valid
+                        value |= 0x00000004u; // DRM keys loaded
+                        value |= 0x00000008u; // CableCARD keys ready
                     }
                     break;
                     
                 case SECBOOT_VERIFY_STATUS_REG:
                     // Signature verification status
-                    value = 0x87654321; // Verification signature
+                    value = 0x87654321u; // Verification signature
                     if (bootChainValid)
                     {
-                        value |= 0x00000001; // Bootloader verified
-                        value |= 0x00000002; // Kernel verified
-                        value |= 0x00000004; // RDK stack verified
-                        value |= 0x00000008; // Applications verified
+                        value |= 0x00000001u; // Bootloader verified
+                        value |= 0x00000002u; // Kernel verified
+                        value |= 0x00000004u; // RDK stack verified
+                        value |= 0x00000008u; // Applications verified
                     }
                     break;
                     
                 case SECBOOT_CHAIN_STATUS_REG:
                     // Boot chain progression status
                     value = bootStage; // Current boot stage
-                    value |= 0x00000100; // Chain complete
-                    value |= 0x00000200; // No rollback detected
-                    value |= 0x00000400; // Version check passed
+                    value |= 0x00000100u; // Chain complete
+                    value |= 0x00000200u; // No rollback detected
+                    value |= 0x00000400u; // Version check passed
                     break;
                     
                 case SECBOOT_FUSE_STATUS_REG:
                     // Hardware fuse configuration
-                    value = 0xABCDEF00; // Fuse pattern
-                    value |= 0x00000001; // Secure boot fuse blown
-                    value |= 0x00000002; // Debug disable fuse blown
-                    value |= 0x00000004; // Production mode fuse
-                    value |= 0x00000008; // Key revocation fuses
+                    value = 0xABCDEF00u; // Fuse pattern
+                    value |= 0x00000001u; // Secure boot fuse blown
+                    value |= 0x00000002u; // Debug disable fuse blown
+                    value |= 0x00000004u; // Production mode fuse
+                    value |= 0x00000008u; // Key revocation fuses
                     break;
                     
                 case SECBOOT_DEBUG_REG:
                     // Debug and development status
-                    value = debugLocked ? 0x00000000 : 0xDEADBEEF;
+                    value = debugLocked ? 0x00000000u : 0xDEADBEEFu;
                     if (debugLocked)
                     {
-                        value |= 0x00000001; // JTAG locked
-                        value |= 0x00000002; // Serial debug locked
-                        value |= 0x00000004; // Memory debug locked
+                        value |= 0x00000001u; // JTAG locked
+                        value |= 0x00000002u; // Serial debug locked
+                        value |= 0x00000004u; // Memory debug locked
                     }
                     break;
                     
                 case SECBOOT_VERSION_REG:
                     // Secure boot version and build
-                    value = 0x20240101; // Version 2024.01.01
+                    value = 0x20240101u; // Version 2024.01.01
                     break;
                     
                 case SECBOOT_CAPABILITIES_REG:
                     // Supported security features
                     value = GetCapabilityRegister("DRM", "CRYPTO", "HDCP", "SECURE");
-                    value |= 0x00001000; // RSA-2048 support
-                    value |= 0x00002000; // AES-256 support
-                    value |= 0x00004000; // SHA-256 support
-                    value |= 0x00008000; // HDCP 2.2 support
+                    value |= 0x00001000u; // RSA-2048 support
+                    value |= 0x00002000u; // AES-256 support
+                    value |= 0x00004000u; // SHA-256 support
+                    value |= 0x00008000u; // HDCP 2.2 support
                     break;
                     
                 case SECBOOT_ERROR_REG:
                     // Error status (should be 0 for successful boot)
-                    value = 0x00000000; // No errors
+                    value = 0x00000000u; // No errors
                     break;
                     
                 default:
