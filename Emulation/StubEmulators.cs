@@ -34,6 +34,7 @@ namespace ProcessorEmulator.Emulation
         public uint[] RegisterState { get; private set; } = new uint[32];
         public byte[] MemoryState { get; private set; } = new byte[1024];
     }
+    
     public class AlphaEmulator : IEmulator
     {
         public void LoadBinary(byte[] binary) 
@@ -56,7 +57,15 @@ namespace ProcessorEmulator.Emulation
         { 
             Console.WriteLine("AlphaEmulator: Recompile called with code: " + code); 
         }
+        
+        // IEmulator properties
+        public uint ProgramCounter { get; private set; } = 0;
+        public int InstructionCount { get; private set; } = 0;
+        public uint CurrentInstruction { get; private set; } = 0;
+        public uint[] RegisterState { get; private set; } = new uint[32];
+        public byte[] MemoryState { get; private set; } = new byte[1024];
     }
+    
     public class SuperHEmulator : IEmulator
     {
         public void LoadBinary(byte[] binary) 
@@ -79,7 +88,15 @@ namespace ProcessorEmulator.Emulation
         { 
             Console.WriteLine("SuperHEmulator: Recompile called with code: " + code); 
         }
+        
+        // IEmulator properties
+        public uint ProgramCounter { get; private set; } = 0;
+        public int InstructionCount { get; private set; } = 0;
+        public uint CurrentInstruction { get; private set; } = 0;
+        public uint[] RegisterState { get; private set; } = new uint[16];
+        public byte[] MemoryState { get; private set; } = new byte[1024];
     }
+    
     public class RiscV32Emulator : IEmulator
     {
         public void LoadBinary(byte[] binary) 
@@ -102,7 +119,15 @@ namespace ProcessorEmulator.Emulation
         { 
             Console.WriteLine("RiscV32Emulator: Recompile called with code: " + code); 
         }
+        
+        // IEmulator properties
+        public uint ProgramCounter { get; private set; } = 0;
+        public int InstructionCount { get; private set; } = 0;
+        public uint CurrentInstruction { get; private set; } = 0;
+        public uint[] RegisterState { get; private set; } = new uint[32];
+        public byte[] MemoryState { get; private set; } = new byte[1024];
     }
+    
     public class RiscV64Emulator : IEmulator
     {
         public void LoadBinary(byte[] binary) 
@@ -125,7 +150,15 @@ namespace ProcessorEmulator.Emulation
         { 
             Console.WriteLine("RiscV64Emulator: Recompile called with code: " + code); 
         }
+        
+        // IEmulator properties
+        public uint ProgramCounter { get; private set; } = 0;
+        public int InstructionCount { get; private set; } = 0;
+        public uint CurrentInstruction { get; private set; } = 0;
+        public uint[] RegisterState { get; private set; } = new uint[32];
+        public byte[] MemoryState { get; private set; } = new byte[1024];
     }
+    
     public class S390XEmulator : IEmulator
     {
         public void LoadBinary(byte[] binary) 
@@ -148,7 +181,15 @@ namespace ProcessorEmulator.Emulation
         { 
             Console.WriteLine("S390XEmulator: Recompile called with code: " + code); 
         }
+        
+        // IEmulator properties
+        public uint ProgramCounter { get; private set; } = 0;
+        public int InstructionCount { get; private set; } = 0;
+        public uint CurrentInstruction { get; private set; } = 0;
+        public uint[] RegisterState { get; private set; } = new uint[16];
+        public byte[] MemoryState { get; private set; } = new byte[1024];
     }
+    
     public class HppaEmulator : IEmulator
     {
         public void LoadBinary(byte[] binary) 
@@ -171,7 +212,15 @@ namespace ProcessorEmulator.Emulation
         { 
             Console.WriteLine("HppaEmulator: Recompile called with code: " + code); 
         }
+        
+        // IEmulator properties
+        public uint ProgramCounter { get; private set; } = 0;
+        public int InstructionCount { get; private set; } = 0;
+        public uint CurrentInstruction { get; private set; } = 0;
+        public uint[] RegisterState { get; private set; } = new uint[32];
+        public byte[] MemoryState { get; private set; } = new byte[1024];
     }
+    
     public class MicroBlazeEmulator : IEmulator
     {
         public void LoadBinary(byte[] binary) 
@@ -194,7 +243,15 @@ namespace ProcessorEmulator.Emulation
         { 
             Console.WriteLine("MicroBlazeEmulator: Recompile called with code: " + code); 
         }
+        
+        // IEmulator properties
+        public uint ProgramCounter { get; private set; } = 0;
+        public int InstructionCount { get; private set; } = 0;
+        public uint CurrentInstruction { get; private set; } = 0;
+        public uint[] RegisterState { get; private set; } = new uint[32];
+        public byte[] MemoryState { get; private set; } = new byte[1024];
     }
+    
     public class CrisEmulator : IEmulator
     {
         public void LoadBinary(byte[] binary) 
@@ -217,7 +274,15 @@ namespace ProcessorEmulator.Emulation
         { 
             Console.WriteLine("CrisEmulator: Recompile called with code: " + code); 
         }
+        
+        // IEmulator properties
+        public uint ProgramCounter { get; private set; } = 0;
+        public int InstructionCount { get; private set; } = 0;
+        public uint CurrentInstruction { get; private set; } = 0;
+        public uint[] RegisterState { get; private set; } = new uint[16];
+        public byte[] MemoryState { get; private set; } = new byte[1024];
     }
+    
     public class Lm32Emulator : IEmulator
     {
         public void LoadBinary(byte[] binary) 
@@ -240,7 +305,15 @@ namespace ProcessorEmulator.Emulation
         { 
             Console.WriteLine("Lm32Emulator: Recompile called with code: " + code); 
         }
+        
+        // IEmulator properties
+        public uint ProgramCounter { get; private set; } = 0;
+        public int InstructionCount { get; private set; } = 0;
+        public uint CurrentInstruction { get; private set; } = 0;
+        public uint[] RegisterState { get; private set; } = new uint[32];
+        public byte[] MemoryState { get; private set; } = new byte[1024];
     }
+    
     public class M68KEmulator : IEmulator
     {
         public void LoadBinary(byte[] binary) 
@@ -263,7 +336,15 @@ namespace ProcessorEmulator.Emulation
         { 
             Console.WriteLine("M68KEmulator: Recompile called with code: " + code); 
         }
+        
+        // IEmulator properties
+        public uint ProgramCounter { get; private set; } = 0;
+        public int InstructionCount { get; private set; } = 0;
+        public uint CurrentInstruction { get; private set; } = 0;
+        public uint[] RegisterState { get; private set; } = new uint[16];
+        public byte[] MemoryState { get; private set; } = new byte[1024];
     }
+    
     public class XtensaEmulator : IEmulator
     {
         public void LoadBinary(byte[] binary) 
@@ -286,29 +367,12 @@ namespace ProcessorEmulator.Emulation
         { 
             Console.WriteLine("XtensaEmulator: Recompile called with code: " + code); 
         }
+        
+        // IEmulator properties
+        public uint ProgramCounter { get; private set; } = 0;
+        public int InstructionCount { get; private set; } = 0;
+        public uint CurrentInstruction { get; private set; } = 0;
+        public uint[] RegisterState { get; private set; } = new uint[32];
+        public byte[] MemoryState { get; private set; } = new byte[1024];
     }
-    public class OpenRiscEmulator : IEmulator
-    {
-        public void LoadBinary(byte[] binary) 
-        { 
-            Console.WriteLine("OpenRiscEmulator: LoadBinary called."); 
-        }
-        public void Run() 
-        { 
-            Console.WriteLine("OpenRiscEmulator: Run called."); 
-        }
-        public void Step() 
-        { 
-            Console.WriteLine("OpenRiscEmulator: Step called."); 
-        }
-        public void Decompile() 
-        { 
-            Console.WriteLine("OpenRiscEmulator: Decompile called."); 
-        }
-        public void Recompile(string code) 
-        { 
-            Console.WriteLine("OpenRiscEmulator: Recompile called with code: " + code); 
-        }
-    }
-    // Add more stubs as needed for additional architectures
 }
