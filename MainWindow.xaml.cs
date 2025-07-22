@@ -1681,17 +1681,45 @@ namespace ProcessorEmulator
                 selectedPlatform = "RDK-V"; // Assume RDK-V since that's the main focus
             }
 
-            StatusBarText($"Starting {selectedPlatform} emulation for {System.IO.Path.GetFileName(firmwarePath)}...");
-
-            // Route to appropriate emulation handler based on platform
-            switch (selectedPlatform)
+            // Determine selected emulator type
+            string selectedEmulator = "HomebrewEmulator"; // Default
+            try
             {
-                case "RDK-V":
-                    await HandleRdkVEmulation();
-                    break;
-                default:
-                    await HandleGenericEmulation();
-                    break;
+                if (HomebrewEmulatorRadio.IsChecked == true)
+                    selectedEmulator = "HomebrewEmulator";
+                else if (QemuEmulatorRadio.IsChecked == true)
+                    selectedEmulator = "QEMU";
+                else if (RetDecTranslatorRadio.IsChecked == true)
+                    selectedEmulator = "RetDec";
+            }
+            catch
+            {
+                selectedEmulator = "HomebrewEmulator"; // Fallback
+            }
+
+            StatusBarText($"Starting {selectedPlatform} emulation using {selectedEmulator} for {System.IO.Path.GetFileName(firmwarePath)}...");
+
+            // Route to appropriate emulation handler based on emulator choice
+            if (selectedEmulator == "QEMU")
+            {
+                await HandleQemuEmulation();
+            }
+            else if (selectedEmulator == "RetDec")
+            {
+                await HandleRetDecEmulation();
+            }
+            else
+            {
+                // HomebrewEmulator - route based on platform
+                switch (selectedPlatform)
+                {
+                    case "RDK-V":
+                        await HandleRdkVEmulation();
+                        break;
+                    default:
+                        await HandleGenericEmulation();
+                        break;
+                }
             }
         }
 
