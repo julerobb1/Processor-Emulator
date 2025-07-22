@@ -29,15 +29,35 @@ namespace ProcessorEmulator.Emulation
         public void LoadBinary(byte[] binary)
         {
             originalBinary = binary;
-            memory = new byte[Math.Max(binary.Length, 1024 * 1024)]; // At least 1MB
-            Array.Copy(binary, memory, binary.Length);
-            pc = 0;
+            
+            // Create realistic memory layout like real hardware
+            int memorySize = Math.Max(binary.Length * 4, 64 * 1024 * 1024); // At least 64MB
+            memory = new byte[memorySize];
+            
+            // Load firmware at typical ARM boot address (like real hardware)
+            uint loadAddress = 0x8000; // Common ARM kernel load address
+            if (loadAddress + binary.Length < memory.Length)
+            {
+                Array.Copy(binary, 0, memory, loadAddress, binary.Length);
+                pc = loadAddress; // Start execution from load address
+            }
+            else
+            {
+                // Fallback to start of memory
+                Array.Copy(binary, memory, Math.Min(binary.Length, memory.Length));
+                pc = 0;
+            }
+            
+            // Initialize ARM registers like real hardware
             Array.Clear(regs, 0, regs.Length);
+            regs[13] = (uint)(memory.Length - 0x10000); // Stack pointer near end of RAM
+            regs[14] = 0; // Link register
+            regs[15] = pc; // Program counter
             
             // Initialize sync engine for RDK-V ecosystem
             InitializeSyncEngine();
             
-            Debug.WriteLine($"HomebrewEmulator: Loaded {binary.Length} bytes");
+            Debug.WriteLine($"HomebrewEmulator: Loaded {binary.Length} bytes at 0x{pc:X8}, {memorySize / 1024 / 1024}MB RAM");
         }
 
         public void Run()
@@ -45,10 +65,17 @@ namespace ProcessorEmulator.Emulation
             string arch = ArchitectureDetector.Detect(originalBinary);
             Debug.WriteLine($"HomebrewEmulator: Detected architecture: {arch}");
             
-            // Start actual emulation loop
+            // Create EmulatorWindow for display (non-blocking)
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                var window = new EmulatorWindow(this); // Pass this emulator instance
+                window.Show();
+            });
+            
+            // Start actual emulation loop immediately - NO DELAYS!
             Task.Run(() => RunEmulationLoop(arch));
             
-            Debug.WriteLine($"HomebrewEmulator: Started emulation for {arch}");
+            Debug.WriteLine($"HomebrewEmulator: Started high-speed emulation for {arch}");
         }
         
         private async void InitializeSyncEngine()
@@ -86,9 +113,10 @@ namespace ProcessorEmulator.Emulation
             // Initialize RDK-V specific setup
             InitializeRdkVEnvironment();
             
-            // Start instruction execution loop
-            int maxInstructions = 1000; // Limit for demo
+            // Start instruction execution loop - FAST like QEMU!
+            int maxInstructions = 100000; // Much higher limit for real execution
             
+            var startTime = DateTime.Now;
             while (instructionCount < maxInstructions && pc < memory.Length)
             {
                 try
@@ -96,14 +124,21 @@ namespace ProcessorEmulator.Emulation
                     Step(); // Execute one instruction
                     instructionCount++;
                     
-                    // Add delay to see execution
-                    System.Threading.Thread.Sleep(10);
+                    // NO artificial delays - run at full speed like QEMU/VirtualBox
                     
                     // Break on certain conditions (bootloader completion, kernel start, etc.)
                     if (CheckBootloaderComplete() || CheckKernelStart())
                     {
                         Debug.WriteLine("HomebrewEmulator: Boot stage completed");
                         break;
+                    }
+                    
+                    // Performance logging every 10000 instructions
+                    if (instructionCount % 10000 == 0)
+                    {
+                        var elapsed = DateTime.Now - startTime;
+                        var ips = instructionCount / elapsed.TotalSeconds;
+                        Debug.WriteLine($"HomebrewEmulator: {instructionCount} instructions, {ips:F0} IPS");
                     }
                 }
                 catch (Exception ex)
@@ -282,38 +317,204 @@ namespace ProcessorEmulator.Emulation
         
         private void ExecuteArmInstruction(uint instruction)
         {
-            // Basic ARM instruction decoding for RDK-V firmware
+            // Real ARM instruction decoding and execution
+            uint condition = (instruction >> 28) & 0xF;
             uint opcode = (instruction >> 21) & 0xF;
+            uint rd = (instruction >> 12) & 0xF;
+            uint rn = (instruction >> 16) & 0xF;
+            uint rm = instruction & 0xF;
+            uint immediate = instruction & 0xFFF;
+            
+            // Check condition codes (AL = always execute = 0xE)
+            if (condition != 0xE && !CheckCondition(condition))
+            {
+                pc += 4;
+                return;
+            }
+            
+            // Decode and execute ARM instructions
+            uint instrType = (instruction >> 25) & 0x7;
+            
+            switch (instrType)
+            {
+                case 0x0: // Data processing
+                    ExecuteDataProcessing(opcode, rd, rn, rm, immediate, instruction);
+                    break;
+                case 0x1: // Data processing with immediate
+                    ExecuteDataProcessingImmediate(opcode, rd, rn, immediate);
+                    break;
+                case 0x2: // Load/Store immediate offset
+                case 0x3: // Load/Store register offset
+                    ExecuteLoadStore(instruction);
+                    break;
+                case 0x4: // Load/Store multiple
+                    ExecuteLoadStoreMultiple(instruction);
+                    break;
+                case 0x5: // Branch and Branch with Link
+                    ExecuteBranch(instruction);
+                    return; // Don't increment PC for branches
+                case 0x7: // Software interrupt
+                    ExecuteSoftwareInterrupt(instruction);
+                    break;
+                default:
+                    Debug.WriteLine($"ARM: Unimplemented instruction type 0x{instrType:X}");
+                    break;
+            }
+            
+            pc += 4; // Normal instruction increment
+        }
+        
+        private void ExecuteDataProcessing(uint opcode, uint rd, uint rn, uint rm, uint immediate, uint instruction)
+        {
+            uint operand2 = rm; // Simplified - normally would handle shifts/rotates
             
             switch (opcode)
             {
                 case 0x0: // AND
-                case 0x1: // EOR  
+                    regs[rd] = regs[rn] & operand2;
+                    break;
+                case 0x1: // EOR
+                    regs[rd] = regs[rn] ^ operand2;
+                    break;
                 case 0x2: // SUB
+                    regs[rd] = regs[rn] - operand2;
+                    break;
                 case 0x3: // RSB
+                    regs[rd] = operand2 - regs[rn];
+                    break;
                 case 0x4: // ADD
-                    // Basic arithmetic - just advance PC for now
-                    pc += 4;
-                    Debug.WriteLine($"ARM: Arithmetic operation 0x{opcode:X}");
+                    regs[rd] = regs[rn] + operand2;
                     break;
-                case 0x8: // TST
-                case 0x9: // TEQ
-                case 0xA: // CMP
-                case 0xB: // CMN
-                    // Comparison operations
-                    pc += 4;
-                    Debug.WriteLine($"ARM: Comparison operation 0x{opcode:X}");
+                case 0x5: // ADC
+                    regs[rd] = regs[rn] + operand2; // + carry (simplified)
                     break;
-                case 0x5: // ADC - might be MMIO access simulation
-                    // Simulate MMIO access for BCM7449 peripherals
-                    SimulateMmioAccess();
-                    pc += 4;
+                case 0xD: // MOV
+                    regs[rd] = operand2;
+                    break;
+                case 0xF: // MVN
+                    regs[rd] = ~operand2;
                     break;
                 default:
-                    // Unknown instruction, advance PC
-                    pc += 4;
-                    Debug.WriteLine($"ARM: Unknown instruction 0x{instruction:X8}");
+                    Debug.WriteLine($"ARM: Unimplemented data processing opcode 0x{opcode:X}");
                     break;
+            }
+        }
+        
+        private void ExecuteDataProcessingImmediate(uint opcode, uint rd, uint rn, uint immediate)
+        {
+            switch (opcode)
+            {
+                case 0x2: // SUB immediate
+                    regs[rd] = regs[rn] - immediate;
+                    break;
+                case 0x4: // ADD immediate
+                    regs[rd] = regs[rn] + immediate;
+                    break;
+                case 0xD: // MOV immediate
+                    regs[rd] = immediate;
+                    break;
+                default:
+                    Debug.WriteLine($"ARM: Unimplemented immediate opcode 0x{opcode:X}");
+                    break;
+            }
+        }
+        
+        private void ExecuteLoadStore(uint instruction)
+        {
+            uint rd = (instruction >> 12) & 0xF;
+            uint rn = (instruction >> 16) & 0xF;
+            uint offset = instruction & 0xFFF;
+            bool load = ((instruction >> 20) & 1) == 1;
+            bool up = ((instruction >> 23) & 1) == 1;
+            
+            uint address = regs[rn] + (up ? offset : (uint)(-(int)offset));
+            
+            if (load) // LDR
+            {
+                if (address + 4 <= memory.Length)
+                {
+                    regs[rd] = BitConverter.ToUInt32(memory, (int)address);
+                }
+            }
+            else // STR
+            {
+                if (address + 4 <= memory.Length)
+                {
+                    BitConverter.GetBytes(regs[rd]).CopyTo(memory, address);
+                }
+            }
+        }
+        
+        private void ExecuteBranch(uint instruction)
+        {
+            int offset = (int)(instruction & 0xFFFFFF);
+            if ((offset & 0x800000) != 0) // Sign extend 24-bit to 32-bit
+                offset |= unchecked((int)0xFF000000);
+            
+            offset <<= 2; // ARM branches are word-aligned
+            
+            bool link = ((instruction >> 24) & 1) == 1;
+            if (link) // BL - Branch with Link
+            {
+                regs[14] = pc + 4; // Save return address in LR
+            }
+            
+            pc = (uint)((int)pc + offset + 8); // +8 for pipeline
+        }
+        
+        private void ExecuteLoadStoreMultiple(uint instruction)
+        {
+            // Simplified LDM/STM implementation
+            uint rn = (instruction >> 16) & 0xF;
+            uint regList = instruction & 0xFFFF;
+            bool load = ((instruction >> 20) & 1) == 1;
+            
+            uint address = regs[rn];
+            
+            for (int i = 0; i < 16; i++)
+            {
+                if ((regList & (1u << i)) != 0)
+                {
+                    if (load && address + 4 <= memory.Length)
+                    {
+                        regs[i] = BitConverter.ToUInt32(memory, (int)address);
+                    }
+                    else if (!load && address + 4 <= memory.Length)
+                    {
+                        BitConverter.GetBytes(regs[i]).CopyTo(memory, address);
+                    }
+                    address += 4;
+                }
+            }
+        }
+        
+        private void ExecuteSoftwareInterrupt(uint instruction)
+        {
+            uint swi_num = instruction & 0xFFFFFF;
+            Debug.WriteLine($"ARM: Software interrupt SWI 0x{swi_num:X}");
+            
+            // Handle basic system calls
+            switch (swi_num)
+            {
+                case 0x0: // Exit
+                    Debug.WriteLine("ARM: Program exit requested");
+                    instructionCount = int.MaxValue; // Stop execution
+                    break;
+                default:
+                    // Ignore unknown SWIs
+                    break;
+            }
+        }
+        
+        private bool CheckCondition(uint condition)
+        {
+            // Simplified condition checking - would need proper CPSR flags
+            switch (condition)
+            {
+                case 0xE: // AL - Always
+                    return true;
+                default:
+                    return false; // For now, only support unconditional
             }
         }
         
