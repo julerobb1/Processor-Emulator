@@ -17,7 +17,7 @@ namespace ProcessorEmulator.Demo
             Console.WriteLine("Simulating Broadcom BCM7449 BOLT bootloader");
             Console.WriteLine();
 
-            var boltBridge = new SimpleBoltBridge();
+            var boltBridge = new ProcessorEmulator.Emulation.SimpleBoltBridge();
 
             try
             {
