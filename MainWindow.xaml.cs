@@ -1704,12 +1704,7 @@ namespace ProcessorEmulator
                 var binary = File.ReadAllBytes(firmwarePath);
                 var arch = Tools.ArchitectureDetector.Detect(binary);
                 
-                MessageBox.Show($"Generic Firmware Analysis:\n\n" +
-                               $"File: {System.IO.Path.GetFileName(firmwarePath)}\n" +
-                               $"Size: {binary.Length:N0} bytes\n" +
-                               $"Architecture: {arch}\n\n" +
-                               $"Starting emulation...", 
-                               "Generic Firmware", MessageBoxButton.OK, MessageBoxImage.Information);
+                StatusBarText("Starting generic emulation...");
                 
                 // Use HomebrewEmulator for generic emulation too
                 var emulator = new HomebrewEmulator();
