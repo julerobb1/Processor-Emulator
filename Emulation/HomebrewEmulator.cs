@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using ProcessorEmulator.Tools;
 using ProcessorEmulator.Emulation.SoC;
+using ProcessorEmulator.Emulation.SyncEngine;
 
 namespace ProcessorEmulator.Emulation
 {
@@ -14,6 +15,7 @@ namespace ProcessorEmulator.Emulation
         private uint pc = 0;
         private uint[] regs = new uint[32]; // Multi-architecture registers
         private Bcm7449SoCManager socManager; // BCM7449 SoC peripheral emulation
+        private SyncScheduler syncScheduler; // Daily sync engine for guide/entitlements
         private int instructionCount = 0;
         private uint currentInstruction = 0;
         
@@ -32,6 +34,9 @@ namespace ProcessorEmulator.Emulation
             pc = 0;
             Array.Clear(regs, 0, regs.Length);
             
+            // Initialize sync engine for RDK-V ecosystem
+            InitializeSyncEngine();
+            
             Debug.WriteLine($"HomebrewEmulator: Loaded {binary.Length} bytes");
         }
 
@@ -44,6 +49,31 @@ namespace ProcessorEmulator.Emulation
             Task.Run(() => RunEmulationLoop(arch));
             
             Debug.WriteLine($"HomebrewEmulator: Started emulation for {arch}");
+        }
+        
+        private async void InitializeSyncEngine()
+        {
+            try
+            {
+                Debug.WriteLine("[HomebrewEmulator] Initializing RDK-V sync engine...");
+                
+                syncScheduler = new SyncScheduler();
+                await syncScheduler.StartAsync();
+                
+                // Subscribe to sync events for logging
+                syncScheduler.SyncEventOccurred += OnSyncEvent;
+                
+                Debug.WriteLine("[HomebrewEmulator] Sync engine initialized and running");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[HomebrewEmulator] Sync engine initialization failed: {ex.Message}");
+            }
+        }
+        
+        private void OnSyncEvent(SyncEvent syncEvent)
+        {
+            Debug.WriteLine($"[Sync-{syncEvent.Component}] {syncEvent.Message} ({syncEvent.Status})");
         }
         
         private void RunEmulationLoop(string arch)
@@ -98,10 +128,18 @@ namespace ProcessorEmulator.Emulation
             {
                 try
                 {
-                    // TODO: Fix EmulatorWindow namespace resolution
-                    // var emulatorWindow = new EmulatorWindow(this);
-                    // emulatorWindow.Show();
-                    // emulatorWindow.StartEmulation();
+                    // Create and show the graphical emulator window
+                    Debug.WriteLine("[HomebrewEmulator] Creating EmulatorWindow...");
+                    var emulatorWindow = new ProcessorEmulator.Emulation.EmulatorWindow(this);
+                    
+                    // Make sure the window appears prominently
+                    emulatorWindow.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+                    emulatorWindow.Topmost = true; // Bring to front
+                    emulatorWindow.Show();
+                    emulatorWindow.Activate(); // Focus the window
+                    
+                    Debug.WriteLine("[HomebrewEmulator] EmulatorWindow created and shown");
+                    emulatorWindow.StartEmulation();
                     
                     string statusMessage = $"RDK-V emulation started!\n\nArchitecture: {arch}\nInstructions executed: {instructionCount}\nEmulator window opened for real firmware execution display.";
                     
@@ -179,6 +217,10 @@ namespace ProcessorEmulator.Emulation
             
             // Initialize memory mapped I/O regions typical for RDK-V devices
             // UART, GPIO, interrupt controllers, etc.
+            
+            // Initialize sync engine services for real-world connectivity
+            InitializeSyncServices();
+            
             Debug.WriteLine("HomebrewEmulator: RDK-V memory map initialized");
         }
         
@@ -411,6 +453,117 @@ namespace ProcessorEmulator.Emulation
             catch (Exception ex)
             {
                 MessageBox.Show($"Recompilation failed: {ex.Message}", "Recompilation Error");
+            }
+        }
+        
+        private void InitializeSyncServices()
+        {
+            try
+            {
+                if (syncScheduler == null)
+                {
+                    Debug.WriteLine("[RDK-V] Sync engine not initialized yet, skipping service setup");
+                    return;
+                }
+                
+                // Get real guide and entitlement data from sync engine
+                var channelLineup = syncScheduler.ChannelMapper.GetChannelLineup();
+                var boxActivation = syncScheduler.EntitlementManager.GetBoxActivation();
+                var cmtsStatus = syncScheduler.CMTSResponder.IsRunning;
+                
+                Debug.WriteLine($"[RDK-V] Channel lineup: {channelLineup.Count} channels available");
+                Debug.WriteLine($"[RDK-V] Box activation: {(boxActivation.IsActivated ? "ACTIVATED" : "NOT ACTIVATED")}");
+                Debug.WriteLine($"[RDK-V] CMTS connection: {(cmtsStatus ? "ONLINE" : "OFFLINE")}");
+                
+                // Simulate firmware accessing these services
+                Task.Run(() => SimulateChannelTuning());
+                Task.Run(() => SimulateEntitlementCheck());
+                Task.Run(() => SimulateDOCSISBoot());
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[RDK-V] Sync services initialization failed: {ex.Message}");
+            }
+        }
+        
+        private void SimulateChannelTuning()
+        {
+            try
+            {
+                // Wait a bit for sync engine to fully initialize
+                Task.Delay(2000).Wait();
+                
+                // Simulate firmware trying to tune to channel 101
+                var tuneResult = syncScheduler.ChannelMapper.TuneToChannel(101);
+                if (tuneResult.Success)
+                {
+                    Debug.WriteLine($"[RDK-V] Tuned to channel 101: {tuneResult.Channel.CallSign} (Freq: {tuneResult.Frequency / 1000000.0:F1} MHz)");
+                    
+                    // Simulate watching for a few seconds then releasing
+                    Task.Delay(3000).ContinueWith(_ => 
+                    {
+                        syncScheduler.ChannelMapper.ReleaseTuner(tuneResult.TunerId);
+                        Debug.WriteLine($"[RDK-V] Released tuner {tuneResult.TunerId}");
+                    });
+                }
+                else
+                {
+                    Debug.WriteLine($"[RDK-V] Tune failed: {tuneResult.ErrorMessage}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[RDK-V] Channel tuning simulation failed: {ex.Message}");
+            }
+        }
+        
+        private void SimulateEntitlementCheck()
+        {
+            try
+            {
+                // Wait a bit for sync engine to fully initialize
+                Task.Delay(1000).Wait();
+                
+                // Simulate firmware checking various service entitlements
+                var services = new[] { "BASIC_TV", "PREMIUM_TV", "DVR_SERVICE", "ON_DEMAND" };
+                
+                foreach (var service in services)
+                {
+                    var auth = syncScheduler.EntitlementManager.CheckAuthorization(service);
+                    Debug.WriteLine($"[RDK-V] Service {service}: {(auth.IsAuthorized ? "AUTHORIZED" : "DENIED")} - {auth.Message}");
+                }
+                
+                // Check specific channel authorization
+                var channelAuth = syncScheduler.EntitlementManager.CheckChannelAuthorization(102);
+                Debug.WriteLine($"[RDK-V] Channel 102: {(channelAuth.IsAuthorized ? "AUTHORIZED" : "DENIED")}");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[RDK-V] Entitlement check simulation failed: {ex.Message}");
+            }
+        }
+        
+        private void SimulateDOCSISBoot()
+        {
+            try
+            {
+                // Wait a bit for CMTS to be ready
+                Task.Delay(500).Wait();
+                
+                // Simulate cable modem boot sequence
+                var macAddress = "00:1A:2B:3C:4D:5E"; // Fake STB MAC
+                var bootResponse = syncScheduler.CMTSResponder.HandleBootRequest(macAddress);
+                
+                Debug.WriteLine($"[RDK-V] DOCSIS Boot Complete:");
+                Debug.WriteLine($"[RDK-V]   IP Address: {bootResponse.DHCPOffer.ClientIP}");
+                Debug.WriteLine($"[RDK-V]   Gateway: {bootResponse.DHCPOffer.Gateway}");
+                Debug.WriteLine($"[RDK-V]   Config File: {bootResponse.DHCPOffer.ConfigFile}");
+                Debug.WriteLine($"[RDK-V]   Registration: {bootResponse.RegistrationResponse.Status}");
+                Debug.WriteLine($"[RDK-V]   Downstream Freq: {bootResponse.RegistrationResponse.DownstreamFrequency / 1000000.0:F1} MHz");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[RDK-V] DOCSIS boot simulation failed: {ex.Message}");
             }
         }
     }
