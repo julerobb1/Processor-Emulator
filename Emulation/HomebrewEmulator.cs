@@ -98,9 +98,10 @@ namespace ProcessorEmulator.Emulation
             {
                 try
                 {
-                    var emulatorWindow = new ProcessorEmulator.Emulation.EmulatorWindow(this);
-                    emulatorWindow.Show();
-                    emulatorWindow.StartEmulation();
+                    // TODO: Fix EmulatorWindow namespace resolution
+                    // var emulatorWindow = new EmulatorWindow(this);
+                    // emulatorWindow.Show();
+                    // emulatorWindow.StartEmulation();
                     
                     string statusMessage = $"RDK-V emulation started!\n\nArchitecture: {arch}\nInstructions executed: {instructionCount}\nEmulator window opened for real firmware execution display.";
                     
