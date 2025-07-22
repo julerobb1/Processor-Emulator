@@ -68,6 +68,26 @@ namespace ProcessorEmulator.Emulation
             string arch = ArchitectureDetector.Detect(originalBinary);
             Debug.WriteLine($"HomebrewEmulator: Detected architecture: {arch}, starting REAL firmware boot...");
             
+            // ALWAYS show display window regardless of architecture detection
+            InitializeDisplayPipeline();
+            
+            // Show boot progress even if architecture is unknown
+            if (string.IsNullOrEmpty(arch) || arch == "Unknown")
+            {
+                Debug.WriteLine("⚠️ Architecture unknown - attempting generic boot process");
+                arch = "ARM"; // Default to ARM for RDK-V firmware
+                
+                if (pxRenderer?.IsInitialized == true)
+                {
+                    pxRenderer.Clear(0xFF000000); // Black screen
+                    pxRenderer.DrawBootText("UNKNOWN FIRMWARE", 50, 50, 0xFFFF0000);
+                    pxRenderer.DrawBootText("Attempting ARM boot process...", 50, 80, 0xFFFFFF00);
+                    pxRenderer.Flip();
+                    
+                    displayWindow?.ShowBootMessage("Unknown firmware - trying ARM boot");
+                }
+            }
+            
             // NO fake status dialogs or emulator windows - just boot the firmware
             
             // Start actual firmware boot process immediately
@@ -123,9 +143,6 @@ namespace ProcessorEmulator.Emulation
         {
             Debug.WriteLine("Setting up ARM boot environment...");
             
-            // Initialize display pipeline FIRST - this is the missing piece!
-            InitializeDisplayPipeline();
-            
             // Set ARM processor to bootloader state
             pc = 0x8000; // ARM kernel entry point
             
@@ -138,7 +155,7 @@ namespace ProcessorEmulator.Emulation
             regs[15] = pc;      // PC = Entry point
             
             Debug.WriteLine($"ARM boot: PC=0x{pc:X8}, SP=0x{regs[13]:X8}, Machine=0x{regs[1]:X}");
-            Debug.WriteLine("🖥️ Display pipeline ready for firmware rendering");
+            Debug.WriteLine("🖥️ ARM environment ready for firmware execution");
         }
         
         private void InitializeDisplayPipeline()
@@ -688,99 +705,6 @@ namespace ProcessorEmulator.Emulation
             return (value >> amount) | (value << (32 - amount));
         }
 
-        private void RunInterpretationMode(string arch)
-        {
-            Debug.WriteLine($"HomebrewEmulator: Using interpretation mode for {arch}");
-            
-            // Start instruction execution loop - FAST like QEMU!
-            int maxInstructions = 100000; // Much higher limit for real execution
-            
-            var startTime = DateTime.Now;
-            while (instructionCount < maxInstructions && pc < memory.Length)
-            {
-                try
-                {
-                    Step(); // Execute one instruction
-                    instructionCount++;
-                    
-                    // NO artificial delays - run at full speed like QEMU/VirtualBox
-                    
-                    // Break on certain conditions (bootloader completion, kernel start, etc.)
-                    if (CheckBootloaderComplete() || CheckKernelStart())
-                    {
-                        Debug.WriteLine("HomebrewEmulator: Boot stage completed");
-                        break;
-                    }
-                    
-                    // Performance logging every 10000 instructions
-                    if (instructionCount % 10000 == 0)
-                    {
-                        var elapsed = DateTime.Now - startTime;
-                        var ips = instructionCount / elapsed.TotalSeconds;
-                        Debug.WriteLine($"HomebrewEmulator: {instructionCount} instructions, {ips:F0} IPS");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"HomebrewEmulator: Execution error: {ex.Message}");
-                    break;
-                }
-            }
-            
-            Debug.WriteLine($"HomebrewEmulator: Emulation completed. Executed {instructionCount} instructions.");
-            
-            // Generate SoC status report
-            if (socManager != null)
-            {
-                string socReport = socManager.GetSoCStatusReport();
-                Debug.WriteLine("=== BCM7449 SoC Final Status ===");
-                Debug.WriteLine(socReport);
-            }
-            
-            // Show emulator window instead of just a message box
-            Application.Current?.Dispatcher?.Invoke(() =>
-            {
-                try
-                {
-                    // Create and show the graphical emulator window
-                    Debug.WriteLine("[HomebrewEmulator] Creating EmulatorWindow...");
-                    var emulatorWindow = new ProcessorEmulator.Emulation.EmulatorWindow(this);
-                    
-                    // Make sure the window appears prominently
-                    emulatorWindow.WindowStartupLocation = WindowStartupLocation.CenterScreen;
-                    emulatorWindow.Topmost = true; // Bring to front
-                    emulatorWindow.Show();
-                    emulatorWindow.Activate(); // Focus the window
-                    
-                    Debug.WriteLine("[HomebrewEmulator] EmulatorWindow created and shown");
-                    emulatorWindow.StartEmulation();
-                    
-                    string statusMessage = $"RDK-V emulation started!\n\nArchitecture: {arch}\nInstructions executed: {instructionCount}\nEmulator window opened for real firmware execution display.";
-                    
-                    if (socManager != null)
-                    {
-                        statusMessage += "\n\nBCM7449 SoC Status:\n";
-                        statusMessage += "• Secure Boot: VALIDATED\n";
-                        statusMessage += "• HDMI: READY\n";
-                        statusMessage += "• CableCARD: PAIRED\n";
-                        statusMessage += "• MoCA: CONNECTED\n";
-                        statusMessage += "• Crypto Engine: OPERATIONAL";
-                        statusMessage += "\n\nReal-time execution data:\n";
-                        statusMessage += $"• PC: 0x{pc:X8}\n";
-                        statusMessage += $"• Current Instruction: 0x{currentInstruction:X8}\n";
-                        statusMessage += $"• Instructions Executed: {instructionCount}";
-                    }
-                    
-                    MessageBox.Show(statusMessage, 
-                                   "RDK-V Emulation Status", MessageBoxButton.OK, MessageBoxImage.Information);
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"Failed to open emulator window: {ex.Message}", 
-                                   "Emulator Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                }
-            });
-        }
         
         private void InitializeRdkVEnvironment()
         {
