@@ -18,6 +18,7 @@ namespace ProcessorEmulator.Emulation
         private SyncScheduler syncScheduler; // Daily sync engine for guide/entitlements
         private int instructionCount = 0;
         private uint currentInstruction = 0;
+        private ArmToX86Translator translator; // ARM-to-x86 dynamic binary translator
         
         // Public properties for EmulatorWindow to access execution state
         public uint ProgramCounter => pc;
@@ -112,6 +113,72 @@ namespace ProcessorEmulator.Emulation
             
             // Initialize RDK-V specific setup
             InitializeRdkVEnvironment();
+            
+            if (arch == "ARM" || arch == "ARM64")
+            {
+                // Use ARM-to-x86 dynamic binary translation for maximum performance
+                RunArmTranslationMode();
+            }
+            else
+            {
+                // Fall back to interpretation for other architectures
+                RunInterpretationMode(arch);
+            }
+        }
+        
+        private void RunArmTranslationMode()
+        {
+            Debug.WriteLine("HomebrewEmulator: Using ARM-to-x86 dynamic binary translation");
+            
+            translator = new ArmToX86Translator();
+            
+            try
+            {
+                // Phase 1: Translate ARM code to x86-64
+                uint currentAddress = pc;
+                int translationLimit = Math.Min(originalBinary.Length / 4, 25000); // Translate up to 25K instructions
+                
+                Debug.WriteLine($"Phase 1: Translating {translationLimit} ARM instructions to native x86-64...");
+                var translationStart = DateTime.Now;
+                
+                for (int i = 0; i < translationLimit && currentAddress + 4 <= memory.Length; i++)
+                {
+                    uint armInstruction = BitConverter.ToUInt32(memory, (int)currentAddress);
+                    translator.TranslateInstruction(armInstruction, currentAddress);
+                    currentAddress += 4;
+                    
+                    if (i % 5000 == 0)
+                        Debug.WriteLine($"Translated {i} instructions...");
+                }
+                
+                translator.FinalizeTranslation();
+                var translationTime = DateTime.Now - translationStart;
+                Debug.WriteLine($"Translation complete in {translationTime.TotalMilliseconds:F1}ms");
+                
+                // Phase 2: Execute native x86-64 code at full CPU speed
+                Debug.WriteLine("Phase 2: Executing native x86-64 code...");
+                var executionStart = DateTime.Now;
+                
+                translator.ExecuteTranslatedCode(pc);
+                
+                var executionTime = DateTime.Now - executionStart;
+                Debug.WriteLine($"Native execution completed in {executionTime.TotalMilliseconds:F1}ms");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"ARM translation error: {ex.Message}");
+                Debug.WriteLine("Falling back to interpretation mode...");
+                RunInterpretationMode("ARM");
+            }
+            finally
+            {
+                translator?.Dispose();
+            }
+        }
+        
+        private void RunInterpretationMode(string arch)
+        {
+            Debug.WriteLine($"HomebrewEmulator: Using interpretation mode for {arch}");
             
             // Start instruction execution loop - FAST like QEMU!
             int maxInstructions = 100000; // Much higher limit for real execution
