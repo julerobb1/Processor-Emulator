@@ -1453,15 +1453,138 @@ namespace ProcessorEmulator.Emulation
                 }
                 
                 Debug.WriteLine($"HomebrewEmulator: Emulation started at PC=0x{pc:X8}");
+                Debug.WriteLine("🔍 INSTRUCTION TRACE: Starting detailed ARM instruction logging");
                 
-                // Start the main emulation loop
-                _ = Task.Run(() => ExecuteRealFirmware(architecture));
+                // Start the main emulation loop with detailed logging
+                _ = Task.Run(() => ExecuteRealFirmwareWithLogging(architecture));
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"HomebrewEmulator: StartEmulation failed: {ex.Message}");
                 throw;
             }
+        }
+        
+        /// <summary>
+        /// Execute firmware with detailed instruction logging and pxCore detection
+        /// </summary>
+        private void ExecuteRealFirmwareWithLogging(string arch)
+        {
+            Debug.WriteLine($"🚀 FIRMWARE EXECUTION: Starting {arch} firmware at PC=0x{pc:X8}");
+            Debug.WriteLine("📍 INSTRUCTION TRACE: Showing first 10 instructions with full decode");
+            
+            int instructionCount = 0;
+            uint maxInstructions = 1000000;
+            bool detailedLoggingActive = true;
+            
+            // Track pxCore/framebuffer detection
+            bool pxCoreInitDetected = false;
+            bool framebufferWriteDetected = false;
+            
+            while (instructionCount < maxInstructions && pc < memory.Length - 4)
+            {
+                try
+                {
+                    // Read actual firmware instruction at PC
+                    uint instruction = BitConverter.ToUInt32(memory, (int)pc);
+                    uint currentPc = pc; // Save current PC before execution
+                    
+                    if (instruction == 0) // Skip padding/null instructions
+                    {
+                        if (detailedLoggingActive)
+                            Debug.WriteLine($"⏭️  PC=0x{currentPc:X8}: PADDING (0x00000000) - skipping");
+                        pc += 4;
+                        continue;
+                    }
+                    
+                    // Detailed instruction logging for first 10 instructions
+                    if (instructionCount < 10 && detailedLoggingActive)
+                    {
+                        string decodedInstruction = DecodeArmInstruction(instruction);
+                        Debug.WriteLine($"🔍 [{instructionCount + 1:D2}] PC=0x{currentPc:X8}: 0x{instruction:X8} -> {decodedInstruction}");
+                        
+                        // Show register state for first few instructions
+                        Debug.WriteLine($"    📊 R0=0x{regs[0]:X8} R1=0x{regs[1]:X8} R2=0x{regs[2]:X8} R3=0x{regs[3]:X8}");
+                        Debug.WriteLine($"    📊 SP=0x{regs[13]:X8} LR=0x{regs[14]:X8} PC=0x{pc:X8}");
+                    }
+                    
+                    // Check for pxCore initialization patterns
+                    if (!pxCoreInitDetected)
+                    {
+                        pxCoreInitDetected = DetectPxCoreInitialization(currentPc, instruction);
+                        if (pxCoreInitDetected)
+                        {
+                            Debug.WriteLine($"🎯 PXCORE DETECTED: pxCore initialization detected at PC=0x{currentPc:X8}!");
+                            Debug.WriteLine($"    Instruction: 0x{instruction:X8} ({DecodeArmInstruction(instruction)})");
+                        }
+                    }
+                    
+                    // Check for framebuffer writes
+                    if (!framebufferWriteDetected)
+                    {
+                        framebufferWriteDetected = DetectFramebufferWrite(currentPc, instruction);
+                        if (framebufferWriteDetected)
+                        {
+                            Debug.WriteLine($"🖥️ FRAMEBUFFER WRITE: Detected at PC=0x{currentPc:X8}!");
+                            Debug.WriteLine($"    Instruction: 0x{instruction:X8} ({DecodeArmInstruction(instruction)})");
+                        }
+                    }
+                    
+                    // Execute the real ARM instruction
+                    bool continueExecution = ExecuteRealArmInstructionWithLogging(instruction, currentPc);
+                    if (!continueExecution)
+                        break;
+                        
+                    instructionCount++;
+                    
+                    // Disable detailed logging after first 10 instructions
+                    if (instructionCount == 10)
+                    {
+                        detailedLoggingActive = false;
+                        Debug.WriteLine("📝 INSTRUCTION TRACE: Detailed logging complete, switching to milestone logging");
+                        Debug.WriteLine($"🔄 EXECUTION CONTINUES: Now at PC=0x{pc:X8}, continuing execution...");
+                    }
+                    
+                    // Periodic progress updates
+                    if (instructionCount % 10000 == 0)
+                    {
+                        Debug.WriteLine($"⚡ PROGRESS: {instructionCount} instructions executed, PC=0x{pc:X8}");
+                        
+                        if (pxRenderer?.IsInitialized == true)
+                        {
+                            pxRenderer.DrawBootText($"Firmware Instructions: {instructionCount}", 50, 200, 0xFFFFFF00);
+                            pxRenderer.DrawBootText($"Current PC: 0x{pc:X8}", 50, 220, 0xFFFFFF00);
+                            pxRenderer.Flip();
+                        }
+                    }
+                    
+                    // Check for halt condition
+                    if (instruction == 0xEAFFFFFE) // B . (infinite loop)
+                    {
+                        Debug.WriteLine($"🔴 HALT: Firmware reached infinite loop at PC=0x{pc:X8}");
+                        
+                        if (pxRenderer?.IsInitialized == true)
+                        {
+                            pxRenderer.RenderBootScreen("SYSTEM");
+                        }
+                        break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"❌ EXECUTION ERROR at PC=0x{pc:X8}: {ex.Message}");
+                    Debug.WriteLine($"    Instruction count: {instructionCount}");
+                    Debug.WriteLine($"    Call stack: {ex.StackTrace}");
+                    break;
+                }
+            }
+            
+            Debug.WriteLine($"🏁 FIRMWARE EXECUTION COMPLETE:");
+            Debug.WriteLine($"    📊 Total instructions executed: {instructionCount}");
+            Debug.WriteLine($"    📍 Final PC: 0x{pc:X8}");
+            Debug.WriteLine($"    🎯 pxCore initialization detected: {pxCoreInitDetected}");
+            Debug.WriteLine($"    🖥️ Framebuffer writes detected: {framebufferWriteDetected}");
+            Debug.WriteLine($"    🖼️ Display pipeline active: {(pxRenderer?.IsInitialized == true ? "YES" : "NO")}");
         }
     }
 }
