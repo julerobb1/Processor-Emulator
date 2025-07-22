@@ -8,7 +8,7 @@ using ProcessorEmulator.Emulation.SyncEngine;
 
 namespace ProcessorEmulator.Emulation
 {
-    public class HomebrewEmulator : IEmulator
+    public class HomebrewEmulator : IChipsetEmulator
     {
         private byte[] memory;
         private byte[] originalBinary;
