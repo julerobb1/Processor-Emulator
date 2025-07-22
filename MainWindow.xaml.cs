@@ -503,42 +503,25 @@ namespace ProcessorEmulator
                 return;
             }
             string path = firmwarePath;
-            StatusBarText($"Analyzing RDK-V firmware: {System.IO.Path.GetFileName(path)}...");
+            StatusBarText($"Loading RDK-V firmware: {System.IO.Path.GetFileName(path)}...");
 
             try
             {
                 var bin = System.IO.File.ReadAllBytes(path);
                 Debug.WriteLine($"Loaded RDK-V firmware: {bin.Length} bytes from {path}");
-                StatusBarText($"Loaded RDK-V firmware: {bin.Length} bytes");
+                StatusBarText($"Booting RDK-V firmware ({bin.Length:N0} bytes)...");
 
-                // Configure for ARRIS XG1V4 (ARM Cortex-A15 based)
-                var config = RDKVPlatformConfig.CreateArrisXG1V4Config();
-                Debug.WriteLine($"Using {config.DeviceModel} configuration: {config.ProcessorType}, {config.MemorySize / 1024 / 1024}MB");
-                StatusBarText($"Configured for {config.DeviceModel} (ARM Cortex-A15, {config.MemorySize / 1024 / 1024}MB)");
-
-                // Force ARM architecture detection for RDK-V (all RDK-V devices are ARM-based)
-                string detectedArch = Tools.ArchitectureDetector.Detect(bin);
-                string arch = "ARM"; // Override - RDK-V is always ARM-based
-
-                if (detectedArch != "ARM" && detectedArch != "Unknown")
-                {
-                    Debug.WriteLine($"Note: Detected {detectedArch} but forcing ARM for RDK-V compatibility");
-                }
-
-                StatusBarText("Starting RDK-V ARM emulation...");
-                
-                // Always use HomebrewEmulator for RDK-V (never QEMU)
+                // Just load and boot the firmware - NO POPUPS!
                 var emulator = new HomebrewEmulator();
                 emulator.LoadBinary(bin);
-                emulator.Run(); // This will start actual ARM emulation loop
+                emulator.Run(); // This will boot the actual firmware
 
-                StatusBarText("RDK-V ARM emulation started successfully.");
+                StatusBarText("RDK-V firmware boot initiated.");
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"RDK-V emulation error:\n\n{ex.Message}\n\nCheck that the firmware file is valid and accessible.",
-                               "RDK-V Emulation Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                StatusBarText("RDK-V emulation failed.");
+                MessageBox.Show($"RDK-V firmware boot error:\n\n{ex.Message}", "Boot Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusBarText("RDK-V firmware boot failed.");
             }
             await Task.CompletedTask;
         }
