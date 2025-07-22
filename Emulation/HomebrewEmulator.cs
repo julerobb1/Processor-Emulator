@@ -690,12 +690,12 @@ namespace ProcessorEmulator.Emulation
             {
                 uint imm = instruction & 0xFF;
                 uint rotate = (instruction >> 8) & 0xF;
-                return RotateRight(imm, rotate * 2);
+                return RotateRight(imm, (int)(rotate * 2));
             }
             else
             {
                 uint rm = instruction & 0xF;
-                return regs[rm]; // Simplified - no shifts
+                return regs[(int)rm]; // Simplified - no shifts
             }
         }
         
