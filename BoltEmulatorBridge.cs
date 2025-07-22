@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using System.Windows;
+using ProcessorEmulator.Emulation;
 
 namespace ProcessorEmulator
 {
@@ -12,13 +13,13 @@ namespace ProcessorEmulator
     /// </summary>
     public class BoltEmulatorBridge
     {
-        private Emulation.BoltBootloader bolt;
-        private Emulation.HomebrewEmulator emulator;
+        private BoltBootloader bolt;
+        private HomebrewEmulator emulator;
         private bool bootInProgress;
 
         public BoltEmulatorBridge()
         {
-            bolt = new Emulation.BoltBootloader();
+            bolt = new BoltBootloader();
             emulator = new Emulation.HomebrewEmulator();
             bootInProgress = false;
         }
