@@ -3,9 +3,12 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Diagnostics;
 using System.Threading;
+using System.Linq;
+using System.Text;
 
 namespace ProcessorEmulator
 {
