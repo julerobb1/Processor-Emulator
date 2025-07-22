@@ -6,6 +6,8 @@
     <Compile Include="Emulation\SparcEmulator.cs" />
     <Compile Include="Emulation\StubEmulators.cs" />
     <Compile Include="Emulation\HomebrewEmulator.cs" />
+    <Compile Include="Emulation\BoltBootloader.cs" />
+    <Compile Include="Emulation\SimpleBoltBridge.cs" />
     <Compile Include="Emulation\EmulatorWindow.xaml.cs" />
     <Compile Include="Emulation\PXRenderer.cs" />
     <Compile Include="Emulation\DisplayWindow.cs" />
