@@ -94,6 +94,23 @@
                         <Button Content="Mount SquashFS" Width="150" Margin="0,5" Click="MountSquashFs_Click"/>
                     </StackPanel>
                 </TabItem>
+                
+                <!-- Real-Time Emulation Log Tab -->
+                <TabItem Header="Emulation Log">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        
+                        <TextBlock Grid.Row="0" FontWeight="Bold" Text="Real-Time Emulation Logging" 
+                                   FontSize="14" Margin="10" />
+                        
+                        <!-- Log Panel will be added programmatically -->
+                        <Border Grid.Row="1" x:Name="LogPanelContainer" Margin="10"/>
+                    </Grid>
+                </TabItem>
+                
             </TabControl>
         </Grid>
     </DockPanel>
