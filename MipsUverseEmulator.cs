@@ -430,9 +430,7 @@ namespace ProcessorEmulator.Emulation
         #endregion
 
         #region IChipsetEmulator Implementation
-        
-        public string ChipsetName => "AT&T U-verse MIPS/WinCE";
-        
+                
         public bool Initialize(string configPath)
         {
             // Start the initialization process
@@ -506,6 +504,7 @@ namespace ProcessorEmulator.Emulation
         
         public Dictionary<string, object> GetStatus()
         {
+            var recentLogs = bootLog.Count > 10 ? bootLog.GetRange(bootLog.Count - 10, 10) : bootLog;
             return new Dictionary<string, object>
             {
                 ["IsInitialized"] = isInitialized,
@@ -513,7 +512,7 @@ namespace ProcessorEmulator.Emulation
                 ["IsRunning"] = IsRunning,
                 ["PC"] = $"0x{GetProgramCounter():X8}",
                 ["InstructionCount"] = "N/A",
-                ["BootLog"] = string.Join("\n", bootLog.TakeLast(10))
+                ["BootLog"] = string.Join("\n", recentLogs)
             };
         }
         
