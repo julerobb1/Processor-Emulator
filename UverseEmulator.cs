@@ -71,5 +71,10 @@ namespace ProcessorEmulator
     public class UverseHardwareConfig
     {
         // Configuration class for U-verse hardware settings
+        public string ModelType { get; set; } = "VIP1225";
+        public string ProcessorType { get; set; } = "MIPS";
+        public uint MemorySize { get; set; } = 128 * 1024 * 1024; // 128MB default
+        public bool IsDVR { get; set; } = false;
+        public bool IsWholeHome { get; set; } = false;
     }
 }
