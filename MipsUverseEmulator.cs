@@ -4,7 +4,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows;
-using ProcessorEmulator.Emulation;
+using ProcessorEmulator.Tools;
 
 namespace ProcessorEmulator.Emulation
 {
@@ -431,6 +431,50 @@ namespace ProcessorEmulator.Emulation
 
         #region IChipsetEmulator Implementation
         
+        public string ChipsetName => "AT&T U-verse MIPS/WinCE";
+        
+        public bool Initialize(string configPath)
+        {
+            // Start the initialization process
+            Task.Run(async () => await Initialize());
+            return true;
+        }
+        
+        public byte[] ReadRegister(uint address)
+        {
+            // Read MIPS register or memory
+            if (address < 32) // MIPS registers R0-R31
+            {
+                uint value = GetRegister((int)address);
+                return BitConverter.GetBytes(value);
+            }
+            else
+            {
+                // Read from memory
+                byte[] buffer = new byte[4];
+                ReadMemory(address, buffer, 4);
+                return buffer;
+            }
+        }
+        
+        public void WriteRegister(uint address, byte[] data)
+        {
+            if (data.Length >= 4)
+            {
+                uint value = BitConverter.ToUInt32(data, 0);
+                if (address < 32) // MIPS registers R0-R31
+                {
+                    SetRegister((int)address, value);
+                }
+                else
+                {
+                    // Write to memory
+                    WriteMemory(address, data, data.Length);
+                }
+            }
+        }
+        
+        // Additional methods for U-verse specific functionality
         public async Task StartEmulation()
         {
             if (!await Initialize())
