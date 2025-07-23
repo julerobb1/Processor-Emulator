@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using ProcessorEmulator.Emulation;
+using ProcessorEmulator.Tools;
 
 namespace ProcessorEmulator
 {
@@ -18,8 +18,6 @@ namespace ProcessorEmulator
         
         // IChipsetEmulator implementation
         public string ChipsetName => "AT&T U-verse Mediaroom";
-        public string Architecture => "Content Management";
-        public bool IsRunning => isRunning;
         
         public UverseEmulator()
         {
@@ -54,35 +52,19 @@ namespace ProcessorEmulator
         }
         
         // IChipsetEmulator implementation
-        public void StartEmulation()
+        public bool Initialize(string configPath)
         {
-            isRunning = true;
+            return true;
         }
         
-        public void StopEmulation()
+        public byte[] ReadRegister(uint address)
         {
-            isRunning = false;
+            return new byte[4];
         }
         
-        public void LoadFirmware(byte[] firmwareData)
+        public void WriteRegister(uint address, byte[] data)
         {
-            // Load firmware data
-        }
-        
-        public Dictionary<string, object> GetStatus()
-        {
-            return new Dictionary<string, object>
-            {
-                ["IsRunning"] = isRunning,
-                ["BootImage"] = bootImagePath ?? "Not loaded",
-                ["ContentSignature"] = contentSignaturePath ?? "Not loaded",
-                ["ConfigLoaded"] = config != null
-            };
-        }
-        
-        public void Dispose()
-        {
-            StopEmulation();
+            // Write to register
         }
     }
     
