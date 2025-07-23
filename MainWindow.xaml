@@ -61,6 +61,9 @@
                                 <RadioButton x:Name="RdkVPlatformRadio" Content="RDK-V (ARRIS XG1V4)" 
                                            GroupName="PlatformChoice" Margin="0,2"
                                            ToolTip="RDK-V platform with BCM7449 SoC emulation"/>
+                                <RadioButton x:Name="UversePlatformRadio" Content="AT&amp;T U-verse (MIPS/WinCE)" 
+                                           GroupName="PlatformChoice" Margin="0,2"
+                                           ToolTip="AT&amp;T U-verse STB with MIPS processor and WinCE kernel"/>
                                 <RadioButton x:Name="GenericPlatformRadio" Content="Generic Platform" 
                                            GroupName="PlatformChoice" IsChecked="True" Margin="0,2"
                                            ToolTip="Auto-detect platform from firmware"/>
