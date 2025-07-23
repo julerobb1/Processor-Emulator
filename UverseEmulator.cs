@@ -6,8 +6,8 @@ using ProcessorEmulator.Tools;
 namespace ProcessorEmulator
 {
     /// <summary>
-    /// AT&T U-verse Content and Mediaroom Emulator
-    /// Handles content loading, signatures, and whole home network emulation
+    ///  AT&T U-verse Content and Mediaroom Emulator
+    ///  Handles content loading, signatures, and whole home network emulation
     /// </summary>
     public class UverseEmulator : IChipsetEmulator
     {
