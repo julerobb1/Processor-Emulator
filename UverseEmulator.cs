@@ -1,54 +1,205 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Net;
-using System.Security.Cryptography;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
-using ProcessorEmulator.Network;
-
+using System.Windows;
+using ProcessorEmulator.Emulation;
+// We're going off the rails like a crazy train! but this is the U-verse MIPS emulator!
 namespace ProcessorEmulator.Emulation
 {
-    public class UverseHardwareConfig
+    /// <summary>
+    /// AT&T U-verse MIPS/WinCE Emulator
+    /// Boots real nk.bin kernel with native MIPS-to-x64 translation
+    /// Target: Microsoft Mediaroom STB firmware
+    /// </summary>
+    public class UverseEmulator : IChipsetEmulator
     {
-        public string ModelType { get; set; }  // VIP1200, VIP2250, etc.
-        public string ProcessorType { get; set; }
-        public uint MemorySize { get; set; }
-        public bool IsDVR { get; set; }
-        public bool IsWholeHome { get; set; }
-    }
+        #region Native DLL Imports
+        
+        [DllImport("MipsEmulatorCore.dll", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int InitEmulator(uint ramSize);
+        
+        [DllImport("MipsEmulatorCore.dll", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int LoadFirmware([MarshalAs(UnmanagedType.LPStr)] string path, uint loadAddress);
+        
+        [DllImport("MipsEmulatorCore.dll", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int SetRegister(int regNum, uint value);
+        
+        [DllImport("MipsEmulatorCore.dll", CallingConvention = CallingConvention.Cdecl)]
+        private static extern uint GetRegister(int regNum);
+        
+        [DllImport("MipsEmulatorCore.dll", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int ExecuteInstruction();
+        
+        [DllImport("MipsEmulatorCore.dll", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int RunContinuous();
+        
+        [DllImport("MipsEmulatorCore.dll", CallingConvention = CallingConvention.Cdecl)]
+        private static extern uint GetProgramCounter();
+        
+        [DllImport("MipsEmulatorCore.dll", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int WriteMemory(uint address, byte[] data, int length);
+        
+        [DllImport("MipsEmulatorCore.dll", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int ReadMemory(uint address, byte[] buffer, int length);
+        
+        [DllImport("MipsEmulatorCore.dll", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int SetBreakpoint(uint address);
+        
+        [DllImport("MipsEmulatorCore.dll", CallingConvention = CallingConvention.Cdecl)]
+        private static extern void GetEmulatorStatus([MarshalAs(UnmanagedType.LPStr)] out string status);
+        
+        #endregion
 
-    public class MediaroomEmulator
-    {
-        private const uint MEDIAROOM_MAGIC = 0x4D524D56; // "MRMV"
-        private Dictionary<string, byte[]> contentFiles = new();
-        private Dictionary<string, string> signatures = new();
-
-        public void LoadBootSignature(string bootSigPath)
+        #region U-verse Firmware Paths
+        
+        private readonly string BasePath = @"C:\Users\Juler\Downloads\DVR Stuff\UVERSE STUFF\Uverse Drive E";
+        
+        private readonly Dictionary<string, string> FirmwareFiles = new Dictionary<string, string>
         {
-            var lines = File.ReadAllLines(bootSigPath);
-            foreach (var line in lines)
-            {
-                if (string.IsNullOrWhiteSpace(line)) continue;
-                var parts = line.Split(' ');
-                if (parts.Length >= 3)
-                {
-                    signatures[parts[0]] = parts[2]; // filename -> signature
-                }
-            }
+            {"kernel", "nk.bin"},           // WinCE kernel image  
+            {"config", "etc.bin"},          // Boot overlays + configs
+            {"registry", "default.hv"},     // Registry hive
+            {"startup", "startup.bz"},      // Bootloader arguments
+            {"signature", "boot.sig"},      // Boot signature (optional)
+            {"security", "sec.bin"}         // DRM/PlayReady logic
+        };
+        
+        #endregion
+
+        #region State Management
+        
+        private bool isInitialized = false;
+        private bool isKernelLoaded = false;
+        private bool isBootInProgress = false;
+        
+        private Dictionary<string, object> registryHive;
+        private List<string> bootLog;
+        private uint entryPoint = 0xBFC00000; // MIPS boot vector
+        
+        #endregion
+
+        public UverseEmulator()
+        {
+            bootLog = new List<string>();
+            registryHive = new Dictionary<string, object>();
+            LogBoot("U-verse MIPS Emulator initialized");
         }
 
-        public void LoadContentFiles(string contentSigPath)
+        #region IChipsetEmulator Implementation
+        
+        public string ChipsetName => "AT&T U-verse MIPS/WinCE";
+        
+        public async Task<bool> DetectFirmware(byte[] firmwareData)
         {
-            var lines = File.ReadAllLines(contentSigPath);
-            foreach (var line in lines)
+            try
             {
-                if (string.IsNullOrWhiteSpace(line)) continue;
-                var parts = line.Split(' ');
-                if (parts.Length >= 3)
+                // Check for WinCE kernel signature
+                if (firmwareData.Length < 0x1000) return false;
+                
+                // Look for WinCE PE header or known U-verse signatures
+                var header = System.Text.Encoding.ASCII.GetString(firmwareData, 0, Math.Min(256, firmwareData.Length));
+                
+                bool isWinCE = header.Contains("WINCE") || 
+                              header.Contains("Microsoft") ||
+                              header.Contains("nk.bin") ||
+                              header.Contains("mediaroom");
+                              
+                bool isMIPS = (firmwareData[0x18] == 0x66 && firmwareData[0x19] == 0x01) || // MIPS machine type
+                             header.Contains("MIPS");
+                
+                LogBoot($"Firmware detection: WinCE={isWinCE}, MIPS={isMIPS}");
+                return isWinCE && isMIPS;
+            }
+            catch (Exception ex)
+            {
+                LogBoot($"Firmware detection error: {ex.Message}");
+                return false;
+            }
+        }
+        
+        public async Task<bool> LoadFirmware(byte[] firmwareData, string firmwarePath = null)
+        {
+            try
+            {
+                LogBoot("=== AT&T U-verse MIPS Emulator Boot Sequence ===");
+                LogBoot($"Target: Microsoft Mediaroom STB");
+                LogBoot($"Architecture: MIPS32 → x64 hypervisor");
+                LogBoot("");
+                
+                // Step 1: Initialize native MIPS emulator core
+                LogBoot("Step 1: Initializing MIPS CPU emulator...");
+                int ramSize = 64 * 1024 * 1024; // 64MB RAM sandbox
+                int initResult = InitEmulator((uint)ramSize);
+                
+                if (initResult != 0)
                 {
-                    // Track content files and their signatures
-                    signatures[parts[0].ToLowerInvariant()] = parts[2];
+                    LogBoot($"❌ Failed to initialize MIPS emulator core (error {initResult})");
+                    return false;
                 }
+                
+                isInitialized = true;
+                LogBoot("✅ MIPS emulator core initialized");
+                LogBoot($"   - Virtual registers R0-R31 created");
+                LogBoot($"   - RAM sandbox: {ramSize / (1024 * 1024)}MB allocated");
+                LogBoot($"   - MMU: Basic page mapping enabled");
+                LogBoot("");
+                
+                // Step 2: Load firmware files
+                await LoadUverseFirmwareFiles();
+                
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LogBoot($"❌ Fatal error during firmware load: {ex.Message}");
+                return false;
+            }
+        }
+        
+        public async Task StartEmulation()
+        {
+            if (!isInitialized || !isKernelLoaded)
+            {
+                LogBoot("❌ Cannot start emulation: firmware not loaded");
+                return;
+            }
+            
+            try
+            {
+                isBootInProgress = true;
+                LogBoot("🚀 Starting MIPS execution...");
+                LogBoot($"📍 Entry Point: 0x{entryPoint:X8}");
+                LogBoot("");
+                
+                // Set initial register state
+                SetRegister(29, 0x80100000); // SP (stack pointer)  
+                SetRegister(30, 0x80100000); // FP (frame pointer)
+                SetRegister(31, 0x00000000); // RA (return address)
+                
+                LogBoot("🔍 MIPS EXECUTION TRACE:");
+                LogBoot("==================================================");
+                
+                // Start continuous execution in native core
+                await Task.Run(() =>
+                {
+                    int result = RunContinuous();
+                    LogBoot($"Emulation stopped with result: {result}");
+                });
+                
+                isBootInProgress = false;
+            }
+            catch (Exception ex)
+            {
+                LogBoot($"❌ Emulation error: {ex.Message}");
+                isBootInProgress = false;
+            }
+        }
+        
+        public bool IsEmulationRunning => isBootInProgress;
+        
+        #endregion
             }
         }
 
