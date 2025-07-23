@@ -530,14 +530,17 @@ namespace ProcessorEmulator.Emulation
                 hiveData = data;
             }
             
-            public async Task Parse()
+            public Task Parse()
             {
-                // Simplified registry parsing
-                // Real implementation would parse Windows CE registry format
-                services.Add("tv2clientce.exe");
-                services.Add("gwes.exe");
-                services.Add("iptvcryptohal.dll");
-                services.Add("notify.dll");
+                return Task.Run(() =>
+                {
+                    // Simplified registry parsing
+                    // Real implementation would parse Windows CE registry format
+                    services.Add("tv2clientce.exe");
+                    services.Add("gwes.exe");
+                    services.Add("iptvcryptohal.dll");
+                    services.Add("notify.dll");
+                });
             }
             
             public List<string> GetServices()
