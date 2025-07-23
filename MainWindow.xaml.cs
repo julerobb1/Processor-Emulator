@@ -275,89 +275,123 @@ namespace ProcessorEmulator
 
         private async Task HandleUverseEmulation()
         {
-            var openFileDialog = new OpenFileDialog
-            {
-                Filter = "Firmware Images (*.bin;*.img;*.sig)|*.bin;*.img;*.sig|All Files (*.*)|*.*"
-            };
-            if (openFileDialog.ShowDialog() != true) return;
-
-            string filePath = openFileDialog.FileName;
-            StatusBarText($"Selected file: {Path.GetFileName(filePath)}");
             try
             {
-                string ext = Path.GetExtension(filePath).ToLowerInvariant();
-                string extractDir = Path.Combine(Path.GetDirectoryName(filePath), Path.GetFileNameWithoutExtension(filePath) + "_extracted");
-                if (ext != ".sig")
+                StatusBarText("Starting U-verse MIPS/WinCE emulation...");
+                
+                // Check if this is an nk.bin kernel file
+                if (Path.GetFileName(firmwarePath).ToLower() == "nk.bin")
                 {
-                    // Perform generic firmware analysis
-                    await Task.Run(() => ArchiveExtractor.ExtractAndAnalyze(filePath, extractDir));
-                    FirmwareAnalyzer.AnalyzeFirmwareArchive(filePath, extractDir);
-                    StatusBarText("Firmware analysis complete.");
-                    MessageBox.Show($"Firmware {Path.GetFileName(filePath)} analyzed in {extractDir}", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
-                    return;
+                    StatusBarText("Detected nk.bin - initializing MIPS U-verse emulator...");
+                    
+                    // Use the MIPS U-verse emulator for nk.bin
+                    var mipsEmulator = new ProcessorEmulator.Emulation.MipsUverseEmulator();
+                    
+                    if (!mipsEmulator.Initialize(""))
+                    {
+                        throw new Exception("Failed to initialize MIPS U-verse emulator");
+                    }
+                    
+                    await mipsEmulator.StartEmulation();
+                    
+                    // Show emulator status
+                    var status = mipsEmulator.GetStatus();
+                    var results = new List<string>
+                    {
+                        "=== U-verse MIPS Emulator Status ===",
+                        $"Chipset: {mipsEmulator.ChipsetName}",
+                        $"File: {Path.GetFileName(firmwarePath)}",
+                        $"Initialized: {status["IsInitialized"]}",
+                        $"Kernel Loaded: {status["KernelLoaded"]}",
+                        $"Running: {status["IsRunning"]}",
+                        $"PC: {status["PC"]}",
+                        "",
+                        "Boot Log:",
+                        status["BootLog"]?.ToString() ?? "No boot log available"
+                    };
+                    
+                    ShowTextWindow("U-verse MIPS Emulation Results", results);
+                    StatusBarText("U-verse MIPS emulation started successfully");
                 }
-
-                // Signature-based Uverse emulation
-                StatusBarText($"Loading Uverse config from {Path.GetFileName(filePath)}...");
-                string model = PromptUserForInput("Enter model type (e.g. VIP2250):")?.Trim();
-                if (string.IsNullOrWhiteSpace(model)) model = "VIP2250";
-                string proc = PromptUserForInput("Enter processor type (e.g. ARM/x86):")?.Trim();
-                if (string.IsNullOrWhiteSpace(proc)) proc = "ARM";
-                string memInput = PromptUserForInput("Enter memory size in MB:")?.Trim();
-                if (!int.TryParse(memInput, out int mb)) mb = 128;
-                uint memBytes = (uint)(mb * 1024 * 1024);
-                bool isDVR = PromptUserForChoice("Is this device a DVR?", new[] { "Yes", "No" }) == "Yes";
-                bool isWholeHome = PromptUserForChoice("Enable Whole Home network?", new[] { "Yes", "No" }) == "Yes";
-                var config = new UverseHardwareConfig
+                else
                 {
-                    ModelType = model,
-                    ProcessorType = proc,
-                    MemorySize = memBytes,
-                    IsDVR = isDVR,
-                    IsWholeHome = isWholeHome
-                };
-
-                //What is the air speed velocity of an unladen swallow?
-                //What do you mean? An African or European swallow?
-                //What? I don't know that!
-                //AAAUUH
-                //Unladen swallow? What do you mean?
-                //Well you have to know these things when you're a king, you know.
-                //               
-                // 
-                //  // Initialize Uverse emulator with the provided configuration
-
-                var emulator = new UverseEmulator(config);
-                ShowTextWindow("Uverse Emulation", new List<string> { "Initialized emulator with config." });
-                emulator.LoadBootImage(filePath);
-                ShowTextWindow("Uverse Emulation", new List<string> { $"Loaded boot image: {Path.GetFileName(filePath)}" });
-                string contentSig = Path.Combine(Path.GetDirectoryName(filePath), "content.sig");
-                if (File.Exists(contentSig))
-                {
-                    emulator.LoadMediaroomContent(contentSig);
-                    ShowTextWindow("Uverse Emulation", new List<string> { $"Loaded content signatures: {Path.GetFileName(contentSig)}" });
+                    // Use the regular U-verse content emulator for other files
+                    StatusBarText("Using U-verse content/Mediaroom emulator...");
+                    
+                    // Detect if it's a signature file (.sig) or other content
+                    string ext = Path.GetExtension(firmwarePath).ToLowerInvariant();
+                    
+                    if (ext == ".sig")
+                    {
+                        // Handle signature-based U-verse emulation
+                        StatusBarText($"Loading U-verse config from {Path.GetFileName(firmwarePath)}...");
+                        string model = PromptUserForInput("Enter model type (e.g. VIP2250):")?.Trim();
+                        if (string.IsNullOrWhiteSpace(model)) model = "VIP2250";
+                        string proc = PromptUserForInput("Enter processor type (e.g. MIPS):")?.Trim();
+                        if (string.IsNullOrWhiteSpace(proc)) proc = "MIPS";
+                        
+                        var config = new UverseHardwareConfig
+                        {
+                            ModelType = model,
+                            ProcessorType = proc,
+                            MemorySize = 128 * 1024 * 1024, // 128MB
+                            IsDVR = false,
+                            IsWholeHome = false
+                        };
+                        
+                        var emulator = new UverseEmulator(config);
+                        emulator.LoadBootImage(firmwarePath);
+                        emulator.LoadMediaroomContent(firmwarePath);
+                        emulator.EmulateWholeHomeNetwork();
+                        UverseEmulator.StartMediaroom();
+                        
+                        var uverseLog = new List<string>
+                        {
+                            "=== U-verse Content Emulator ===",
+                            $"File: {Path.GetFileName(firmwarePath)}",
+                            $"Model: {model}",
+                            $"Processor: {proc}",
+                            $"Memory: 128MB",
+                            $"DVR Enabled: {config.IsDVR}",
+                            $"Whole Home Network: {config.IsWholeHome}",
+                            "Status: Mediaroom platform started"
+                        };
+                        
+                        ShowTextWindow("U-verse Content Emulation", uverseLog);
+                    }
+                    else
+                    {
+                        // Generic firmware analysis for other U-verse files
+                        string extractDir = Path.Combine(Path.GetDirectoryName(firmwarePath), 
+                            Path.GetFileNameWithoutExtension(firmwarePath) + "_extracted");
+                        
+                        await Task.Run(() => ArchiveExtractor.ExtractAndAnalyze(firmwarePath, extractDir));
+                        FirmwareAnalyzer.AnalyzeFirmwareArchive(firmwarePath, extractDir);
+                        
+                        var results = new List<string>
+                        {
+                            "=== U-verse Firmware Analysis ===",
+                            $"File: {Path.GetFileName(firmwarePath)}",
+                            $"Extracted to: {extractDir}",
+                            "Analysis completed - check extracted directory for details"
+                        };
+                        
+                        ShowTextWindow("U-verse Firmware Analysis", results);
+                    }
+                    
+                    StatusBarText("U-verse content emulation completed");
                 }
-                emulator.EmulateWholeHomeNetwork();
-                ShowTextWindow("Uverse Emulation", new List<string> { "Configured whole home network." });
-                UverseEmulator.StartMediaroom();
-                ShowTextWindow("Uverse Emulation", new List<string> { "Started Mediaroom platform." });
-                var uverseLog = new List<string>
-                {
-                    $"Model: {model}",
-                    $"Processor: {proc}",
-                    $"Memory (MB): {mb}",
-                    $"DVR Enabled: {isDVR}",
-                    $"Whole Home Network: {isWholeHome}"
-                };
-                ShowTextWindow("Uverse Emulation Log", uverseLog);
-                StatusBarText("Uverse emulation complete.");
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Uverse processing failed: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                StatusBarText("Uverse processing failed.");
+                StatusBarText("U-verse emulation failed");
+                ShowTextWindow("U-verse Emulation Error", new List<string> 
+                { 
+                    $"Error: {ex.Message}",
+                    $"File: {Path.GetFileName(firmwarePath)}",
+                    $"Stack: {ex.StackTrace}"
+                });
             }
-            await Task.CompletedTask;
         }
 
         /// <summary>
@@ -1657,26 +1691,36 @@ namespace ProcessorEmulator
             selectedPlatform = "Generic"; // Default
             try
             {
-                if (RdkVPlatformRadio.IsChecked == true)
+                var rdkRadio = FindName("RdkVPlatformRadio") as RadioButton;
+                var uverseRadio = FindName("UversePlatformRadio") as RadioButton;
+                var genericRadio = FindName("GenericPlatformRadio") as RadioButton;
+                
+                if (rdkRadio?.IsChecked == true)
                     selectedPlatform = "RDK-V";
-                else if (GenericPlatformRadio.IsChecked == true)
+                else if (uverseRadio?.IsChecked == true)
+                    selectedPlatform = "U-verse";
+                else if (genericRadio?.IsChecked == true)
                     selectedPlatform = "Generic";
             }
             catch
             {
                 // Fallback if radio buttons not accessible
-                selectedPlatform = "RDK-V"; // Assume RDK-V since that's the main focus
+                selectedPlatform = "Generic"; // Default to generic for safety
             }
 
             // Determine selected emulator type
             string selectedEmulator = "HomebrewEmulator"; // Default
             try
             {
-                if (HomebrewEmulatorRadio.IsChecked == true)
+                var homebrewRadio = FindName("HomebrewEmulatorRadio") as RadioButton;
+                var qemuRadio = FindName("QemuEmulatorRadio") as RadioButton;
+                var retDecRadio = FindName("RetDecTranslatorRadio") as RadioButton;
+                
+                if (homebrewRadio?.IsChecked == true)
                     selectedEmulator = "HomebrewEmulator";
-                else if (QemuEmulatorRadio.IsChecked == true)
+                else if (qemuRadio?.IsChecked == true)
                     selectedEmulator = "QEMU";
-                else if (RetDecTranslatorRadio.IsChecked == true)
+                else if (retDecRadio?.IsChecked == true)
                     selectedEmulator = "RetDec";
             }
             catch
@@ -1702,6 +1746,9 @@ namespace ProcessorEmulator
                 {
                     case "RDK-V":
                         await HandleRdkVEmulation();
+                        break;
+                    case "U-verse":
+                        await HandleUverseEmulation();
                         break;
                     default:
                         await HandleGenericEmulation();
@@ -1786,9 +1833,13 @@ namespace ProcessorEmulator
         {
             try
             {
-                if (HomebrewEmulatorRadio?.IsChecked == true) return "HomebrewEmulator";
-                if (QemuEmulatorRadio?.IsChecked == true) return "QEMU";
-                if (RetDecTranslatorRadio?.IsChecked == true) return "RetDec";
+                var homebrewRadio = FindName("HomebrewEmulatorRadio") as RadioButton;
+                var qemuRadio = FindName("QemuEmulatorRadio") as RadioButton;
+                var retDecRadio = FindName("RetDecTranslatorRadio") as RadioButton;
+                
+                if (homebrewRadio?.IsChecked == true) return "HomebrewEmulator";
+                if (qemuRadio?.IsChecked == true) return "QEMU";
+                if (retDecRadio?.IsChecked == true) return "RetDec";
             }
             catch
             {
@@ -1801,8 +1852,13 @@ namespace ProcessorEmulator
         {
             try
             {
-                if (RdkVPlatformRadio?.IsChecked == true) return "RDK-V";
-                if (GenericPlatformRadio?.IsChecked == true) return "Generic";
+                var rdkRadio = FindName("RdkVPlatformRadio") as RadioButton;
+                var uverseRadio = FindName("UversePlatformRadio") as RadioButton;
+                var genericRadio = FindName("GenericPlatformRadio") as RadioButton;
+                
+                if (rdkRadio?.IsChecked == true) return "RDK-V";
+                if (uverseRadio?.IsChecked == true) return "U-verse";
+                if (genericRadio?.IsChecked == true) return "Generic";
             }
             catch
             {
@@ -2196,5 +2252,58 @@ namespace ProcessorEmulator
                 Debug.WriteLine($"SetBoltFirmwarePath error: {ex.Message}");
             }
         }
+
+        #region U-verse MIPS Emulator Testing
+        
+        private async void TestUverseMipsEmulator()
+        {
+            try
+            {
+                StatusBarText("Starting U-verse MIPS/WinCE emulator test...");
+                
+                // Create the MIPS U-verse emulator
+                var mipsEmulator = new ProcessorEmulator.Emulation.MipsUverseEmulator();
+                
+                // Initialize the emulator
+                if (!mipsEmulator.Initialize(""))
+                {
+                    ShowTextWindow("U-verse MIPS Test", new List<string> { "Failed to initialize MIPS emulator" });
+                    return;
+                }
+                
+                // Start emulation
+                await mipsEmulator.StartEmulation();
+                
+                // Get status
+                var status = mipsEmulator.GetStatus();
+                var results = new List<string>
+                {
+                    "=== U-verse MIPS Emulator Test Results ===",
+                    $"Chipset: {mipsEmulator.ChipsetName}",
+                    $"Initialized: {status["IsInitialized"]}",
+                    $"Kernel Loaded: {status["KernelLoaded"]}",
+                    $"Running: {status["IsRunning"]}",
+                    $"PC: {status["PC"]}",
+                    "",
+                    "Boot Log:",
+                    status["BootLog"]?.ToString() ?? "No boot log available"
+                };
+                
+                ShowTextWindow("U-verse MIPS Emulator Test", results);
+                StatusBarText("U-verse MIPS emulator test completed");
+            }
+            catch (Exception ex)
+            {
+                ShowTextWindow("U-verse MIPS Test Error", new List<string> 
+                { 
+                    $"Error: {ex.Message}",
+                    $"Stack: {ex.StackTrace}"
+                });
+                StatusBarText("U-verse MIPS emulator test failed");
+            }
+        }
+        
+        #endregion
+
     }
 }
