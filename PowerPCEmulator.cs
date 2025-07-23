@@ -4,7 +4,7 @@ using System.IO;
 using System.Text;
 using System.Windows;
 using ProcessorEmulator.Tools;
-
+//I got 54 problems with this code, but I don't care because I'm a PowerPC emulator!
 namespace ProcessorEmulator
 {
     public class PowerPCEmulator : IChipsetEmulator
