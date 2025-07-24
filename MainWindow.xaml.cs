@@ -139,6 +139,8 @@ namespace ProcessorEmulator
                 "Emulate CMTS Head End",
                 "Uverse Box Emulator",
                 "DirecTV Box/Firmware Analysis",
+                "Pluto TV Integration",
+                "Custom Hypervisor",
                 "Executable Analysis",
                 "Linux Filesystem Read/Write",
                 "Cross-Compile Binary",
@@ -2533,6 +2535,65 @@ namespace ProcessorEmulator
                 if (found) return true;
             }
             return false;
+        }
+        
+        private async Task HandlePlutoTvIntegration()
+        {
+            try
+            {
+                StatusBarText("Initializing Pluto TV integration...");
+                
+                var guideFetcher = new ProcessorEmulator.Emulation.SyncEngine.GuideFetcher();
+                var guideData = await guideFetcher.FetchGuideAsync();
+                
+                var channelList = new List<string>();
+                channelList.Add("=== PLUTO TV CHANNELS ===");
+                channelList.Add($"Total Channels: {guideData.Channels.Count}");
+                channelList.Add($"Total Programs: {guideData.Programs.Count}");
+                channelList.Add("");
+                
+                foreach (var channel in guideData.Channels)
+                {
+                    channelList.Add($"{channel.Number}: {channel.Name}");
+                }
+                
+                ShowTextWindow("Pluto TV Integration", channelList);
+                StatusBarText("Pluto TV integration completed successfully");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Pluto TV integration failed: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusBarText("Pluto TV integration failed");
+            }
+        }
+        
+        private async Task HandleCustomHypervisor()
+        {
+            var openFileDialog = new OpenFileDialog
+            {
+                Filter = "Firmware Files (*.bin;*.img;*.elf)|*.bin;*.img;*.elf|All Files (*.*)|*.*",
+                Title = "Select firmware for custom hypervisor"
+            };
+            
+            if (openFileDialog.ShowDialog() != true) return;
+            
+            try
+            {
+                StatusBarText("Launching custom hypervisor...");
+                
+                byte[] firmware = File.ReadAllBytes(openFileDialog.FileName);
+                string platformName = Path.GetFileNameWithoutExtension(openFileDialog.FileName);
+                
+                // Launch the real VMware-style hypervisor
+                VirtualMachineHypervisor.LaunchHypervisor(firmware, $"Custom Platform - {platformName}");
+                
+                StatusBarText("Custom hypervisor launched successfully");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Custom hypervisor launch failed: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusBarText("Custom hypervisor launch failed");
+            }
         }
         
         #endregion
