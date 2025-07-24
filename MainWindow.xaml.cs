@@ -531,7 +531,7 @@ namespace ProcessorEmulator
         // Core feature handlers
 
         /// <summary>
-        /// Emulates an RDK-V set-top box using built-in emulator with display.
+        /// Emulates an RDK-V set-top box using dedicated RDK-V emulator with ARM decoding.
         /// </summary>
         private async Task HandleRdkVEmulation()
         {
@@ -549,12 +549,12 @@ namespace ProcessorEmulator
                 Debug.WriteLine($"Loaded RDK-V firmware: {bin.Length} bytes from {path}");
                 StatusBarText($"Booting RDK-V firmware ({bin.Length:N0} bytes)...");
 
-                // Just load and boot the firmware - NO POPUPS!
-                var emulator = new HomebrewEmulator();
+                // Use the proper RDK-V emulator, not generic HomebrewEmulator
+                var emulator = new ProcessorEmulator.Emulation.RDKVEmulator();
                 emulator.LoadBinary(bin);
-                emulator.Run(); // This will boot the actual firmware
+                emulator.Run(); // This will actually boot the firmware with ARM decoding
 
-                StatusBarText("RDK-V firmware boot initiated.");
+                StatusBarText("RDK-V firmware boot completed - check Debug Output for execution details.");
             }
             catch (Exception ex)
             {
@@ -2301,6 +2301,238 @@ namespace ProcessorEmulator
                 });
                 StatusBarText("U-verse MIPS emulator test failed");
             }
+        }
+        
+        #endregion
+
+        #region Advanced Analysis Options
+        
+        private async void AdvancedOptionsButton_Click(object sender, RoutedEventArgs e)
+        {
+            // Present all advanced analysis and emulation options
+            var mainOptions = new List<string>
+            {
+                "Generic CPU/OS Emulation",
+                "RDK-V Emulator", 
+                "RDK-B Emulator",
+                "PowerPC Bootloader Demo",
+                "Dish Network Box/VxWorks Analysis",
+                "Simulate SWM Switch/LNB",
+                "Probe Filesystem",
+                "Emulate CMTS Head End",
+                "Uverse Box Emulator",
+                "DirecTV Box/Firmware Analysis",
+                "Executable Analysis",
+                "Linux Filesystem Read/Write",
+                "Cross-Compile Binary",
+                "Mount CE Filesystem",
+                "Mount YAFFS Filesystem",
+                "Mount ISO Filesystem", 
+                "Mount EXT Filesystem",
+                "Simulate SWM LNB",
+                "Boot Firmware (Homebrew First)",
+                "Boot Firmware in Homebrew Emulator",
+                "Analyze Folder Contents"
+            };
+            
+            string mainChoice = PromptUserForChoice("Advanced Analysis Options", mainOptions);
+            if (string.IsNullOrEmpty(mainChoice)) return;
+
+            StatusBarText($"Starting: {mainChoice}");
+
+            switch (mainChoice)
+            {
+                case "Generic CPU/OS Emulation":
+                    await HandleGenericEmulation();
+                    break;
+                case "RDK-V Emulator":
+                    await HandleRdkVEmulation();
+                    break;
+                case "RDK-B Emulator":
+                    await HandleRdkBEmulation();
+                    break;
+                case "PowerPC Bootloader Demo":
+                    await HandlePowerPCBootloaderDemo();
+                    break;
+                case "Dish Network Box/VxWorks Analysis":
+                    await HandleDishNetworkAnalysis();
+                    break;
+                case "Simulate SWM Switch/LNB":
+                    await HandleSwmLnbSimulation();
+                    break;
+                case "Probe Filesystem":
+                    await HandleFilesystemProbe();
+                    break;
+                case "Emulate CMTS Head End":
+                    await HandleCmtsEmulation();
+                    break;
+                case "Uverse Box Emulator":
+                    await HandleUverseEmulation();
+                    break;
+                case "DirecTV Box/Firmware Analysis":
+                    await HandleDirectvAnalysis();
+                    break;
+                case "Executable Analysis":
+                    await HandleExecutableAnalysis();
+                    break;
+                case "Linux Filesystem Read/Write":
+                    await HandleLinuxFsReadWrite();
+                    break;
+                case "Cross-Compile Binary":
+                    await HandleCrossCompile();
+                    break;
+                case "Mount CE Filesystem":
+                    await HandleCeMount();
+                    break;
+                case "Mount YAFFS Filesystem":
+                    await HandleYaffsMount();
+                    break;
+                case "Mount ISO Filesystem":
+                    await HandleIsoMount();
+                    break;
+                case "Mount EXT Filesystem":
+                    await HandleExtMount();
+                    break;
+                case "Simulate SWM LNB":
+                    await HandleSwmLnbSimulation();
+                    break;
+                case "Boot Firmware (Homebrew First)":
+                    await HandleBootFirmwareHomebrewFirst();
+                    break;
+                case "Boot Firmware in Homebrew Emulator":
+                    await HandleBootFirmwareInHomebrew();
+                    break;
+                case "Analyze Folder Contents":
+                    await HandleFolderAnalysis();
+                    break;
+                default:
+                    MessageBox.Show($"'{mainChoice}' is not implemented yet.", "Feature Not Available", 
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                    break;
+            }
+            
+            StatusBarText("Advanced analysis completed");
+        }
+
+        /// <summary>
+        /// Analyzes Dish Network firmware and ecosystem components.
+        /// </summary>
+        private async Task HandleDishNetworkAnalysis()
+        {
+            if (string.IsNullOrEmpty(firmwarePath))
+            {
+                MessageBox.Show("Please select a firmware file first.", "No Firmware Selected", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            StatusBarText("Analyzing Dish Network ecosystem...");
+            
+            try
+            {
+                var bin = System.IO.File.ReadAllBytes(firmwarePath);
+                Debug.WriteLine($"Analyzing Dish Network firmware: {bin.Length} bytes");
+
+                // Look for Dish Network signatures
+                bool foundDishSignatures = SearchForDishNetworkSignatures(bin);
+                string chipsetInfo = AnalyzeDishNetworkChipset(bin);
+                string osInfo = AnalyzeDishNetworkOS(bin);
+
+                string analysis = $"=== Dish Network Firmware Analysis ===\n\n";
+                analysis += $"File: {System.IO.Path.GetFileName(firmwarePath)}\n";
+                analysis += $"Size: {bin.Length:N0} bytes\n\n";
+                analysis += $"Dish Network Signatures: {(foundDishSignatures ? "DETECTED" : "Not Found")}\n";
+                analysis += $"Chipset Analysis: {chipsetInfo}\n";
+                analysis += $"Operating System: {osInfo}\n\n";
+
+                // Additional Dish-specific analysis
+                analysis += AnalyzeDishNetworkFeatures(bin);
+
+                ShowTextWindow("Dish Network Analysis", new List<string> { analysis });
+                StatusBarText("Dish Network analysis completed");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Dish Network analysis error:\n\n{ex.Message}", "Analysis Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusBarText("Dish Network analysis failed");
+            }
+
+            await Task.CompletedTask;
+        }
+
+        private bool SearchForDishNetworkSignatures(byte[] data)
+        {
+            string[] signatures = { "DISH", "EchoStar", "Hopper", "Joey", "ViP", "Wally", "Broadcom", "bcm7" };
+            foreach (string sig in signatures)
+            {
+                if (SearchBinaryForString(data, sig))
+                {
+                    Debug.WriteLine($"Found Dish signature: {sig}");
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private string AnalyzeDishNetworkChipset(byte[] data)
+        {
+            // Common Dish Network chipsets
+            if (SearchBinaryForString(data, "bcm7425") || SearchBinaryForString(data, "BCM7425"))
+                return "Broadcom BCM7425 (Hopper/Joey)";
+            if (SearchBinaryForString(data, "bcm7445") || SearchBinaryForString(data, "BCM7445"))
+                return "Broadcom BCM7445 (Hopper 3)";
+            if (SearchBinaryForString(data, "bcm7252") || SearchBinaryForString(data, "BCM7252"))
+                return "Broadcom BCM7252 (Joey 4K)";
+            
+            return "Unknown/Generic";
+        }
+
+        private string AnalyzeDishNetworkOS(byte[] data)
+        {
+            if (SearchBinaryForString(data, "Linux") && SearchBinaryForString(data, "DISH"))
+                return "Linux-based (Custom Dish OS)";
+            if (SearchBinaryForString(data, "VxWorks"))
+                return "VxWorks RTOS";
+            if (data.Length >= 4 && data[0] == 0x7F && data[1] == 0x45 && data[2] == 0x4C && data[3] == 0x46)
+                return "ELF Binary (Linux/Custom)";
+            
+            return "Unknown";
+        }
+
+        private string AnalyzeDishNetworkFeatures(byte[] data)
+        {
+            string features = "Detected Features:\n";
+            
+            if (SearchBinaryForString(data, "DVR") || SearchBinaryForString(data, "PVR"))
+                features += "• DVR/PVR Recording Capability\n";
+            if (SearchBinaryForString(data, "Netflix") || SearchBinaryForString(data, "YouTube"))
+                features += "• Streaming Apps Support\n";
+            if (SearchBinaryForString(data, "Bluetooth") || SearchBinaryForString(data, "WiFi"))
+                features += "• Wireless Connectivity\n";
+            if (SearchBinaryForString(data, "4K") || SearchBinaryForString(data, "UHD"))
+                features += "• 4K/UHD Support\n";
+            if (SearchBinaryForString(data, "Dolby"))
+                features += "• Dolby Audio Support\n";
+            
+            return features;
+        }
+
+        private bool SearchBinaryForString(byte[] data, string searchString)
+        {
+            byte[] searchBytes = System.Text.Encoding.ASCII.GetBytes(searchString.ToLower());
+            for (int i = 0; i <= data.Length - searchBytes.Length; i++)
+            {
+                bool found = true;
+                for (int j = 0; j < searchBytes.Length; j++)
+                {
+                    if (char.ToLower((char)data[i + j]) != (char)searchBytes[j])
+                    {
+                        found = false;
+                        break;
+                    }
+                }
+                if (found) return true;
+            }
+            return false;
         }
         
         #endregion
