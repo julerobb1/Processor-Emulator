@@ -214,23 +214,20 @@ namespace ProcessorEmulator.Emulation
             }
 
             isRunning = true;
-            Debug.WriteLine("🚀 LAUNCHING RDK-V VISUAL HYPERVISOR");
+            Debug.WriteLine("🚀 LAUNCHING REAL ARM HYPERVISOR");
             Debug.WriteLine($"Platform: {config.DeviceModel} ({config.PlatformName})");
             Debug.WriteLine($"PC: 0x{armRegisters[15]:X8}");
 
             try
             {
-                // Launch the REAL hypervisor window with visual execution
-                Application.Current.Dispatcher.Invoke(() => {
-                    var hypervisorWindow = new HypervisorWindow(firmwareData, $"RDK-V ARM - {config.DeviceModel}");
-                    hypervisorWindow.Show();
-                });
+                // Launch the REAL hypervisor display with live execution
+                RealHypervisorDisplay.ShowHypervisorExecution(firmwareData, $"{config.DeviceModel} (BCM7445)");
                 
-                Debug.WriteLine("✅ RDK-V Visual Hypervisor launched successfully");
+                Debug.WriteLine("✅ REAL ARM Hypervisor launched successfully");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"❌ RDK-V hypervisor launch error: {ex.Message}");
+                Debug.WriteLine($"❌ ARM hypervisor launch error: {ex.Message}");
                 isRunning = false;
                 throw;
             }
