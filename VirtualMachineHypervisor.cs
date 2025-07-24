@@ -8,6 +8,7 @@ using System.Windows.Media.Animation;
 using System.Diagnostics;
 using System.IO;
 using ProcessorEmulator.Tools;
+using ProcessorEmulator.Emulation;
 
 namespace ProcessorEmulator
 {
