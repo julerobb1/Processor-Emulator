@@ -178,7 +178,7 @@ namespace ProcessorEmulator
                 resetButton.IsEnabled = true;
                 statusDisplay.Text = "Booting firmware...";
                 
-                await Task.Run(() => BootFirmware());
+                await BootFirmware();
             }
         }
         
@@ -200,7 +200,7 @@ namespace ProcessorEmulator
             }
         }
         
-        private void BootFirmware()
+        private async Task BootFirmware()
         {
             try
             {
@@ -212,7 +212,7 @@ namespace ProcessorEmulator
                     statusDisplay.Text = "Executing BIOS POST...";
                 });
                 
-                var biosResult = customBios.ExecutePostSequence(virtualMemory, armRegisters);
+                var biosResult = await customBios.ExecutePostSequence(virtualMemory, armRegisters);
                 
                 Application.Current.Dispatcher.Invoke(() => {
                     biosLog.AppendText(biosResult.LogOutput);
