@@ -59,6 +59,48 @@ namespace ProcessorEmulator.Emulation
             ResetArmCpu();
         }
 
+        public bool Initialize(string configPath)
+        {
+            // Initialize the emulator with configuration
+            Debug.WriteLine($"🔧 Initializing RDK-V X1 Platform Emulator");
+            Debug.WriteLine($"Config: {configPath ?? "Default"}");
+            Debug.WriteLine($"Platform: {config.DeviceModel} ({config.PlatformName})");
+            
+            ResetArmCpu();
+            return true;
+        }
+
+        public byte[] ReadRegister(uint address)
+        {
+            // Read from ARM register or memory-mapped register
+            if (address < 16) // ARM general-purpose registers R0-R15
+            {
+                return BitConverter.GetBytes(armRegisters[address]);
+            }
+            else if (address < hypervisorMemory.Length)
+            {
+                // Read from memory-mapped registers
+                return new byte[] { hypervisorMemory[address] };
+            }
+            
+            return new byte[0];
+        }
+
+        public void WriteRegister(uint address, byte[] data)
+        {
+            // Write to ARM register or memory-mapped register
+            if (address < 16 && data.Length >= 4) // ARM general-purpose registers R0-R15
+            {
+                armRegisters[address] = BitConverter.ToUInt32(data, 0);
+                Debug.WriteLine($"ARM R{address} = 0x{armRegisters[address]:X8}");
+            }
+            else if (address < hypervisorMemory.Length && data.Length > 0)
+            {
+                // Write to memory-mapped registers
+                hypervisorMemory[address] = data[0];
+            }
+        }
+
         private void ResetArmCpu()
         {
             // Clear all ARM registers
