@@ -52,30 +52,34 @@ namespace ProcessorEmulator.Emulation.SyncEngine
                 
                 // Pluto TV API endpoints
                 var channelsUrl = "https://api.pluto.tv/v2/channels?sort=name";
-                // var epgUrl = "https://api.pluto.tv/v2/channels?sort=name&includeEpg=true"; // For future EPG support
                 
                 var response = await httpClient.GetStringAsync(channelsUrl);
-                var plutoChannels = JsonSerializer.Deserialize<PlutoTVResponse>(response);
                 
-                foreach (var channel in plutoChannels.data)
+                // Parse JSON more robustly - handle API changes
+                using (JsonDocument doc = JsonDocument.Parse(response))
                 {
-                    var guideChannel = new GuideChannel
+                    JsonElement root = doc.RootElement;
+                    
+                    // Try different possible JSON structures
+                    JsonElement channelsArray;
+                    if (root.TryGetProperty("data", out channelsArray))
                     {
-                        Id = $"pluto_{channel.id}",
-                        Name = channel.name,
-                        Number = $"10{channel.number:D2}", // Map to 1000+ range
-                        LogoUrl = channel.images?.logo?.path,
-                        Category = channel.category,
-                        Source = "PlutoTV"
-                    };
-                    
-                    guideData.Channels.Add(guideChannel);
-                    
-                    // Add sample programs for this channel
-                    AddSamplePrograms(guideData, guideChannel, channel.name);
+                        // Structure: { "data": [...] }
+                        ParsePlutoChannels(channelsArray, guideData);
+                    }
+                    else if (root.ValueKind == JsonValueKind.Array)
+                    {
+                        // Structure: [...] (direct array)
+                        ParsePlutoChannels(root, guideData);
+                    }
+                    else
+                    {
+                        Debug.WriteLine("[GuideFetcher] Unknown Pluto TV API structure - using fallback");
+                        AddFallbackChannels(guideData, "PlutoTV");
+                    }
                 }
                 
-                Debug.WriteLine($"[GuideFetcher] Added {plutoChannels.data.Length} Pluto TV channels");
+                Debug.WriteLine($"[GuideFetcher] Added Pluto TV channels successfully");
             }
             catch (Exception ex)
             {
@@ -83,6 +87,49 @@ namespace ProcessorEmulator.Emulation.SyncEngine
                 // Add fallback channels
                 AddFallbackChannels(guideData, "PlutoTV");
             }
+        }
+
+        private void ParsePlutoChannels(JsonElement channelsArray, GuideData guideData)
+        {
+            int channelCount = 0;
+            foreach (JsonElement channel in channelsArray.EnumerateArray())
+            {
+                try
+                {
+                    string id = channel.TryGetProperty("id", out var idProp) ? idProp.GetString() : $"pluto_{channelCount}";
+                    string name = channel.TryGetProperty("name", out var nameProp) ? nameProp.GetString() : "Unknown Channel";
+                    int number = channel.TryGetProperty("number", out var numProp) ? numProp.GetInt32() : channelCount + 1000;
+                    string category = channel.TryGetProperty("category", out var catProp) ? catProp.GetString() : "General";
+                    
+                    string logoUrl = null;
+                    if (channel.TryGetProperty("images", out var images) && 
+                        images.TryGetProperty("logo", out var logo) &&
+                        logo.TryGetProperty("path", out var path))
+                    {
+                        logoUrl = path.GetString();
+                    }
+
+                    var guideChannel = new GuideChannel
+                    {
+                        Id = $"pluto_{id}",
+                        Name = name,
+                        Number = $"10{number:D2}", // Map to 1000+ range
+                        LogoUrl = logoUrl,
+                        Category = category,
+                        Source = "PlutoTV"
+                    };
+                    
+                    guideData.Channels.Add(guideChannel);
+                    AddSamplePrograms(guideData, guideChannel, name);
+                    channelCount++;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[GuideFetcher] Failed to parse Pluto channel: {ex.Message}");
+                }
+            }
+            
+            Debug.WriteLine($"[GuideFetcher] Added {channelCount} Pluto TV channels");
         }
         
         private async Task FetchTizenFreeGuide(GuideData guideData)
@@ -140,7 +187,7 @@ namespace ProcessorEmulator.Emulation.SyncEngine
             }
         }
         
-        private async Task FetchXMLTVSample(GuideData guideData)
+        private Task FetchXMLTVSample(GuideData guideData)
         {
             try
             {
@@ -182,6 +229,7 @@ namespace ProcessorEmulator.Emulation.SyncEngine
             {
                 Debug.WriteLine($"[GuideFetcher] XMLTV sample creation failed: {ex.Message}");
             }
+            return Task.CompletedTask;
         }
         
         private void AddSamplePrograms(GuideData guideData, GuideChannel channel, string channelName)
