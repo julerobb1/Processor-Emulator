@@ -78,6 +78,9 @@
                             <Button x:Name="AnalyzeOnlyButton" Content="Analyze Only" Width="100" 
                                     Height="30" Margin="0,0,10,0" Click="AnalyzeFirmware_Click"
                                     ToolTip="Analyze firmware without emulation"/>
+                            <Button x:Name="AdvancedOptionsButton" Content="Advanced Analysis" Width="130" 
+                                    Height="30" Margin="0,0,10,0" Click="AdvancedOptionsButton_Click"
+                                    ToolTip="Show all analysis and emulation options"/>
                         </StackPanel>
                     </StackPanel>
                 </TabItem>
