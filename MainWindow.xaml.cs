@@ -1362,6 +1362,34 @@ namespace ProcessorEmulator
         }
 
         /// <summary>
+        /// Mounts a FAT filesystem image using DiscUtils.Fat
+        /// </summary>
+        private async Task HandleFatMount()
+        {
+            var dlg = new OpenFileDialog { Filter = "FAT Images (*.img;*.fat;*.fat32)|*.img;*.fat;*.fat32|All Files (*.*)|*.*" };
+            if (dlg.ShowDialog() != true) return;
+            string path = dlg.FileName;
+            StatusBarText($"Mounting FAT image {Path.GetFileName(path)}...");
+            try
+            {
+                using var stream = File.OpenRead(path);
+                SetupHelper.RegisterAssembly(typeof(DiscUtils.Fat.FatFileSystem).Assembly);
+                var fs = new DiscUtils.Fat.FatFileSystem(stream);
+                var entries = new List<string> { $"Mounted FAT: {Path.GetFileName(path)}" };
+                foreach (var entry in fs.GetFiles("", "*", SearchOption.AllDirectories))
+                    entries.Add(entry);
+                ShowTextWindow("FAT Filesystem Mount", entries);
+                StatusBarText("FAT mount complete.");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"FAT mount error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusBarText("FAT mount failed.");
+            }
+            await Task.CompletedTask;
+        }
+
+        /// <summary>
         /// Mounts an ISO9660 image and lists all files.
         /// </summary>
         private async Task HandleIsoMount()
@@ -1927,24 +1955,24 @@ namespace ProcessorEmulator
         }
 
         // Filesystem mounting event handlers
-        private void MountFat_Click(object sender, RoutedEventArgs e)
+        private async void MountFat_Click(object sender, RoutedEventArgs e)
         {
-            MessageBox.Show("FAT filesystem mounting not yet implemented.", "Mount FAT");
+            await HandleFatMount();
         }
 
-        private void MountIso_Click(object sender, RoutedEventArgs e)
+        private async void MountIso_Click(object sender, RoutedEventArgs e)
         {
-            MessageBox.Show("ISO filesystem mounting not yet implemented.", "Mount ISO");
+            await HandleIsoMount();
         }
 
-        private void MountExt_Click(object sender, RoutedEventArgs e)
+        private async void MountExt_Click(object sender, RoutedEventArgs e)
         {
-            MessageBox.Show("EXT filesystem mounting not yet implemented.", "Mount EXT");
+            await HandleExtMount();
         }
 
-        private void MountSquashFs_Click(object sender, RoutedEventArgs e)
+        private async void MountSquashFs_Click(object sender, RoutedEventArgs e)
         {
-            MessageBox.Show("SquashFS filesystem mounting not yet implemented.", "Mount SquashFS");
+            await HandleSquashFsMount();
         }
 
         // Button click to select firmware once
