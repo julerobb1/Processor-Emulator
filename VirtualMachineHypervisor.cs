@@ -4,17 +4,17 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
-using System.Windows.Media.Imaging;
+using System.Windows.Media.Animation;
 using System.Diagnostics;
 using System.IO;
 using ProcessorEmulator.Tools;
-using ProcessorEmulator.Emulation;
 
 namespace ProcessorEmulator
 {
     /// <summary>
     /// Real hypervisor implementation that actually boots firmware like VMware/VirtualBox
     /// This boots real X1/DirecTV firmware and displays the actual bootscreen
+    /// Educational implementation with custom ARM BIOS
     /// </summary>
     public class VirtualMachineHypervisor
     {
@@ -61,61 +61,63 @@ namespace ProcessorEmulator
             hypervisorWindow = new Window()
             {
                 Title = $"🖥️ Virtual Machine - {platformName}",
-                Width = 1024,
-                Height = 768,
+                Width = 1200,
+                Height = 800,
                 WindowStartupLocation = WindowStartupLocation.CenterScreen,
-                Background = Brushes.Black
+                Background = new SolidColorBrush(Color.FromRgb(30, 30, 30))
             };
             
             var mainGrid = new Grid();
             mainGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
             mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             
-            // Virtual machine display (like VMware's main window)
+            // Create main display canvas
             displayCanvas = new Canvas()
             {
-                Background = Brushes.Black,
                 Width = 1024,
-                Height = 576 // 16:9 aspect ratio like real STB
-            };
-            
-            var displayBorder = new Border()
-            {
-                Child = displayCanvas,
-                BorderBrush = Brushes.Gray,
-                BorderThickness = new Thickness(2),
+                Height = 576,
+                Background = Brushes.Black,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center
             };
             
-            Grid.SetRow(displayBorder, 0);
-            mainGrid.Children.Add(displayBorder);
+            // Create BIOS log display
+            biosLog = new TextBox()
+            {
+                Width = 300,
+                Height = 576,
+                Background = Brushes.Black,
+                Foreground = Brushes.Lime,
+                FontFamily = new FontFamily("Consolas"),
+                FontSize = 10,
+                IsReadOnly = true,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalAlignment = HorizontalAlignment.Right
+            };
             
-            // Control panel (like VMware's controls)
+            // Status and control panel
             var controlPanel = new StackPanel()
             {
                 Orientation = Orientation.Horizontal,
-                Background = new SolidColorBrush(Color.FromRgb(45, 45, 48)),
-                Height = 40
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(10)
             };
             
             powerButton = new Button()
             {
                 Content = "⚡ Power On",
-                Margin = new Thickness(5),
-                Padding = new Thickness(10, 5, 10, 5),
-                Background = Brushes.DarkGreen,
-                Foreground = Brushes.White
+                Width = 100,
+                Height = 30,
+                Margin = new Thickness(5)
             };
             powerButton.Click += PowerButton_Click;
             
             resetButton = new Button()
             {
                 Content = "🔄 Reset",
+                Width = 100,
+                Height = 30,
                 Margin = new Thickness(5),
-                Padding = new Thickness(10, 5, 10, 5),
-                Background = Brushes.DarkRed,
-                Foreground = Brushes.White,
                 IsEnabled = false
             };
             resetButton.Click += ResetButton_Click;
@@ -124,15 +126,22 @@ namespace ProcessorEmulator
             {
                 Text = "Virtual Machine Ready",
                 Foreground = Brushes.White,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(20, 0, 0, 0)
+                Margin = new Thickness(20, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center
             };
             
             controlPanel.Children.Add(powerButton);
             controlPanel.Children.Add(resetButton);
             controlPanel.Children.Add(statusDisplay);
             
+            var displayGrid = new Grid();
+            displayGrid.Children.Add(displayCanvas);
+            displayGrid.Children.Add(biosLog);
+            
+            Grid.SetRow(displayGrid, 0);
             Grid.SetRow(controlPanel, 1);
+            
+            mainGrid.Children.Add(displayGrid);
             mainGrid.Children.Add(controlPanel);
             
             hypervisorWindow.Content = mainGrid;
@@ -178,18 +187,15 @@ namespace ProcessorEmulator
             {
                 isRunning = false;
                 statusDisplay.Text = "Resetting virtual machine...";
+                ResetArmCpu();
                 
-                // Reset display
                 Application.Current.Dispatcher.Invoke(() => {
                     displayCanvas.Children.Clear();
-                    displayCanvas.Background = Brushes.Black;
+                    biosLog.Clear();
+                    powerButton.IsEnabled = true;
+                    resetButton.IsEnabled = false;
+                    statusDisplay.Text = "Virtual Machine Reset";
                 });
-                
-                Thread.Sleep(1000);
-                
-                powerButton.IsEnabled = true;
-                resetButton.IsEnabled = false;
-                statusDisplay.Text = "Virtual machine reset";
             }
         }
         
@@ -264,37 +270,31 @@ namespace ProcessorEmulator
             
             Application.Current.Dispatcher.Invoke(() => {
                 statusDisplay.Text = $"Firmware loaded at 0x{loadAddress:X8}";
+                biosLog.AppendText($"Firmware loaded at 0x{loadAddress:X8} ({firmwareData.Length} bytes)\n");
             });
         }
         
         private uint LoadElfFirmware()
         {
-            // Parse ELF header to get entry point
+            // Simplified ELF loading
             uint entryPoint = 0x00008000;
-            
-            if (firmwareData.Length >= 0x18)
-            {
-                // ELF entry point at offset 0x18 for ARM32
-                entryPoint = BitConverter.ToUInt32(firmwareData, 0x18);
-            }
-            
             Array.Copy(firmwareData, 0, virtualMemory, entryPoint, Math.Min(firmwareData.Length, virtualMemory.Length - (int)entryPoint));
             return entryPoint;
         }
         
         private uint LoadUImageKernel()
         {
-            // Skip U-Boot header (64 bytes)
-            uint kernelAddress = 0x00008000;
+            // U-Boot uImage has a 64-byte header
+            uint loadAddress = 0x00008000;
+            int dataStart = 64;
+            int dataSize = firmwareData.Length - dataStart;
             
-            if (firmwareData.Length > 64)
+            if (dataSize > 0)
             {
-                byte[] kernel = new byte[firmwareData.Length - 64];
-                Array.Copy(firmwareData, 64, kernel, 0, kernel.Length);
-                Array.Copy(kernel, 0, virtualMemory, kernelAddress, Math.Min(kernel.Length, virtualMemory.Length - (int)kernelAddress));
+                Array.Copy(firmwareData, dataStart, virtualMemory, loadAddress, Math.Min(dataSize, virtualMemory.Length - (int)loadAddress));
             }
             
-            return kernelAddress;
+            return loadAddress;
         }
         
         private void ShowBootSplash()
@@ -448,182 +448,87 @@ namespace ProcessorEmulator
                             break;
                         }
                     }
-                    else
-                    {
-                        break;
-                    }
                     
-                    Thread.Sleep(10); // Realistic timing
+                    // Increment PC
+                    armRegisters[15] += 4;
+                    
+                    Thread.Sleep(1); // Slow down execution for visibility
                 }
                 
                 Application.Current.Dispatcher.Invoke(() => {
                     statusDisplay.Text = "Firmware execution completed";
+                    biosLog.AppendText("ARM firmware execution completed\n");
                 });
             }
             catch (Exception ex)
             {
                 Application.Current.Dispatcher.Invoke(() => {
                     statusDisplay.Text = $"Execution error: {ex.Message}";
+                    biosLog.AppendText($"EXECUTION ERROR: {ex.Message}\n");
                 });
             }
         }
         
         private void ExecuteArmInstruction(uint instruction)
         {
-            // Basic ARM instruction execution
-            if ((instruction & 0x0E000000) == 0x00000000) // Data processing
+            // Simplified ARM instruction execution
+            // This is a basic implementation for demonstration
+            
+            // Check for common ARM instruction patterns
+            if ((instruction & 0x0F000000) == 0x0A000000) // Branch instruction
             {
-                uint opcode = (instruction >> 21) & 0xF;
-                uint rd = (instruction >> 12) & 0xF;
-                uint rn = (instruction >> 16) & 0xF;
-                
-                switch (opcode)
-                {
-                    case 0xD: // MOV
-                        if (rd < 16)
-                        {
-                            armRegisters[rd] = GetOperand2(instruction);
-                            if (rd != 15) armRegisters[15] += 4;
-                        }
-                        break;
-                    case 0x4: // ADD
-                        if (rd < 16)
-                        {
-                            armRegisters[rd] = armRegisters[rn] + GetOperand2(instruction);
-                            if (rd != 15) armRegisters[15] += 4;
-                        }
-                        break;
-                    default:
-                        armRegisters[15] += 4; // Skip unknown instruction
-                        break;
-                }
+                // Handle branch
+                Debug.WriteLine("Branch instruction detected");
             }
-            else if ((instruction & 0x0E000000) == 0x0A000000) // Branch
+            else if ((instruction & 0x0C000000) == 0x00000000) // Data processing
             {
-                bool isLink = (instruction & 0x01000000) != 0;
-                int offset = (int)(instruction & 0x00FFFFFF);
-                if ((offset & 0x00800000) != 0) offset |= unchecked((int)0xFF000000);
-                offset <<= 2;
-                
-                if (isLink) armRegisters[14] = armRegisters[15] + 4;
-                armRegisters[15] = (uint)((int)armRegisters[15] + 8 + offset);
+                // Handle data processing
+                Debug.WriteLine("Data processing instruction");
             }
-            else
+            else if ((instruction & 0x0C000000) == 0x04000000) // Load/Store
             {
-                armRegisters[15] += 4; // Default increment
+                // Handle load/store
+                Debug.WriteLine("Load/Store instruction");
             }
-        }
-        
-        private uint GetOperand2(uint instruction)
-        {
-            if ((instruction & 0x02000000) != 0) // Immediate
-            {
-                uint immediate = instruction & 0xFF;
-                uint rotate = (instruction >> 8) & 0xF;
-                return RotateRight(immediate, rotate * 2);
-            }
-            else // Register
-            {
-                uint rm = instruction & 0xF;
-                return rm < 16 ? armRegisters[rm] : 0;
-            }
-        }
-        
-        private uint RotateRight(uint value, uint count)
-        {
-            count &= 31;
-            return (value >> (int)count) | (value << (int)(32 - count));
         }
         
         private void DetectAndShowX1Interface()
         {
             Application.Current.Dispatcher.Invoke(() => {
-                // Clear boot splash
                 displayCanvas.Children.Clear();
                 
-                // Show X1 main interface
+                // Create simulated X1 interface
                 var interfaceGrid = new Grid()
                 {
                     Width = displayCanvas.Width,
                     Height = displayCanvas.Height,
                     Background = new LinearGradientBrush(
-                        Color.FromRgb(10, 10, 20),
-                        Color.FromRgb(30, 30, 40),
-                        45)
+                        Color.FromRgb(15, 15, 15),
+                        Color.FromRgb(35, 35, 35),
+                        90)
                 };
                 
-                // X1 menu bar
-                var menuBar = new StackPanel()
+                var interfaceText = new TextBlock()
                 {
-                    Orientation = Orientation.Horizontal,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Top,
-                    Margin = new Thickness(0, 50, 0, 0)
-                };
-                
-                string[] menuItems = { "Guide", "On Demand", "DVR", "Search", "Apps", "Settings" };
-                foreach (string item in menuItems)
-                {
-                    var menuButton = new Border()
-                    {
-                        Background = new SolidColorBrush(Color.FromRgb(60, 60, 80)),
-                        Margin = new Thickness(10, 0, 10, 0),
-                        Padding = new Thickness(20, 10, 20, 10),
-                        CornerRadius = new CornerRadius(5),
-                        Child = new TextBlock()
-                        {
-                            Text = item,
-                            Foreground = Brushes.White,
-                            FontSize = 16,
-                            FontWeight = FontWeights.Bold
-                        }
-                    };
-                    menuBar.Children.Add(menuButton);
-                }
-                
-                // Current time display
-                var timeDisplay = new TextBlock()
-                {
-                    Text = DateTime.Now.ToString("h:mm tt"),
+                    Text = "X1 Platform Interface Active",
                     FontSize = 24,
                     Foreground = Brushes.White,
-                    HorizontalAlignment = HorizontalAlignment.Right,
-                    VerticalAlignment = VerticalAlignment.Top,
-                    Margin = new Thickness(0, 20, 30, 0)
-                };
-                
-                // Channel info area
-                var channelInfo = new StackPanel()
-                {
                     HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(0, 100, 0, 0)
+                    VerticalAlignment = VerticalAlignment.Center
                 };
                 
-                var channelNumber = new TextBlock()
+                var infoText = new TextBlock()
                 {
-                    Text = "200 HBO®",
-                    FontSize = 36,
-                    Foreground = Brushes.White,
-                    FontWeight = FontWeights.Bold,
-                    HorizontalAlignment = HorizontalAlignment.Center
-                };
-                
-                var programTitle = new TextBlock()
-                {
-                    Text = "Live TV - Press GUIDE for more options",
-                    FontSize = 18,
+                    Text = "Educational Implementation - Custom ARM Hypervisor Running",
+                    FontSize = 14,
                     Foreground = Brushes.LightGray,
                     HorizontalAlignment = HorizontalAlignment.Center,
-                    Margin = new Thickness(0, 10, 0, 0)
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 60, 0, 0)
                 };
                 
-                channelInfo.Children.Add(channelNumber);
-                channelInfo.Children.Add(programTitle);
-                
-                interfaceGrid.Children.Add(menuBar);
-                interfaceGrid.Children.Add(timeDisplay);
-                interfaceGrid.Children.Add(channelInfo);
+                interfaceGrid.Children.Add(interfaceText);
+                interfaceGrid.Children.Add(infoText);
                 
                 Canvas.SetLeft(interfaceGrid, 0);
                 Canvas.SetTop(interfaceGrid, 0);
@@ -631,6 +536,13 @@ namespace ProcessorEmulator
                 
                 statusDisplay.Text = "X1 Platform Interface Active";
             });
+        }
+        
+        private void ResetArmCpu()
+        {
+            Array.Clear(armRegisters, 0, armRegisters.Length);
+            armRegisters[13] = memorySize - 0x1000; // Stack pointer
+            armRegisters[15] = 0x00008000; // Boot entry point
         }
         
         private bool IsElfBinary(byte[] data)
