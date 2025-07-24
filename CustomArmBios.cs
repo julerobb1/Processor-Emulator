@@ -9,7 +9,8 @@ namespace ProcessorEmulator.Emulation
     /// <summary>
     /// Custom BIOS implementation for ARM-based set-top boxes
     /// Provides hardware initialization and firmware boot services
-    /// Similar to AMI/Insyde patterns but custom-built for educational purposes
+    /// Integrates DOCSIS 4.0 security framework for broadcast technology preservation
+    /// Educational implementation based on CableLabs specifications
     /// </summary>
     public class CustomArmBios
     {
@@ -17,6 +18,7 @@ namespace ProcessorEmulator.Emulation
         private byte[] biosMemory = new byte[1024 * 1024]; // 1MB BIOS space
         private Dictionary<uint, string> biosServices = new Dictionary<uint, string>();
         private bool biosInitialized = false;
+        private DocsisSecurityFramework securityFramework;
         
         // BIOS memory map (ARM set-top box standard)
         private const uint BIOS_BASE = 0xFFFF0000;
@@ -28,6 +30,7 @@ namespace ProcessorEmulator.Emulation
         
         public CustomArmBios()
         {
+            securityFramework = new DocsisSecurityFramework();
             InitializeBiosServices();
         }
         
