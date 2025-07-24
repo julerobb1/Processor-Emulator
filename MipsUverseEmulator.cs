@@ -59,7 +59,8 @@ namespace ProcessorEmulator.Emulation
         private const uint RAM_BASE = 0x80000000;
         
         // U-verse file paths
-        private const string UVERSE_PATH = @"C:\Users\Juler\Downloads\DVR Stuff\UVERSE STUFF\Uverse Drive E\";
+        private static readonly string UVERSE_PATH = Environment.GetEnvironmentVariable("UVERSE_PATH") 
+            ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "UverseDriveE");
         
         #endregion
 
