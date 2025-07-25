@@ -2,7 +2,28 @@ using System;
 using System.Collections.Generic;
 using System.Windows;
 
-namespace ProcessorEmulator
+n            // Hypervisor Errors
+            { 5001, "💥 SYSTEM HALTED 💥\nCause: Someone poked reality too hard.\nSuggested Fix: Reverse your last three actions and say 'D'oh!'" },
+            { 5002, "Virtual machine error: D'oh! VM exploded." },
+            { 5003, "Hardware emulation failed: Snake jazz hardware." },
+            { 5004, "Memory allocation error: Cleanup memory aisles." },
+            { 5005, "CPU virtualization failed: Stupid sexy Flanders CPU." },
+            
+            // Special French Instructions Error (Homer meme reference)
+            { 5010, "D'oh... English side ruined, must use French instructions." },
+            { 5011, "Le Grille? What the hell is that?" },
+            { 5012, "Instructions unclear: Put a six pack of beer in the fridge. It will be cold by the time you are through." },
+            
+            // Failure Philosophy Errors (Homer wisdom)
+            { 5020, "You tried your best and you failed miserably. The lesson is, never try." },
+            { 5021, "Kids, you tried your best and you failed miserably. The lesson is, never try." },
+            { 5022, "Trying is the first step towards failure." },
+            { 5023, "If something's hard to do, then it's not worth doing." },
+            
+            // Towel Error (Hitchhiker's Guide + Simpsons mashup)
+            { 5030, "You'll have to speak up, I'm wearing a towel." },
+            { 5031, "Error 42: Don't forget to bring a towel." },
+            { 5032, "Panic! And don't know where your towel is." }ce ProcessorEmulator
 {
     /// <summary>
     /// Centralized error management with pop culture references and proper error codes
@@ -75,11 +96,27 @@ namespace ProcessorEmulator
             { 4005, "Service unavailable: Ahh geez Rick, it's down." },
             
             // Hypervisor Errors (5000-5099)
-            { 5001, "Hypervisor crash: Wubba lubba dub dub reality!" },
+            { 5001, "💥 SYSTEM HALTED 💥\nCause: Someone poked reality too hard.\nSuggested Fix: Reverse your last three actions and say 'D'oh!'" },
             { 5002, "Virtual machine error: D'oh! VM exploded." },
             { 5003, "Hardware emulation failed: Snake jazz hardware." },
             { 5004, "Memory allocation error: Cleanup memory aisles." },
-            { 5005, "CPU virtualization failed: Stupid sexy Flanders CPU." }
+            { 5005, "CPU virtualization failed: Stupid sexy Flanders CPU." },
+            
+            // Special French Instructions Error (Homer meme reference)
+            { 5010, "D'oh... English side ruined, must use French instructions." },
+            { 5011, "Le Grille? What the hell is that?" },
+            { 5012, "Instructions unclear: Put a six pack of beer in the fridge. It will be cold by the time you are through." },
+            
+            // Failure Philosophy Errors (Homer wisdom)
+            { 5020, "You tried your best and you failed miserably. The lesson is, never try." },
+            { 5021, "Kids, you tried your best and you failed miserably. The lesson is, never try." },
+            { 5022, "Trying is the first step towards failure." },
+            { 5023, "If something's hard to do, then it's not worth doing." },
+            
+            // Towel Error (Hitchhiker's Guide + Simpsons mashup)
+            { 5030, "You'll have to speak up, I'm wearing a towel." },
+            { 5031, "Error 42: Don't forget to bring a towel." },
+            { 5032, "Panic! And don't know where your towel is." }
         };
 
         private static readonly Dictionary<int, string> SuccessMessages = new Dictionary<int, string>
@@ -192,13 +229,72 @@ namespace ProcessorEmulator
         }
 
         /// <summary>
-        /// Get random success message
+        /// Special hypervisor crash handler with Homer-style error display
         /// </summary>
-        public static string GetRandomSuccessMessage()
+        public static void ShowHypervisorCrash(string context = "", Exception ex = null)
         {
-            var codes = new[] { 9001, 9002, 9003, 9004, 9005, 9006, 9007, 9008, 9009, 9010 };
+            var crashMessages = new[]
+            {
+                GetErrorMessage(Codes.HYPERVISOR_CRASH),
+                GetErrorMessage(Codes.FRENCH_INSTRUCTIONS),
+                GetErrorMessage(Codes.LE_GRILLE),
+                GetErrorMessage(Codes.BEER_FRIDGE_INSTRUCTIONS),
+                GetErrorMessage(Codes.TRIED_AND_FAILED),
+                GetErrorMessage(Codes.WEARING_A_TOWEL)
+            };
+            
             var random = new Random();
-            return GetSuccessMessage(codes[random.Next(codes.Length)]);
+            string selectedMessage = crashMessages[random.Next(crashMessages.Length)];
+            
+            string fullMessage = selectedMessage;
+            
+            if (!string.IsNullOrEmpty(context))
+                fullMessage += $"\n\n📍 Context: {context}";
+                
+            if (ex != null)
+                fullMessage += $"\n\n🔧 Technical Details: {ex.Message}";
+            
+            // Add Homer's philosophy
+            fullMessage += "\n\n💭 Remember: " + GetErrorMessage(Codes.TRIED_AND_FAILED);
+            
+            MessageBox.Show(fullMessage, "💥 HYPERVISOR MELTDOWN 💥", MessageBoxButton.OK, MessageBoxImage.Error);
+            
+            // Log for debugging
+            LogError(Codes.HYPERVISOR_CRASH, context, ex);
+        }
+        
+        /// <summary>
+        /// Show random "instructions unclear" error (Homer meme style)
+        /// </summary>
+        public static void ShowInstructionsUnclear(string operation = "")
+        {
+            var instructionErrors = new[]
+            {
+                GetErrorMessage(Codes.FRENCH_INSTRUCTIONS),
+                GetErrorMessage(Codes.LE_GRILLE),
+                GetErrorMessage(Codes.BEER_FRIDGE_INSTRUCTIONS)
+            };
+            
+            var random = new Random();
+            string message = instructionErrors[random.Next(instructionErrors.Length)];
+            
+            if (!string.IsNullOrEmpty(operation))
+                message = $"Operation: {operation}\n\n{message}";
+            
+            MessageBox.Show(message, "📝 Instructions Unclear", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        
+        /// <summary>
+        /// Show "tried and failed" philosophy error
+        /// </summary>
+        public static void ShowTriedAndFailed(string whatYouTried = "")
+        {
+            string message = GetErrorMessage(Codes.TRIED_AND_FAILED);
+            
+            if (!string.IsNullOrEmpty(whatYouTried))
+                message = $"What you tried: {whatYouTried}\n\n{message}";
+            
+            MessageBox.Show(message, "🎓 Life Lessons with Homer", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
         // Common error codes as constants for easy reference
@@ -266,6 +362,18 @@ namespace ProcessorEmulator
             public const int HARDWARE_EMULATION_FAILED = 5003;
             public const int MEMORY_ALLOCATION_ERROR = 5004;
             public const int CPU_VIRTUALIZATION_FAILED = 5005;
+            
+            // Special Homer Errors
+            public const int FRENCH_INSTRUCTIONS = 5010;
+            public const int LE_GRILLE = 5011;
+            public const int BEER_FRIDGE_INSTRUCTIONS = 5012;
+            public const int TRIED_AND_FAILED = 5020;
+            public const int KIDS_NEVER_TRY = 5021;
+            public const int TRYING_IS_FAILURE = 5022;
+            public const int NOT_WORTH_DOING = 5023;
+            public const int WEARING_A_TOWEL = 5030;
+            public const int BRING_A_TOWEL = 5031;
+            public const int TOWEL_PANIC = 5032;
             
             // Success Codes
             public const int WELCOME_MESSAGE = 9001;
