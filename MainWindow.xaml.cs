@@ -579,6 +579,7 @@ namespace ProcessorEmulator
         private async Task ExtractFirmwareWithBinwalk(string firmwareFile, string workDir, List<string> log)
         {
             log.Add("Extracting firmware with binwalk...");
+            ShowFunnyStatus("Firmware extraction");
             
             try
             {
@@ -1715,7 +1716,8 @@ namespace ProcessorEmulator
             }
             catch (NotImplementedException)
             {
-                MessageBox.Show($"Translation from {fromArch} to {toArch} not implemented.", "Cross-Compile Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                // Show "instructions unclear" error
+                ErrorManager.ShowInstructionsUnclear($"Cross-compilation from {fromArch} to {toArch}");
                 return data;
             }
         }
@@ -2097,6 +2099,7 @@ namespace ProcessorEmulator
         
         // First-time user tracking
         private static bool firstTimeExtractionDone = false;
+        private static Random statusRandom = new Random();
         
         private bool IsFirstTimeExtraction()
         {
@@ -2106,6 +2109,31 @@ namespace ProcessorEmulator
         private void MarkFirstTimeExtractionDone()
         {
             firstTimeExtractionDone = true;
+        }
+        
+        /// <summary>
+        /// Show funny status message during long operations (Homer style)
+        /// </summary>
+        private void ShowFunnyStatus(string operation = "")
+        {
+            var funnyMessages = new[]
+            {
+                ErrorManager.GetStatusMessage(ErrorManager.Codes.INITIALIZING),
+                "Processing... wubba lubba dub dub!",
+                "Loading... snake jazz playing in background.",
+                "Analyzing... stupid sexy Flanders analyzing.",
+                "Please wait... D'oh! This is taking forever.",
+                "Working hard... or hardly working?",
+                "Computing... *dial-up modem sounds*",
+                "Almost there... like Sisyphus, but funnier.",
+                "Still going... grab a beer, this might take a while."
+            };
+            
+            string message = funnyMessages[statusRandom.Next(funnyMessages.Length)];
+            if (!string.IsNullOrEmpty(operation))
+                message = $"{operation}: {message}";
+                
+            StatusBarText(message);
         }
 
         /// <summary>
@@ -2646,10 +2674,17 @@ namespace ProcessorEmulator
             }
             catch (Exception ex)
             {
+                // Show Homer's philosophy about trying and failing
+                ErrorManager.ShowTriedAndFailed("RetDec binary translation");
+                
                 var errorLog = new List<string> 
                 { 
                     "=== RetDec Translation Error ===",
-                    $"Error: {ex.Message}",
+                    ErrorManager.GetErrorMessage(ErrorManager.Codes.TRIED_AND_FAILED),
+                    "",
+                    $"What went wrong: {ex.Message}",
+                    "",
+                    "Instructions unclear? " + ErrorManager.GetErrorMessage(ErrorManager.Codes.BEER_FRIDGE_INSTRUCTIONS),
                     "",
                     "Note: RetDec requires external installation.",
                     "Install RetDec from: https://github.com/avast/retdec",
