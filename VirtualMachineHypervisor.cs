@@ -53,7 +53,7 @@ namespace ProcessorEmulator
             Application.Current.Dispatcher.Invoke(() => {
                 CreateHypervisorWindow(platformName);
                 InitializeVirtualHardware();
-                UpdateStatus(ErrorManager.GetStatusMessage(ErrorManager.Codes.INITIALIZING));
+                UpdateStatus("Initializing virtual hardware...");
                 _ = BootFirmware(); // Fire and forget async
             });
         }
@@ -218,7 +218,7 @@ namespace ProcessorEmulator
                 // Execute BIOS POST sequence first (like real hardware)
                 Application.Current.Dispatcher.Invoke(() => {
                     biosLog.Text = "Starting BIOS POST sequence...\n";
-                    UpdateStatus(ErrorManager.GetStatusMessage(ErrorManager.Codes.INITIALIZING));
+                    UpdateStatus("Running BIOS POST sequence...");
                 });
                 
                 var biosResult = await customBios.ExecutePostSequence(virtualMemory, armRegisters);
@@ -226,8 +226,8 @@ namespace ProcessorEmulator
                 Application.Current.Dispatcher.Invoke(() => {
                     biosLog.AppendText(biosResult.LogOutput);
                     UpdateStatus(biosResult.Success ? 
-                        ErrorManager.GetSuccessMessage(ErrorManager.Codes.OPERATION_SUCCESS) : 
-                        ErrorManager.GetErrorMessage(ErrorManager.Codes.BOOT_SEQUENCE_ERROR));
+                        "BIOS POST completed successfully!" : 
+                        "BIOS POST failed - Boot sequence error");
                 });
                 
                 if (!biosResult.Success)
@@ -236,11 +236,11 @@ namespace ProcessorEmulator
                 }
                 
                 // Load firmware into virtual memory
-                UpdateStatus(ErrorManager.GetStatusMessage(ErrorManager.Codes.LOADING));
+                UpdateStatus("Loading firmware into virtual memory...");
                 LoadFirmwareIntoMemory();
                 
                 // Show boot splash (like real X1 bootscreen)
-                UpdateStatus(ErrorManager.GetStatusMessage(ErrorManager.Codes.PROCESSING));
+                UpdateStatus("Displaying boot splash screen...");
                 ShowBootSplash();
                 
                 // Execute firmware
@@ -253,8 +253,8 @@ namespace ProcessorEmulator
             {
                 Application.Current.Dispatcher.Invoke(() => {
                     // Use our fancy error system
-                    ErrorManager.ShowHypervisorCrash("Firmware boot sequence", ex);
-                    UpdateStatus(ErrorManager.GetErrorMessage(ErrorManager.Codes.HYPERVISOR_CRASH));
+                    ErrorManager.ShowHypervisorCrash("Firmware boot sequence failed");
+                    UpdateStatus("💥 HYPERVISOR CRASH - System halted");
                     biosLog.AppendText($"💥 HYPERVISOR MELTDOWN: {ex.Message}\n");
                     biosLog.AppendText("Suggested fix: Reverse your last three actions and say 'D'oh!'\n");
                 });
