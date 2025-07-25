@@ -252,8 +252,11 @@ namespace ProcessorEmulator
             catch (Exception ex)
             {
                 Application.Current.Dispatcher.Invoke(() => {
-                    statusDisplay.Text = $"Boot failed: {ex.Message}";
-                    biosLog.AppendText($"BOOT ERROR: {ex.Message}\n");
+                    // Use our fancy error system
+                    ErrorManager.ShowHypervisorCrash("Firmware boot sequence", ex);
+                    UpdateStatus(ErrorManager.GetErrorMessage(ErrorManager.Codes.HYPERVISOR_CRASH));
+                    biosLog.AppendText($"💥 HYPERVISOR MELTDOWN: {ex.Message}\n");
+                    biosLog.AppendText("Suggested fix: Reverse your last three actions and say 'D'oh!'\n");
                 });
                 Debug.WriteLine($"Firmware boot failed: {ex.Message}");
             }
