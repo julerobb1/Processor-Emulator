@@ -234,13 +234,13 @@ namespace ProcessorEmulator
                 if (name.Equals("trx", StringComparison.OrdinalIgnoreCase))
                 {
                     var trxOut = Path.Combine(outDir, $"{name}_{off:X}_extracted");
-                    ProcessorEmulator.Tools.TrxExtractor.ExtractTrx(outputFile, trxOut);
+                    TrxExtractor.ExtractTrx(outputFile, trxOut);
                 }
                 // If Mediaroom XMI detected, run XMI extractor stub
                 if (name.Equals("xmi", StringComparison.OrdinalIgnoreCase))
                 {
                     var xmiOut = Path.Combine(outDir, $"{name}_{off:X}_extracted");
-                    ProcessorEmulator.Tools.XmiExtractor.ExtractXmi(outputFile, xmiOut);
+                    XmiExtractor.ExtractXmi(outputFile, xmiOut);
                 }
             }
         }

@@ -1,6 +1,43 @@
-<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <Compile Include="*.cs" Exclude="FolderAnalysisWindow.cs" />
+    <Compile Include="Tools\*.cs" />
+    <Compile Include="Emulation\SparcEmulator.cs" />
+    <Compile Include="Emulation\StubEmulators.cs" />
+    <Compile Include="Emulation\HomebrewEmulator.cs" />
+    <Compile Include="Emulation\BoltBootloader.cs" />
+    <Compile Include="Emulation\SimpleBoltBridge.cs" />
+    <Compile Include="Emulation\EmulatorWindow.xaml.cs" />
+    <Compile Include="Emulation\PXRenderer.cs" />
+    <Compile Include="Emulation\DisplayWindow.cs" />
+    <Compile Include="Emulation\SoC\*.cs" />
+    <Compile Include="Emulation\SyncEngine\*.cs" />
+    <Page Include="App.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="MainWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="ClassicStyle.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Emulation\EmulatorWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="FolderAnalysisWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+  </ItemGroup>
 
   <PropertyGroup>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <EnableDefaultPageItems>false</EnableDefaultPageItems>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net6.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
@@ -22,24 +59,16 @@
   <!-- Using stub Unicorn definitions in Tools/BinaryTranslator.cs; no external package required -->
   <ItemGroup>
     <PackageReference Include="SharpCompress" Version="0.30.0" />
-
     <!-- DiscUtils for partition & filesystem support; latest available version -->
-  <!-- FAT filesystem support -->
-  <PackageReference Include="DiscUtils.Fat" Version="0.16.13" />
-  <!-- SquashFS filesystem support -->
-  <PackageReference Include="DiscUtils.SquashFs" Version="0.16.13" />
-  <!-- ISO9660 filesystem support -->
-  <PackageReference Include="DiscUtils.Iso9660" Version="0.16.13" />
-  <!-- EXT filesystem support (ext2/3/4) -->
-  <PackageReference Include="DiscUtils.Ext" Version="0.16.13" />
-  <!-- Real Unicorn binding for firmware emulation -->
-  <PackageReference Include="UnicornEngine.Unicorn" Version="2.1.0" />
-    <!-- Exclude duplicate console entry-point file -->
-    <Compile Remove="Program.cs" />
-  </ItemGroup>
-  <!-- Exclude old XAML-based folder analysis window -->
-  <ItemGroup>
-    <Page Remove="FolderAnalysisWindow.xaml" />
-    <Compile Remove="FolderAnalysisWindow.xaml.cs" />
+    <!-- FAT filesystem support -->
+    <PackageReference Include="DiscUtils.Fat" Version="0.16.13" />
+    <!-- SquashFS filesystem support -->
+    <PackageReference Include="DiscUtils.SquashFs" Version="0.16.13" />
+    <!-- ISO9660 filesystem support -->
+    <PackageReference Include="DiscUtils.Iso9660" Version="0.16.13" />
+    <!-- EXT filesystem support (ext2/3/4) -->
+    <PackageReference Include="DiscUtils.Ext" Version="0.16.13" />
+    <!-- Real Unicorn binding for firmware emulation -->
+    <PackageReference Include="UnicornEngine.Unicorn" Version="2.1.0" />
   </ItemGroup>
 </Project>

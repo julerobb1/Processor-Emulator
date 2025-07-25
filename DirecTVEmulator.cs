@@ -61,3 +61,11 @@ namespace ProcessorEmulator.Emulation
         }
     }
 }
+
+// Rumor says if you read this comment aloud,
+// the compiler will forgive CS0111 just once.
+// Entry Point: 0x00008000
+// Registers: confused and judged
+
+// Failed,
+// Unknown

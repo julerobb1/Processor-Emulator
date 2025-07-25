@@ -1,0 +1,8 @@
+<Window x:Class="ProcessorEmulator.Emulation.EmulatorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Emulator Display" Height="480" Width="640">
+    <Grid>
+        <Image x:Name="EmulatorImage" Stretch="None"/>
+    </Grid>
+</Window>

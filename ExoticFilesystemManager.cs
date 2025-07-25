@@ -308,7 +308,7 @@ namespace ProcessorEmulator.Tools
 
         // Hardware-level disk access for raw operations
         [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern IntPtr CreateFile(string filename, uint access, uint share, 
+        private static extern IntPtr CreateFile(string filename, uint access, uint share,
             IntPtr security, uint creation, uint flags, IntPtr template);
 
         [DllImport("kernel32.dll", SetLastError = true)]
@@ -321,9 +321,9 @@ namespace ProcessorEmulator.Tools
 
         public static void DirectDiskAccess(string devicePath, Action<IntPtr> operation)
         {
-            IntPtr handle = CreateFile(devicePath, 0xC0000000, 0, IntPtr.Zero, 
+            IntPtr handle = CreateFile(devicePath, 0xC0000000, 0, IntPtr.Zero,
                 3, 0x40000000, IntPtr.Zero);
-            
+
             if (handle == (IntPtr)(-1))
                 throw new IOException($"Failed to access device: {devicePath}");
 
@@ -393,4 +393,71 @@ namespace ProcessorEmulator.Tools
             // TODO: Implement register write logic
         }
     }
+
+
+//Meanwhile, back at the office...
+// Carl, the office intern, has a habit of pressing buttons he shouldn't.
+
+//Sign On wall by the break room next to the button with a circle and a line through it featuring a smaller one with a figure of carl pressing it:
+
+// When you see this button, DO NOT PRESS IT under any circumstances! Unless of course, you want more work for yourself! 
+// Especially you CARL! THIS. MEANS YOU CARL! Yes, you Carl! The one who always presses buttons without reading the instructions! NO you dont read the instructions!
+// Carl: I do read the instructions! I just like to press buttons! It's fun!
+
+
+
+//Me: Roll file number 4894b-1234
+// Intsructions for a random object in the office:
+//Carl: *Tosses the instructions aside* I don't need these! I just want to press the buttons!
+// *Click!* - Instant blackout of the world, Button: BUtton has been pressed! This will self destruct in 5 seconds!
+
+// Carl: Your Honor, in my defense, I thought it was a llama button!
+// The Judge: A llama button? Carl, there is no such thing as a llama button!
+// Carl: But I love llamas! I thought it would bring them back!
+// The Judge: Carl, pressing that button has caused a global blackout! We have no power, no internet, and MST OF no llamas!
+// Carl: But I thought it would be like a llama revival button! You know, like in those cartoons where they press a button and everything goes back to normal!
+// Me: Carl, this is not a cartoon! This is real life! And now we have to deal with the consequences of your actions!
+// Carl: But I just wanted to bring back the llamas! I thought it would be fun!
+// Me: Carl, this is not fun! This is serious! We have to fix this mess you've made!
+// Carl: But I didn't mean to cause a blackout! I just wanted to see what would happen if I pressed the button!
+// Me: Carl, you can't just press buttons without knowing what they do! This is not a game! This is real life, and your actions have real consequences!
+//END OF FILE 4894b-1234 
+// Me: Roll file number 7859b-1256!
+
+// Carl, what did I tell you about pressing random buttons in the office? Carl? 
+// Oh no, where did he go?
+// Did he get sucked into another dimension?
+// Is he trapped in a time loop?
+// Did he accidentally create a black hole?
+// Is he lost in a parallel universe?
+// Did he trigger a time paradox?
+// Is he stuck in a glitch in the matrix?
+// no it cant be .. that sound... 
+// It's the sound of a button being pressed!
+// Oh great, Carl pressed the button again! its unleashed unspeakable horrors upon us! THE COPIER IS SHOOTING OUT PAPER LIKE A MACHINE GUN!
+// Carl, what did I tell you about pressing that button?
+// Carl: But I thought it would bring back the Pizza Party! You know, the one we had last week?
+// Me: Carl, that button does not bring back the Pizza Party! It just causes chaos in the office!
+//How many times do we have to teach you this lesson, ol- I mean Carl?
+// *cickk click* - Oh no, Carl! You pressed the button again?! now its raining pape clips and staplers in here! ow! OOh, a red swingline stapler! ow! Ahhhhhh I've been stapled Save yourselves!!
+
+//end of file 7859b-1256
+
+// 
+// NO DONT PRESS THAT BUTTON! NO CARL IT WLL NOT BRING LLAMAS BACK!
+// CARL IF YOU PRESS THAT BUTTO- *Click!* I TOLD YOU NOT TO PRESS THAT BUTTON! NO CARL BAD CARL!
+//Oh good grief, Carl, you pressed the button! Now we have to deal with the consequences!
+// I told you not to press that button, Carl! Now we have llamas everywhere!
+// Carl, you pressed the button! Now we have llamas in the office! How are we going to get any work done with llamas running around?
+//Carl: LLAMAS! I LOVE LLAMAS! IM A MEMBER OF THE LLAMA CLUB! 
+// Me: Carl, this is not the time for your llama obsession! We have to clean up this mess!
+// Carl: But llamas are so fluffy and cute! Look at them! They're just wandering around, eating our paperwork!
+// Me: Yes, Carl, they're cute, but we have to get them out of here! We can't have llamas in the office!
+// Carl: But I don't want to get rid of them! They're my friends now!
+// Me: Carl, we have to be professional! We can't have llamas in the off- Carl no! Don't feed them the paperwork!
+// Carl: But they look so hungry! I just wanted to share my lunch with them!
+// Me: Carl, you can't just feed llamas paperwork! They're not supposed to eat that! Now they're going to be sick!
+// Carl: But I thought they would like it! I mean, it's paper, right? They eat grass, so why not paper?
+// Me: Carl, llamas are not supposed to eat paper! It's not good for them  and it can make them sick! We have to get them out of here before they cause more damage!
+
 }

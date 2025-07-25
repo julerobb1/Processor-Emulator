@@ -30,7 +30,7 @@ namespace ProcessorEmulator.Tools
                     if (arch != "Unknown")
                     {
                         Console.WriteLine($"{file}: {arch}");
-                        var disasm = ProcessorEmulator.Tools.Disassembler.Disassemble(data, arch);
+                        var disasm = Tools.Disassembler.Disassemble(data, arch);
                         foreach (var line in disasm.Take(5)) // Preview first 5 lines
                             Console.WriteLine("    " + line);
                     }
@@ -40,7 +40,7 @@ namespace ProcessorEmulator.Tools
         }
     }
 
-    internal static class Disassembler
+    internal static class BinaryDisassembler
     {
         public static string[] Disassemble(byte[] data, string arch)
         {

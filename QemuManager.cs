@@ -46,33 +46,58 @@ namespace ProcessorEmulator.Tools
             var exe = architecture switch
             {
                 "MIPS32" => "qemu-system-mips.exe",
-                "MIPS64" => "qemu-system-mips64.exe",
+                "MIPS32-BCM7346" => "qemu-system-mips.exe",
+                "MIPS64" => "qemu-system-mips64.exe", 
                 "ARM" => "qemu-system-arm.exe",
                 "ARM64" => "qemu-system-aarch64.exe",
                 "PowerPC" => "qemu-system-ppc.exe",
                 "x86" => "qemu-system-i386.exe",
                 "x86-64" => "qemu-system-x86_64.exe",
                 "RISC-V" => "qemu-system-riscv64.exe",
-                _ => "qemu-system-mips.exe",
+                "Unknown" => throw new ArgumentException($"Cannot determine QEMU executable for unknown architecture. Please select an architecture manually."),
+                _ => throw new ArgumentException($"Unsupported architecture: {architecture}. Supported: MIPS32, MIPS64, ARM, ARM64, PowerPC, x86, x86-64, RISC-V"),
             };
             return LocateExecutable(exe);
         }
 
         private static string GetQemuArgs(string imagePath, string architecture)
         {
-            // Select machine type based on architecture: malta for MIPS, virt for ARM
+            // Select machine type based on architecture
             string machine = null;
-            if (architecture.StartsWith("MIPS", StringComparison.OrdinalIgnoreCase)) machine = "malta";
-            else if (architecture.StartsWith("ARM", StringComparison.OrdinalIgnoreCase)) machine = "virt";
+            string extraArgs = "";
+            
+            if (architecture.StartsWith("MIPS", StringComparison.OrdinalIgnoreCase)) 
+            {
+                machine = "malta";
+            }
+            else if (architecture.StartsWith("ARM", StringComparison.OrdinalIgnoreCase)) 
+            {
+                machine = "virt";
+            }
+            else if (architecture.Equals("PowerPC", StringComparison.OrdinalIgnoreCase))
+            {
+                machine = "g3beige"; // Classic PowerPC machine with OpenBIOS
+                extraArgs = "-boot order=cd"; // Boot from CD/firmware
+            }
+            
             string machineArg = string.IsNullOrEmpty(machine) ? string.Empty : $"-machine {machine}";
+            
             // If this is a raw firmware blob, boot it as a kernel with serial console
             var ext = Path.GetExtension(imagePath).ToLowerInvariant();
             if (ext == ".bin")
             {
-                return $"{machineArg} -m 256 -kernel \"{imagePath}\" -serial stdio";
+                if (architecture.Equals("PowerPC", StringComparison.OrdinalIgnoreCase))
+                {
+                    // PowerPC firmware - load as BIOS/bootloader
+                    return $"{machineArg} -m 256 -bios \"{imagePath}\" -serial stdio -monitor stdio {extraArgs}";
+                }
+                else
+                {
+                    return $"{machineArg} -m 256 -kernel \"{imagePath}\" -serial stdio {extraArgs}";
+                }
             }
             // Otherwise boot from image drive with VGA display
-            return $"{machineArg} -m 256 -drive file=\"{imagePath}\",format=raw -boot order=c -vga std -display sdl";
+            return $"{machineArg} -m 256 -drive file=\"{imagePath}\",format=raw -boot order=c -vga std -display sdl {extraArgs}";
         }
 
         public static void Launch(string imagePath, string architecture)

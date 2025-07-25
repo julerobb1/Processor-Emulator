@@ -82,5 +82,12 @@ namespace ProcessorEmulator.Emulation
         {
             // Recompile for target architecture
         }
+        
+        // IEmulator properties
+        public uint ProgramCounter { get; private set; } = 0;
+        public int InstructionCount { get; private set; } = 0;
+        public uint CurrentInstruction { get; private set; } = 0;
+        public uint[] RegisterState { get; private set; } = new uint[16];
+        public byte[] MemoryState { get; private set; } = new byte[1024];
     }
 }

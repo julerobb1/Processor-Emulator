@@ -1,0 +1,15 @@
+C:\Users\juler\Documents\GitHub\Processor-Emulator\BoltDemo_Standalone\bin\Debug\net6.0\BoltDemo.exe
+C:\Users\juler\Documents\GitHub\Processor-Emulator\BoltDemo_Standalone\bin\Debug\net6.0\BoltDemo.deps.json
+C:\Users\juler\Documents\GitHub\Processor-Emulator\BoltDemo_Standalone\bin\Debug\net6.0\BoltDemo.runtimeconfig.json
+C:\Users\juler\Documents\GitHub\Processor-Emulator\BoltDemo_Standalone\bin\Debug\net6.0\BoltDemo.dll
+C:\Users\juler\Documents\GitHub\Processor-Emulator\BoltDemo_Standalone\bin\Debug\net6.0\BoltDemo.pdb
+C:\Users\juler\Documents\GitHub\Processor-Emulator\BoltDemo_Standalone\obj\Debug\net6.0\BoltDemo.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\juler\Documents\GitHub\Processor-Emulator\BoltDemo_Standalone\obj\Debug\net6.0\BoltDemo.AssemblyInfoInputs.cache
+C:\Users\juler\Documents\GitHub\Processor-Emulator\BoltDemo_Standalone\obj\Debug\net6.0\BoltDemo.AssemblyInfo.cs
+C:\Users\juler\Documents\GitHub\Processor-Emulator\BoltDemo_Standalone\obj\Debug\net6.0\BoltDemo.csproj.CoreCompileInputs.cache
+C:\Users\juler\Documents\GitHub\Processor-Emulator\BoltDemo_Standalone\obj\Debug\net6.0\BoltDemo.sourcelink.json
+C:\Users\juler\Documents\GitHub\Processor-Emulator\BoltDemo_Standalone\obj\Debug\net6.0\BoltDemo.dll
+C:\Users\juler\Documents\GitHub\Processor-Emulator\BoltDemo_Standalone\obj\Debug\net6.0\refint\BoltDemo.dll
+C:\Users\juler\Documents\GitHub\Processor-Emulator\BoltDemo_Standalone\obj\Debug\net6.0\BoltDemo.pdb
+C:\Users\juler\Documents\GitHub\Processor-Emulator\BoltDemo_Standalone\obj\Debug\net6.0\BoltDemo.genruntimeconfig.cache
+C:\Users\juler\Documents\GitHub\Processor-Emulator\BoltDemo_Standalone\obj\Debug\net6.0\ref\BoltDemo.dll

@@ -64,7 +64,7 @@ namespace ProcessorEmulator.Tools.FileSystems
 
             throw new Exception("Unknown VxWorks version or not a VxWorks firmware");
         }
-
+//Stupid Sexy Flanders
         private static string SearchVersionString(byte[] firmware)
         {
             // Common VxWorks version string patterns

@@ -27,14 +27,149 @@
             <StatusBarItem Content="Ready" />
         </StatusBar>
         <Grid>
-            <StackPanel Margin="20">
-                <TextBlock Text="Emulator Control Panel" FontWeight="Bold" FontSize="16" Margin="0,0,0,10"/>
-                <Button Content="Start Emulation" Width="150" Height="30" Margin="0,0,0,10" Click="StartEmulation_Click"/>
-                <TextBox Width="300" Height="25"/>
-                <Button Content="Analyze Firmware" Width="150" Height="30" Margin="0,10,0,10" Click="AnalyzeFirmware_Click"/>
-                <Button Content="Extract Firmware" Width="150" Height="30" Margin="0,0,0,10" Click="ExtractFirmware_Click"/>
-                <Button Content="Detect File Type" Width="150" Height="30" Margin="0,0,0,10" Click="DetectFileType_Click"/>
-            </StackPanel>
+            <TabControl>
+                <TabItem Header="Emulation">
+                    <StackPanel Margin="10">
+                        <TextBlock FontWeight="Bold" Text="Firmware Emulation" FontSize="14" Margin="0,0,0,10"/>
+                        
+                        <!-- Firmware Selection -->
+                        <GroupBox Header="1. Select Firmware" Margin="0,0,0,10">
+                            <DockPanel Margin="5">
+                                <TextBox x:Name="FirmwarePathTextBox" Width="400"/>
+                                <Button x:Name="BrowseFirmwareButton" Content="Browse..." Width="75" Margin="5,0,0,0" Click="BrowseFirmwareButton_Click"/>
+                            </DockPanel>
+                        </GroupBox>
+                        
+                        <!-- Emulator Selection -->
+                        <GroupBox Header="2. Choose Emulator" Margin="0,0,0,10">
+                            <StackPanel Margin="5">
+                                <RadioButton x:Name="HomebrewEmulatorRadio" Content="HomebrewEmulator (Recommended)" 
+                                           GroupName="EmulatorChoice" IsChecked="True" Margin="0,2"
+                                           ToolTip="Multi-architecture emulator with BCM7449 SoC support for RDK-V devices"/>
+                                <RadioButton x:Name="QemuEmulatorRadio" Content="QEMU (External Process)" 
+                                           GroupName="EmulatorChoice" Margin="0,2"
+                                           ToolTip="External QEMU process for full system emulation"/>
+                                <RadioButton x:Name="RetDecTranslatorRadio" Content="RetDec Binary Translator" 
+                                           GroupName="EmulatorChoice" Margin="0,2"
+                                           ToolTip="Static decompilation and cross-architecture translation"/>
+                            </StackPanel>
+                        </GroupBox>
+                        
+                        <!-- Platform Selection -->
+                        <GroupBox Header="3. Platform Type (Optional)" Margin="0,0,0,10">
+                            <StackPanel Margin="5">
+                                <RadioButton x:Name="RdkVPlatformRadio" Content="RDK-V (ARRIS XG1V4)" 
+                                           GroupName="PlatformChoice" Margin="0,2"
+                                           ToolTip="RDK-V platform with BCM7449 SoC emulation"/>
+                                <RadioButton x:Name="UversePlatformRadio" Content="AT&amp;T U-verse (MIPS/WinCE)" 
+                                           GroupName="PlatformChoice" Margin="0,2"
+                                           ToolTip="AT&amp;T U-verse STB with MIPS processor and WinCE kernel"/>
+                                <RadioButton x:Name="GenericPlatformRadio" Content="Generic Platform" 
+                                           GroupName="PlatformChoice" IsChecked="True" Margin="0,2"
+                                           ToolTip="Auto-detect platform from firmware"/>
+                            </StackPanel>
+                        </GroupBox>
+                        
+                        <!-- Action Buttons -->
+                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0" HorizontalAlignment="Left">
+                            <Button x:Name="StartEmulationButton" Content="Start Emulation" Width="120" 
+                                    Height="30" Margin="0,0,10,0" Click="StartEmulationButton_Click"
+                                    ToolTip="Start emulation with selected options"/>
+                            <Button x:Name="AnalyzeOnlyButton" Content="Analyze Only" Width="100" 
+                                    Height="30" Margin="0,0,10,0" Click="AnalyzeFirmware_Click"
+                                    ToolTip="Analyze firmware without emulation"/>
+                            <Button x:Name="AdvancedOptionsButton" Content="Advanced Analysis" Width="130" 
+                                    Height="30" Margin="0,0,10,0" Click="AdvancedOptionsButton_Click"
+                                    ToolTip="Show all analysis and emulation options"/>
+                        </StackPanel>
+                    </StackPanel>
+                </TabItem>
+                <TabItem Header="Analysis">
+                    <StackPanel Margin="10">
+                        <Button Content="Analyze Firmware" Width="150" Margin="0,5" Click="AnalyzeFirmware_Click"/>
+                        <Button Content="Extract Firmware" Width="150" Margin="0,5" Click="ExtractFirmware_Click"/>
+                        <Button Content="Detect File Type" Width="150" Margin="0,5" Click="DetectFileType_Click"/>
+                        <Button Content="Summarize DVR Data" Width="150" Margin="0,5" Click="SummarizeDvrData_Click"/>
+                    </StackPanel>
+                </TabItem>
+                <TabItem Header="Filesystems">
+                    <StackPanel Margin="10">
+                        <Button Content="Mount FAT" Width="150" Margin="0,5" Click="MountFat_Click"/>
+                        <Button Content="Mount ISO" Width="150" Margin="0,5" Click="MountIso_Click"/>
+                        <Button Content="Mount EXT" Width="150" Margin="0,5" Click="MountExt_Click"/>
+                        <Button Content="Mount SquashFS" Width="150" Margin="0,5" Click="MountSquashFs_Click"/>
+                    </StackPanel>
+                </TabItem>
+                
+                <!-- BOLT Bootloader Tab -->
+                <TabItem Header="BOLT Bootloader">
+                    <StackPanel Margin="10">
+                        <TextBlock FontWeight="Bold" Text="BOLT Bootloader Simulation" FontSize="14" Margin="0,0,0,10"/>
+                        
+                        <!-- BOLT Status -->
+                        <GroupBox Header="BOLT Status" Margin="0,0,0,10">
+                            <TextBlock x:Name="BoltStatusText" Text="BOLT: Not initialized" 
+                                       FontFamily="Consolas" Margin="5" Foreground="Red"/>
+                        </GroupBox>
+                        
+                        <!-- BOLT Actions -->
+                        <GroupBox Header="BOLT Actions" Margin="0,0,0,10">
+                            <StackPanel Margin="5">
+                                <Button x:Name="InitBoltButton" Content="Initialize BOLT" Width="150" 
+                                        Height="30" Margin="0,5" Click="InitBoltButton_Click"
+                                        ToolTip="Initialize BCM7449 SoC and BOLT bootloader"/>
+                                <Button x:Name="BoltCliButton" Content="BOLT CLI" Width="150" 
+                                        Height="30" Margin="0,5" Click="BoltCliButton_Click"
+                                        ToolTip="Open BOLT command line interface"/>
+                                <Button x:Name="LoadFirmwareButton" Content="Load Firmware via BOLT" Width="150" 
+                                        Height="30" Margin="0,5" Click="LoadFirmwareButton_Click"
+                                        ToolTip="Load and boot firmware through BOLT"/>
+                            </StackPanel>
+                        </GroupBox>
+                        
+                        <!-- Firmware Path for BOLT -->
+                        <GroupBox Header="Firmware Selection" Margin="0,0,0,10">
+                            <DockPanel Margin="5">
+                                <TextBox x:Name="BoltFirmwarePathTextBox" Width="400"/>
+                                <Button x:Name="BoltBrowseFirmwareButton" Content="Browse..." Width="75" 
+                                        Margin="5,0,0,0" Click="BoltBrowseFirmwareButton_Click"/>
+                            </DockPanel>
+                        </GroupBox>
+                        
+                        <!-- Quick Boot Options -->
+                        <GroupBox Header="Quick Boot Options" Margin="0,0,0,10">
+                            <StackPanel Orientation="Horizontal" Margin="5">
+                                <Button x:Name="MemTestButton" Content="Memory Test" Width="100" 
+                                        Height="25" Margin="0,0,10,0" Click="MemTestButton_Click"
+                                        ToolTip="Run BOLT memory test"/>
+                                <Button x:Name="ShowDtbButton" Content="Show DTB" Width="100" 
+                                        Height="25" Margin="0,0,10,0" Click="ShowDtbButton_Click"
+                                        ToolTip="Display device tree blob"/>
+                                <Button x:Name="DumpMemoryButton" Content="Dump Memory" Width="100" 
+                                        Height="25" Margin="0,0,10,0" Click="DumpMemoryButton_Click"
+                                        ToolTip="Dump memory contents"/>
+                            </StackPanel>
+                        </GroupBox>
+                    </StackPanel>
+                </TabItem>
+                
+                <!-- Real-Time Emulation Log Tab -->
+                <TabItem Header="Emulation Log">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        
+                        <TextBlock Grid.Row="0" FontWeight="Bold" Text="Real-Time Emulation Logging" 
+                                   FontSize="14" Margin="10" />
+                        
+                        <!-- Log Panel will be added programmatically -->
+                        <Border Grid.Row="1" x:Name="LogPanelContainer" Margin="10"/>
+                    </Grid>
+                </TabItem>
+                
+            </TabControl>
         </Grid>
     </DockPanel>
 </Window>
