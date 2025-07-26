@@ -564,7 +564,7 @@ namespace ProcessorEmulator.Emulation
             LogBoot("=== MIPS EMULATION LOOP ENDED ===");
         }
         
-        private async Task CheckSystemCalls(uint pc)
+        private void CheckSystemCalls(uint pc)
         {
             // Check for key addresses that indicate progress
             if (pc >= 0x80000000 && pc < 0x80001000)
