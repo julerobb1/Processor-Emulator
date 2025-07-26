@@ -52,8 +52,8 @@ namespace ProcessorEmulator
             }
         }
 
-        // Entry point for standalone testing
-        public static async Task Main(string[] args)
+        // Entry point for standalone testing (disabled: multiple entry points not allowed)
+        // public static async Task Main(string[] args)
         {
             if (args.Length > 0 && args[0] == "--test-uverse")
             {
