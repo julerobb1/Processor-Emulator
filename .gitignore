@@ -266,3 +266,4 @@ Directv and DVR Workspace..code-workspace
 *.cache
 /obj
 /obj/Release/net6.0-windows
+/obj
