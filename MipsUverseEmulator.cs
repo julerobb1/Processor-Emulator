@@ -319,11 +319,11 @@ namespace ProcessorEmulator.Emulation
                 LogBoot("=== STARTING U-VERSE KERNEL BOOT ===");
                 
                 // 1. Load nk.bin kernel at MIPS address 0xBFC00000
-                if (!await LoadNkBinKernel())
+                if (!LoadNkBinKernel())
                     return false;
                 
                 // 2. Parse and load bootloader arguments
-                if (!await ParseStartupArgs())
+                if (!ParseStartupArgs())
                     return false;
                 
                 // 3. Mount registry hive
@@ -331,11 +331,11 @@ namespace ProcessorEmulator.Emulation
                     return false;
                 
                 // 4. Load boot overlays
-                if (!await LoadBootOverlays())
+                if (!LoadBootOverlays())
                     return false;
                 
                 // 5. Initialize CPU and start execution
-                if (!await StartKernelExecution())
+                if (!StartKernelExecution())
                     return false;
                 
                 LogBoot("=== KERNEL BOOT SEQUENCE COMPLETE ===");
@@ -419,7 +419,7 @@ namespace ProcessorEmulator.Emulation
             }
         }
         
-        private bool MountRegistryHive()
+        private async Task<bool> MountRegistryHive()
         {
             LogBoot("Step 3: Mounting registry hive default.hv...");
             
@@ -548,7 +548,7 @@ namespace ProcessorEmulator.Emulation
                     lastPC = currentPC;
                     
                     // Check for system calls or interesting addresses
-                    await CheckSystemCalls(currentPC);
+                    CheckSystemCalls(currentPC);
                     
                     // Small delay to prevent overwhelming the system
                     if (instructionCount % 100 == 0)
