@@ -481,7 +481,7 @@ namespace ProcessorEmulator.Emulation
             }
         }
         
-        private async Task<bool> StartKernelExecution()
+        private bool StartKernelExecution()
         {
             LogBoot("Step 5: Starting MIPS kernel execution...");
             
