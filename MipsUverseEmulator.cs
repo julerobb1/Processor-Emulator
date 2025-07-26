@@ -375,7 +375,7 @@ namespace ProcessorEmulator.Emulation
             
             LogBoot("✓ nk.bin kernel loaded successfully");
             kernelLoaded = true;
-            return true;
+            return Task.FromResult(true);
         }
         
         private uint ParseNkBinHeader(byte[] kernelData)
