@@ -453,7 +453,7 @@ namespace ProcessorEmulator.Emulation
             }
         }
         
-        private async Task<bool> LoadBootOverlays()
+        private bool LoadBootOverlays()
         {
             LogBoot("Step 4: Loading boot overlays from etc.bin...");
             
