@@ -348,14 +348,14 @@ namespace ProcessorEmulator.Emulation
             }
         }
         
-        private async Task<bool> LoadNkBinKernel()
+        private Task<bool> LoadNkBinKernel()
         {
             LogBoot("Step 1: Loading nk.bin kernel image...");
             
             if (!firmwareFiles.ContainsKey("nk.bin"))
             {
                 LogBoot("ERROR: nk.bin kernel image not found");
-                return false;
+                return Task.FromResult(false);
             }
             
             byte[] kernelData = firmwareFiles["nk.bin"];
