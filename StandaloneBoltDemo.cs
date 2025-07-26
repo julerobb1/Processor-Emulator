@@ -243,7 +243,8 @@ namespace BoltDemo
 
     class Program
     {
-        static async Task Main(string[] args)
+        // Disabled: Multiple entry points not allowed  
+        // static async Task Main(string[] args)
         {
             Console.WriteLine("=== BOLT Bootloader Demo ===");
             Console.WriteLine("Simulating Broadcom BCM7449 BOLT bootloader");
