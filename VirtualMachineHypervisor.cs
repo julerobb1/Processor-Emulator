@@ -54,7 +54,8 @@ namespace ProcessorEmulator
                 CreateHypervisorWindow(platformName);
                 InitializeVirtualHardware();
                 UpdateStatus("Initializing virtual hardware...");
-                _ = BootFirmware(); // Fire and forget async
+                // Start boot sequence on background thread to prevent UI freeze
+                Task.Run(async () => await BootFirmware());
             });
         }
         
@@ -221,7 +222,9 @@ namespace ProcessorEmulator
                     UpdateStatus("Running BIOS POST sequence...");
                 });
                 
-                var biosResult = await customBios.ExecutePostSequence(virtualMemory, armRegisters);
+                // Execute BIOS POST sequence on background thread to avoid UI freeze
+                var biosResult = await Task.Run(async () => 
+                    await customBios.ExecutePostSequence(virtualMemory, armRegisters));
                 
                 Application.Current.Dispatcher.Invoke(() => {
                     biosLog.AppendText(biosResult.LogOutput);
