@@ -419,7 +419,7 @@ namespace ProcessorEmulator.Emulation
             }
         }
         
-        private async Task<bool> MountRegistryHive()
+        private bool MountRegistryHive()
         {
             LogBoot("Step 3: Mounting registry hive default.hv...");
             
