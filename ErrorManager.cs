@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Windows;
+using ProcessorEmulator.CarlContainmentProtocol;
 
 namespace ProcessorEmulator
 {
@@ -492,5 +493,89 @@ namespace ProcessorEmulator
             // For now, just show the error since we don't have a logging system
             ShowError(code, operation, ex);
         }
+        
+        #region Carl-Specific Emergency Protocols
+        
+        /// <summary>
+        /// Handle Carl-induced system failures with appropriate containment measures
+        /// </summary>
+        public static void ShowCarlEmergency(string incident)
+        {
+            var threat = CarlMonitor.CurrentThreatLevel;
+            var message = threat switch
+            {
+                CarlMonitor.CarlThreatLevel.Critical => $"🚨 CARL CRITICAL INCIDENT 🚨\n\n{incident}\n\n" +
+                    "Emergency Protocol Activated:\n" +
+                    "• All buttons have been hidden\n" +
+                    "• Coffee supply secured\n" +
+                    "• Llama barriers deployed\n" +
+                    "• Strongly worded memo sent\n\n" +
+                    "System attempting self-recovery...",
+                
+                CarlMonitor.CarlThreatLevel.Apocalyptic => $"💥 CARL APOCALYPTIC EVENT 💥\n\n{incident}\n\n" +
+                    "🦙 INTERDIMENSIONAL LLAMAS DETECTED! 🦙\n\n" +
+                    "Emergency Actions Taken:\n" +
+                    "• Dimensional vacuum deployed\n" +
+                    "• Emergency hay distributed\n" +
+                    "• All personnel evacuated to safe dimensions\n" +
+                    "• Carl's access privileges revoked (again)\n\n" +
+                    "May the force be with us all.",
+                
+                _ => $"⚠️ CARL INCIDENT DETECTED ⚠️\n\n{incident}\n\n" +
+                    "Don't panic! This is probably just Carl being Carl.\n" +
+                    "Containment protocols are in effect."
+            };
+            
+            MessageBox.Show(message, "🔴 CARL CONTAINMENT PROTOCOL", 
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        
+        /// <summary>
+        /// Special llama-specific error handling
+        /// </summary>
+        public static void ShowLlamaAlert(LlamaException ex)
+        {
+            var message = $"🦙 LLAMA DIMENSIONAL BREACH 🦙\n\n" +
+                $"Exception: {ex.Message}\n\n" +
+                "Emergency Llama Protocols:\n" +
+                "• Deploying emergency hay\n" +
+                "• Activating dimensional barriers\n" +
+                "• Sending Carl to timeout corner\n" +
+                "• Consulting llama whisperer\n\n" +
+                "Please stand by while we contain the llama situation.\n" +
+                "Do NOT feed the interdimensional llamas!";
+            
+            MessageBox.Show(message, "🦙 LLAMA CONTAINMENT PROTOCOL", 
+                MessageBoxButton.OK, MessageBoxImage.Exclamation);
+            
+            // Generate incident report
+            var report = CarlMonitor.GetCarlIncidentReport();
+            var reportText = string.Join("\n", report);
+            
+            // Show detailed incident report
+            MessageBox.Show(reportText, "📋 CARL INCIDENT REPORT", 
+                MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        
+        /// <summary>
+        /// Carl's processor state corruption handler
+        /// </summary>
+        public static void ShowProcessorCarlified(string processorState)
+        {
+            var message = $"💾 PROCESSOR STATE CORRUPTED BY CARL 💾\n\n" +
+                $"Current State: {processorState}\n\n" +
+                "Diagnostic Results:\n" +
+                "• All registers flooded with llama interference\n" +
+                "• Stack pointer pointing to interdimensional space\n" +
+                "• Program counter stuck in infinite Carl loop\n" +
+                "• Cache filled with button press patterns\n\n" +
+                "Attempting automatic Carl recovery...\n" +
+                "(This may take several attempts)";
+            
+            MessageBox.Show(message, "🔧 CARL PROCESSOR RECOVERY", 
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        
+        #endregion
     }
 }

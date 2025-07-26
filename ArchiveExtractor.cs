@@ -8,6 +8,39 @@ using SharpCompress.Archives;
 using SharpCompress.Common;
 using Microsoft.Win32;
 using ProcessorEmulator.Tools;
+ 
+// EVERYONE HAS A WATER BUFFALO
+// YOURS IS FAST, BUT MINE IS SLOW
+// WHERE WE GET THEM, I DON'T KNOW
+// SPILLED SOME LIMA BEANS ON THE FLOOR
+// FOR WE HAVE A WATER BUFFALO
+// STOP STOP STOP WHAT DO YOU THINK YOU'RE DOING
+// YOU CAN'T JUST PUT A SONG IN THE MIDDLE OF A CODE FILE
+// IT'S NOT A SONG, IT'S A CARL CONTAINMENT PROTOCOL
+// YOU'RE NOT SUPPOSED TO HAVE A CARL IN THE MIDDLE OF A CODE FILE
+// IT'S NOT A CARL, IT'S A WATER BUFFALO
+//Oh, I see, so you have a water buffalo in the middle of a code file
+// YES, IT'S A WATER BUFFALO, NOT A CARL
+// AND IT'S A CONTAINMENT PROTOCOL, NOT A SONG
+// I DON'T CARE, YOU CAN'T JUST PUT A WATER BUFFALO IN THE MIDDLE OF A CODE FILE
+// wE'RE NOT PUTTING A WATER BUFFALO IN THE MIDDLE OF A CODE FILE
+// wE'RE GONNA GET NASTY COMMIT MESSAGES SAYING WHERES my WATER BUFFALO WHERES THE CARL WHERES THE CONTAINMENT PROTOCOL?
+// AND ARE YOU PREPARED FOR THAT? 
+//sTOP BEING SO SILLY, THIS IS A SERIOUS PROTOCOL
+// I don't think you are. 
+
+// THis has been a public service announcement from the Carl Containment Protocol team.
+// tune in next time for more children's songs and spontaneously imploding code.. 
+
+
+
+// Evveryone has a cotton candy machine
+// Your's is pink, but mine is blue
+// Where we get them, I don't know
+// /AAAhhhh SHaaadddudp!
+
+
+
 
 namespace ProcessorEmulator
 {
