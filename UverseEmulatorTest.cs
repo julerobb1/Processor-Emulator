@@ -54,14 +54,14 @@ namespace ProcessorEmulator
 
         // Entry point for standalone testing (disabled: multiple entry points not allowed)
         // public static async Task Main(string[] args)
-        {
-            if (args.Length > 0 && args[0] == "--test-uverse")
-            {
-                await RunTest();
-                Console.WriteLine("Press any key to exit...");
-                Console.ReadKey();
-                Environment.Exit(0);
-            }
-        }
+        // {
+        //     if (args.Length > 0 && args[0] == "--test-uverse")
+        //     {
+        //         await RunTest();
+        //         Console.WriteLine("Press any key to exit...");
+        //         Console.ReadKey();
+        //         Environment.Exit(0);
+        //     }
+        // }
     }
 }
