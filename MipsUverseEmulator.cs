@@ -616,7 +616,7 @@ namespace ProcessorEmulator.Emulation
                 LogBoot("Implementing emergency containment procedures...");
                 
                 // Check for specific Carl chaos patterns
-                if (address == 0xC4RLB00T)
+                if (address == 0xCA71B007)
                 {
                     LogBoot("💥 CRITICAL: Carl has accessed the boot registers! Prepare for anomalous behavior!");
                     LogBoot("Activating llama-proof barriers and hiding all important buttons...");

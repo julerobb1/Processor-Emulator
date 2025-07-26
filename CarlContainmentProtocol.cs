@@ -13,9 +13,9 @@ namespace ProcessorEmulator.CarlContainmentProtocol
     /// </summary>
     public static class CarlMonitor
     {
-        private static readonly uint CARL_BOOT_ADDRESS = 0xC4RLB00T;
+        private static readonly uint CARL_BOOT_ADDRESS = 0xCA71B007;
         private static readonly uint FORBIDDEN_BUTTON = 0xDEADBEEF;
-        private static readonly uint LLAMA_PORTAL = 0xB4AA4BAA;
+        private static readonly uint LLAMA_PORTAL = 0xBA11ABAD;
         
         private static bool isCarlContained = true;
         private static int llamaSwarmCount = 0;
@@ -135,7 +135,7 @@ namespace ProcessorEmulator.CarlContainmentProtocol
                 $"Current Threat Level: {CurrentThreatLevel}",
                 $"Total Llama Incidents: {llamaSwarmCount}",
                 $"Last Button Press: {(lastButtonPress == DateTime.MinValue ? "Never (suspicious)" : lastButtonPress.ToString())}",
-                $"Carl Containment Status: {(isCarLContained ? "Contained (probably)" : "AT LARGE!")}",
+                $"Carl Containment Status: {(isCarlContained ? "Contained (probably)" : "AT LARGE!")}",
                 "",
                 "Recent Incidents:"
             };
@@ -183,7 +183,7 @@ namespace ProcessorEmulator.CarlContainmentProtocol
         {
             LogCarlIncident("🔄 Resetting Carl containment protocols...");
             CurrentThreatLevel = CarlThreatLevel.Green;
-            isCarLContained = true;
+            isCarlContained = true;
             LogCarlIncident("✅ Carl containment reset. All clear... until next time.");
         }
     }

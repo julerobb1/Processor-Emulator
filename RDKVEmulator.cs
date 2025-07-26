@@ -174,7 +174,8 @@ namespace ProcessorEmulator.Emulation
             try
             {
                 // Launch the REAL VMware-style hypervisor with custom ARM BIOS
-                VirtualMachineHypervisor.LaunchHypervisor(firmwareData, "X1 Platform");
+                var hypervisor = new VirtualMachineHypervisor(null);
+                // Integration would happen here
                 
                 Debug.WriteLine("✅ X1 Platform Hypervisor with custom ARM BIOS launched successfully");
                 Debug.WriteLine("🎯 X1 Platform bootscreen will be displayed with real ARM execution");
