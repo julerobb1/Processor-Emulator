@@ -348,14 +348,14 @@ namespace ProcessorEmulator.Emulation
             }
         }
         
-        private Task<bool> LoadNkBinKernel()
+        private bool LoadNkBinKernel()
         {
             LogBoot("Step 1: Loading nk.bin kernel image...");
             
             if (!firmwareFiles.ContainsKey("nk.bin"))
             {
                 LogBoot("ERROR: nk.bin kernel image not found");
-                return Task.FromResult(false);
+                return false;
             }
             
             byte[] kernelData = firmwareFiles["nk.bin"];
@@ -375,7 +375,7 @@ namespace ProcessorEmulator.Emulation
             
             LogBoot("✓ nk.bin kernel loaded successfully");
             kernelLoaded = true;
-            return Task.FromResult(true);
+            return true;
         }
         
         private uint ParseNkBinHeader(byte[] kernelData)
@@ -394,7 +394,7 @@ namespace ProcessorEmulator.Emulation
             return entryPoint;
         }
         
-        private async Task<bool> ParseStartupArgs()
+        private bool ParseStartupArgs()
         {
             LogBoot("Step 2: Parsing startup.bz bootloader arguments...");
             
