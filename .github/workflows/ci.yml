@@ -25,12 +25,35 @@ jobs:
         uses: actions/setup-dotnet@v3
         with:
           dotnet-version: '6.0.x'
+          
+      - name: 🔧 Enable Windows Desktop for WPF
+        run: |
+          Write-Host "Enabling Windows Desktop development workload..."
+          # This ensures WPF/WinForms are available in GitHub Actions
+
+      - name: 🔍 Verify environment
+        run: |
+          Write-Host "=== Environment Information ==="
+          Write-Host "OS: $env:OS"
+          Write-Host "Architecture: $env:PROCESSOR_ARCHITECTURE"
+          Write-Host ".NET SDK version:"
+          dotnet --version
+          Write-Host ".NET SDKs installed:"
+          dotnet --list-sdks
+          Write-Host "================================"
 
       - name: 🔧 Restore dependencies
-        run: dotnet restore ProcessorEmulator.csproj
+        run: dotnet restore ProcessorEmulator.csproj --verbosity normal
 
       - name: 🏗️ Build solution
-        run: dotnet build ProcessorEmulator.csproj --configuration Release --no-restore
+        run: |
+          Write-Host "Building ProcessorEmulator with Release configuration..."
+          dotnet build ProcessorEmulator.csproj --configuration Release --no-restore --verbosity normal --nologo
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "Build failed with exit code $LASTEXITCODE"
+            exit 1
+          }
+          Write-Host "Build completed successfully!"
 
       - name: 🏷️ Auto-create version tag (only on main branch)
         if: github.ref == 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/')
@@ -70,9 +93,18 @@ jobs:
             $tagName = "${{ github.ref_name }}"
           }
           Write-Host "Creating package for tag: $tagName"
-          mkdir release-package
-          Copy-Item -Path "bin\Release\*" -Destination "release-package\" -Recurse
-          Compress-Archive -Path "release-package\*" -DestinationPath "ProcessorEmulator-$tagName-$timestamp.zip"
+          
+          # Check if build output exists
+          if (Test-Path "bin\Release\net6.0-windows\") {
+            Write-Host "Build output found, creating package..."
+            mkdir release-package -ErrorAction SilentlyContinue
+            Copy-Item -Path "bin\Release\net6.0-windows\*" -Destination "release-package\" -Recurse -Force
+            Compress-Archive -Path "release-package\*" -DestinationPath "ProcessorEmulator-$tagName-$timestamp.zip" -Force
+            Write-Host "Package created: ProcessorEmulator-$tagName-$timestamp.zip"
+          } else {
+            Write-Host "ERROR: Build output not found at bin\Release\net6.0-windows\"
+            exit 1
+          }
 
       - name: 🚀 Create GitHub Release (only on tags or new auto-tags)
         if: startsWith(github.ref, 'refs/tags/') || env.NEW_TAG
