@@ -20,3 +20,8 @@ C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Release\net6.0-windows\re
 C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Release\net6.0-windows\ProcessorEmulator.pdb
 C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Release\net6.0-windows\ProcessorEmulator.genruntimeconfig.cache
 C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Release\net6.0-windows\ref\ProcessorEmulator.dll
+C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Release\net6.0-windows\ProcessorEmulator.csproj.AssemblyReference.cache
+C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Release\net6.0-windows\Emulation\EmulatorWindow.baml
+C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Release\net6.0-windows\FolderAnalysisWindow.baml
+C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Release\net6.0-windows\Emulation\EmulatorWindow.g.cs
+C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Release\net6.0-windows\FolderAnalysisWindow.g.cs

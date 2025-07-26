@@ -242,12 +242,11 @@ namespace ProcessorEmulator.Emulation
                 
                 // Show user-friendly error with our fancy error system
                 Application.Current?.Dispatcher?.Invoke(() => {
-                    ErrorManager.ShowError("Missing Dependency", 
+                    ErrorManager.ShowError(2001, "MipsEmulatorCore.dll Dependency", 
                         "MipsEmulatorCore.dll is not available, but don't worry!\n\n" +
                         "The emulator will run in educational simulation mode.\n" +
                         "This is perfect for learning about MIPS architecture!\n\n" +
-                        "📚 Consider this a 'study guide' rather than a crash course! 😄", 
-                        2001);
+                        "📚 Consider this a 'study guide' rather than a crash course! 😄");
                 });
                 
                 // Still try to load firmware files for analysis
