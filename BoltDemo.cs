@@ -11,98 +11,99 @@ namespace ProcessorEmulator.Demo
     /// </summary>
     public class BoltDemo
     {
-        public static async Task Main(string[] args)
-        {
-            Console.WriteLine("=== BOLT Bootloader Demo ===");
-            Console.WriteLine("Simulating Broadcom BCM7449 BOLT bootloader");
-            Console.WriteLine();
+        // Disabled: Multiple entry points not allowed
+        // public static async Task Main(string[] args)
+        // {
+        //     Console.WriteLine("=== BOLT Bootloader Demo ===");
+        //     Console.WriteLine("Simulating Broadcom BCM7449 BOLT bootloader");
+        //     Console.WriteLine();
 
-            var boltBridge = new SimpleBoltBridge();
+        //     var boltBridge = new SimpleBoltBridge();
 
-            try
-            {
-                // Step 1: Initialize BOLT
-                Console.WriteLine("Step 1: Initializing BOLT...");
-                bool success = await boltBridge.InitializeBolt();
+        //     try
+        //     {
+        //         // Step 1: Initialize BOLT
+        //         Console.WriteLine("Step 1: Initializing BOLT...");
+        //         bool success = await boltBridge.InitializeBolt();
                 
-                if (!success)
-                {
-                    Console.WriteLine("BOLT initialization failed!");
-                    return;
-                }
+        //         if (!success)
+        //         {
+        //             Console.WriteLine("BOLT initialization failed!");
+        //             return;
+        //         }
 
-                Console.WriteLine("BOLT initialized successfully!");
-                Console.WriteLine();
+        //         Console.WriteLine("BOLT initialized successfully!");
+        //         Console.WriteLine();
 
-                // Step 2: Show BOLT status
-                Console.WriteLine("Step 2: BOLT Status:");
-                Console.WriteLine(boltBridge.GetBoltStatus());
-                Console.WriteLine();
+        //         // Step 2: Show BOLT status
+        //         Console.WriteLine("Step 2: BOLT Status:");
+        //         Console.WriteLine(boltBridge.GetBoltStatus());
+        //         Console.WriteLine();
 
-                // Step 3: Run some BOLT commands
-                Console.WriteLine("Step 3: Running BOLT commands:");
+        //         // Step 3: Run some BOLT commands
+        //         Console.WriteLine("Step 3: Running BOLT commands:");
                 
-                Console.WriteLine("BOLT> memtest");
-                Console.WriteLine(boltBridge.ExecuteBoltCommand("memtest"));
-                Console.WriteLine();
+        //         Console.WriteLine("BOLT> memtest");
+        //         Console.WriteLine(boltBridge.ExecuteBoltCommand("memtest"));
+        //         Console.WriteLine();
 
-                Console.WriteLine("BOLT> dt show");
-                Console.WriteLine(boltBridge.ExecuteBoltCommand("dt show"));
-                Console.WriteLine();
+        //         Console.WriteLine("BOLT> dt show");
+        //         Console.WriteLine(boltBridge.ExecuteBoltCommand("dt show"));
+        //         Console.WriteLine();
 
-                Console.WriteLine("BOLT> dump 0x8000 0x40");
-                Console.WriteLine(boltBridge.ExecuteBoltCommand("dump 0x8000 0x40"));
-                Console.WriteLine();
+        //         Console.WriteLine("BOLT> dump 0x8000 0x40");
+        //         Console.WriteLine(boltBridge.ExecuteBoltCommand("dump 0x8000 0x40"));
+        //         Console.WriteLine();
 
-                // Step 4: Try to boot firmware (if available)
-                Console.WriteLine("Step 4: Firmware Boot Demo");
+        //         // Step 4: Try to boot firmware (if available)
+        //         Console.WriteLine("Step 4: Firmware Boot Demo");
                 
-                if (args.Length > 0 && File.Exists(args[0]))
-                {
-                    Console.WriteLine($"Attempting to boot firmware: {args[0]}");
-                    bool bootSuccess = await boltBridge.BootFirmware(args[0], "ARM");
+        //         if (args.Length > 0 && File.Exists(args[0]))
+        //         {
+        //             Console.WriteLine($"Attempting to boot firmware: {args[0]}");
+        //             bool bootSuccess = await boltBridge.BootFirmware(args[0], "ARM");
                     
-                    if (bootSuccess)
-                    {
-                        Console.WriteLine("Firmware boot successful!");
-                        Console.WriteLine("Emulator handoff completed.");
-                    }
-                    else
-                    {
-                        Console.WriteLine("Firmware boot failed.");
-                    }
-                }
-                else
-                {
-                    Console.WriteLine("No firmware file provided. Creating demo firmware...");
-                    CreateDemoFirmware();
+        //             if (bootSuccess)
+        //             {
+        //                 Console.WriteLine("Firmware boot successful!");
+        //                 Console.WriteLine("Emulator handoff completed.");
+        //             }
+        //             else
+        //             {
+        //                 Console.WriteLine("Firmware boot failed.");
+        //             }
+        //         }
+        //         else
+        //         {
+        //             Console.WriteLine("No firmware file provided. Creating demo firmware...");
+        //             CreateDemoFirmware();
                     
-                    Console.WriteLine("Booting demo firmware...");
-                    bool bootSuccess = await boltBridge.BootFirmware("demo_firmware.bin", "ARM");
+        //             Console.WriteLine("Booting demo firmware...");
+        //             bool bootSuccess = await boltBridge.BootFirmware("demo_firmware.bin", "ARM");
                     
-                    if (bootSuccess)
-                    {
-                        Console.WriteLine("Demo firmware boot successful!");
-                    }
-                    else
-                    {
-                        Console.WriteLine("Demo firmware boot failed.");
-                    }
-                }
+        //             if (bootSuccess)
+        //             {
+        //                 Console.WriteLine("Demo firmware boot successful!");
+        //             }
+        //             else
+        //             {
+        //                 Console.WriteLine("Demo firmware boot failed.");
+        //             }
+        //         }
 
-                Console.WriteLine("\nPress any key to exit...");
-                Console.ReadKey();
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Demo failed: {ex.Message}");
-                Console.WriteLine($"Stack trace: {ex.StackTrace}");
-            }
-            finally
-            {
-                boltBridge?.Dispose();
-            }
-        }
+        //         Console.WriteLine("\nPress any key to exit...");
+        //         Console.ReadKey();
+        //     }
+        //     catch (Exception ex)
+        //     {
+        //         Console.WriteLine($"Demo failed: {ex.Message}");
+        //         Console.WriteLine($"Stack trace: {ex.StackTrace}");
+        //     }
+        //     finally
+        //     {
+        //         boltBridge?.Dispose();
+        //     }
+        // }
 
         private static void CreateDemoFirmware()
         {

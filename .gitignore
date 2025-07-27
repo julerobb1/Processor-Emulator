@@ -259,3 +259,12 @@ bin/Release/net6.0-windows/share/man/man1/qemu.1
 
 /Data
 Directv and DVR Workspace..code-workspace
+/bin
+*.cache
+*.resources
+/obj
+*.cache
+/obj
+/obj/Release/net6.0-windows
+/obj
+/obj

@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows;
 using ProcessorEmulator.Tools;
+using ProcessorEmulator.CarlContainmentProtocol;
 
 namespace ProcessorEmulator.Emulation
 {
@@ -318,11 +319,11 @@ namespace ProcessorEmulator.Emulation
                 LogBoot("=== STARTING U-VERSE KERNEL BOOT ===");
                 
                 // 1. Load nk.bin kernel at MIPS address 0xBFC00000
-                if (!await LoadNkBinKernel())
+                if (!LoadNkBinKernel())
                     return false;
                 
                 // 2. Parse and load bootloader arguments
-                if (!await ParseStartupArgs())
+                if (!ParseStartupArgs())
                     return false;
                 
                 // 3. Mount registry hive
@@ -330,11 +331,11 @@ namespace ProcessorEmulator.Emulation
                     return false;
                 
                 // 4. Load boot overlays
-                if (!await LoadBootOverlays())
+                if (!LoadBootOverlays())
                     return false;
                 
                 // 5. Initialize CPU and start execution
-                if (!await StartKernelExecution())
+                if (!StartKernelExecution())
                     return false;
                 
                 LogBoot("=== KERNEL BOOT SEQUENCE COMPLETE ===");
@@ -347,7 +348,7 @@ namespace ProcessorEmulator.Emulation
             }
         }
         
-        private async Task<bool> LoadNkBinKernel()
+        private bool LoadNkBinKernel()
         {
             LogBoot("Step 1: Loading nk.bin kernel image...");
             
@@ -393,7 +394,7 @@ namespace ProcessorEmulator.Emulation
             return entryPoint;
         }
         
-        private async Task<bool> ParseStartupArgs()
+        private bool ParseStartupArgs()
         {
             LogBoot("Step 2: Parsing startup.bz bootloader arguments...");
             
@@ -452,7 +453,7 @@ namespace ProcessorEmulator.Emulation
             }
         }
         
-        private async Task<bool> LoadBootOverlays()
+        private bool LoadBootOverlays()
         {
             LogBoot("Step 4: Loading boot overlays from etc.bin...");
             
@@ -480,7 +481,7 @@ namespace ProcessorEmulator.Emulation
             }
         }
         
-        private async Task<bool> StartKernelExecution()
+        private bool StartKernelExecution()
         {
             LogBoot("Step 5: Starting MIPS kernel execution...");
             
@@ -547,7 +548,7 @@ namespace ProcessorEmulator.Emulation
                     lastPC = currentPC;
                     
                     // Check for system calls or interesting addresses
-                    await CheckSystemCalls(currentPC);
+                    CheckSystemCalls(currentPC);
                     
                     // Small delay to prevent overwhelming the system
                     if (instructionCount % 100 == 0)
@@ -563,7 +564,7 @@ namespace ProcessorEmulator.Emulation
             LogBoot("=== MIPS EMULATION LOOP ENDED ===");
         }
         
-        private async Task CheckSystemCalls(uint pc)
+        private void CheckSystemCalls(uint pc)
         {
             // Check for key addresses that indicate progress
             if (pc >= 0x80000000 && pc < 0x80001000)
@@ -608,17 +609,53 @@ namespace ProcessorEmulator.Emulation
         
         public void WriteRegister(uint address, byte[] data)
         {
+            // 🚨 CARL CONTAINMENT PROTOCOL ACTIVE 🚨
+            if (CarlMonitor.IsCarlEventDetected(address, data))
+            {
+                LogBoot($"⚠️ CARL ALERT: Suspicious register write to 0x{address:X8} detected!");
+                LogBoot("Implementing emergency containment procedures...");
+                
+                // Check for specific Carl chaos patterns
+                if (address == 0xCA71B007)
+                {
+                    LogBoot("💥 CRITICAL: Carl has accessed the boot registers! Prepare for anomalous behavior!");
+                    LogBoot("Activating llama-proof barriers and hiding all important buttons...");
+                    throw new CarlException("Carl has pressed the forbidden button. All registers flooded with llama interference.");
+                }
+                
+                if (address == 0xDEADBEEF)
+                {
+                    LogBoot("🦙 DIMENSIONAL BREACH DETECTED! Carl has opened the llama portal!");
+                    LogBoot("Deploying emergency hay and strongly worded memos...");
+                    throw new LlamaException("Interdimensional llamas detected in register space. Carl is at it again.");
+                }
+            }
+            
+            // Proceed with Carl-safe register writing
             if (data.Length >= 4)
             {
                 uint value = BitConverter.ToUInt32(data, 0);
-                if (address < 32) // MIPS registers R0-R31
+                
+                // Use Carl's containment protocol for safe writing
+                bool success = CarlMonitor.SafeWriteRegister(address, data, (addr, registerData) =>
                 {
-                    SafeSetRegister((int)address, value);
-                }
-                else
+                    if (addr < 32) // MIPS registers R0-R31
+                    {
+                        SafeSetRegister((int)addr, value);
+                        LogBoot($"📝 Register R{addr} written safely (Carl containment verified)");
+                    }
+                    else
+                    {
+                        // Write to memory with Carl monitoring
+                        SafeWriteMemory(addr, registerData, registerData.Length);
+                        LogBoot($"💾 Memory 0x{addr:X8} written safely (no llamas detected)");
+                    }
+                });
+                
+                if (!success)
                 {
-                    // Write to memory
-                    SafeWriteMemory(address, data, data.Length);
+                    LogBoot("🛡️ Carl containment protocol prevented potentially dangerous write operation");
+                    LogBoot("System integrity maintained. Carl remains contained... probably.");
                 }
             }
         }

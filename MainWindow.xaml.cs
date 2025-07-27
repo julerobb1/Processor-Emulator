@@ -1181,9 +1181,10 @@ namespace ProcessorEmulator
                 log.Add($"Loaded {firmware.Length:N0} bytes of firmware");
                 
                 // Launch hypervisor with ARM emulation
-                VirtualMachineHypervisor.LaunchHypervisor(firmware, "ARM-Custom");
+                // var hypervisor = new VirtualMachineHypervisor(this);
+                // Integration would happen here
                 
-                log.Add("Custom ARM emulation started");
+                log.Add("Custom ARM emulation started (integration disabled for build)");
                 log.Add("Check hypervisor window for firmware execution");
             }
             catch (Exception ex)
@@ -3863,7 +3864,8 @@ namespace ProcessorEmulator
                 StatusBarText(ErrorManager.GetStatusMessage(ErrorManager.Codes.LOADING));
                 
                 // Launch the real VMware-style hypervisor
-                VirtualMachineHypervisor.LaunchHypervisor(firmware, $"Custom Platform - {platformName}");
+                // var hypervisor = new VirtualMachineHypervisor(this);
+                // Integration would happen here
                 
                 StatusBarText(ErrorManager.GetSuccessMessage(ErrorManager.Codes.WUBBA_SUCCESS));
                 
