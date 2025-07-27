@@ -9,6 +9,12 @@ on:
     branches: [dev]
   workflow_dispatch:
 
+permissions:
+  contents: write
+  packages: write
+  issues: read
+  pull-requests: read
+
 jobs:
   build:
     name: Build on Windows
@@ -64,6 +70,7 @@ jobs:
 
       - name: 🏷️ Auto-create version tag (only on main/dev branch pushes)
         if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && github.event_name == 'push'
+        continue-on-error: true
         run: |
           # Get the latest tag, or start with v1.0.0 if no tags exist
           $latestTag = git describe --tags --abbrev=0 2>$null
@@ -93,8 +100,18 @@ jobs:
           # Create and push the new tag
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          Write-Host "Creating new tag: $newTag"
           git tag $newTag
-          git push origin $newTag
+          
+          Write-Host "Attempting to push tag..."
+          git push origin $newTag 2>&1 | Tee-Object -Variable pushResult
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "✅ Successfully pushed tag $newTag"
+          } else {
+            Write-Host "⚠️ Failed to push tag (this may be due to permissions, but build succeeded)"
+            Write-Host "Push output: $pushResult"
+          }
           
           # Set output for later steps
           echo "NEW_TAG=$newTag" >> $env:GITHUB_ENV
