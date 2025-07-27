@@ -268,3 +268,6 @@ Directv and DVR Workspace..code-workspace
 /obj/Release/net6.0-windows
 /obj
 /obj
+obj/Debug/net6.0-windows/ProcessorEmulator.AssemblyInfo.cs
+*.cache
+/obj/Debug/net6.0-windows
