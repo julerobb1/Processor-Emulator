@@ -130,6 +130,7 @@ namespace ProcessorEmulator
             // Present main options to the user
             var mainOptions = new List<string>
             {
+                "Real VMware-Style Boot",
                 "Generic CPU/OS Emulation",
                 "RDK-V Emulator",
                 "RDK-B Emulator",
@@ -159,6 +160,9 @@ namespace ProcessorEmulator
 
             switch (mainChoice)
             {
+                case "Real VMware-Style Boot":
+                    await HandleRealHypervisorBoot();
+                    break;
                 case "Generic CPU/OS Emulation":
                     await HandleGenericEmulation();
                     break;
@@ -3892,6 +3896,145 @@ namespace ProcessorEmulator
             {
                 ErrorManager.ShowError(ErrorManager.Codes.HYPERVISOR_CRASH, openFileDialog.FileName, ex);
                 ErrorManager.LogError(ErrorManager.Codes.HYPERVISOR_CRASH, openFileDialog.FileName, ex);
+            }
+        }
+        
+        /// <summary>
+        /// Launch real VMware/VirtualBox-style hypervisor that actually boots firmware
+        /// Shows visible X1 Platform boot screen as requested
+        /// </summary>
+        private async Task HandleRealHypervisorBoot()
+        {
+            try
+            {
+                ShowTextWindow("Real Hypervisor Boot", 
+                    "🚀 Starting Real VMware-Style Hypervisor\n\n" +
+                    "This will launch a real ARM virtualization hypervisor\n" +
+                    "that actually boots firmware like VMware or VirtualBox.\n\n" +
+                    "You will see the X1 Platform bootscreen and real firmware execution.\n\n" +
+                    "Click OK to start...");
+
+                var choice = PromptUserForChoice("Boot Options",
+                    new List<string> { 
+                        "Boot Demo Firmware", 
+                        "Load Custom Firmware", 
+                        "Show Available Firmware" 
+                    });
+
+                if (string.IsNullOrEmpty(choice)) return;
+
+                var hypervisor = new VirtualMachineHypervisor();
+                
+                switch (choice)
+                {
+                    case "Boot Demo Firmware":
+                        StatusBar.Text = "🚀 Booting demo firmware in real hypervisor...";
+                        
+                        bool demoSuccess = await hypervisor.BootDemoFirmware();
+                        if (demoSuccess)
+                        {
+                            ShowTextWindow("Hypervisor Success", 
+                                "✅ Demo firmware booted successfully!\n\n" +
+                                "The X1 Platform boot screen should now be visible.\n" +
+                                "This proves the hypervisor works like VMware/VirtualBox.\n\n" +
+                                "Check the boot display window for real ARM execution.");
+                        }
+                        else
+                        {
+                            ShowTextWindow("Hypervisor Error", 
+                                "❌ Demo firmware boot failed.\n" +
+                                "Check the console for error details.");
+                        }
+                        break;
+                        
+                    case "Load Custom Firmware":
+                        var openDialog = new OpenFileDialog
+                        {
+                            Title = "Select Firmware Binary",
+                            Filter = "Firmware Files (*.bin;*.elf;*.img)|*.bin;*.elf;*.img|All Files (*.*)|*.*",
+                            CheckFileExists = true
+                        };
+                        
+                        if (openDialog.ShowDialog() == true)
+                        {
+                            StatusBar.Text = $"🔄 Loading firmware: {Path.GetFileName(openDialog.FileName)}";
+                            
+                            bool loaded = await hypervisor.LoadFirmware(openDialog.FileName);
+                            if (loaded)
+                            {
+                                StatusBar.Text = "🚀 Starting firmware boot sequence...";
+                                bool bootSuccess = await hypervisor.BootFirmware();
+                                
+                                if (bootSuccess)
+                                {
+                                    ShowTextWindow("Custom Firmware Boot", 
+                                        $"✅ Successfully booted: {Path.GetFileName(openDialog.FileName)}\n\n" +
+                                        "Real ARM hypervisor is now running your firmware.\n" +
+                                        "Check the X1 Platform boot display for execution status.");
+                                }
+                                else
+                                {
+                                    ShowTextWindow("Boot Failed", 
+                                        $"❌ Failed to boot: {Path.GetFileName(openDialog.FileName)}\n" +
+                                        "The firmware may be incompatible or corrupted.");
+                                }
+                            }
+                            else
+                            {
+                                ShowTextWindow("Load Failed", 
+                                    $"❌ Failed to load: {Path.GetFileName(openDialog.FileName)}\n" +
+                                    "File may be corrupted or in unsupported format.");
+                            }
+                        }
+                        break;
+                        
+                    case "Show Available Firmware":
+                        var availableFirmware = new StringBuilder();
+                        availableFirmware.AppendLine("📁 Available Firmware Files:\n");
+                        
+                        string[] firmwareFiles = {
+                            "demo_firmware.bin",
+                            "test_rdkv_firmware.bin"
+                        };
+                        
+                        foreach (var file in firmwareFiles)
+                        {
+                            if (File.Exists(file))
+                            {
+                                var info = new FileInfo(file);
+                                availableFirmware.AppendLine($"✅ {file} ({info.Length:N0} bytes)");
+                            }
+                            else
+                            {
+                                availableFirmware.AppendLine($"❌ {file} (not found)");
+                            }
+                        }
+                        
+                        availableFirmware.AppendLine("\n🔍 Looking for firmware in subdirectories...");
+                        
+                        var dataDir = Path.Combine(Environment.CurrentDirectory, "Data");
+                        if (Directory.Exists(dataDir))
+                        {
+                            var dataFiles = Directory.GetFiles(dataDir, "*.bin");
+                            foreach (var file in dataFiles)
+                            {
+                                var info = new FileInfo(file);
+                                availableFirmware.AppendLine($"📂 Data/{Path.GetFileName(file)} ({info.Length:N0} bytes)");
+                            }
+                        }
+                        
+                        ShowTextWindow("Available Firmware", availableFirmware.ToString());
+                        break;
+                }
+                
+                StatusBar.Text = "✅ Real hypervisor boot completed";
+            }
+            catch (Exception ex)
+            {
+                ErrorManager.ShowError(ErrorManager.Codes.HYPERVISOR_CRASH, "Real Hypervisor Boot", ex);
+                ShowTextWindow("Hypervisor Error", 
+                    $"❌ Real hypervisor boot failed:\n\n{ex.Message}\n\n" +
+                    "This may be due to missing dependencies or system limitations.");
             }
         }
         
