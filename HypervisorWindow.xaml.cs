@@ -5,20 +5,20 @@ using System.Windows.Threading;
 
 namespace ProcessorEmulator
 {
-    public partial class HypervisorWindow : Window
+    public class HypervisorWindow : Window
     {
         private readonly VirtualMachineHypervisor hypervisor;
-        private TextBox LogBox;
-        private TextBlock StatusText;
-        private Button PowerOnButton;
-        private Button ResetButton;
+        private TextBox logBox;
+        private TextBlock statusText;
+        private Button powerOnButton;
+        private Button resetButton;
 
         public HypervisorWindow(VirtualMachineHypervisor hypervisor, string platformName)
         {
             this.hypervisor = hypervisor;
             this.Title = $"VMware-Style Hypervisor - {platformName}";
             
-            // Manual UI creation instead of XAML
+            // Create UI programmatically
             CreateUI();
             
             // Subscribe to boot messages
@@ -58,7 +58,7 @@ namespace ProcessorEmulator
             mainStack.Children.Add(subtitleText);
 
             // Status
-            StatusText = new TextBlock
+            statusText = new TextBlock
             {
                 Text = "Initializing...",
                 FontSize = 14,
@@ -66,7 +66,7 @@ namespace ProcessorEmulator
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Margin = new Thickness(0, 10, 0, 0)
             };
-            mainStack.Children.Add(StatusText);
+            mainStack.Children.Add(statusText);
 
             // Log area
             var border = new Border
@@ -85,7 +85,7 @@ namespace ProcessorEmulator
             };
             border.Child = scrollViewer;
 
-            LogBox = new TextBox
+            logBox = new TextBox
             {
                 Background = System.Windows.Media.Brushes.Black,
                 Foreground = System.Windows.Media.Brushes.LightGreen,
@@ -95,7 +95,7 @@ namespace ProcessorEmulator
                 BorderThickness = new Thickness(0),
                 AcceptsReturn = true
             };
-            scrollViewer.Content = LogBox;
+            scrollViewer.Content = logBox;
 
             // Buttons
             var buttonStack = new StackPanel
@@ -106,24 +106,24 @@ namespace ProcessorEmulator
             };
             mainStack.Children.Add(buttonStack);
 
-            PowerOnButton = new Button
+            powerOnButton = new Button
             {
                 Content = "Power On",
                 Width = 100,
                 Margin = new Thickness(5)
             };
-            PowerOnButton.Click += PowerOn_Click;
-            buttonStack.Children.Add(PowerOnButton);
+            powerOnButton.Click += PowerOn_Click;
+            buttonStack.Children.Add(powerOnButton);
 
-            ResetButton = new Button
+            resetButton = new Button
             {
                 Content = "Reset",
                 Width = 100,
                 Margin = new Thickness(5),
                 IsEnabled = false
             };
-            ResetButton.Click += Reset_Click;
-            buttonStack.Children.Add(ResetButton);
+            resetButton.Click += Reset_Click;
+            buttonStack.Children.Add(resetButton);
         }
 
         private void AppendLog(string message)
@@ -132,16 +132,16 @@ namespace ProcessorEmulator
             Dispatcher.Invoke(() =>
             {
                 var timestamp = DateTime.Now.ToString("HH:mm:ss");
-                LogBox.AppendText($"[{timestamp}] {message}\n");
-                LogBox.ScrollToEnd();
-                StatusText.Text = message;
+                logBox.AppendText($"[{timestamp}] {message}\n");
+                logBox.ScrollToEnd();
+                statusText.Text = message;
             });
         }
 
         private async void PowerOn_Click(object sender, RoutedEventArgs e)
         {
-            PowerOnButton.IsEnabled = false;
-            ResetButton.IsEnabled = true;
+            powerOnButton.IsEnabled = false;
+            resetButton.IsEnabled = true;
             await hypervisor.PowerOn();
         }
 
