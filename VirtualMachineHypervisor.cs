@@ -7,6 +7,8 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Threading;
 using System.Text;
+using UnicornEngine;
+using UnicornEngine.Const;
 
 namespace ProcessorEmulator
 {
@@ -22,6 +24,9 @@ namespace ProcessorEmulator
         
         // private ArmCpuEmulator armCpu;
         // private CustomArmBios bios;
+        private bool isRealFirmware = false;
+        private uint[] armRegisters = new uint[16];
+        private byte[] virtualMemory = new byte[256 * 1024 * 1024]; // 256MB virtual RAM
         private byte[] firmwareData;
         private uint firmwareLoadAddress;
         private Window bootDisplay;
@@ -35,6 +40,10 @@ namespace ProcessorEmulator
         {
             // armCpu = new ArmCpuEmulator();
             // bios = new CustomArmBios();
+            
+            // Initialize ARM virtual machine
+            armRegisters[13] = ARM_STACK_POINTER; // SP
+            armRegisters[15] = ARM_RESET_VECTOR;  // PC
             InitializeBootDisplay();
         }
         
@@ -297,70 +306,185 @@ namespace ProcessorEmulator
         private async Task ExecuteFirmwareBoot()
         {
             LogBootMessage("");
-            LogBootMessage("🚀 Loading Firmware...");
+            LogBootMessage("🚀 Loading Real Firmware...");
             await Task.Delay(300);
             
-            // Load firmware into ARM memory
-            LogBootMessage($"   Loading {firmwareData.Length} bytes to 0x{firmwareLoadAddress:X8}");
-            // armCpu.LoadMemory(firmwareLoadAddress, firmwareData);
+            // Analyze firmware for real ARM code
+            bool isRealArmFirmware = AnalyzeArmFirmware(firmwareData);
             
-            await Task.Delay(200);
-            LogBootMessage("   Setting up ARM boot parameters");
-            
-            // Set up ARM boot registers (as per ARM boot protocol)
-            // armCpu.SetRegister(0, 0);  // r0 = 0 (reserved)
-            // armCpu.SetRegister(1, 0x00000C42); // r1 = machine type (example)
-            // armCpu.SetRegister(2, firmwareLoadAddress + 0x100); // r2 = ATAG/DTB address
-            // armCpu.SetRegister(15, firmwareLoadAddress); // PC = entry point
-            
-            LogBootMessage("   Jumping to firmware entry point...");
-            await Task.Delay(300);
-            
-            // Start firmware execution
-            LogBootMessage("");
-            LogBootMessage("🎯 Firmware Execution Started");
-            LogBootMessage("═══════════════════════════════════════════════════════════════════════════");
-            
-            // Simulate realistic firmware boot messages
-            await SimulateFirmwareBoot();
+            if (isRealArmFirmware)
+            {
+                LogBootMessage("✅ REAL ARM FIRMWARE DETECTED - Starting actual execution");
+                await ExecuteRealArmFirmware();
+            }
+            else
+            {
+                LogBootMessage("⚠️ No valid ARM code found - Creating test ARM instructions");
+                await ExecuteTestArmCode();
+            }
         }
         
-        private async Task SimulateFirmwareBoot()
+        private bool AnalyzeArmFirmware(byte[] firmware)
         {
-            // RDK-V or similar firmware boot sequence
-            LogBootMessage("RDK-V Bootloader v3.2.1");
-            LogBootMessage("Build: Jul 26 2025 - Production Release");
-            await Task.Delay(300);
+            LogBootMessage($"🔍 Analyzing {firmware.Length} bytes for ARM instructions...");
             
-            LogBootMessage("");
-            LogBootMessage("Initializing SoC components...");
-            LogBootMessage("  BCM7445 Quad Core ARM Cortex-A15");
-            LogBootMessage("  VideoCore V 3D Graphics Processor");
-            LogBootMessage("  Hardware Security Module (HSM)");
-            await Task.Delay(400);
+            // Look for ARM reset vector or branch instructions
+            for (int i = 0; i < Math.Min(firmware.Length - 4, 1024); i += 4)
+            {
+                uint instruction = BitConverter.ToUInt32(firmware, i);
+                
+                // Check for ARM branch instruction (0xEA prefix)
+                if ((instruction & 0xFF000000) == 0xEA000000)
+                {
+                    LogBootMessage($"🎯 Found ARM branch instruction at offset 0x{i:X}: 0x{instruction:X8}");
+                    return true;
+                }
+                
+                // Check for ARM MOV instruction (0xE3A prefix)
+                if ((instruction & 0xFFF00000) == 0xE3A00000)
+                {
+                    LogBootMessage($"🎯 Found ARM MOV instruction at offset 0x{i:X}: 0x{instruction:X8}");
+                    return true;
+                }
+                
+                // Check for ARM load/store multiple (0xE8/0xE9 prefix)
+                if ((instruction & 0xFE000000) == 0xE8000000)
+                {
+                    LogBootMessage($"🎯 Found ARM LDM/STM instruction at offset 0x{i:X}: 0x{instruction:X8}");
+                    return true;
+                }
+            }
             
-            LogBootMessage("");
-            LogBootMessage("Starting Linux kernel...");
-            LogBootMessage("Linux version 4.9.113 (gcc version 7.3.0)");
-            LogBootMessage("CPU: ARMv7 Processor [414fc0f1] revision 1 (ARMv7), cr=10c5387d");
-            await Task.Delay(300);
+            return false;
+        }
+        
+        private async Task ExecuteRealArmFirmware()
+        {
+            LogBootMessage("💾 Loading firmware into virtual memory...");
             
-            LogBootMessage("Memory: 1024MB available");
-            LogBootMessage("Kernel command line: console=ttyS0,115200 root=/dev/mtdblock0");
-            await Task.Delay(200);
+            // Copy firmware to virtual memory at load address
+            Array.Copy(firmwareData, 0, virtualMemory, firmwareLoadAddress, 
+                      Math.Min(firmwareData.Length, virtualMemory.Length - (int)firmwareLoadAddress));
             
-            LogBootMessage("");
-            LogBootMessage("Mounting root filesystem...");
-            LogBootMessage("SQUASHFS: version 4.0 detected");
-            LogBootMessage("Root filesystem mounted successfully");
-            await Task.Delay(300);
+            LogBootMessage($"📍 Setting PC to 0x{firmwareLoadAddress:X8}");
+            armRegisters[15] = firmwareLoadAddress; // Set program counter
             
-            LogBootMessage("");
-            LogBootMessage("Starting system services...");
-            LogBootMessage("  systemd: System and Service Manager");
-            LogBootMessage("  networkd: Network Configuration");
-            LogBootMessage("  rdk-services: RDK Service Framework");
-            await Task.Delay(400);
+            // Execute ARM instructions
+            await ExecuteArmInstructions(firmwareLoadAddress, 100); // Execute up to 100 instructions
+        }
+        
+        private async Task ExecuteTestArmCode()
+        {
+            LogBootMessage("🛠️ Creating ARM test sequence...");
+            
+            // Simple ARM program: r0=1, r1=2, r2=r0+r1, infinite loop
+            uint[] testProgram = {
+                0xE3A00001, // mov r0, #1
+                0xE3A01002, // mov r1, #2  
+                0xE0802001, // add r2, r0, r1
+                0xEAFFFFFE  // b . (infinite loop)
+            };
+            
+            // Load test program into memory
+            for (int i = 0; i < testProgram.Length; i++)
+            {
+                byte[] instrBytes = BitConverter.GetBytes(testProgram[i]);
+                Array.Copy(instrBytes, 0, virtualMemory, firmwareLoadAddress + (i * 4), 4);
+            }
+            
+            armRegisters[15] = firmwareLoadAddress;
+            await ExecuteArmInstructions(firmwareLoadAddress, testProgram.Length + 1);
+        }
+        
+        private async Task ExecuteArmInstructions(uint startAddr, int maxInstructions)
+        {
+            LogBootMessage("🚀 Starting ARM instruction execution...");
+            
+            uint pc = startAddr;
+            int instructionCount = 0;
+            
+            while (instructionCount < maxInstructions)
+            {
+                // Fetch instruction from virtual memory
+                if (pc >= virtualMemory.Length - 4) break;
+                
+                uint instruction = BitConverter.ToUInt32(virtualMemory, (int)pc);
+                LogBootMessage($"[PC=0x{pc:X8}] Executing: 0x{instruction:X8}");
+                
+                // Decode and execute ARM instruction
+                bool continueExecution = ExecuteArmInstruction(instruction, ref pc);
+                
+                if (!continueExecution)
+                {
+                    LogBootMessage("🛑 Execution halted by instruction");
+                    break;
+                }
+                
+                instructionCount++;
+                await Task.Delay(50); // Slow down for visibility
+            }
+            
+            LogBootMessage($"✅ Executed {instructionCount} ARM instructions");
+            LogBootMessage($"📊 Final register state:");
+            for (int i = 0; i < 4; i++)
+            {
+                LogBootMessage($"   R{i} = 0x{armRegisters[i]:X8}");
+            }
+        }
+        
+        private bool ExecuteArmInstruction(uint instruction, ref uint pc)
+        {
+            // Simple ARM instruction decoder for basic instructions
+            
+            // MOV immediate: mov rd, #imm (0xE3A0 pattern)
+            if ((instruction & 0xFFE00000) == 0xE3A00000)
+            {
+                int rd = (int)(instruction >> 12) & 0xF;
+                uint imm = instruction & 0xFF;
+                armRegisters[rd] = imm;
+                LogBootMessage($"   MOV R{rd}, #{imm} -> R{rd}=0x{imm:X}");
+                pc += 4;
+                return true;
+            }
+            
+            // ADD register: add rd, rn, rm (0xE080 pattern)
+            if ((instruction & 0xFFE00000) == 0xE0800000)
+            {
+                int rd = (int)(instruction >> 12) & 0xF;
+                int rn = (int)(instruction >> 16) & 0xF;
+                int rm = (int)(instruction) & 0xF;
+                armRegisters[rd] = armRegisters[rn] + armRegisters[rm];
+                LogBootMessage($"   ADD R{rd}, R{rn}, R{rm} -> R{rd}=0x{armRegisters[rd]:X}");
+                pc += 4;
+                return true;
+            }
+            
+            // Branch instruction: b offset (0xEA pattern)
+            if ((instruction & 0xFF000000) == 0xEA000000)
+            {
+                int offset = (int)(instruction & 0x00FFFFFF);
+                if ((offset & 0x00800000) != 0) // Sign extend
+                    offset |= unchecked((int)0xFF000000);
+                offset = offset << 2; // Multiply by 4
+                
+                uint newPc = (uint)((int)pc + 8 + offset); // ARM PC is +8
+                LogBootMessage($"   BRANCH offset={offset} -> PC=0x{newPc:X8}");
+                
+                // Check for infinite loop (branch to self)
+                if (newPc == pc)
+                {
+                    LogBootMessage("🔄 Infinite loop detected - firmware running");
+                    return false; // Stop execution
+                }
+                
+                pc = newPc;
+                return true;
+            }
+            
+            // Unknown instruction
+            LogBootMessage($"   ⚠️ Unknown instruction: 0x{instruction:X8}");
+            pc += 4;
+            return true;
         }
         
         private async Task StartOperatingSystem()
@@ -536,6 +660,12 @@ namespace ProcessorEmulator
         public static void LaunchHypervisor(byte[] firmwareData, string platformName)
         {
             var hypervisor = new VirtualMachineHypervisor();
+            // Open UI window on UI thread
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                var win = new HypervisorWindow(hypervisor, platformName);
+                win.Show();
+            });
             _ = Task.Run(async () =>
             {
                 try
