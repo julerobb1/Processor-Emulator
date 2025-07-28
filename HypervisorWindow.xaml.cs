@@ -15,29 +15,23 @@ namespace ProcessorEmulator
 
         public HypervisorWindow(VirtualMachineHypervisor hypervisor, string platformName)
         {
-            InitializeComponent();
             this.hypervisor = hypervisor;
             this.Title = $"VMware-Style Hypervisor - {platformName}";
             
-            // Create UI programmatically
             CreateUI();
-            
-            // Subscribe to boot messages
             this.hypervisor.OnBootMessage += AppendLog;
         }
 
         private void CreateUI()
         {
-            // Get the Grid from XAML
-            var mainGrid = Content as Grid;
-            if (mainGrid == null)
-            {
-                mainGrid = new Grid();
-                Content = mainGrid;
-            }
+            // Set window properties directly
+            Width = 800;
+            Height = 600;
+            Background = System.Windows.Media.Brushes.Black;
+            WindowStartupLocation = WindowStartupLocation.CenterOwner;
 
             var mainStack = new StackPanel();
-            mainGrid.Children.Add(mainStack);
+            Content = mainStack;
 
             // Title
             var titleText = new TextBlock
