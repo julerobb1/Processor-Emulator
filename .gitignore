@@ -5,7 +5,7 @@ qemu-*
 qemu.exe
 qemu-system-*
 qemu-img*
-*.dll
+
 *.so
 *.dylib
 *.qcow2
