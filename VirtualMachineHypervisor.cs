@@ -474,7 +474,7 @@ namespace ProcessorEmulator
             return false;
         }
         
-        private async Task<bool> ExecuteRealArmInstruction(uint instruction, ref uint pc)
+        private async Task<(bool continueExecution, uint newPc)> ExecuteRealArmInstruction(uint instruction, uint pc)
         {
             // Real ARM instruction execution with register updates
             
