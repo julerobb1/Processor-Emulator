@@ -54,3 +54,5 @@ C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Debug\net6.0-windows\refi
 C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Debug\net6.0-windows\ProcessorEmulator.pdb
 C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Debug\net6.0-windows\ProcessorEmulator.genruntimeconfig.cache
 C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Debug\net6.0-windows\ref\ProcessorEmulator.dll
+C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Debug\net6.0-windows\HypervisorWindow.baml
+C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Debug\net6.0-windows\HypervisorWindow.g.cs

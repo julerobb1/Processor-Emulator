@@ -27,6 +27,7 @@ namespace ProcessorEmulator
         private bool isRealFirmware = false;
         private uint[] armRegisters = new uint[16];
         private byte[] virtualMemory = new byte[256 * 1024 * 1024]; // 256MB virtual RAM
+        private UnicornEngine.Unicorn armUnicorn;
         private byte[] firmwareData;
         private uint firmwareLoadAddress;
         private Window bootDisplay;
@@ -360,17 +361,114 @@ namespace ProcessorEmulator
         
         private async Task ExecuteRealArmFirmware()
         {
-            LogBootMessage("💾 Loading firmware into virtual memory...");
+            LogBootMessage("💾 Starting REAL ARM Cortex-A15 emulation with Unicorn...");
             
-            // Copy firmware to virtual memory at load address
-            Array.Copy(firmwareData, 0, virtualMemory, firmwareLoadAddress, 
-                      Math.Min(firmwareData.Length, virtualMemory.Length - (int)firmwareLoadAddress));
+            const ulong BASE_ADDR = 0x80000000; // Standard ARM boot address
+            const ulong MEM_SIZE = 2 * 1024 * 1024; // 2MB
             
-            LogBootMessage($"📍 Setting PC to 0x{firmwareLoadAddress:X8}");
-            armRegisters[15] = firmwareLoadAddress; // Set program counter
-            
-            // Execute ARM instructions
-            await ExecuteArmInstructions(firmwareLoadAddress, 100); // Execute up to 100 instructions
+            try
+            {
+                // Initialize Unicorn ARM Cortex-A15 emulator
+                armUnicorn = new UnicornEngine.Unicorn(UnicornEngine.Const.Arch.UC_ARCH_ARM, UnicornEngine.Const.Mode.UC_MODE_ARM);
+                
+                // Map memory for firmware
+                armUnicorn.MemMap(BASE_ADDR, MEM_SIZE, UnicornEngine.Const.Perm.UC_PROT_ALL);
+                LogBootMessage($"📍 Mapped {MEM_SIZE} bytes at 0x{BASE_ADDR:X8}");
+                
+                // Load firmware into emulated memory
+                armUnicorn.MemWrite(BASE_ADDR, firmwareData, (ulong)Math.Min(firmwareData.Length, (int)MEM_SIZE));
+                LogBootMessage($"💾 Loaded {firmwareData.Length} bytes of firmware into ARM memory");
+                
+                // Set initial ARM registers
+                armUnicorn.RegWrite(UnicornEngine.Const.Arm.UC_ARM_REG_PC, BASE_ADDR);
+                armUnicorn.RegWrite(UnicornEngine.Const.Arm.UC_ARM_REG_SP, BASE_ADDR + MEM_SIZE - 0x1000); // Stack at top
+                
+                // Hook instruction execution for live tracing
+                armUnicorn.HookAdd(UnicornEngine.Const.Hook.UC_HOOK_CODE, CodeHookCallback, IntPtr.Zero, 1, 0);
+                
+                LogBootMessage("🚀 Starting ARM firmware execution...");
+                LogBootMessage("════════════════════════════════════════════════════");
+                
+                // Start emulation
+                ulong endAddr = BASE_ADDR + (ulong)Math.Min(firmwareData.Length, 0x10000); // Execute first 64KB max
+                armUnicorn.EmuStart(BASE_ADDR, endAddr, 0, 1000); // Max 1000 instructions
+                
+            }
+            catch (Exception ex)
+            {
+                LogBootMessage($"❌ ARM emulation failed: {ex.Message}");
+                LogBootMessage("💡 This might be encrypted/signed firmware or invalid ARM code");
+            }
+        }
+        
+        private void CodeHookCallback(IntPtr uc, ulong address, uint size, IntPtr userData)
+        {
+            try
+            {
+                // Read the instruction from memory
+                byte[] instrBytes = armUnicorn.MemRead(address, size);
+                uint instruction = size >= 4 ? BitConverter.ToUInt32(instrBytes, 0) : 0;
+                
+                // Get current register values
+                ulong pc = armUnicorn.RegRead(UnicornEngine.Const.Arm.UC_ARM_REG_PC);
+                ulong r0 = armUnicorn.RegRead(UnicornEngine.Const.Arm.UC_ARM_REG_R0);
+                ulong r1 = armUnicorn.RegRead(UnicornEngine.Const.Arm.UC_ARM_REG_R1);
+                ulong sp = armUnicorn.RegRead(UnicornEngine.Const.Arm.UC_ARM_REG_SP);
+                
+                // Log real ARM execution
+                string logMsg = $"[PC=0x{pc:X8}] 0x{instruction:X8} | R0=0x{r0:X8} R1=0x{r1:X8} SP=0x{sp:X8}";
+                LogBootMessage(logMsg);
+                
+                // Decode common ARM instructions for better visibility
+                DecodeArmInstruction(instruction, address);
+                
+            }
+            catch (Exception ex)
+            {
+                LogBootMessage($"⚠️ Hook error at 0x{address:X8}: {ex.Message}");
+            }
+        }
+        
+        private void DecodeArmInstruction(uint instruction, ulong address)
+        {
+            // ARM instruction decoding for common patterns
+            if ((instruction & 0xFF000000) == 0xEA000000)
+            {
+                // Branch instruction
+                int offset = (int)(instruction & 0x00FFFFFF);
+                if ((offset & 0x00800000) != 0) offset |= unchecked((int)0xFF000000); // Sign extend
+                offset = offset << 2;
+                ulong target = address + 8 + (ulong)offset;
+                LogBootMessage($"    → BRANCH to 0x{target:X8}");
+            }
+            else if ((instruction & 0xFFE00000) == 0xE3A00000)
+            {
+                // MOV immediate
+                int rd = (int)(instruction >> 12) & 0xF;
+                uint imm = instruction & 0xFF;
+                LogBootMessage($"    → MOV R{rd}, #{imm}");
+            }
+            else if ((instruction & 0xFFE00000) == 0xE0800000)
+            {
+                // ADD register
+                int rd = (int)(instruction >> 12) & 0xF;
+                int rn = (int)(instruction >> 16) & 0xF;
+                int rm = (int)(instruction) & 0xF;
+                LogBootMessage($"    → ADD R{rd}, R{rn}, R{rm}");
+            }
+            else if ((instruction & 0xFFE00000) == 0xE1A00000)
+            {
+                // MOV register
+                int rd = (int)(instruction >> 12) & 0xF;
+                int rm = (int)(instruction) & 0xF;
+                LogBootMessage($"    → MOV R{rd}, R{rm}");
+            }
+            else if ((instruction & 0xFF000000) == 0xEF000000)
+            {
+                // SWI (Software Interrupt)
+                uint swiNum = instruction & 0x00FFFFFF;
+                LogBootMessage($"    → SWI #{swiNum} (System Call)");
+            }
         }
         
         private async Task ExecuteTestArmCode()
@@ -660,16 +758,21 @@ namespace ProcessorEmulator
         public static void LaunchHypervisor(byte[] firmwareData, string platformName)
         {
             var hypervisor = new VirtualMachineHypervisor();
-            // Open UI window on UI thread
+            
+            // Show the hypervisor window on UI thread
             Application.Current.Dispatcher.Invoke(() =>
             {
-                var win = new HypervisorWindow(hypervisor, platformName);
-                win.Show();
+                var window = new HypervisorWindow(hypervisor, platformName);
+                window.Show();
             });
+            
             _ = Task.Run(async () =>
             {
                 try
                 {
+                    hypervisor.LogBootMessage($"🚀 REAL ARM HYPERVISOR STARTING - {platformName}");
+                    hypervisor.LogBootMessage("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                    
                     await hypervisor.PowerOn();
                     await hypervisor.LoadFirmware(firmwareData);
                     await hypervisor.BootFirmware();
