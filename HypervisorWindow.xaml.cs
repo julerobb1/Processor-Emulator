@@ -28,13 +28,16 @@ namespace ProcessorEmulator
 
         private void CreateUI()
         {
-            Width = 800;
-            Height = 600;
-            Background = System.Windows.Media.Brushes.Black;
-            WindowStartupLocation = WindowStartupLocation.CenterOwner;
+            // Get the Grid from XAML
+            var mainGrid = Content as Grid;
+            if (mainGrid == null)
+            {
+                mainGrid = new Grid();
+                Content = mainGrid;
+            }
 
             var mainStack = new StackPanel();
-            Content = mainStack;
+            mainGrid.Children.Add(mainStack);
 
             // Title
             var titleText = new TextBlock
