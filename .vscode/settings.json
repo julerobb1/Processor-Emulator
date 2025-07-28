@@ -40,5 +40,8 @@
     "telemetry.telemetryLevel": "off",
 
     // YAML: disable built-in validation to ignore ci.yml errors
-    "yaml.validate": false
+    "yaml.validate": false,
+    "github.copilot.enable": {
+        "scminput": true
+    }
 }

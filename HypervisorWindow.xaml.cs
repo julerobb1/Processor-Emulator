@@ -5,7 +5,7 @@ using System.Windows.Threading;
 
 namespace ProcessorEmulator
 {
-    public class HypervisorWindow : Window
+    public partial class HypervisorWindow : Window
     {
         private readonly VirtualMachineHypervisor hypervisor;
         private TextBox logBox;
