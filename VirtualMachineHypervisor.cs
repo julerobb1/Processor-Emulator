@@ -422,7 +422,9 @@ namespace ProcessorEmulator
                 LogBootMessage($"[PC=0x{pc:X8}] 0x{instruction:X8} {(isValidArm ? "✓" : "?")}");
                 
                 // Decode and execute ARM instruction
-                bool continueExecution = await ExecuteRealArmInstruction(instruction, ref pc);
+                var result = await ExecuteRealArmInstruction(instruction, pc);
+                bool continueExecution = result.continueExecution;
+                pc = result.newPc;
                 
                 if (!continueExecution)
                 {
@@ -485,8 +487,7 @@ namespace ProcessorEmulator
                 uint imm = instruction & 0xFF;
                 armRegisters[rd] = imm;
                 LogBootMessage($"    → MOV R{rd}, #{imm} → R{rd}=0x{imm:X8}");
-                pc += 4;
-                return true;
+                return (true, pc + 4);
             }
             
             // ADD register: add rd, rn, rm
@@ -497,8 +498,7 @@ namespace ProcessorEmulator
                 int rm = (int)(instruction) & 0xF;
                 armRegisters[rd] = armRegisters[rn] + armRegisters[rm];
                 LogBootMessage($"    → ADD R{rd}, R{rn}, R{rm} → R{rd}=0x{armRegisters[rd]:X8}");
-                pc += 4;
-                return true;
+                return (true, pc + 4);
             }
             
             // Branch: b offset
@@ -515,11 +515,10 @@ namespace ProcessorEmulator
                 if (newPc == pc)
                 {
                     LogBootMessage("🔄 Infinite loop detected - firmware entered run state");
-                    return false;
+                    return (false, newPc);
                 }
                 
-                pc = newPc;
-                return true;
+                return (true, newPc);
             }
             
             // LDR/STR instructions
@@ -528,8 +527,7 @@ namespace ProcessorEmulator
                 bool isLoad = (instruction & 0x00100000) != 0;
                 int rd = (int)(instruction >> 12) & 0xF;
                 LogBootMessage($"    → {(isLoad ? "LDR" : "STR")} R{rd}, [memory]");
-                pc += 4;
-                return true;
+                return (true, pc + 4);
             }
             
             // Software interrupt
@@ -537,14 +535,12 @@ namespace ProcessorEmulator
             {
                 uint swiNum = instruction & 0x00FFFFFF;
                 LogBootMessage($"    → SWI #{swiNum} (System Call) - FIRMWARE MAKING SYSTEM CALL!");
-                pc += 4;
-                return true;
+                return (true, pc + 4);
             }
             
             // Unknown but potentially valid instruction
             LogBootMessage($"    → Unknown ARM instruction: 0x{instruction:X8}");
-            pc += 4;
-            return true;
+            return (true, pc + 4);
         }
         
         private async Task ExecuteTestArmCode()
