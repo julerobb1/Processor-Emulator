@@ -15,6 +15,7 @@ namespace ProcessorEmulator
 
         public HypervisorWindow(VirtualMachineHypervisor hypervisor, string platformName)
         {
+            InitializeComponent();
             this.hypervisor = hypervisor;
             this.Title = $"VMware-Style Hypervisor - {platformName}";
             
