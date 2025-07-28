@@ -1,5 +1,0 @@
-C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Debug\net6.0\BoltDemo.GeneratedMSBuildEditorConfig.editorconfig
-C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Debug\net6.0\BoltDemo.AssemblyInfoInputs.cache
-C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Debug\net6.0\BoltDemo.AssemblyInfo.cs
-C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Debug\net6.0\BoltDemo.csproj.CoreCompileInputs.cache
-C:\Users\juler\Documents\GitHub\Processor-Emulator\obj\Debug\net6.0\BoltDemo.sourcelink.json
