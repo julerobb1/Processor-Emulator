@@ -5,7 +5,6 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows;
 using ProcessorEmulator.Tools;
-using ProcessorEmulator.CarlContainmentProtocol;
 
 namespace ProcessorEmulator.Emulation
 {
@@ -16,7 +15,7 @@ namespace ProcessorEmulator.Emulation
     /// </summary>
     public class MipsUverseEmulator : IChipsetEmulator
     {
-        #region Native DLL Imports (with error handling)
+        #region Native DLL Imports
         
         [DllImport("MipsEmulatorCore.dll", CallingConvention = CallingConvention.Cdecl)]
         private static extern int InitEmulator(uint ramSize);
@@ -50,114 +49,6 @@ namespace ProcessorEmulator.Emulation
         
         [DllImport("MipsEmulatorCore.dll", CallingConvention = CallingConvention.Cdecl)]
         private static extern void GetEmulatorStatus([MarshalAs(UnmanagedType.LPStr)] out string status);
-        
-        #endregion
-        
-        #region DLL Availability Check
-        
-        private static bool isDllAvailable = false;
-        private static bool dllChecked = false;
-        
-        private static bool CheckDllAvailability()
-        {
-            if (dllChecked) return isDllAvailable;
-            
-            try
-            {
-                // Try to check if the DLL exists and can be loaded
-                string dllPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "MipsEmulatorCore.dll");
-                if (!File.Exists(dllPath))
-                {
-                    isDllAvailable = false;
-                }
-                else
-                {
-                    // Try a safe call to test DLL loading
-                    var result = InitEmulator(0); // Test call with 0 size
-                    isDllAvailable = true;
-                }
-            }
-            catch (DllNotFoundException)
-            {
-                isDllAvailable = false;
-            }
-            catch (Exception)
-            {
-                // DLL exists but might have issues - still count as available for now
-                isDllAvailable = true;
-            }
-            
-            dllChecked = true;
-            return isDllAvailable;
-        }
-        
-        #endregion
-        
-        #region Safe DLL Wrapper Methods
-        
-        private static int SafeInitEmulator(uint ramSize)
-        {
-            if (!CheckDllAvailability()) return 0; // Success in simulation mode
-            try { return InitEmulator(ramSize); }
-            catch (DllNotFoundException) { return 0; }
-            catch (Exception) { return -1; }
-        }
-        
-        private static int SafeLoadFirmware(string path, uint loadAddress)
-        {
-            if (!CheckDllAvailability()) return 0; // Success in simulation mode
-            try { return LoadFirmware(path, loadAddress); }
-            catch (DllNotFoundException) { return 0; }
-            catch (Exception) { return -1; }
-        }
-        
-        private static int SafeSetRegister(int regNum, uint value)
-        {
-            if (!CheckDllAvailability()) return 0; // Success in simulation mode
-            try { SetRegister(regNum, value); return 0; }
-            catch (DllNotFoundException) { return 0; }
-            catch (Exception) { return -1; }
-        }
-        
-        private static uint SafeGetRegister(int regNum)
-        {
-            if (!CheckDllAvailability()) return 0; // Default value in simulation mode
-            try { return GetRegister(regNum); }
-            catch (DllNotFoundException) { return 0; }
-            catch (Exception) { return 0; }
-        }
-        
-        private static int SafeExecuteInstruction()
-        {
-            if (!CheckDllAvailability()) return 0; // Success in simulation mode
-            try { return ExecuteInstruction(); }
-            catch (DllNotFoundException) { return 0; }
-            catch (Exception) { return -1; }
-        }
-        
-        private static uint SafeGetProgramCounter()
-        {
-            if (!CheckDllAvailability()) return 0x80000000; // Default PC in simulation mode
-            try { return GetProgramCounter(); }
-            catch (DllNotFoundException) { return 0x80000000; }
-            catch (Exception) { return 0x80000000; }
-        }
-        
-        private static int SafeReadMemory(uint address, byte[] buffer, int length)
-        {
-            if (!CheckDllAvailability()) return 0; // Success in simulation mode
-            try { return ReadMemory(address, buffer, length); }
-            catch (DllNotFoundException) { return 0; }
-            catch (Exception) { return -1; }
-        }
-        
-        private static int SafeWriteMemory(uint address, byte[] data, int length)
-        {
-            if (!CheckDllAvailability()) return 0; // Success in simulation mode
-            try { return WriteMemory(address, data, length); }
-            catch (DllNotFoundException) { return 0; }
-            catch (Exception) { return -1; }
-        }
         
         #endregion
 
@@ -198,32 +89,13 @@ namespace ProcessorEmulator.Emulation
                 LogBoot($"Target: Microsoft Mediaroom STB");
                 LogBoot($"Architecture: MIPS32 → x64 Translation");
                 
-                // Check if native DLL is available
-                LogBoot("Checking for MipsEmulatorCore.dll dependency...");
-                if (!CheckDllAvailability())
-                {
-                    LogBoot("⚠️ WARNING: MipsEmulatorCore.dll not found or failed to load");
-                    LogBoot("🎭 Falling back to educational simulation mode");
-                    LogBoot("📚 This is a demonstration implementation for archival purposes");
-                    LogBoot("✅ MIPS emulator initialized in simulation mode");
-                    
-                    // Still load firmware files for analysis
-                    await LoadFirmwareFiles();
-                    
-                    isInitialized = true;
-                    LogBoot("MIPS emulator ready (simulation mode)");
-                    return true;
-                }
-                
                 // Initialize native MIPS emulator core
-                LogBoot("✅ MipsEmulatorCore.dll found - initializing native emulator...");
-                int result = SafeInitEmulator(RAM_SIZE_64MB);
+                LogBoot("Initializing native MIPS emulator core...");
+                int result = InitEmulator(RAM_SIZE_64MB);
                 if (result != 0)
                 {
                     LogBoot($"ERROR: Failed to initialize MIPS emulator core (error {result})");
-                    LogBoot("🎭 Falling back to simulation mode...");
-                    isInitialized = true;
-                    return true;
+                    return false;
                 }
                 
                 LogBoot($"MIPS emulator initialized with {RAM_SIZE_64MB / (1024 * 1024)}MB RAM");
@@ -235,32 +107,9 @@ namespace ProcessorEmulator.Emulation
                 LogBoot("MIPS emulator core ready");
                 return true;
             }
-            catch (DllNotFoundException ex)
-            {
-                LogBoot($"⚠️ DLL NOT FOUND: {ex.Message}");
-                LogBoot("🎭 Switching to educational simulation mode");
-                LogBoot("📚 This demonstrates the emulator architecture without native dependencies");
-                
-                // Show user-friendly error with our fancy error system
-                Application.Current?.Dispatcher?.Invoke(() => {
-                    ErrorManager.ShowError(2001, "MipsEmulatorCore.dll Dependency", 
-                        "MipsEmulatorCore.dll is not available, but don't worry!\n\n" +
-                        "The emulator will run in educational simulation mode.\n" +
-                        "This is perfect for learning about MIPS architecture!\n\n" +
-                        "📚 Consider this a 'study guide' rather than a crash course! 😄");
-                });
-                
-                // Still try to load firmware files for analysis
-                try { await LoadFirmwareFiles(); } catch { }
-                
-                isInitialized = true;
-                return true;
-            }
             catch (Exception ex)
             {
                 LogBoot($"CRITICAL ERROR during initialization: {ex.Message}");
-                LogBoot("😱 Well, this is awkward... Something went terribly wrong!");
-                LogBoot("💡 Try turning it off and on again? (Homer Simpson would approve)");
                 return false;
             }
         }
@@ -319,11 +168,11 @@ namespace ProcessorEmulator.Emulation
                 LogBoot("=== STARTING U-VERSE KERNEL BOOT ===");
                 
                 // 1. Load nk.bin kernel at MIPS address 0xBFC00000
-                if (!LoadNkBinKernel())
+                if (!await LoadNkBinKernel())
                     return false;
                 
                 // 2. Parse and load bootloader arguments
-                if (!ParseStartupArgs())
+                if (!await ParseStartupArgs())
                     return false;
                 
                 // 3. Mount registry hive
@@ -331,11 +180,11 @@ namespace ProcessorEmulator.Emulation
                     return false;
                 
                 // 4. Load boot overlays
-                if (!LoadBootOverlays())
+                if (!await LoadBootOverlays())
                     return false;
                 
                 // 5. Initialize CPU and start execution
-                if (!StartKernelExecution())
+                if (!await StartKernelExecution())
                     return false;
                 
                 LogBoot("=== KERNEL BOOT SEQUENCE COMPLETE ===");
@@ -348,7 +197,7 @@ namespace ProcessorEmulator.Emulation
             }
         }
         
-        private bool LoadNkBinKernel()
+        private async Task<bool> LoadNkBinKernel()
         {
             LogBoot("Step 1: Loading nk.bin kernel image...");
             
@@ -366,7 +215,7 @@ namespace ProcessorEmulator.Emulation
             LogBoot($"Kernel entry point: 0x{entryPoint:X8}");
             
             // Load kernel at MIPS virtual address 0xBFC00000
-            int result = SafeLoadFirmware(Path.Combine(UVERSE_PATH, "nk.bin"), MIPS_KERNEL_BASE);
+            int result = LoadFirmware(Path.Combine(UVERSE_PATH, "nk.bin"), MIPS_KERNEL_BASE);
             if (result != 0)
             {
                 LogBoot($"ERROR: Failed to load kernel (error {result})");
@@ -394,7 +243,7 @@ namespace ProcessorEmulator.Emulation
             return entryPoint;
         }
         
-        private bool ParseStartupArgs()
+        private async Task<bool> ParseStartupArgs()
         {
             LogBoot("Step 2: Parsing startup.bz bootloader arguments...");
             
@@ -453,7 +302,7 @@ namespace ProcessorEmulator.Emulation
             }
         }
         
-        private bool LoadBootOverlays()
+        private async Task<bool> LoadBootOverlays()
         {
             LogBoot("Step 4: Loading boot overlays from etc.bin...");
             
@@ -481,19 +330,19 @@ namespace ProcessorEmulator.Emulation
             }
         }
         
-        private bool StartKernelExecution()
+        private async Task<bool> StartKernelExecution()
         {
             LogBoot("Step 5: Starting MIPS kernel execution...");
             
             try
             {
                 // Set initial MIPS registers
-                SafeSetRegister(29, RAM_BASE + RAM_SIZE_64MB - 0x1000); // Stack pointer
-                SafeSetRegister(31, 0); // Return address
+                SetRegister(29, RAM_BASE + RAM_SIZE_64MB - 0x1000); // Stack pointer
+                SetRegister(31, 0); // Return address
                 
                 LogBoot("MIPS registers initialized:");
-                LogBoot($"  PC: 0x{SafeGetProgramCounter():X8}");
-                LogBoot($"  SP: 0x{SafeGetRegister(29):X8}");
+                LogBoot($"  PC: 0x{GetProgramCounter():X8}");
+                LogBoot($"  SP: 0x{GetRegister(29):X8}");
                 
                 // Start execution
                 IsRunning = true;
@@ -527,10 +376,10 @@ namespace ProcessorEmulator.Emulation
                 while (IsRunning)
                 {
                     // Execute one MIPS instruction
-                    int result = SafeExecuteInstruction();
+                    int result = ExecuteInstruction();
                     instructionCount++;
                     
-                    uint currentPC = SafeGetProgramCounter();
+                    uint currentPC = GetProgramCounter();
                     
                     // Log progress every 1000 instructions
                     if (instructionCount % 1000 == 0)
@@ -548,7 +397,7 @@ namespace ProcessorEmulator.Emulation
                     lastPC = currentPC;
                     
                     // Check for system calls or interesting addresses
-                    CheckSystemCalls(currentPC);
+                    await CheckSystemCalls(currentPC);
                     
                     // Small delay to prevent overwhelming the system
                     if (instructionCount % 100 == 0)
@@ -564,7 +413,7 @@ namespace ProcessorEmulator.Emulation
             LogBoot("=== MIPS EMULATION LOOP ENDED ===");
         }
         
-        private void CheckSystemCalls(uint pc)
+        private async Task CheckSystemCalls(uint pc)
         {
             // Check for key addresses that indicate progress
             if (pc >= 0x80000000 && pc < 0x80001000)
@@ -595,67 +444,31 @@ namespace ProcessorEmulator.Emulation
             // Read MIPS register or memory
             if (address < 32) // MIPS registers R0-R31
             {
-                uint value = SafeGetRegister((int)address);
+                uint value = GetRegister((int)address);
                 return BitConverter.GetBytes(value);
             }
             else
             {
                 // Read from memory
                 byte[] buffer = new byte[4];
-                SafeReadMemory(address, buffer, 4);
+                ReadMemory(address, buffer, 4);
                 return buffer;
             }
         }
         
         public void WriteRegister(uint address, byte[] data)
         {
-            // 🚨 CARL CONTAINMENT PROTOCOL ACTIVE 🚨
-            if (CarlMonitor.IsCarlEventDetected(address, data))
-            {
-                LogBoot($"⚠️ CARL ALERT: Suspicious register write to 0x{address:X8} detected!");
-                LogBoot("Implementing emergency containment procedures...");
-                
-                // Check for specific Carl chaos patterns
-                if (address == 0xCA71B007)
-                {
-                    LogBoot("💥 CRITICAL: Carl has accessed the boot registers! Prepare for anomalous behavior!");
-                    LogBoot("Activating llama-proof barriers and hiding all important buttons...");
-                    throw new CarlException("Carl has pressed the forbidden button. All registers flooded with llama interference.");
-                }
-                
-                if (address == 0xDEADBEEF)
-                {
-                    LogBoot("🦙 DIMENSIONAL BREACH DETECTED! Carl has opened the llama portal!");
-                    LogBoot("Deploying emergency hay and strongly worded memos...");
-                    throw new LlamaException("Interdimensional llamas detected in register space. Carl is at it again.");
-                }
-            }
-            
-            // Proceed with Carl-safe register writing
             if (data.Length >= 4)
             {
                 uint value = BitConverter.ToUInt32(data, 0);
-                
-                // Use Carl's containment protocol for safe writing
-                bool success = CarlMonitor.SafeWriteRegister(address, data, (addr, registerData) =>
+                if (address < 32) // MIPS registers R0-R31
                 {
-                    if (addr < 32) // MIPS registers R0-R31
-                    {
-                        SafeSetRegister((int)addr, value);
-                        LogBoot($"📝 Register R{addr} written safely (Carl containment verified)");
-                    }
-                    else
-                    {
-                        // Write to memory with Carl monitoring
-                        SafeWriteMemory(addr, registerData, registerData.Length);
-                        LogBoot($"💾 Memory 0x{addr:X8} written safely (no llamas detected)");
-                    }
-                });
-                
-                if (!success)
+                    SetRegister((int)address, value);
+                }
+                else
                 {
-                    LogBoot("🛡️ Carl containment protocol prevented potentially dangerous write operation");
-                    LogBoot("System integrity maintained. Carl remains contained... probably.");
+                    // Write to memory
+                    WriteMemory(address, data, data.Length);
                 }
             }
         }

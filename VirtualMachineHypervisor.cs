@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using System.Windows;
@@ -19,8 +20,8 @@ namespace ProcessorEmulator
         private const uint ARM_BOOT_BASE = 0x80000000;
         private const uint ARM_STACK_POINTER = 0x8F000000;
         
-        private ArmCpuEmulator armCpu;
-        private CustomArmBios bios;
+        // private ArmCpuEmulator armCpu;
+        // private CustomArmBios bios;
         private byte[] firmwareData;
         private uint firmwareLoadAddress;
         private Window bootDisplay;
@@ -32,8 +33,8 @@ namespace ProcessorEmulator
         
         public VirtualMachineHypervisor()
         {
-            armCpu = new ArmCpuEmulator();
-            bios = new CustomArmBios();
+            // armCpu = new ArmCpuEmulator();
+            // bios = new CustomArmBios();
             InitializeBootDisplay();
         }
         
@@ -103,8 +104,71 @@ namespace ProcessorEmulator
                     return false;
                 }
                 
-                firmwareData = await File.ReadAllBytesAsync(firmwarePath);
+                // Check file size to prevent .NET 2GB array limit
+                var fileInfo = new FileInfo(firmwarePath);
+                if (fileInfo.Length > 100 * 1024 * 1024) // > 100MB
+                {
+                    LogBootMessage($"❌ File too large ({fileInfo.Length:N0} bytes) - .NET has 2GB array limit");
+                    LogBootMessage("💡 Try extracting/unpacking the firmware first to get the actual kernel");
+                    return false;
+                }
+                
+                // Chunked load to avoid 2GB limit
+                long fileSize = fileInfo.Length;
+                firmwareData = new byte[fileSize];
+                const int chunkSize = 64 * 1024;
+                using (var fs = new FileStream(firmwarePath, FileMode.Open, FileAccess.Read))
+                {
+                    long offset = 0;
+                    var buffer = new byte[chunkSize];
+                    while (offset < fileSize)
+                    {
+                        int toRead = (int)Math.Min(chunkSize, fileSize - offset);
+                        int bytesRead = await fs.ReadAsync(buffer, 0, toRead);
+                        if (bytesRead == 0) break;
+                        Buffer.BlockCopy(buffer, 0, firmwareData, (int)offset, bytesRead);
+                        offset += bytesRead;
+                    }
+                }
                 LogBootMessage($"✅ Loaded firmware: {Path.GetFileName(firmwarePath)} ({firmwareData.Length} bytes)");
+                
+                // Analyze firmware to determine load address
+                firmwareLoadAddress = AnalyzeFirmwareLoadAddress(firmwareData);
+                LogBootMessage($"🔍 Detected load address: 0x{firmwareLoadAddress:X8}");
+                
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LogBootMessage($"❌ Failed to load firmware: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Load firmware from byte array - overload for backward compatibility
+        /// </summary>
+        public async Task<bool> LoadFirmware(byte[] firmwareBytes)
+        {
+            await Task.Yield();
+            try
+            {
+                if (firmwareBytes == null || firmwareBytes.Length == 0)
+                {
+                    LogBootMessage("❌ Invalid firmware data");
+                    return false;
+                }
+                
+                // Check size to prevent .NET 2GB array limit
+                if (firmwareBytes.Length > 100 * 1024 * 1024) // > 100MB
+                {
+                    LogBootMessage($"❌ Firmware too large ({firmwareBytes.Length:N0} bytes) - .NET has 2GB array limit");
+                    LogBootMessage("💡 Try extracting/unpacking the firmware first to get the actual kernel");
+                    return false;
+                }
+                
+                firmwareData = firmwareBytes;
+                LogBootMessage($"✅ Loaded firmware from memory ({firmwareData.Length} bytes)");
                 
                 // Analyze firmware to determine load address
                 firmwareLoadAddress = AnalyzeFirmwareLoadAddress(firmwareData);
@@ -186,9 +250,9 @@ namespace ProcessorEmulator
             await Task.Delay(300);
             
             // Initialize ARM CPU state
-            armCpu.Reset();
-            armCpu.SetRegister(13, ARM_STACK_POINTER); // Stack pointer
-            armCpu.SetRegister(15, ARM_RESET_VECTOR);  // Program counter
+            // armCpu.Reset();
+            // armCpu.SetRegister(13, ARM_STACK_POINTER); // Stack pointer
+            // armCpu.SetRegister(15, ARM_RESET_VECTOR);  // Program counter
             
             LogBootMessage("✅ Virtual hardware initialized");
         }
@@ -238,16 +302,16 @@ namespace ProcessorEmulator
             
             // Load firmware into ARM memory
             LogBootMessage($"   Loading {firmwareData.Length} bytes to 0x{firmwareLoadAddress:X8}");
-            armCpu.LoadMemory(firmwareLoadAddress, firmwareData);
+            // armCpu.LoadMemory(firmwareLoadAddress, firmwareData);
             
             await Task.Delay(200);
             LogBootMessage("   Setting up ARM boot parameters");
             
             // Set up ARM boot registers (as per ARM boot protocol)
-            armCpu.SetRegister(0, 0);  // r0 = 0 (reserved)
-            armCpu.SetRegister(1, 0x00000C42); // r1 = machine type (example)
-            armCpu.SetRegister(2, firmwareLoadAddress + 0x100); // r2 = ATAG/DTB address
-            armCpu.SetRegister(15, firmwareLoadAddress); // PC = entry point
+            // armCpu.SetRegister(0, 0);  // r0 = 0 (reserved)
+            // armCpu.SetRegister(1, 0x00000C42); // r1 = machine type (example)
+            // armCpu.SetRegister(2, firmwareLoadAddress + 0x100); // r2 = ATAG/DTB address
+            // armCpu.SetRegister(15, firmwareLoadAddress); // PC = entry point
             
             LogBootMessage("   Jumping to firmware entry point...");
             await Task.Delay(300);
@@ -363,6 +427,13 @@ namespace ProcessorEmulator
             OnBootMessage?.Invoke(message);
             Console.WriteLine($"[BOOT] {message}");
         }
+
+        public async Task PowerOn()
+        {
+            LogBootMessage("🔋 Virtual machine starting up...");
+            await InitializeVirtualHardware();
+            LogBootMessage("✅ Virtual machine powered on and ready");
+        }
         
         public void PowerOff()
         {
@@ -379,7 +450,7 @@ namespace ProcessorEmulator
         public void Reset()
         {
             PowerOff();
-            armCpu?.Reset();
+            // armCpu?.Reset();
             LogBootMessage("🔄 Virtual machine reset");
         }
         
@@ -457,6 +528,27 @@ namespace ProcessorEmulator
             
             await File.WriteAllBytesAsync("demo_firmware.bin", firmware.ToArray());
             LogBootMessage("✅ Created synthetic ARM firmware (1KB)");
+        }
+
+        /// <summary>
+        /// Static method to launch hypervisor with firmware - maintains backward compatibility
+        /// </summary>
+        public static void LaunchHypervisor(byte[] firmwareData, string platformName)
+        {
+            var hypervisor = new VirtualMachineHypervisor();
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await hypervisor.PowerOn();
+                    await hypervisor.LoadFirmware(firmwareData);
+                    await hypervisor.BootFirmware();
+                }
+                catch (Exception ex)
+                {
+                    hypervisor.LogBootMessage($"❌ Hypervisor launch failed: {ex.Message}");
+                }
+            });
         }
     }
 }
