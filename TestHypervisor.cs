@@ -18,10 +18,9 @@ namespace ProcessorEmulator
                 // Create test firmware data (simulating real X1 firmware)
                 byte[] testFirmware = CreateTestX1Firmware();
                 
-                // Launch the hypervisor with X1 Platform configuration
-                await Task.Run(() => {
-                    VirtualMachineHypervisor.LaunchHypervisor(testFirmware, "X1 Platform");
-                });
+                // Launch the real MIPS hypervisor with X1 Platform configuration  
+                var hypervisor = new RealMipsHypervisor();
+                await hypervisor.StartEmulation(testFirmware);
                 
                 Console.WriteLine("X1 Platform hypervisor test completed successfully");
             }

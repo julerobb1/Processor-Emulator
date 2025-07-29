@@ -211,11 +211,11 @@ namespace ProcessorEmulator.Emulation
             LogBoot($"Kernel size: {kernelData.Length:N0} bytes");
             
             // Parse PE/NK header to find entry point
-            uint entryPoint = ParseNkBinHeader(kernelData);
+            uint entryPoint = await Task.Run(() => ParseNkBinHeader(kernelData));
             LogBoot($"Kernel entry point: 0x{entryPoint:X8}");
             
             // Load kernel at MIPS virtual address 0xBFC00000
-            int result = LoadFirmware(Path.Combine(UVERSE_PATH, "nk.bin"), MIPS_KERNEL_BASE);
+            int result = await Task.Run(() => LoadFirmware(Path.Combine(UVERSE_PATH, "nk.bin"), MIPS_KERNEL_BASE));
             if (result != 0)
             {
                 LogBoot($"ERROR: Failed to load kernel (error {result})");
@@ -257,7 +257,7 @@ namespace ProcessorEmulator.Emulation
             {
                 byte[] startupData = firmwareFiles["startup.bz"];
                 // Decompress if needed (BZ2 format)
-                string args = System.Text.Encoding.ASCII.GetString(startupData);
+                string args = await Task.Run(() => System.Text.Encoding.ASCII.GetString(startupData));
                 LogBoot($"Boot arguments: {args.Substring(0, Math.Min(args.Length, 100))}...");
                 return true;
             }
@@ -319,6 +319,10 @@ namespace ProcessorEmulator.Emulation
                 
                 // Parse etc.bin overlay structure
                 // This typically contains filesystem overlays, drivers, etc.
+                await Task.Run(() => {
+                    // Simulate processing overlay data
+                    System.Threading.Thread.Sleep(100);
+                });
                 
                 LogBoot("✓ Boot overlays processed");
                 return true;
@@ -337,8 +341,10 @@ namespace ProcessorEmulator.Emulation
             try
             {
                 // Set initial MIPS registers
-                SetRegister(29, RAM_BASE + RAM_SIZE_64MB - 0x1000); // Stack pointer
-                SetRegister(31, 0); // Return address
+                await Task.Run(() => {
+                    SetRegister(29, RAM_BASE + RAM_SIZE_64MB - 0x1000); // Stack pointer
+                    SetRegister(31, 0); // Return address
+                });
                 
                 LogBoot("MIPS registers initialized:");
                 LogBoot($"  PC: 0x{GetProgramCounter():X8}");
@@ -416,16 +422,18 @@ namespace ProcessorEmulator.Emulation
         private async Task CheckSystemCalls(uint pc)
         {
             // Check for key addresses that indicate progress
-            if (pc >= 0x80000000 && pc < 0x80001000)
-            {
-                LogBoot($"🎯 Kernel initialization at PC=0x{pc:X8}");
-            }
-            else if (pc >= 0x90000000)
-            {
-                LogBoot($"🖥️ Possible UI/Graphics initialization at PC=0x{pc:X8}");
-            }
-            
-            // TODO: Add more sophisticated syscall detection
+            await Task.Run(() => {
+                if (pc >= 0x80000000 && pc < 0x80001000)
+                {
+                    LogBoot($"🎯 Kernel initialization at PC=0x{pc:X8}");
+                }
+                else if (pc >= 0x90000000)
+                {
+                    LogBoot($"🖥️ Possible UI/Graphics initialization at PC=0x{pc:X8}");
+                }
+                
+                // TODO: Add more sophisticated syscall detection
+            });
         }
         
         #endregion

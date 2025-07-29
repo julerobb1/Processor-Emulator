@@ -7,19 +7,30 @@ namespace ProcessorEmulator
 {
     public partial class HypervisorWindow : Window
     {
-        private readonly VirtualMachineHypervisor hypervisor;
+        private readonly RealMipsHypervisor hypervisor;
         private TextBox logBox;
         private TextBlock statusText;
-        private Button powerOnButton;
-        private Button resetButton;
+        private Button startButton;
+        private Button stopButton;
 
-        public HypervisorWindow(VirtualMachineHypervisor hypervisor, string platformName)
+        public HypervisorWindow(RealMipsHypervisor hypervisor, string platformName)
         {
             this.hypervisor = hypervisor;
-            this.Title = $"VMware-Style Hypervisor - {platformName}";
+            this.Title = $"Real MIPS Hypervisor - {platformName}";
             
             CreateUI();
-            this.hypervisor.OnBootMessage += AppendLog;
+            this.hypervisor.OnRealExecution += AppendLog;
+        }
+        
+        // Constructor for backward compatibility
+        public HypervisorWindow(object legacyHypervisor, string platformName)
+        {
+            // Create new real hypervisor if old one is passed
+            this.hypervisor = new RealMipsHypervisor();
+            this.Title = $"Real MIPS Hypervisor - {platformName}";
+            
+            CreateUI();
+            this.hypervisor.OnRealExecution += AppendLog;
         }
 
         private void CreateUI()
@@ -36,7 +47,7 @@ namespace ProcessorEmulator
             // Title
             var titleText = new TextBlock
             {
-                Text = "X1 PLATFORM",
+                Text = "REAL MIPS EMULATOR",
                 FontSize = 36,
                 FontWeight = FontWeights.Bold,
                 Foreground = System.Windows.Media.Brushes.White,
@@ -48,7 +59,7 @@ namespace ProcessorEmulator
             // Subtitle
             var subtitleText = new TextBlock
             {
-                Text = "BIOS Version 3.2.1 - ARM Cortex-A15",
+                Text = "AT&T U-verse / Microsoft Mediaroom",
                 FontSize = 16,
                 Foreground = System.Windows.Media.Brushes.Gray,
                 HorizontalAlignment = HorizontalAlignment.Center
@@ -104,24 +115,24 @@ namespace ProcessorEmulator
             };
             mainStack.Children.Add(buttonStack);
 
-            powerOnButton = new Button
+            startButton = new Button
             {
-                Content = "Power On",
-                Width = 100,
+                Content = "Start U-verse",
+                Width = 120,
                 Margin = new Thickness(5)
             };
-            powerOnButton.Click += PowerOn_Click;
-            buttonStack.Children.Add(powerOnButton);
+            startButton.Click += Start_Click;
+            buttonStack.Children.Add(startButton);
 
-            resetButton = new Button
+            stopButton = new Button
             {
-                Content = "Reset",
+                Content = "Stop",
                 Width = 100,
                 Margin = new Thickness(5),
                 IsEnabled = false
             };
-            resetButton.Click += Reset_Click;
-            buttonStack.Children.Add(resetButton);
+            stopButton.Click += Stop_Click;
+            buttonStack.Children.Add(stopButton);
         }
 
         private void AppendLog(string message)
@@ -136,16 +147,26 @@ namespace ProcessorEmulator
             });
         }
 
-        private async void PowerOn_Click(object sender, RoutedEventArgs e)
+        private async void Start_Click(object sender, RoutedEventArgs e)
         {
-            powerOnButton.IsEnabled = false;
-            resetButton.IsEnabled = true;
-            await hypervisor.PowerOn();
+            startButton.IsEnabled = false;
+            stopButton.IsEnabled = true;
+            
+            // Start real U-verse emulation
+            bool success = await hypervisor.StartEmulation();
+            if (!success)
+            {
+                AppendLog("❌ Failed to start U-verse emulation");
+                startButton.IsEnabled = true;
+                stopButton.IsEnabled = false;
+            }
         }
 
-        private void Reset_Click(object sender, RoutedEventArgs e)
+        private void Stop_Click(object sender, RoutedEventArgs e)
         {
-            hypervisor.Reset();
+            hypervisor.StopEmulation();
+            startButton.IsEnabled = true;
+            stopButton.IsEnabled = false;
         }
     }
 }

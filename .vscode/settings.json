@@ -42,6 +42,9 @@
     // YAML: disable built-in validation to ignore ci.yml errors
     "yaml.validate": false,
     "github.copilot.enable": {
+        "*": false,
+        "plaintext": false,
+        "markdown": false,
         "scminput": true
     }
 }

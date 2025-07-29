@@ -1235,16 +1235,17 @@ namespace ProcessorEmulator
         {
             try
             {
-                log.Add("Starting custom ARM emulator...");
+                log.Add("Starting real MIPS emulator...");
                 
-                // Use our VirtualMachineHypervisor for ARM emulation
+                // Use our RealMipsHypervisor for actual emulation
                 var firmware = await File.ReadAllBytesAsync(firmwareFile);
                 log.Add($"Loaded {firmware.Length:N0} bytes of firmware");
                 
-                // Launch hypervisor with ARM emulation
-                VirtualMachineHypervisor.LaunchHypervisor(firmware, "ARM-Custom");
+                // Launch real MIPS hypervisor
+                var hypervisor = new RealMipsHypervisor();
+                await hypervisor.StartEmulation(firmware);
                 
-                log.Add("Custom ARM emulation started");
+                log.Add("Real MIPS emulation started");
                 log.Add("Check hypervisor window for firmware execution");
             }
             catch (Exception ex)
@@ -3923,8 +3924,9 @@ namespace ProcessorEmulator
                 
                 StatusBarText(ErrorManager.GetStatusMessage(ErrorManager.Codes.LOADING));
                 
-                // Launch the real VMware-style hypervisor
-                VirtualMachineHypervisor.LaunchHypervisor(firmware, $"Custom Platform - {platformName}");
+                // Launch the real MIPS hypervisor
+                var hypervisor = new RealMipsHypervisor();
+                await hypervisor.StartEmulation(firmware);
                 
                 StatusBarText(ErrorManager.GetSuccessMessage(ErrorManager.Codes.WUBBA_SUCCESS));
                 
