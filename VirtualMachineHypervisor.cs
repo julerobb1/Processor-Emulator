@@ -214,24 +214,19 @@ namespace ProcessorEmulator
             
             try
             {
-                // Show boot display
-                Application.Current.Dispatcher.Invoke(() =>
-                {
-                    bootDisplay.Show();
-                    bootDisplay.Activate();
-                });
+                LogBootMessage("🔧 Loading firmware into ARM virtual machine...");
                 
-                // Step 1: Initialize Virtual Hardware
-                await InitializeVirtualHardware();
+                // Load firmware into virtual memory at the detected address
+                Array.Copy(firmwareData, 0, virtualMemory, firmwareLoadAddress, firmwareData.Length);
+                LogBootMessage($"✅ Firmware loaded at 0x{firmwareLoadAddress:X8} ({firmwareData.Length} bytes)");
                 
-                // Step 2: Run BIOS/UEFI Boot Sequence
-                await RunBiosSequence();
+                // Set ARM registers for boot
+                armRegisters[15] = firmwareLoadAddress; // PC = firmware entry point
+                armRegisters[13] = ARM_STACK_POINTER;   // SP = stack pointer
+                LogBootMessage($"🎯 ARM PC set to 0x{armRegisters[15]:X8}");
                 
-                // Step 3: Load and Execute Firmware
-                await ExecuteFirmwareBoot();
-                
-                // Step 4: Hand off to operating system
-                await StartOperatingSystem();
+                // Execute real ARM firmware instructions
+                await ExecuteRealArmFirmware();
                 
                 return true;
             }
@@ -724,9 +719,8 @@ namespace ProcessorEmulator
 
         public async Task PowerOn()
         {
-            LogBootMessage("🔋 Virtual machine starting up...");
-            await InitializeVirtualHardware();
-            LogBootMessage("✅ Virtual machine powered on and ready");
+            LogBootMessage("🔋 Hypervisor initialized - waiting for firmware...");
+            // Don't show fake boot messages - wait for real firmware
         }
         
         public void PowerOff()
@@ -845,8 +839,15 @@ namespace ProcessorEmulator
                     hypervisor.LogBootMessage($"🚀 REAL ARM HYPERVISOR STARTING - {platformName}");
                     hypervisor.LogBootMessage("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
                     
-                    await hypervisor.PowerOn();
-                    await hypervisor.LoadFirmware(firmwareData);
+                    // Load firmware FIRST
+                    bool loaded = await hypervisor.LoadFirmware(firmwareData);
+                    if (!loaded)
+                    {
+                        hypervisor.LogBootMessage("❌ Failed to load firmware");
+                        return;
+                    }
+                    
+                    // Then boot the loaded firmware
                     await hypervisor.BootFirmware();
                 }
                 catch (Exception ex)

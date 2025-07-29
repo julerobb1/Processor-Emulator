@@ -222,6 +222,9 @@ namespace ProcessorEmulator
                 case "Analyze Folder Contents":
                     await HandleFolderAnalysis();
                     break;
+                case "Custom Hypervisor":
+                    await HandleCustomHypervisor();
+                    break;
                 default:
                     MessageBox.Show("Not implemented yet.", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
                     break;
