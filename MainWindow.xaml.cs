@@ -2084,18 +2084,8 @@ namespace ProcessorEmulator
                 StatusBarText($"X1 emulation error: {ex.Message}");
             }
         }
-                if (!initialized)
-                {
-                    logEntries.Add("❌ Failed to initialize X1 emulator");
-                    ShowTextWindow("X1 Emulation Error", logEntries);
-                    return;
-                }
 
-                logEntries.Add("✅ X1 emulator initialized successfully");
-                logEntries.Add("");
-
-                // Load firmware
-                bool firmwareLoaded = await x1Emulator.LoadFirmware(firmwarePath);
+        private async Task HandleDirectvAnalysis()
                 if (!firmwareLoaded)
                 {
                     logEntries.Add("❌ Failed to load X1 firmware");
