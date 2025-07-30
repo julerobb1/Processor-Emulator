@@ -130,9 +130,68 @@ namespace ProcessorEmulator
             }
         }
 
-        /// <summary>
-        /// Create a virtual disk image like VMware/VirtualBox
-        /// </summary>
+        public async Task<bool> Start()
+        {
+            if (!IsRunning)
+            {
+                Console.WriteLine("Error: No virtual machine created");
+                return false;
+            }
+
+            try
+            {
+                Console.WriteLine("Starting Comcast X1 Virtual Machine...");
+                
+                // Launch QEMU with our virtual disk
+                await LaunchQemuVirtualMachine();
+                
+                Console.WriteLine("Virtual machine started successfully");
+                Console.WriteLine("RDK firmware is now running in virtualized environment");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"VM Start Error: {ex.Message}");
+                return false;
+            }
+        }
+
+        public async Task<bool> Stop()
+        {
+            IsRunning = false;
+            return true;
+        }
+
+        public async Task<bool> Reset()
+        {
+            await Stop();
+            return await Initialize();
+        }
+
+        // IChipsetEmulator required methods
+        public bool Initialize(string configPath)
+        {
+            // Synchronous wrapper for async Initialize
+            return Initialize().Result;
+        }
+
+        public byte[] ReadRegister(uint address)
+        {
+            // Implement BCM chipset register reading via QEMU
+            // This would interface with the real QEMU emulator
+            return new byte[4]; // Placeholder for now
+        }
+
+        public void WriteRegister(uint address, byte[] data)
+        {
+            // Implement BCM chipset register writing via QEMU
+            // This would interface with the real QEMU emulator
+        }
+
+        #endregion
+
+        #region Virtual Disk Creation
+
         private async Task CreateVirtualDiskFromFirmware(string firmwarePath)
         {
             var firmware = await File.ReadAllBytesAsync(firmwarePath);
@@ -160,9 +219,6 @@ namespace ProcessorEmulator
             Console.WriteLine($"Disk size: {totalSize / (1024 * 1024)} MB");
         }
 
-        /// <summary>
-        /// Install actual firmware to the virtual disk
-        /// </summary>
         private async Task InstallFirmwareToVirtualDisk(string firmwarePath)
         {
             Console.WriteLine("Installing RDK firmware to virtual disk...");
@@ -185,9 +241,6 @@ namespace ProcessorEmulator
             Console.WriteLine("Firmware installation complete");
         }
 
-        /// <summary>
-        /// Create QCOW2 virtual disk using qemu-img tool
-        /// </summary>
         private async Task CreateQCOW2Disk(string diskPath, long sizeBytes)
         {
             string qemuImgPath = LocateQemuImg();
@@ -218,35 +271,6 @@ namespace ProcessorEmulator
             }
         }
 
-        public async Task<bool> Start()
-        {
-            if (!IsRunning)
-            {
-                Console.WriteLine("Error: No virtual machine created");
-                return false;
-            }
-
-            try
-            {
-                Console.WriteLine("Starting Comcast X1 Virtual Machine...");
-                
-                // Launch QEMU with our virtual disk
-                await LaunchQemuVirtualMachine();
-                
-                Console.WriteLine("Virtual machine started successfully");
-                Console.WriteLine("RDK firmware is now running in virtualized environment");
-                return true;
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"VM Start Error: {ex.Message}");
-                return false;
-            }
-        }
-
-        /// <summary>
-        /// Launch QEMU virtual machine with our virtual disk
-        /// </summary>
         private async Task LaunchQemuVirtualMachine()
         {
             string qemuSystemPath = GetQemuSystemPath();
@@ -295,45 +319,10 @@ namespace ProcessorEmulator
             });
         }
 
-        public async Task<bool> Stop()
-        {
-            IsRunning = false;
-            return true;
-        }
-
-        public async Task<bool> Reset()
-        {
-            await Stop();
-            return await Initialize();
-        }
-
-        // IChipsetEmulator required methods
-        public bool Initialize(string configPath)
-        {
-            // Synchronous wrapper for async Initialize
-            return Initialize().Result;
-        }
-
-        public byte[] ReadRegister(uint address)
-        {
-            // Implement BCM chipset register reading via QEMU
-            // This would interface with the real QEMU emulator
-            return new byte[4]; // Placeholder for now
-        }
-
-        public void WriteRegister(uint address, byte[] data)
-        {
-            // Implement BCM chipset register writing via QEMU
-            // This would interface with the real QEMU emulator
-        }
-
         #endregion
 
-        #region Firmware Analysis and Virtualization
+        #region Firmware Analysis
 
-        /// <summary>
-        /// Analyze firmware partitions for virtual disk creation
-        /// </summary>
         private List<VirtualPartition> AnalyzeFirmwarePartitions(byte[] firmware)
         {
             var partitions = new List<VirtualPartition>();
@@ -349,7 +338,6 @@ namespace ProcessorEmulator
                 ["jffs2"] = new byte[] { 0x19, 0x85 }, // JFFS2
             };
             
-            long currentOffset = 0;
             foreach (var sig in signatures)
             {
                 var positions = FindBytePattern(firmware, sig.Value);
@@ -383,26 +371,18 @@ namespace ProcessorEmulator
         private long CalculateRequiredDiskSize(List<VirtualPartition> partitions)
         {
             long totalSize = partitions.Sum(p => p.SizeBytes);
-            // Add 25% overhead for partition table, alignment, etc.
-            return (long)(totalSize * 1.25);
+            return (long)(totalSize * 1.25); // Add 25% overhead
         }
 
         private async Task CreatePartitionTable()
         {
-            // Use fdisk to create GPT partition table on virtual disk
-            // This would typically involve mounting the disk and creating partitions
             Console.WriteLine("Creating GPT partition table...");
-            
-            // For now, we'll create a simple layout
-            // In a full implementation, this would use disk tools
         }
 
         private async Task InstallPartitionToVirtualDisk(VirtualPartition partition, byte[] firmware)
         {
             if (partition.OriginalData != null)
             {
-                // Write partition data to virtual disk at correct offset
-                // This would typically use dd or similar tools
                 Console.WriteLine($"Writing {partition.Name} to virtual disk...");
             }
         }
@@ -410,8 +390,11 @@ namespace ProcessorEmulator
         private async Task InstallBootloader()
         {
             Console.WriteLine("Installing bootloader to virtual disk...");
-            // Install U-Boot or CFE bootloader to make disk bootable
         }
+
+        #endregion
+
+        #region Hardware Configuration
 
         private void ConfigureQemuVirtualization()
         {
@@ -483,18 +466,80 @@ namespace ProcessorEmulator
 
         private void AddPlatformSpecificOptions(List<string> args)
         {
-            // Add RDK-specific virtualization options
             args.AddRange(new[]
             {
-                "-device", "virtio-rng-pci", // Hardware RNG
-                "-rtc", "base=localtime",    // Real-time clock
-                "-boot", "order=c"           // Boot from disk
+                "-device", "virtio-rng-pci",
+                "-rtc", "base=localtime",
+                "-boot", "order=c"
             });
+        }
+
+        #endregion
+
+        #region Utility Methods
+        
+        private List<int> FindBytePattern(byte[] data, byte[] pattern)
+        {
+            var positions = new List<int>();
+            
+            for (int i = 0; i <= data.Length - pattern.Length; i++)
+            {
+                bool found = true;
+                for (int j = 0; j < pattern.Length; j++)
+                {
+                    if (data[i + j] != pattern[j])
+                    {
+                        found = false;
+                        break;
+                    }
+                }
+                if (found)
+                {
+                    positions.Add(i);
+                }
+            }
+            
+            return positions;
+        }
+
+        private long DeterminePartitionSize(byte[] firmware, long offset, string partitionType)
+        {
+            return partitionType switch
+            {
+                "bootloader" => 1 * 1024 * 1024,
+                "uboot" => 512 * 1024,
+                "kernel" => 8 * 1024 * 1024,
+                "rootfs" => 64 * 1024 * 1024,
+                "ubifs" => 32 * 1024 * 1024,
+                "jffs2" => 16 * 1024 * 1024,
+                _ => 4 * 1024 * 1024
+            };
+        }
+
+        private string GetFileSystemType(string partitionType)
+        {
+            return partitionType switch
+            {
+                "rootfs" => "squashfs",
+                "ubifs" => "ubifs",
+                "jffs2" => "jffs2",
+                "data" => "ext4",
+                _ => "raw"
+            };
+        }
+
+        private byte[] ExtractPartitionData(byte[] firmware, long offset, long size)
+        {
+            if (offset + size > firmware.Length)
+                size = firmware.Length - offset;
+                
+            byte[] data = new byte[size];
+            Array.Copy(firmware, offset, data, 0, size);
+            return data;
         }
 
         private string LocateQemuImg()
         {
-            // Look for qemu-img tool
             string[] possiblePaths = {
                 "qemu-img",
                 "qemu-img.exe",
@@ -531,71 +576,6 @@ namespace ProcessorEmulator
                 return false;
             }
         }
-
-        #endregion
-
-        #region Utility Methods
-        
-        private List<int> FindBytePattern(byte[] data, byte[] pattern)
-        {
-            var positions = new List<int>();
-            
-            for (int i = 0; i <= data.Length - pattern.Length; i++)
-            {
-                bool found = true;
-                for (int j = 0; j < pattern.Length; j++)
-                {
-                    if (data[i + j] != pattern[j])
-                    {
-                        found = false;
-                        break;
-                    }
-                }
-                if (found)
-                {
-                    positions.Add(i);
-                }
-            }
-            
-            return positions;
-        }
-
-        private long DeterminePartitionSize(byte[] firmware, long offset, string partitionType)
-        {
-            // Heuristic to determine partition size based on type
-            return partitionType switch
-            {
-                "bootloader" => 1 * 1024 * 1024,    // 1MB
-                "uboot" => 512 * 1024,              // 512KB
-                "kernel" => 8 * 1024 * 1024,        // 8MB
-                "rootfs" => 64 * 1024 * 1024,       // 64MB
-                "ubifs" => 32 * 1024 * 1024,        // 32MB
-                "jffs2" => 16 * 1024 * 1024,        // 16MB
-                _ => 4 * 1024 * 1024                 // 4MB default
-            };
-        }
-
-        private string GetFileSystemType(string partitionType)
-        {
-            return partitionType switch
-            {
-                "rootfs" => "squashfs",
-                "ubifs" => "ubifs",
-                "jffs2" => "jffs2",
-                "data" => "ext4",
-                _ => "raw"
-            };
-        }
-
-        private byte[] ExtractPartitionData(byte[] firmware, long offset, long size)
-        {
-            if (offset + size > firmware.Length)
-                size = firmware.Length - offset;
-                
-            byte[] data = new byte[size];
-            Array.Copy(firmware, offset, data, 0, size);
-            return data;
-        }
         
         #endregion
 
@@ -608,7 +588,6 @@ namespace ProcessorEmulator
                 byte[] header = File.ReadAllBytes(firmwarePath).Take(1024).ToArray();
                 string headerText = System.Text.Encoding.ASCII.GetString(header);
                 
-                // Real hardware detection based on firmware signatures
                 if (headerText.Contains("BCM7445") || headerText.Contains("XG1v4"))
                     return X1HardwareType.XG1v4_BCM7445;
                 else if (headerText.Contains("BCM7252") && headerText.Contains("XiD"))
@@ -623,26 +602,6 @@ namespace ProcessorEmulator
             catch
             {
                 return X1HardwareType.Unknown;
-            }
-        }
-        
-        private void ConfigureQemuForHardware(X1HardwareType hardware)
-        {
-            switch (hardware)
-            {
-                case X1HardwareType.XG1v4_BCM7445:
-                case X1HardwareType.XiDP_BCM7252:
-                case X1HardwareType.XG1v3_BCM7252:
-                    qemuManager.QemuPath = "qemu-system-arm.exe";
-                    break;
-                    
-                case X1HardwareType.X1_BCM7425:
-                    qemuManager.QemuPath = "qemu-system-mips.exe";
-                    break;
-                    
-                default:
-                    qemuManager.QemuPath = "qemu-system-arm.exe"; // Default to ARM
-                    break;
             }
         }
         
