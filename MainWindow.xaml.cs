@@ -2085,53 +2085,6 @@ namespace ProcessorEmulator
             }
         }
 
-        private async Task HandleDirectvAnalysis()
-                if (!firmwareLoaded)
-                {
-                    logEntries.Add("❌ Failed to load X1 firmware");
-                    ShowTextWindow("X1 Firmware Error", logEntries);
-                    return;
-                }
-
-                logEntries.Add("✅ X1 firmware loaded and analyzed");
-                logEntries.Add("📋 Starting real X1 emulation...");
-                logEntries.Add("");
-
-                // Start emulation
-                bool emulationStarted = await x1Emulator.Start();
-                if (emulationStarted)
-                {
-                    logEntries.Add("🚀 COMCAST X1 EMULATION ACTIVE!");
-                    logEntries.Add("");
-                    logEntries.Add("Real QEMU backend running");
-                    logEntries.Add("No fake implementations");
-                    logEntries.Add("");
-                    logEntries.Add("🎯 Real X1 emulation with QEMU integration");
-                    StatusBarText("Comcast X1 emulation running successfully");
-                }
-                else
-                {
-                    logEntries.Add("❌ Failed to start X1 emulation");
-                }
-
-                ShowTextWindow("Comcast X1 Platform Emulator", logEntries);
-            }
-            catch (Exception ex)
-            {
-                var errorEntries = new List<string>
-                {
-                    "❌ Comcast X1 Emulation Error:",
-                    "",
-                    ex.Message,
-                    "",
-                    "Stack trace:",
-                    ex.StackTrace
-                };
-                ShowTextWindow("X1 Emulation Error", errorEntries);
-                StatusBarText("X1 emulation failed");
-            }
-        }
-
         // New handler for firmware analysis from menu
         private async void AnalyzeFirmware_Click(object sender, RoutedEventArgs e)
         {
