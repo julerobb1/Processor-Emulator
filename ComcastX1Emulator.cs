@@ -325,7 +325,43 @@ namespace ProcessorEmulator
 
         private async Task LaunchUniversalQemu()
         {
-            string qemuPath = GetQemuForArchitecture(currentVM.Architecture);
+            string qemuPath;
+            
+            try
+            {
+                qemuPath = GetQemuForArchitecture(currentVM.Architecture);
+            }
+            catch (FileNotFoundException ex)
+            {
+                Console.WriteLine("🔄 QEMU not found, attempting auto-installation...");
+                
+                bool installed = await AutoInstallQemu();
+                if (installed)
+                {
+                    // Try again after installation
+                    try
+                    {
+                        qemuPath = GetQemuForArchitecture(currentVM.Architecture);
+                        Console.WriteLine("✅ QEMU found after auto-installation");
+                    }
+                    catch (FileNotFoundException)
+                    {
+                        throw new InvalidOperationException(
+                            "QEMU installation completed but executable still not found. " +
+                            "You may need to restart the application or add QEMU to your PATH."
+                        );
+                    }
+                }
+                else
+                {
+                    throw new InvalidOperationException(
+                        "QEMU auto-installation failed. Please install QEMU manually:\n" +
+                        "1. Download from: https://www.qemu.org/download/#windows\n" +
+                        "2. Or run: winget install QEMU.QEMU\n" +
+                        "3. Or run: choco install qemu"
+                    );
+                }
+            }
             
             var args = new List<string>();
             
@@ -579,15 +615,102 @@ namespace ProcessorEmulator
                 }
             }
 
-            // QEMU not found - throw meaningful error instead of faking it
+            // QEMU not found - attempt auto-installation instead of faking it
             throw new FileNotFoundException(
                 $"QEMU emulator not found for {arch} architecture.\n\n" +
-                "To use real emulation, please install QEMU:\n" +
-                "1. Download from: https://www.qemu.org/download/#windows\n" +
-                "2. Or install via: winget install QEMU.QEMU\n" +
-                "3. Or use MSYS2: pacman -S mingw-w64-x86_64-qemu\n\n" +
-                $"Required executable: {qemuExe}"
+                "Attempting auto-installation...\n" +
+                "Please wait while QEMU is downloaded and installed.",
+                $"Missing: {qemuExe}"
             );
+        }
+
+        /// <summary>
+        /// Automatically installs QEMU on Windows using winget
+        /// </summary>
+        private async Task<bool> AutoInstallQemu()
+        {
+            try
+            {
+                Console.WriteLine("🔄 Auto-installing QEMU via winget...");
+                
+                var process = new Process
+                {
+                    StartInfo = new ProcessStartInfo
+                    {
+                        FileName = "winget",
+                        Arguments = "install QEMU.QEMU --accept-package-agreements --accept-source-agreements",
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        CreateNoWindow = true
+                    }
+                };
+                
+                process.Start();
+                var output = await process.StandardOutput.ReadToEndAsync();
+                var error = await process.StandardError.ReadToEndAsync();
+                process.WaitForExit();
+                
+                if (process.ExitCode == 0)
+                {
+                    Console.WriteLine("✅ QEMU installed successfully via winget");
+                    return true;
+                }
+                else
+                {
+                    Console.WriteLine($"❌ Winget installation failed: {error}");
+                    return await TryAlternativeInstallation();
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ Auto-installation failed: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Try alternative QEMU installation methods
+        /// </summary>
+        private async Task<bool> TryAlternativeInstallation()
+        {
+            try
+            {
+                Console.WriteLine("🔄 Trying chocolatey installation...");
+                
+                var process = new Process
+                {
+                    StartInfo = new ProcessStartInfo
+                    {
+                        FileName = "choco",
+                        Arguments = "install qemu -y",
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        CreateNoWindow = true
+                    }
+                };
+                
+                process.Start();
+                var output = await process.StandardOutput.ReadToEndAsync();
+                process.WaitForExit();
+                
+                if (process.ExitCode == 0)
+                {
+                    Console.WriteLine("✅ QEMU installed successfully via chocolatey");
+                    return true;
+                }
+                else
+                {
+                    Console.WriteLine("❌ Chocolatey installation also failed");
+                    return false;
+                }
+            }
+            catch
+            {
+                Console.WriteLine("❌ Alternative installation methods failed");
+                return false;
+            }
         }
 
         private string GetCPUType()
