@@ -62,7 +62,7 @@ Write-Host "🔧 Compiling and running domain parser..." -ForegroundColor Yellow
 
 try {
     # Compile and run the demo
-    $result = dotnet run --project ProcessorEmulator.csproj -- $tempFile
+    dotnet run --project ProcessorEmulator.csproj -- $tempFile
     
     if ($LASTEXITCODE -eq 0) {
         Write-Host "✅ Domain analysis completed successfully!" -ForegroundColor Green
