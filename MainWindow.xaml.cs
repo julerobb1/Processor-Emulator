@@ -2040,7 +2040,7 @@ namespace ProcessorEmulator
                 if (started)
                 {
                     logEntries.Add("✅ QEMU emulation started successfully");
-                    logEntries.Add($"Process ID: {x1Emulator.GetProcessId()}");
+                    logEntries.Add($"Process running in background");
                     StatusBarText("X1 emulation running");
                 }
                 else
