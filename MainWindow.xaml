@@ -70,6 +70,134 @@
                             </StackPanel>
                         </GroupBox>
                         
+                        <!-- Universal Hypervisor Configuration -->
+                        <GroupBox Header="4. Universal Hypervisor Options" Margin="0,0,0,10">
+                            <Grid Margin="5">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="120"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                
+                                <!-- Architecture Selection -->
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Architecture:" VerticalAlignment="Center" Margin="0,2"/>
+                                <ComboBox x:Name="ArchitectureComboBox" Grid.Row="0" Grid.Column="1" Margin="5,2" 
+                                          ToolTip="Select target CPU architecture for emulation">
+                                    <ComboBoxItem Content="Auto-Detect" IsSelected="True"/>
+                                    <ComboBoxItem Content="x86-64 (Intel/AMD 64-bit)"/>
+                                    <ComboBoxItem Content="x86-32 (Intel/AMD 32-bit)"/>
+                                    <ComboBoxItem Content="ARM64 (AArch64)"/>
+                                    <ComboBoxItem Content="ARM32"/>
+                                    <ComboBoxItem Content="MIPS64"/>
+                                    <ComboBoxItem Content="MIPS32"/>
+                                    <ComboBoxItem Content="PowerPC64"/>
+                                    <ComboBoxItem Content="PowerPC32"/>
+                                    <ComboBoxItem Content="RISC-V 64-bit"/>
+                                    <ComboBoxItem Content="RISC-V 32-bit"/>
+                                    <ComboBoxItem Content="SPARC64"/>
+                                    <ComboBoxItem Content="SPARC32"/>
+                                    <ComboBoxItem Content="Motorola 68000"/>
+                                    <ComboBoxItem Content="DEC Alpha"/>
+                                    <ComboBoxItem Content="HP PA-RISC"/>
+                                    <ComboBoxItem Content="SuperH (SH4)"/>
+                                </ComboBox>
+                                
+                                <!-- Security Bypass Level -->
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Security Level:" VerticalAlignment="Center" Margin="0,2"/>
+                                <ComboBox x:Name="SecurityBypassComboBox" Grid.Row="1" Grid.Column="1" Margin="5,2"
+                                          ToolTip="Select security bypass level for firmware emulation">
+                                    <ComboBoxItem Content="Bypass All Security (Maximum Freedom)" IsSelected="True"/>
+                                    <ComboBoxItem Content="Disable Secure Boot Only"/>
+                                    <ComboBoxItem Content="Disable Code Signing Only"/>
+                                    <ComboBoxItem Content="Disable ARM TrustZone Only"/>
+                                    <ComboBoxItem Content="Disable x86 SMM Only"/>
+                                    <ComboBoxItem Content="Disable Hypervisor Detection Only"/>
+                                    <ComboBoxItem Content="Normal Operation (No Bypass)"/>
+                                </ComboBox>
+                                
+                                <!-- Memory Size -->
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Memory Size:" VerticalAlignment="Center" Margin="0,2"/>
+                                <ComboBox x:Name="MemorySizeComboBox" Grid.Row="2" Grid.Column="1" Margin="5,2"
+                                          ToolTip="Select virtual machine memory allocation">
+                                    <ComboBoxItem Content="Auto-Calculate (Recommended)" IsSelected="True"/>
+                                    <ComboBoxItem Content="512 MB"/>
+                                    <ComboBoxItem Content="1 GB"/>
+                                    <ComboBoxItem Content="2 GB"/>
+                                    <ComboBoxItem Content="4 GB"/>
+                                    <ComboBoxItem Content="8 GB"/>
+                                    <ComboBoxItem Content="16 GB"/>
+                                    <ComboBoxItem Content="32 GB"/>
+                                </ComboBox>
+                                
+                                <!-- CPU Type -->
+                                <TextBlock Grid.Row="3" Grid.Column="0" Text="CPU Type:" VerticalAlignment="Center" Margin="0,2"/>
+                                <ComboBox x:Name="CpuTypeComboBox" Grid.Row="3" Grid.Column="1" Margin="5,2"
+                                          ToolTip="Select CPU type for emulation">
+                                    <ComboBoxItem Content="Auto-Select (Recommended)" IsSelected="True"/>
+                                    <ComboBoxItem Content="Host CPU (KVM Acceleration)"/>
+                                    <ComboBoxItem Content="Generic QEMU CPU"/>
+                                    <ComboBoxItem Content="Cortex-A72 (ARM64)"/>
+                                    <ComboBoxItem Content="Cortex-A15 (ARM32)"/>
+                                    <ComboBoxItem Content="MIPS 24Kf"/>
+                                    <ComboBoxItem Content="POWER9 (PowerPC64)"/>
+                                    <ComboBoxItem Content="UltraSPARC (SPARC64)"/>
+                                </ComboBox>
+                                
+                                <!-- Virtual Machine Type -->
+                                <TextBlock Grid.Row="4" Grid.Column="0" Text="Machine Type:" VerticalAlignment="Center" Margin="0,2"/>
+                                <ComboBox x:Name="MachineTypeComboBox" Grid.Row="4" Grid.Column="1" Margin="5,2"
+                                          ToolTip="Select virtual machine platform">
+                                    <ComboBoxItem Content="Auto-Select (Recommended)" IsSelected="True"/>
+                                    <ComboBoxItem Content="Generic Virtual Platform"/>
+                                    <ComboBoxItem Content="PC (x86/x64)"/>
+                                    <ComboBoxItem Content="ARM Virtual Board"/>
+                                    <ComboBoxItem Content="MIPS Malta Board"/>
+                                    <ComboBoxItem Content="PowerPC pSeries"/>
+                                    <ComboBoxItem Content="SPARC Sun4u"/>
+                                    <ComboBoxItem Content="RISC-V Virtual Board"/>
+                                </ComboBox>
+                            </Grid>
+                        </GroupBox>
+                        
+                        <!-- Action Selection -->
+                        <GroupBox Header="5. Select Action" Margin="0,0,0,10">
+                            <StackPanel Margin="5">
+                                <ComboBox x:Name="ActionSelectionComboBox" Margin="0,2"
+                                          ToolTip="Select the action to perform when Start Emulation is clicked">
+                                    <ComboBoxItem Content="Generic CPU/OS Emulation" IsSelected="True"/>
+                                    <ComboBoxItem Content="RDK-V Emulator"/>
+                                    <ComboBoxItem Content="RDK-B Emulator"/>
+                                    <ComboBoxItem Content="PowerPC Bootloader Demo"/>
+                                    <ComboBoxItem Content="Dish Network Box/VxWorks Analysis"/>
+                                    <ComboBoxItem Content="Simulate SWM Switch/LNB"/>
+                                    <ComboBoxItem Content="Probe Filesystem"/>
+                                    <ComboBoxItem Content="Emulate CMTS Head End"/>
+                                    <ComboBoxItem Content="Uverse Box Emulator"/>
+                                    <ComboBoxItem Content="Comcast X1 Platform Emulator"/>
+                                    <ComboBoxItem Content="DirecTV Box/Firmware Analysis"/>
+                                    <ComboBoxItem Content="Pluto TV Integration"/>
+                                    <ComboBoxItem Content="Custom Hypervisor"/>
+                                    <ComboBoxItem Content="Executable Analysis"/>
+                                    <ComboBoxItem Content="Linux Filesystem Read/Write"/>
+                                    <ComboBoxItem Content="Cross-Compile Binary"/>
+                                    <ComboBoxItem Content="Mount CE Filesystem"/>
+                                    <ComboBoxItem Content="Mount YAFFS Filesystem"/>
+                                    <ComboBoxItem Content="Mount ISO Filesystem"/>
+                                    <ComboBoxItem Content="Mount EXT Filesystem"/>
+                                    <ComboBoxItem Content="Simulate SWM LNB"/>
+                                    <ComboBoxItem Content="Boot Firmware (Homebrew First)"/>
+                                    <ComboBoxItem Content="Boot Firmware in Homebrew Emulator"/>
+                                    <ComboBoxItem Content="Analyze Folder Contents"/>
+                                </ComboBox>
+                            </StackPanel>
+                        </GroupBox>
+                        
                         <!-- Action Buttons -->
                         <StackPanel Orientation="Horizontal" Margin="0,10,0,0" HorizontalAlignment="Left">
                             <Button x:Name="StartEmulationButton" Content="Start Emulation" Width="120" 

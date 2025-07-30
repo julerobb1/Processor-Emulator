@@ -47,6 +47,14 @@ namespace ProcessorEmulator
         private string firmwarePath;
         private string selectedPlatform;
         
+        // Universal Hypervisor Configuration
+        private string selectedArchitecture = "Auto-Detect";
+        private string selectedSecurityBypass = "Bypass All Security (Maximum Freedom)";
+        private string selectedMemorySize = "Auto-Calculate (Recommended)";
+        private string selectedCpuType = "Auto-Select (Recommended)";
+        private string selectedMachineType = "Auto-Select (Recommended)";
+        private string selectedAction = "Generic CPU/OS Emulation";
+        
         // BOLT Bootloader Integration
         private BoltEmulatorBridge boltBridge;
         private bool boltInitialized;
@@ -54,21 +62,41 @@ namespace ProcessorEmulator
         // Add default constructor for XAML
         public MainWindow()
         {
-            InitializeComponent();
-            // Load XAML UI components
-            // Initialize drag-and-drop for file support
-            this.AllowDrop = true;
-            this.Drop += MainWindow_Drop;
+            try
+            {
+                InitializeComponent();
+                // Load XAML UI components
+                // Initialize drag-and-drop for file support
+                this.AllowDrop = true;
+                this.Drop += MainWindow_Drop;
 
-            // Initialize real-time emulation log panel
-            InitializeLogPanel();
+                // Initialize real-time emulation log panel
+                InitializeLogPanel();
+                
+                // Initialize dropdown handlers
+                this.Loaded += (s, e) => InitializeDropdownHandlers();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[MainWindow] Constructor error: {ex.Message}");
+            }
         }
 
         public MainWindow(IEmulator currentEmulator)
         {
-            InitializeComponent();
-            this.currentEmulator = currentEmulator;
-            InitializeLogPanel();
+            try
+            {
+                InitializeComponent();
+                this.currentEmulator = currentEmulator;
+                InitializeLogPanel();
+                
+                // Initialize dropdown handlers
+                this.Loaded += (s, e) => InitializeDropdownHandlers();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[MainWindow] Constructor error: {ex.Message}");
+            }
         }
 
         /// <summary>
@@ -91,6 +119,86 @@ namespace ProcessorEmulator
             catch (Exception ex)
             {
                 Debug.WriteLine($"[MainWindow] Failed to initialize log panel: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Initialize dropdown event handlers for Universal Hypervisor configuration
+        /// </summary>
+        private void InitializeDropdownHandlers()
+        {
+            try
+            {
+                // Architecture dropdown
+                if (ArchitectureComboBox != null)
+                {
+                    ArchitectureComboBox.SelectionChanged += (s, e) =>
+                    {
+                        if (ArchitectureComboBox.SelectedItem is ComboBoxItem item)
+                        {
+                            selectedArchitecture = item.Content.ToString();
+                            StatusBarText($"Architecture: {selectedArchitecture}");
+                        }
+                    };
+                }
+
+                // Security bypass dropdown
+                if (SecurityBypassComboBox != null)
+                {
+                    SecurityBypassComboBox.SelectionChanged += (s, e) =>
+                    {
+                        if (SecurityBypassComboBox.SelectedItem is ComboBoxItem item)
+                        {
+                            selectedSecurityBypass = item.Content.ToString();
+                            StatusBarText($"Security Level: {selectedSecurityBypass}");
+                        }
+                    };
+                }
+
+                // Memory size dropdown
+                if (MemorySizeComboBox != null)
+                {
+                    MemorySizeComboBox.SelectionChanged += (s, e) =>
+                    {
+                        if (MemorySizeComboBox.SelectedItem is ComboBoxItem item)
+                        {
+                            selectedMemorySize = item.Content.ToString();
+                            StatusBarText($"Memory: {selectedMemorySize}");
+                        }
+                    };
+                }
+
+                // CPU type dropdown
+                if (CpuTypeComboBox != null)
+                {
+                    CpuTypeComboBox.SelectionChanged += (s, e) =>
+                    {
+                        if (CpuTypeComboBox.SelectedItem is ComboBoxItem item)
+                        {
+                            selectedCpuType = item.Content.ToString();
+                            StatusBarText($"CPU: {selectedCpuType}");
+                        }
+                    };
+                }
+
+                // Machine type dropdown
+                if (MachineTypeComboBox != null)
+                {
+                    MachineTypeComboBox.SelectionChanged += (s, e) =>
+                    {
+                        if (MachineTypeComboBox.SelectedItem is ComboBoxItem item)
+                        {
+                            selectedMachineType = item.Content.ToString();
+                            StatusBarText($"Machine: {selectedMachineType}");
+                        }
+                    };
+                }
+
+                Debug.WriteLine("[MainWindow] Dropdown handlers initialized successfully");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[MainWindow] Failed to initialize dropdown handlers: {ex.Message}");
             }
         }
 
