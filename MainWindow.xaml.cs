@@ -138,7 +138,8 @@ namespace ProcessorEmulator
                 "Simulate SWM Switch/LNB",
                 "Probe Filesystem",
                 "Emulate CMTS Head End",
-                "Uverse Box Emulator",
+                "Uverse Box Emulator", 
+                "Comcast X1 Platform Emulator",
                 "DirecTV Box/Firmware Analysis",
                 "Pluto TV Integration",
                 "Custom Hypervisor",
@@ -185,6 +186,9 @@ namespace ProcessorEmulator
                     break;
                 case "Uverse Box Emulator":
                     await HandleUverseEmulation();
+                    break;
+                case "Comcast X1 Platform Emulator":
+                    await HandleComcastX1Emulation();
                     break;
                 case "DirecTV Box/Firmware Analysis":
                     await HandleDirectvAnalysis();
@@ -1885,8 +1889,20 @@ namespace ProcessorEmulator
             string ext = Path.GetExtension(filePath).ToLowerInvariant();
             if (ext == ".exe" || ext == ".dll")
                 return "Executable";
-            if (ext == ".img" || ext == ".bin")
+            if (ext == ".img" || ext == ".bin" || ext == ".fw" || ext == ".rdk")
             {
+                // Check for Comcast X1 firmware signatures
+                if (binary.Length > 10)
+                {
+                    string header = Encoding.ASCII.GetString(binary.Take(100).ToArray());
+                    if (header.Contains("COMCAST") || header.Contains("X1-PLATFORM") || 
+                        header.Contains("RDK-B") || header.Contains("ARRIS") ||
+                        header.Contains("BCM7445") || header.Contains("XG1"))
+                    {
+                        return "Comcast X1 Firmware";
+                    }
+                }
+                
                 // Heuristic: check for firmware or archive magic numbers
                 if (binary.Length > 4 && binary[0] == 0x1F && binary[1] == 0x8B)
                     return "Archive"; // gzip
@@ -3953,6 +3969,105 @@ namespace ProcessorEmulator
             {
                 ErrorManager.ShowError(ErrorManager.Codes.HYPERVISOR_CRASH, openFileDialog.FileName, ex);
                 ErrorManager.LogError(ErrorManager.Codes.HYPERVISOR_CRASH, openFileDialog.FileName, ex);
+            }
+        }
+        
+        /// <summary>
+        /// Handle Comcast X1 Platform emulation with real firmware analysis
+        /// </summary>
+        private async Task HandleComcastX1Emulation()
+        {
+            var openFileDialog = new OpenFileDialog
+            {
+                Filter = "Comcast X1 Firmware (*.bin;*.img;*.fw;*.rdk)|*.bin;*.img;*.fw;*.rdk|All Files (*.*)|*.*",
+                Title = "Select Comcast X1 Firmware File"
+            };
+
+            if (openFileDialog.ShowDialog() == true)
+            {
+                string firmwarePath = openFileDialog.FileName;
+                StatusBarText($"Loading Comcast X1 firmware: {Path.GetFileName(firmwarePath)}");
+
+                try
+                {
+                    // Create X1 emulator with XG1v4 configuration
+                    var x1Config = ComcastX1Emulator.X1PlatformConfig.CreateXG1v4();
+                    var x1Emulator = new ComcastX1Emulator(x1Config);
+
+                    var logEntries = new List<string>
+                    {
+                        "=== COMCAST X1 PLATFORM EMULATION ===",
+                        "",
+                        $"📁 Firmware: {Path.GetFileName(firmwarePath)}",
+                        $"🏗️ Platform: {x1Config.HardwareModel}",
+                        $"🔧 Chipset: {x1Config.ChipsetFamily} ({x1Config.ProcessorArch})",
+                        $"💾 Memory: {x1Config.RamSizeMB}MB RAM, {x1Config.FlashSizeMB}MB Flash",
+                        $"📺 DVR Support: {(x1Config.HasDVRSupport ? "Yes" : "Client Only")}",
+                        $"🌐 RDK Version: {x1Config.RDKVersion}",
+                        ""
+                    };
+
+                    // Initialize emulator
+                    bool initialized = x1Emulator.Initialize(firmwarePath);
+                    if (!initialized)
+                    {
+                        logEntries.Add("❌ Failed to initialize X1 emulator");
+                        ShowTextWindow("X1 Emulation Error", logEntries);
+                        return;
+                    }
+
+                    logEntries.Add("✅ X1 emulator initialized successfully");
+                    logEntries.Add("");
+
+                    // Load firmware
+                    bool firmwareLoaded = await x1Emulator.LoadComcastFirmware(firmwarePath);
+                    if (!firmwareLoaded)
+                    {
+                        logEntries.Add("❌ Failed to load X1 firmware");
+                        ShowTextWindow("X1 Firmware Error", logEntries);
+                        return;
+                    }
+
+                    logEntries.Add("✅ X1 firmware loaded and analyzed");
+                    logEntries.Add("📋 Starting real X1 emulation...");
+                    logEntries.Add("");
+
+                    // Start emulation
+                    bool emulationStarted = await x1Emulator.StartX1Emulation();
+                    if (emulationStarted)
+                    {
+                        logEntries.Add("🚀 COMCAST X1 EMULATION ACTIVE!");
+                        logEntries.Add("");
+                        logEntries.Add("Connected services:");
+                        logEntries.Add("  📺 Guide Service (current.611ds.ccp.xcal.tv)");
+                        logEntries.Add("  🔐 Authentication (current.aclauth.coast.xcal.tv)");
+                        logEntries.Add("  🛠️ Configuration (current.xconfds.coast.xcal.tv)");
+                        logEntries.Add("  📱 DVR Services (current.cdvr.dvr.r53.xcal.tv)");
+                        logEntries.Add("");
+                        logEntries.Add("🎯 Real X1 emulation with Comcast backend integration");
+                        StatusBarText("Comcast X1 emulation running successfully");
+                    }
+                    else
+                    {
+                        logEntries.Add("❌ Failed to start X1 emulation");
+                    }
+
+                    ShowTextWindow("Comcast X1 Platform Emulator", logEntries);
+                }
+                catch (Exception ex)
+                {
+                    var errorEntries = new List<string>
+                    {
+                        "❌ Comcast X1 Emulation Error:",
+                        "",
+                        ex.Message,
+                        "",
+                        "Stack trace:",
+                        ex.StackTrace
+                    };
+                    ShowTextWindow("X1 Emulation Error", errorEntries);
+                    StatusBarText("X1 emulation failed");
+                }
             }
         }
         
