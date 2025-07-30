@@ -6,7 +6,7 @@
         <Menu DockPanel.Dock="Top">
             <MenuItem Header="_File">
                 <MenuItem Header="_Open" Click="OpenMenuItem_Click"/>
-                <!-- General firmware extract & analysis -->
+                <!-- General firmware extract &amp; analysis -->
                 <MenuItem Header="Analyze _Firmware..." Click="AnalyzeFirmware_Click"/>
                 <MenuItem Header="Scan _DVR Data..." Click="ScanDvrData_Click" ToolTip="Scan attached DVR datasets for firmware and logs"/>
                 <MenuItem Header="List DVR _Firmware" Click="ListDvrFirmware_Click" ToolTip="List all firmware files in DVR datasets"/>
@@ -40,47 +40,57 @@
                             </DockPanel>
                         </GroupBox>
                         
-                        <!-- Emulator Selection -->
-                        <GroupBox Header="2. Choose Emulator" Margin="0,0,0,10">
-                            <StackPanel Margin="5">
-                                <RadioButton x:Name="HomebrewEmulatorRadio" Content="HomebrewEmulator (Recommended)" 
-                                           GroupName="EmulatorChoice" IsChecked="True" Margin="0,2"
-                                           ToolTip="Multi-architecture emulator with BCM7449 SoC support for RDK-V devices"/>
-                                <RadioButton x:Name="QemuEmulatorRadio" Content="QEMU (External Process)" 
-                                           GroupName="EmulatorChoice" Margin="0,2"
-                                           ToolTip="External QEMU process for full system emulation"/>
-                                <RadioButton x:Name="RetDecTranslatorRadio" Content="RetDec Binary Translator" 
-                                           GroupName="EmulatorChoice" Margin="0,2"
-                                           ToolTip="Static decompilation and cross-architecture translation"/>
-                            </StackPanel>
-                        </GroupBox>
-                        
-                        <!-- Platform Selection -->
-                        <GroupBox Header="3. Platform Type (Optional)" Margin="0,0,0,10">
-                            <StackPanel Margin="5">
-                                <RadioButton x:Name="RdkVPlatformRadio" Content="RDK-V (ARRIS XG1V4)" 
-                                           GroupName="PlatformChoice" Margin="0,2"
-                                           ToolTip="RDK-V platform with BCM7449 SoC emulation"/>
-                                <RadioButton x:Name="UversePlatformRadio" Content="AT&amp;T U-verse (MIPS/WinCE)" 
-                                           GroupName="PlatformChoice" Margin="0,2"
-                                           ToolTip="AT&amp;T U-verse STB with MIPS processor and WinCE kernel"/>
-                                <RadioButton x:Name="GenericPlatformRadio" Content="Generic Platform" 
-                                           GroupName="PlatformChoice" IsChecked="True" Margin="0,2"
-                                           ToolTip="Auto-detect platform from firmware"/>
-                            </StackPanel>
-                        </GroupBox>
-                        
-                        <!-- Universal Hypervisor Configuration -->
-                        <GroupBox Header="4. Universal Hypervisor Options" Margin="0,0,0,10">
+                        <!-- Platform-Specific Emulators -->
+                        <GroupBox Header="2. Platform-Specific Emulators" Margin="0,0,0,10">
                             <Grid Margin="5">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                
+                                <!-- First Row -->
+                                <Button Grid.Row="0" Grid.Column="0" Content="RDK-V Emulator" Margin="2" Padding="5" Height="35"
+                                        Click="RdkVEmulator_Click" ToolTip="ARRIS XG1V4, BCM7449 SoC"/>
+                                <Button Grid.Row="0" Grid.Column="1" Content="U-verse Emulator" Margin="2" Padding="5" Height="35"
+                                        Click="UverseEmulator_Click" ToolTip="AT&amp;T U-verse, MIPS/WinCE"/>
+                                <Button Grid.Row="0" Grid.Column="2" Content="Comcast X1" Margin="2" Padding="5" Height="35"
+                                        Click="ComcastX1Emulator_Click" ToolTip="Comcast X1 Platform"/>
+                                
+                                <!-- Second Row -->
+                                <Button Grid.Row="1" Grid.Column="0" Content="DirecTV Analysis" Margin="2" Padding="5" Height="35"
+                                        Click="DirectvAnalysis_Click" ToolTip="DirecTV firmware analysis"/>
+                                <Button Grid.Row="1" Grid.Column="1" Content="RDK-B Emulator" Margin="2" Padding="5" Height="35"
+                                        Click="RdkBEmulator_Click" ToolTip="RDK-B broadband gateway"/>
+                                <Button Grid.Row="1" Grid.Column="2" Content="Dish/VxWorks" Margin="2" Padding="5" Height="35"
+                                        Click="DishVxWorks_Click" ToolTip="Dish Network VxWorks analysis"/>
+                                
+                                <!-- Third Row -->
+                                <Button Grid.Row="2" Grid.Column="0" Content="PowerPC Demo" Margin="2" Padding="5" Height="35"
+                                        Click="PowerPCDemo_Click" ToolTip="PowerPC bootloader demo"/>
+                                <Button Grid.Row="2" Grid.Column="1" Content="Generic Emulation" Margin="2" Padding="5" Height="35"
+                                        Click="GenericEmulation_Click" ToolTip="Generic CPU/OS emulation"/>
+                                <Button Grid.Row="2" Grid.Column="2" Content="Universal Hypervisor" Margin="2" Padding="5" Height="35"
+                                        Click="UniversalHypervisor_Click" ToolTip="Universal multi-architecture hypervisor"/>
+                            </Grid>
+                        </GroupBox>
+                        
+                        <!-- Universal Hypervisor Configuration -->
+                        <GroupBox Header="3. Universal Hypervisor Options" Margin="0,0,0,10">
+                            <Grid Margin="5">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
                                 <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="120"/>
+                                    <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="120"/>
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
@@ -90,142 +100,154 @@
                                 <ComboBox x:Name="ArchitectureComboBox" Grid.Row="0" Grid.Column="1" Margin="5,2" 
                                           ToolTip="Select target CPU architecture for emulation">
                                     <ComboBoxItem Content="Auto-Detect" IsSelected="True"/>
-                                    <ComboBoxItem Content="x86-64 (Intel/AMD 64-bit)"/>
-                                    <ComboBoxItem Content="x86-32 (Intel/AMD 32-bit)"/>
-                                    <ComboBoxItem Content="ARM64 (AArch64)"/>
+                                    <ComboBoxItem Content="x86-64"/>
+                                    <ComboBoxItem Content="ARM64"/>
                                     <ComboBoxItem Content="ARM32"/>
-                                    <ComboBoxItem Content="MIPS64"/>
                                     <ComboBoxItem Content="MIPS32"/>
-                                    <ComboBoxItem Content="PowerPC64"/>
-                                    <ComboBoxItem Content="PowerPC32"/>
-                                    <ComboBoxItem Content="RISC-V 64-bit"/>
-                                    <ComboBoxItem Content="RISC-V 32-bit"/>
-                                    <ComboBoxItem Content="SPARC64"/>
-                                    <ComboBoxItem Content="SPARC32"/>
-                                    <ComboBoxItem Content="Motorola 68000"/>
-                                    <ComboBoxItem Content="DEC Alpha"/>
-                                    <ComboBoxItem Content="HP PA-RISC"/>
-                                    <ComboBoxItem Content="SuperH (SH4)"/>
+                                    <ComboBoxItem Content="PowerPC"/>
                                 </ComboBox>
                                 
                                 <!-- Security Bypass Level -->
-                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Security Level:" VerticalAlignment="Center" Margin="0,2"/>
-                                <ComboBox x:Name="SecurityBypassComboBox" Grid.Row="1" Grid.Column="1" Margin="5,2"
-                                          ToolTip="Select security bypass level for firmware emulation">
-                                    <ComboBoxItem Content="Bypass All Security (Maximum Freedom)" IsSelected="True"/>
-                                    <ComboBoxItem Content="Disable Secure Boot Only"/>
-                                    <ComboBoxItem Content="Disable Code Signing Only"/>
-                                    <ComboBoxItem Content="Disable ARM TrustZone Only"/>
-                                    <ComboBoxItem Content="Disable x86 SMM Only"/>
-                                    <ComboBoxItem Content="Disable Hypervisor Detection Only"/>
-                                    <ComboBoxItem Content="Normal Operation (No Bypass)"/>
+                                <TextBlock Grid.Row="0" Grid.Column="2" Text="Security:" VerticalAlignment="Center" Margin="10,2,0,2"/>
+                                <ComboBox x:Name="SecurityBypassComboBox" Grid.Row="0" Grid.Column="3" Margin="5,2"
+                                          ToolTip="Select security bypass level">
+                                    <ComboBoxItem Content="Bypass All" IsSelected="True"/>
+                                    <ComboBoxItem Content="Secure Boot Only"/>
+                                    <ComboBoxItem Content="Normal Operation"/>
                                 </ComboBox>
                                 
                                 <!-- Memory Size -->
-                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Memory Size:" VerticalAlignment="Center" Margin="0,2"/>
-                                <ComboBox x:Name="MemorySizeComboBox" Grid.Row="2" Grid.Column="1" Margin="5,2"
-                                          ToolTip="Select virtual machine memory allocation">
-                                    <ComboBoxItem Content="Auto-Calculate (Recommended)" IsSelected="True"/>
-                                    <ComboBoxItem Content="512 MB"/>
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Memory:" VerticalAlignment="Center" Margin="0,2"/>
+                                <ComboBox x:Name="MemorySizeComboBox" Grid.Row="1" Grid.Column="1" Margin="5,2"
+                                          ToolTip="Select virtual machine memory">
+                                    <ComboBoxItem Content="Auto-Calculate" IsSelected="True"/>
                                     <ComboBoxItem Content="1 GB"/>
                                     <ComboBoxItem Content="2 GB"/>
                                     <ComboBoxItem Content="4 GB"/>
                                     <ComboBoxItem Content="8 GB"/>
-                                    <ComboBoxItem Content="16 GB"/>
-                                    <ComboBoxItem Content="32 GB"/>
                                 </ComboBox>
                                 
                                 <!-- CPU Type -->
-                                <TextBlock Grid.Row="3" Grid.Column="0" Text="CPU Type:" VerticalAlignment="Center" Margin="0,2"/>
-                                <ComboBox x:Name="CpuTypeComboBox" Grid.Row="3" Grid.Column="1" Margin="5,2"
+                                <TextBlock Grid.Row="1" Grid.Column="2" Text="CPU Type:" VerticalAlignment="Center" Margin="10,2,0,2"/>
+                                <ComboBox x:Name="CpuTypeComboBox" Grid.Row="1" Grid.Column="3" Margin="5,2"
                                           ToolTip="Select CPU type for emulation">
-                                    <ComboBoxItem Content="Auto-Select (Recommended)" IsSelected="True"/>
-                                    <ComboBoxItem Content="Host CPU (KVM Acceleration)"/>
-                                    <ComboBoxItem Content="Generic QEMU CPU"/>
-                                    <ComboBoxItem Content="Cortex-A72 (ARM64)"/>
-                                    <ComboBoxItem Content="Cortex-A15 (ARM32)"/>
-                                    <ComboBoxItem Content="MIPS 24Kf"/>
-                                    <ComboBoxItem Content="POWER9 (PowerPC64)"/>
-                                    <ComboBoxItem Content="UltraSPARC (SPARC64)"/>
-                                </ComboBox>
-                                
-                                <!-- Virtual Machine Type -->
-                                <TextBlock Grid.Row="4" Grid.Column="0" Text="Machine Type:" VerticalAlignment="Center" Margin="0,2"/>
-                                <ComboBox x:Name="MachineTypeComboBox" Grid.Row="4" Grid.Column="1" Margin="5,2"
-                                          ToolTip="Select virtual machine platform">
-                                    <ComboBoxItem Content="Auto-Select (Recommended)" IsSelected="True"/>
-                                    <ComboBoxItem Content="Generic Virtual Platform"/>
-                                    <ComboBoxItem Content="PC (x86/x64)"/>
-                                    <ComboBoxItem Content="ARM Virtual Board"/>
-                                    <ComboBoxItem Content="MIPS Malta Board"/>
-                                    <ComboBoxItem Content="PowerPC pSeries"/>
-                                    <ComboBoxItem Content="SPARC Sun4u"/>
-                                    <ComboBoxItem Content="RISC-V Virtual Board"/>
+                                    <ComboBoxItem Content="Auto-Select" IsSelected="True"/>
+                                    <ComboBoxItem Content="Host CPU (KVM)"/>
+                                    <ComboBoxItem Content="Generic QEMU"/>
+                                    <ComboBoxItem Content="Cortex-A72"/>
                                 </ComboBox>
                             </Grid>
                         </GroupBox>
-                        
-                        <!-- Action Selection -->
-                        <GroupBox Header="5. Select Action" Margin="0,0,0,10">
-                            <StackPanel Margin="5">
-                                <ComboBox x:Name="ActionSelectionComboBox" Margin="0,2"
-                                          ToolTip="Select the action to perform when Start Emulation is clicked">
-                                    <ComboBoxItem Content="Generic CPU/OS Emulation" IsSelected="True"/>
-                                    <ComboBoxItem Content="RDK-V Emulator"/>
-                                    <ComboBoxItem Content="RDK-B Emulator"/>
-                                    <ComboBoxItem Content="PowerPC Bootloader Demo"/>
-                                    <ComboBoxItem Content="Dish Network Box/VxWorks Analysis"/>
-                                    <ComboBoxItem Content="Simulate SWM Switch/LNB"/>
-                                    <ComboBoxItem Content="Probe Filesystem"/>
-                                    <ComboBoxItem Content="Emulate CMTS Head End"/>
-                                    <ComboBoxItem Content="Uverse Box Emulator"/>
-                                    <ComboBoxItem Content="Comcast X1 Platform Emulator"/>
-                                    <ComboBoxItem Content="DirecTV Box/Firmware Analysis"/>
-                                    <ComboBoxItem Content="Pluto TV Integration"/>
-                                    <ComboBoxItem Content="Custom Hypervisor"/>
-                                    <ComboBoxItem Content="Executable Analysis"/>
-                                    <ComboBoxItem Content="Linux Filesystem Read/Write"/>
-                                    <ComboBoxItem Content="Cross-Compile Binary"/>
-                                    <ComboBoxItem Content="Mount CE Filesystem"/>
-                                    <ComboBoxItem Content="Mount YAFFS Filesystem"/>
-                                    <ComboBoxItem Content="Mount ISO Filesystem"/>
-                                    <ComboBoxItem Content="Mount EXT Filesystem"/>
-                                    <ComboBoxItem Content="Simulate SWM LNB"/>
-                                    <ComboBoxItem Content="Boot Firmware (Homebrew First)"/>
-                                    <ComboBoxItem Content="Boot Firmware in Homebrew Emulator"/>
-                                    <ComboBoxItem Content="Analyze Folder Contents"/>
-                                </ComboBox>
-                            </StackPanel>
-                        </GroupBox>
-                        
-                        <!-- Action Buttons -->
-                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0" HorizontalAlignment="Left">
-                            <Button x:Name="StartEmulationButton" Content="Start Emulation" Width="120" 
-                                    Height="30" Margin="0,0,10,0" Click="StartEmulationButton_Click"
-                                    ToolTip="Start emulation with selected options"/>
-                            <Button x:Name="AnalyzeOnlyButton" Content="Analyze Only" Width="100" 
-                                    Height="30" Margin="0,0,10,0" Click="AnalyzeFirmware_Click"
-                                    ToolTip="Analyze firmware without emulation"/>
-                            <Button x:Name="AdvancedOptionsButton" Content="Advanced Analysis" Width="130" 
-                                    Height="30" Margin="0,0,10,0" Click="AdvancedOptionsButton_Click"
-                                    ToolTip="Show all analysis and emulation options"/>
-                        </StackPanel>
                     </StackPanel>
                 </TabItem>
                 <TabItem Header="Analysis">
                     <StackPanel Margin="10">
-                        <Button Content="Analyze Firmware" Width="150" Margin="0,5" Click="AnalyzeFirmware_Click"/>
-                        <Button Content="Extract Firmware" Width="150" Margin="0,5" Click="ExtractFirmware_Click"/>
-                        <Button Content="Detect File Type" Width="150" Margin="0,5" Click="DetectFileType_Click"/>
-                        <Button Content="Summarize DVR Data" Width="150" Margin="0,5" Click="SummarizeDvrData_Click"/>
+                        <TextBlock FontWeight="Bold" Text="Firmware Analysis Tools" FontSize="14" Margin="0,0,0,10"/>
+                        
+                        <!-- Basic Analysis -->
+                        <GroupBox Header="Basic Analysis" Margin="0,0,0,10">
+                            <Grid Margin="5">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                
+                                <Button Grid.Row="0" Grid.Column="0" Content="Analyze Firmware" Margin="2" Padding="5" Height="35"
+                                        Click="AnalyzeFirmware_Click" ToolTip="Extract and analyze firmware structure"/>
+                                <Button Grid.Row="0" Grid.Column="1" Content="Extract Firmware" Margin="2" Padding="5" Height="35"
+                                        Click="ExtractFirmware_Click" ToolTip="Extract firmware archives"/>
+                                <Button Grid.Row="0" Grid.Column="2" Content="Detect File Type" Margin="2" Padding="5" Height="35"
+                                        Click="DetectFileType_Click" ToolTip="Identify file format and architecture"/>
+                                
+                                <Button Grid.Row="1" Grid.Column="0" Content="Executable Analysis" Margin="2" Padding="5" Height="35"
+                                        Click="ExecutableAnalysis_Click" ToolTip="Analyze binary executables"/>
+                                <Button Grid.Row="1" Grid.Column="1" Content="Cross-Compile Binary" Margin="2" Padding="5" Height="35"
+                                        Click="CrossCompile_Click" ToolTip="Cross-compile between architectures"/>
+                                <Button Grid.Row="1" Grid.Column="2" Content="Analyze Folder" Margin="2" Padding="5" Height="35"
+                                        Click="AnalyzeFolder_Click" ToolTip="Analyze folder contents"/>
+                            </Grid>
+                        </GroupBox>
+                        
+                        <!-- DVR-Specific Analysis -->
+                        <GroupBox Header="DVR &amp; Set-Top Box Analysis" Margin="0,0,0,10">
+                            <Grid Margin="5">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                
+                                <Button Grid.Row="0" Grid.Column="0" Content="Summarize DVR Data" Margin="2" Padding="5" Height="35"
+                                        Click="SummarizeDvrData_Click" ToolTip="Analyze DVR datasets"/>
+                                <Button Grid.Row="0" Grid.Column="1" Content="Scan DVR Data" Margin="2" Padding="5" Height="35"
+                                        Click="ScanDvrData_Click" ToolTip="Scan attached DVR datasets"/>
+                                <Button Grid.Row="0" Grid.Column="2" Content="List DVR Firmware" Margin="2" Padding="5" Height="35"
+                                        Click="ListDvrFirmware_Click" ToolTip="List all firmware in DVR datasets"/>
+                            </Grid>
+                        </GroupBox>
                     </StackPanel>
                 </TabItem>
                 <TabItem Header="Filesystems">
                     <StackPanel Margin="10">
-                        <Button Content="Mount FAT" Width="150" Margin="0,5" Click="MountFat_Click"/>
-                        <Button Content="Mount ISO" Width="150" Margin="0,5" Click="MountIso_Click"/>
-                        <Button Content="Mount EXT" Width="150" Margin="0,5" Click="MountExt_Click"/>
-                        <Button Content="Mount SquashFS" Width="150" Margin="0,5" Click="MountSquashFs_Click"/>
+                        <TextBlock FontWeight="Bold" Text="Filesystem Operations" FontSize="14" Margin="0,0,0,10"/>
+                        
+                        <!-- Mount Operations -->
+                        <GroupBox Header="Mount Filesystems" Margin="0,0,0,10">
+                            <Grid Margin="5">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                
+                                <Button Grid.Row="0" Grid.Column="0" Content="Mount ISO" Margin="2" Padding="5" Height="35"
+                                        Click="MountIso_Click" ToolTip="Mount ISO 9660 filesystems"/>
+                                <Button Grid.Row="0" Grid.Column="1" Content="Mount EXT" Margin="2" Padding="5" Height="35"
+                                        Click="MountExt_Click" ToolTip="Mount Linux EXT filesystems"/>
+                                <Button Grid.Row="0" Grid.Column="2" Content="Mount FAT" Margin="2" Padding="5" Height="35"
+                                        Click="MountFat_Click" ToolTip="Mount FAT filesystems"/>
+                                
+                                <Button Grid.Row="1" Grid.Column="0" Content="Mount SquashFS" Margin="2" Padding="5" Height="35"
+                                        Click="MountSquashFs_Click" ToolTip="Mount SquashFS compressed filesystems"/>
+                                <Button Grid.Row="1" Grid.Column="1" Content="Mount YAFFS" Margin="2" Padding="5" Height="35"
+                                        Click="MountYaffs_Click" ToolTip="Mount YAFFS flash filesystems"/>
+                                <Button Grid.Row="1" Grid.Column="2" Content="Mount WinCE" Margin="2" Padding="5" Height="35"
+                                        Click="MountCe_Click" ToolTip="Mount Windows CE filesystems"/>
+                            </Grid>
+                        </GroupBox>
+                        
+                        <!-- Filesystem Tools -->
+                        <GroupBox Header="Filesystem Tools" Margin="0,0,0,10">
+                            <Grid Margin="5">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                
+                                <Button Grid.Row="0" Grid.Column="0" Content="Probe Filesystem" Margin="2" Padding="5" Height="35"
+                                        Click="ProbeFilesystem_Click" ToolTip="Probe disk images for partition tables"/>
+                                <Button Grid.Row="0" Grid.Column="1" Content="Linux FS Read/Write" Margin="2" Padding="5" Height="35"
+                                        Click="LinuxFsReadWrite_Click" ToolTip="Linux filesystem operations"/>
+                                <Button Grid.Row="0" Grid.Column="2" Content="Simulate SWM LNB" Margin="2" Padding="5" Height="35"
+                                        Click="SimulateSwmLnb_Click" ToolTip="Simulate SWM switch/LNB"/>
+                            </Grid>
+                        </GroupBox>
                     </StackPanel>
                 </TabItem>
                 

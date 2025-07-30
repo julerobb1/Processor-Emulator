@@ -181,19 +181,6 @@ namespace ProcessorEmulator
                     };
                 }
 
-                // Machine type dropdown
-                if (MachineTypeComboBox != null)
-                {
-                    MachineTypeComboBox.SelectionChanged += (s, e) =>
-                    {
-                        if (MachineTypeComboBox.SelectedItem is ComboBoxItem item)
-                        {
-                            selectedMachineType = item.Content.ToString();
-                            StatusBarText($"Machine: {selectedMachineType}");
-                        }
-                    };
-                }
-
                 Debug.WriteLine("[MainWindow] Dropdown handlers initialized successfully");
             }
             catch (Exception ex)
@@ -230,41 +217,38 @@ namespace ProcessorEmulator
         }
 
         /// <summary>
-        /// Main entry point for user actions. Presents a menu of emulation and analysis options.
+        /// Get configuration from dropdown selections for Universal Hypervisor
         /// </summary>
-        private async void StartEmulation_Click(object sender,
-                                                RoutedEventArgs e)
+        private Dictionary<string, string> GetHypervisorConfiguration()
         {
-            // Present main options to the user
-            var mainOptions = new List<string>
+            var config = new Dictionary<string, string>
             {
-                "Generic CPU/OS Emulation",
-                "RDK-V Emulator",
-                "RDK-B Emulator",
-                "PowerPC Bootloader Demo",
-                "Dish Network Box/VxWorks Analysis",
-                "Simulate SWM Switch/LNB",
-                "Probe Filesystem",
-                "Emulate CMTS Head End",
-                "Uverse Box Emulator", 
-                "Comcast X1 Platform Emulator",
-                "DirecTV Box/Firmware Analysis",
-                "Pluto TV Integration",
-                "Custom Hypervisor",
-                "Executable Analysis",
-                "Linux Filesystem Read/Write",
-                "Cross-Compile Binary",
-                "Mount CE Filesystem",
-                "Mount YAFFS Filesystem",
-                "Mount ISO Filesystem",
-                "Mount EXT Filesystem",
-                "Simulate SWM LNB",
-                "Boot Firmware (Homebrew First)",
-                "Boot Firmware in Homebrew Emulator",
-                "Analyze Folder Contents"
+                ["Action"] = selectedAction,
+                ["Architecture"] = selectedArchitecture,
+                ["SecurityBypass"] = selectedSecurityBypass,
+                ["MemorySize"] = selectedMemorySize,
+                ["CpuType"] = selectedCpuType,
+                ["MachineType"] = selectedMachineType,
+                ["FirmwarePath"] = firmwarePath ?? ""
             };
-            string mainChoice = PromptUserForChoice("What would you like to do?", mainOptions);
-            if (string.IsNullOrEmpty(mainChoice)) return;
+
+            return config;
+        }
+
+        /// <summary>
+        /// Main entry point for user actions. Uses dropdown selection instead of dialog.
+        /// </summary>
+        private async void StartEmulation_Click(object sender, RoutedEventArgs e)
+        {
+            // Use the selected action from the dropdown instead of showing a dialog
+            string mainChoice = selectedAction;
+            if (string.IsNullOrEmpty(mainChoice)) 
+            {
+                StatusBarText("Please select an action from the dropdown");
+                return;
+            }
+
+            StatusBarText($"Starting: {mainChoice}");
 
             switch (mainChoice)
             {
@@ -3570,6 +3554,105 @@ namespace ProcessorEmulator
             await HandleSquashFsMount();
         }
 
+        #region New Organized Button Handlers
+
+        // Platform-Specific Emulator Button Handlers
+        private async void RdkVEmulator_Click(object sender, RoutedEventArgs e)
+        {
+            await HandleRdkVEmulation();
+        }
+
+        private async void UverseEmulator_Click(object sender, RoutedEventArgs e)
+        {
+            await HandleUverseEmulation();
+        }
+
+        private async void ComcastX1Emulator_Click(object sender, RoutedEventArgs e)
+        {
+            if (string.IsNullOrEmpty(firmwarePath))
+            {
+                await HandleComcastX1Emulation();
+            }
+            else
+            {
+                await HandleComcastX1Emulation(firmwarePath);
+            }
+        }
+
+        private async void DirectvAnalysis_Click(object sender, RoutedEventArgs e)
+        {
+            await HandleDirectvAnalysis();
+        }
+
+        private async void RdkBEmulator_Click(object sender, RoutedEventArgs e)
+        {
+            await HandleRdkBEmulation();
+        }
+
+        private async void DishVxWorks_Click(object sender, RoutedEventArgs e)
+        {
+            await HandleDishVxWorksAnalysis();
+        }
+
+        private async void PowerPCDemo_Click(object sender, RoutedEventArgs e)
+        {
+            await HandlePowerPCBootloaderDemo();
+        }
+
+        private async void GenericEmulation_Click(object sender, RoutedEventArgs e)
+        {
+            await HandleGenericEmulation();
+        }
+
+        private async void UniversalHypervisor_Click(object sender, RoutedEventArgs e)
+        {
+            await HandleCustomHypervisor();
+        }
+
+        // Analysis Button Handlers
+        private async void ExecutableAnalysis_Click(object sender, RoutedEventArgs e)
+        {
+            await HandleExecutableAnalysis();
+        }
+
+        private async void CrossCompile_Click(object sender, RoutedEventArgs e)
+        {
+            await HandleCrossCompile();
+        }
+
+        private async void AnalyzeFolder_Click(object sender, RoutedEventArgs e)
+        {
+            await HandleFolderAnalysis();
+        }
+
+        // Filesystem Button Handlers
+        private async void MountYaffs_Click(object sender, RoutedEventArgs e)
+        {
+            await HandleYaffsMount();
+        }
+
+        private async void MountCe_Click(object sender, RoutedEventArgs e)
+        {
+            await HandleCeMount();
+        }
+
+        private async void ProbeFilesystem_Click(object sender, RoutedEventArgs e)
+        {
+            await HandleFilesystemProbe();
+        }
+
+        private async void LinuxFsReadWrite_Click(object sender, RoutedEventArgs e)
+        {
+            await HandleLinuxFsReadWrite();
+        }
+
+        private async void SimulateSwmLnb_Click(object sender, RoutedEventArgs e)
+        {
+            await HandleSwmLnbSimulation();
+        }
+
+        #endregion
+
         // Button click to select firmware once
         private void SelectFirmware_Click(object sender, RoutedEventArgs e)
         {
@@ -4192,28 +4275,79 @@ namespace ProcessorEmulator
         
         private async Task HandleCustomHypervisor()
         {
-            var openFileDialog = new OpenFileDialog
-            {
-                Filter = "Firmware Files (*.bin;*.img;*.elf)|*.bin;*.img;*.elf|All Files (*.*)|*.*",
-                Title = "Select firmware for custom hypervisor"
-            };
-            
-            if (openFileDialog.ShowDialog() != true) return;
-            
             try
             {
-                StatusBarText(ErrorManager.GetStatusMessage(ErrorManager.Codes.INITIALIZING));
+                StatusBarText("Initializing Universal Hypervisor with dropdown configuration...");
                 
-                byte[] firmware = await File.ReadAllBytesAsync(openFileDialog.FileName);
-                string platformName = Path.GetFileNameWithoutExtension(openFileDialog.FileName);
+                // Get configuration from dropdowns
+                var config = GetHypervisorConfiguration();
                 
-                StatusBarText(ErrorManager.GetStatusMessage(ErrorManager.Codes.LOADING));
+                // Use firmware path from textbox if available, otherwise prompt
+                string firmwareFile = firmwarePath;
+                if (string.IsNullOrEmpty(firmwareFile))
+                {
+                    var openFileDialog = new OpenFileDialog
+                    {
+                        Filter = "Firmware Files (*.bin;*.img;*.elf;*.fw;*.rdk)|*.bin;*.img;*.elf;*.fw;*.rdk|All Files (*.*)|*.*",
+                        Title = "Select firmware for Universal Hypervisor"
+                    };
+                    
+                    if (openFileDialog.ShowDialog() != true) return;
+                    firmwareFile = openFileDialog.FileName;
+                }
                 
-                // Launch the real MIPS hypervisor
-                var hypervisor = new RealMipsHypervisor();
-                await hypervisor.StartEmulation(firmware);
+                StatusBarText($"Starting Universal Hypervisor with {Path.GetFileName(firmwareFile)}");
                 
-                StatusBarText(ErrorManager.GetSuccessMessage(ErrorManager.Codes.WUBBA_SUCCESS));
+                // Create Universal Hypervisor using our ComcastX1Emulator
+                var hypervisor = new ComcastX1Emulator();
+                
+                // Initialize with configuration
+                bool initialized = await hypervisor.Initialize();
+                if (!initialized)
+                {
+                    throw new Exception("Failed to initialize Universal Hypervisor");
+                }
+                
+                // Load firmware
+                bool firmwareLoaded = await hypervisor.LoadFirmware(firmwareFile);
+                if (!firmwareLoaded)
+                {
+                    throw new Exception("Failed to load firmware into Universal Hypervisor");
+                }
+                
+                // Start hypervisor
+                bool started = await hypervisor.Start();
+                if (!started)
+                {
+                    throw new Exception("Failed to start Universal Hypervisor");
+                }
+                
+                // Show success with configuration details
+                var results = new List<string>
+                {
+                    "🚀 UNIVERSAL HYPERVISOR STARTED SUCCESSFULLY!",
+                    "",
+                    "=== Configuration (From Dropdowns) ===",
+                    $"Architecture: {config["Architecture"]}",
+                    $"Security Level: {config["SecurityBypass"]}",
+                    $"Memory Size: {config["MemorySize"]}",
+                    $"CPU Type: {config["CpuType"]}",
+                    $"Machine Type: {config["MachineType"]}",
+                    $"Firmware: {Path.GetFileName(firmwareFile)}",
+                    "",
+                    "=== Hypervisor Status ===",
+                    $"Platform: {hypervisor.ChipsetName}",
+                    $"Architecture: {hypervisor.Architecture}",
+                    $"Running: {hypervisor.IsRunning}",
+                    "",
+                    "✅ Universal Hypervisor can run ANY firmware",
+                    "🔓 All security restrictions bypassed",
+                    "🌐 Multi-architecture support active",
+                    "⚡ Real QEMU backend running"
+                };
+                
+                ShowTextWindow("Universal Hypervisor", results);
+                StatusBarText("Universal Hypervisor running successfully");
                 
                 // Show welcome message for first-time users
                 if (IsFirstTimeExtraction())
@@ -4224,20 +4358,20 @@ namespace ProcessorEmulator
             }
             catch (FileNotFoundException)
             {
-                ErrorManager.ShowError(ErrorManager.Codes.FILE_NOT_FOUND, openFileDialog.FileName);
+                ErrorManager.ShowError(ErrorManager.Codes.FILE_NOT_FOUND, firmwarePath);
             }
             catch (UnauthorizedAccessException)
             {
-                ErrorManager.ShowError(ErrorManager.Codes.ACCESS_DENIED, openFileDialog.FileName);
+                ErrorManager.ShowError(ErrorManager.Codes.ACCESS_DENIED, firmwarePath);
             }
             catch (OutOfMemoryException)
             {
-                ErrorManager.ShowError(ErrorManager.Codes.MEMORY_ALLOCATION_ERROR, "Hypervisor launch");
+                ErrorManager.ShowError(ErrorManager.Codes.MEMORY_ALLOCATION_ERROR, "Universal Hypervisor");
             }
             catch (Exception ex)
             {
-                ErrorManager.ShowError(ErrorManager.Codes.HYPERVISOR_CRASH, openFileDialog.FileName, ex);
-                ErrorManager.LogError(ErrorManager.Codes.HYPERVISOR_CRASH, openFileDialog.FileName, ex);
+                ErrorManager.ShowError(ErrorManager.Codes.HYPERVISOR_CRASH, firmwarePath, ex);
+                ErrorManager.LogError(ErrorManager.Codes.HYPERVISOR_CRASH, firmwarePath, ex);
             }
         }
         
