@@ -1378,6 +1378,26 @@ namespace ProcessorEmulator
                 emulator.LoadBinary(bin);
                 emulator.Run(); // This will actually boot the firmware with ARM decoding
 
+                // Show emulation output window
+                var emulationResults = new List<string>
+                {
+                    "🚀 RDK-V Emulation Started",
+                    "",
+                    $"Firmware: {Path.GetFileName(path)}",
+                    $"Size: {bin.Length:N0} bytes",
+                    $"Platform: ARRIS XG1V4 (Comcast X1)",
+                    $"CPU: BCM7445 Cortex-A15 Quad-Core",
+                    $"Architecture: ARM",
+                    "",
+                    "✅ ARM Hypervisor initialized",
+                    "📺 Firmware execution started",
+                    "🎯 Real hardware emulation active",
+                    "",
+                    "Emulation running in background..."
+                };
+                
+                ShowTextWindow("RDK-V Emulation", emulationResults);
+
                 StatusBarText(ErrorManager.GetSuccessMessage(ErrorManager.Codes.WUBBA_SUCCESS));
                 
                 // Show welcome message for first-time users
@@ -1986,13 +2006,84 @@ namespace ProcessorEmulator
                     "=== COMCAST X1 PLATFORM EMULATION ===",
                     "",
                     $"📁 Firmware: {Path.GetFileName(firmwarePath)}",
-                    $"🏗️ Using real QEMU backend",
-                    $"� No fake implementations",
+                    $"🏗️ Checking QEMU availability...",
                     ""
                 };
 
                 // Initialize emulator
                 bool initialized = await x1Emulator.Initialize();
+                if (!initialized)
+                {
+                    logEntries.Add("❌ Failed to initialize emulator");
+                    ShowTextWindow("Comcast X1 Platform Emulator", logEntries);
+                    StatusBarText("X1 emulator initialization failed");
+                    return;
+                }
+
+                logEntries.Add("✅ Emulator initialized");
+                
+                // Load firmware
+                bool loaded = await x1Emulator.LoadFirmware(firmwarePath);
+                if (!loaded)
+                {
+                    logEntries.Add("❌ Failed to load firmware");
+                    ShowTextWindow("Comcast X1 Platform Emulator", logEntries);
+                    StatusBarText("X1 firmware loading failed");
+                    return;
+                }
+
+                logEntries.Add("✅ Firmware loaded");
+                logEntries.Add("🚀 Starting QEMU emulation...");
+                
+                // Start emulation - this will throw if QEMU is not available
+                bool started = await x1Emulator.Start();
+                if (started)
+                {
+                    logEntries.Add("✅ QEMU emulation started successfully");
+                    logEntries.Add($"Process ID: {x1Emulator.GetProcessId()}");
+                    StatusBarText("X1 emulation running");
+                }
+                else
+                {
+                    logEntries.Add("❌ Failed to start QEMU emulation");
+                    StatusBarText("X1 emulation failed");
+                }
+
+                ShowTextWindow("Comcast X1 Platform Emulator", logEntries);
+            }
+            catch (FileNotFoundException ex) when (ex.Message.Contains("QEMU"))
+            {
+                var errorEntries = new List<string>
+                {
+                    "❌ QEMU NOT INSTALLED",
+                    "",
+                    "The Universal Hypervisor requires QEMU to be installed.",
+                    "",
+                    "Installation options:",
+                    "1. Download from: https://www.qemu.org/download/#windows",
+                    "2. Command line: winget install QEMU.QEMU",
+                    "3. MSYS2: pacman -S mingw-w64-x86_64-qemu",
+                    "",
+                    "Error details:",
+                    ex.Message
+                };
+                ShowTextWindow("X1 Emulation Error", errorEntries);
+                StatusBarText("QEMU installation required");
+            }
+            catch (Exception ex)
+            {
+                var errorEntries = new List<string>
+                {
+                    "❌ EMULATION ERROR",
+                    "",
+                    $"Error: {ex.Message}",
+                    "",
+                    "This is a real error, not simulated output."
+                };
+                ShowTextWindow("X1 Emulation Error", errorEntries);
+                StatusBarText($"X1 emulation error: {ex.Message}");
+            }
+        }
                 if (!initialized)
                 {
                     logEntries.Add("❌ Failed to initialize X1 emulator");

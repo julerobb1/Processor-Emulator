@@ -158,27 +158,30 @@ namespace ProcessorEmulator
         {
             if (currentVM == null)
             {
-                Console.WriteLine("Error: No virtual machine loaded");
-                return false;
+                throw new InvalidOperationException("No virtual machine loaded. Call LoadFirmware() first.");
             }
 
             try
             {
-                Console.WriteLine("Starting Universal Virtual Machine...");
+                Console.WriteLine($"Starting Universal Virtual Machine for {currentVM.Architecture}...");
                 
-                // Launch QEMU with maximum capabilities and bypassed security
+                // This will throw an exception if QEMU is not available
                 await LaunchUniversalQemu();
                 
                 currentVM.IsRunning = true;
-                Console.WriteLine("Virtual Machine Started Successfully");
-                Console.WriteLine("All security restrictions bypassed");
-                Console.WriteLine("Universal hardware emulation active");
+                Console.WriteLine("Real QEMU process started successfully");
+                Console.WriteLine($"QEMU PID: {currentVM.QemuProcess?.Id}");
                 return true;
+            }
+            catch (FileNotFoundException ex)
+            {
+                Console.WriteLine($"QEMU Installation Error: {ex.Message}");
+                throw; // Re-throw so calling code can handle properly
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"VM Start Error: {ex.Message}");
-                return false;
+                throw; // Re-throw so calling code can handle properly
             }
         }
 
@@ -509,22 +512,82 @@ namespace ProcessorEmulator
 
         private string GetQemuForArchitecture(UniversalArchitecture arch)
         {
-            return arch switch
+            // First check if QEMU is available in PATH or common installation directories
+            string qemuExe = arch switch
             {
-                UniversalArchitecture.x86_64 => "qemu-system-x86_64",
-                UniversalArchitecture.x86_32 => "qemu-system-i386",
-                UniversalArchitecture.ARM64 => "qemu-system-aarch64",
-                UniversalArchitecture.ARM32 => "qemu-system-arm",
-                UniversalArchitecture.MIPS64 => "qemu-system-mips64",
-                UniversalArchitecture.MIPS32 => "qemu-system-mips",
-                UniversalArchitecture.PowerPC64 => "qemu-system-ppc64",
-                UniversalArchitecture.PowerPC32 => "qemu-system-ppc",
-                UniversalArchitecture.RISC_V64 => "qemu-system-riscv64",
-                UniversalArchitecture.RISC_V32 => "qemu-system-riscv32",
-                UniversalArchitecture.SPARC64 => "qemu-system-sparc64",
-                UniversalArchitecture.SPARC32 => "qemu-system-sparc",
-                _ => "qemu-system-arm"
+                UniversalArchitecture.x86_64 => "qemu-system-x86_64.exe",
+                UniversalArchitecture.x86_32 => "qemu-system-i386.exe",
+                UniversalArchitecture.ARM64 => "qemu-system-aarch64.exe",
+                UniversalArchitecture.ARM32 => "qemu-system-arm.exe",
+                UniversalArchitecture.MIPS64 => "qemu-system-mips64.exe",
+                UniversalArchitecture.MIPS32 => "qemu-system-mips.exe",
+                UniversalArchitecture.PowerPC64 => "qemu-system-ppc64.exe",
+                UniversalArchitecture.PowerPC32 => "qemu-system-ppc.exe",
+                UniversalArchitecture.RISC_V64 => "qemu-system-riscv64.exe",
+                UniversalArchitecture.RISC_V32 => "qemu-system-riscv32.exe",
+                UniversalArchitecture.SPARC64 => "qemu-system-sparc64.exe",
+                UniversalArchitecture.SPARC32 => "qemu-system-sparc.exe",
+                _ => "qemu-system-arm.exe"
             };
+
+            // Check common QEMU installation paths on Windows
+            var commonPaths = new[]
+            {
+                qemuExe, // Try PATH first
+                $@"C:\Program Files\qemu\{qemuExe}",
+                $@"C:\qemu\{qemuExe}",
+                $@"C:\msys64\mingw64\bin\{qemuExe}",
+                $@"C:\msys64\usr\bin\{qemuExe}"
+            };
+
+            foreach (var path in commonPaths)
+            {
+                try
+                {
+                    // Try to find the executable
+                    var process = new Process
+                    {
+                        StartInfo = new ProcessStartInfo
+                        {
+                            FileName = "where",
+                            Arguments = path.Contains("\\") ? $"\"{path}\"" : path,
+                            UseShellExecute = false,
+                            RedirectStandardOutput = true,
+                            RedirectStandardError = true,
+                            CreateNoWindow = true
+                        }
+                    };
+                    
+                    process.Start();
+                    var output = process.StandardOutput.ReadToEnd();
+                    process.WaitForExit();
+                    
+                    if (process.ExitCode == 0 && !string.IsNullOrWhiteSpace(output))
+                    {
+                        return output.Trim().Split('\n')[0].Trim();
+                    }
+                }
+                catch
+                {
+                    // Continue to next path
+                }
+                
+                // Also check if file exists directly
+                if (File.Exists(path))
+                {
+                    return path;
+                }
+            }
+
+            // QEMU not found - throw meaningful error instead of faking it
+            throw new FileNotFoundException(
+                $"QEMU emulator not found for {arch} architecture.\n\n" +
+                "To use real emulation, please install QEMU:\n" +
+                "1. Download from: https://www.qemu.org/download/#windows\n" +
+                "2. Or install via: winget install QEMU.QEMU\n" +
+                "3. Or use MSYS2: pacman -S mingw-w64-x86_64-qemu\n\n" +
+                $"Required executable: {qemuExe}"
+            );
         }
 
         private string GetCPUType()
