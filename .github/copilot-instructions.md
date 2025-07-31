@@ -177,3 +177,64 @@ Before writing code:
 
 
 Secondary note : These instructions are not just for human developers; they also apply to AI assistants like Copilot. AI-generated code should adhere to the same standards of quality, clarity, and intent as human-written code. This means taking the time to understand the codebase, following best practices, and being mindful of the user experience. AI is a tool to assist developers, not a replacement for human judgment and expertise. These instructions help Copilot and all AI assistants contribute code that is clean, intentional, and aligned with our engineering expectations. Failure to comply risks corrupting emulator flow, misleading the user, or triggering irreversible bugs—so don’t be Carl. The name is also subject to change, but for now, it is processor-emulator, and in addition to the above, this is a very scope-creep affected project, so please be mindful of that and do not introduce any unnecessary complexity or anymore scope creep than there already is.
+
+---
+
+### 📁 1. **Project Overview**
+- **Name**: Processor Emulator
+- **Goal**: Translate firmware instruction sets (ARM, MIPS, etc.) into x64 logic for live booting and analysis.
+- **Scope**: Emulation, instruction translation, filesystem probing, hypervisor orchestration.
+
+---
+
+### 🧩 2. **Core Components**
+| Component              | Purpose                                         | Notes                                                |
+|------------------------|-------------------------------------------------|------------------------------------------------------|
+| MainWindow.xaml.cs     | UI layer for user interaction                   | WPF-based; binds to ComboBoxes and triggers emulation|
+| ComcastX1Emulator.cs   | Firmware analysis and architecture detection    | ELF parsing, ASCII heuristics, fallback logic        |
+| FilesystemProber.cs    | Mount and probe logic for firmware blobs        | Handles YAFFS, ISO, EXT, etc.                          |
+| HypervisorManager.cs   | Orchestrates boot logic and translation         | Avoids QEMU dependency; uses custom instruction layer|
+
+---
+
+### 🧠 3. **Instruction Translation Layer**
+- **Input**: Raw firmware blob
+- **Output**: Executable x64 logic
+- **Translation Strategy**:
+  - Opcode mapping
+  - Register emulation
+  - Memory model abstraction
+  - I/O operation handling
+  - Control flow management
+  - Exception handling
+  - State preservation
+  - Debugging support
+  - Performance optimization
+    - Just-in-time compilation
+    - Code inlining
+    - Dead code elimination
+      - Unused function removal
+      - Full virtualization
+        - Translate all instructions to a high-level intermediate representation
+        - Allow for easier analysis and optimization
+        - Enable dynamic recompilation and optimization
+          - Adapt to changing workloads and usage patterns
+          - Improve performance through runtime analysis and feedback
+            - Hypervisor MUST have the OS THINK ITS THE ACTUAL DEVICE WE ARE TRYING TO BOOT SEE BELOW FOR DETAILS
+              - This means presenting the correct device IDs, capabilities, and features to the OS
+              - The hypervisor must intercept and emulate all device interactions
+              - Any discrepancies between the emulated and actual hardware must be handled gracefully
+              - The hypervisor must provide accurate timing and performance characteristics to the OS
+              - The hypervisor must ensure that all device memory accesses are properly translated and emulated
+              - The hypervisor must maintain a consistent view of the system state across all virtualized devices
+              - The hypervisor must provide mechanisms for device hotplugging and dynamic reconfiguration
+              - The hypervisor must support live migration of virtual machines - Maybe later
+              - The hypervisor must ensure that all virtualized devices are properly initialized and configured
+              - The hypervisor for example could use a device model to represent each virtualized device, allowing for easier management and configuration. 
+                    Eg. Arris XG1v4 - Arris AX014ANM , we would create a device model for the Arris XG1v4 that includes all of its hardware specifications, capabilities, and features. This device model could then be used by the hypervisor to emulate the device and present it to the OS as if it were the actual hardware. Obviously we know that device runs on RDK-V , and is an Xfinity device..(technically its Arris, but it is branded as an Xfinity device)
+                    This approach allows for greater flexibility and scalability in the hypervisor's design, as new devices can be added or existing devices modified without requiring significant changes to the underlying emulation logic.
+
+                    Additionally, this device model can encapsulate all the necessary logic for interacting with the virtualized device, including handling interrupts, managing device state, and providing a consistent API for the hypervisor to use. This further simplifies the hypervisor's design and implementation, as it can rely on the device model to handle all the intricacies of the virtualized device. We would also have to do full research with whatever information we can gather thats reputable about each device. Eg. foo device made by foo labs has the calcutron 8000 CPU, which is a highly advanced processing unit designed for optimal performance in virtualized environments. Mind you, this device is not a real device , meaning the foo device made by foo labs does not actually exist, nor does the calcutron 8000. this is just a highly detailed example of what a device model could look like.
+
+                    <!-- // The same can be said for humans. Humans (contributors) must be aware of the device models and their capabilities, as they will need to interact with them when developing new features or debugging issues. This means that the device models should be well-documented online .  Contributors should be able to easily access and understand the device models in order to effectively work with them. Or at the very least they should have some form of knowledge about thier funcitonality , how it works, not just a surface level understanding . // -->
+
