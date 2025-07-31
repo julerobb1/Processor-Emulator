@@ -207,3 +207,28 @@ This project emphasizes **authentic firmware execution** over simulation:
 ## License
 
 MIT License (see `LICENSE` file for details).
+
+## Unintended Behavior: AVR File Extraction
+
+### Description
+The Processor Emulator has demonstrated the ability to analyze `.avr` files and extract their contents. This behavior was discovered while analyzing firmware files from Denon AVR devices.
+
+### Steps to Reproduce
+1. Navigate to the `Analysis` tab in the Processor Emulator.
+2. Feed a `.avr` file into the `analyze FW` functionality.
+3. Observe the extracted files in the output directory.
+
+### Output Details
+The extracted files include:
+- Configuration settings
+- Product IDs
+- MCU details
+- Other related data
+
+### Significance
+This feature provides insights into the structure and configuration of `.avr` files, enabling reverse engineering and deeper analysis of firmware.
+
+### Next Steps
+- Enhance robustness to handle edge cases.
+- Implement additional features to parse and interpret extracted files.
+- Provide user feedback during the extraction process.

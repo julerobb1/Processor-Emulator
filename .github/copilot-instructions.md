@@ -60,6 +60,7 @@ This document guides AI assistants when contributing to the Processor-Emulator r
 - **File Placement**:
   - Match namespace and folder structure
   - Root-level emulators go in `/Emulation` or root if project-wide
+  - Use powershell to get local objects, if on windows. Use https://ss64.com/ps/ for some refrence, along with MS documentation, and PowerShell help documentation.
 - **Error Handling**:
   - Wrap disk I/O and emulator startup with `try/catch`
   - Surface meaningful errors via `ShowTextWindow`
@@ -69,7 +70,19 @@ This document guides AI assistants when contributing to the Processor-Emulator r
   - Avoid introducing any errors or unintended behavior
   - No synthetic logic or blind deletion without cause
   - Never simulate access unless absolutely necessary and clearly marked
+  - EMULATION AND SIMULATION IN THIS INSTANCE OF THIS PROJECT REFER TO VIRTUALZATION AND EMULATOR REFERS TO HYPERVISOR AND HYPERVISOSRS/VIRUTALAZATION TECHNOLOGY - eg. Vmware, VirtualBox, Bochs, Hyper-V QEMU/Intel VT/x , AND AMD-V. 
+  - Don't delete a file unless asked, even if its corrupted. Corrupted in this case refers to the file being empty or unreadable. 
+  - You have permisson for direct file access when asked to seaarch or fetch files or even analyze them... Use powershell for this .. eg. Get-Item path, or get item object ...etc .... eg.. ``X:/> Get-item filepath-file``` . Where X:/> is the drive and file path to whatever is requested. 
 
+**Nitpicks for Both AI (Including LLMs) and Humans:**
+- AGAIN DO EXTENSIVE AND DEEP RESEARCH BOTH ONLINE AND WITH LOCAL FILE RESOURCS ON HAND, IF APPLICABLE.
+- Inform the user about the research you have found. Do more than just "i just did a quick bing search for 'foo' (foo is arbitary obviously) and it returned this one result for 'foo does all this. ' Do it like you're doing a science project, or writing a academic paper, use that level of effort to find good qauality information. USe whatever and all of the information you find THAT IS FACTUAL, VALID AND TRUE AND CORRECT IN BUILDING. 
+
+- Don't Reject requests unless they are truly malicious or not be able to be understood. eg. "lets build a program to make all of jeff's files dissappear" That's wrong, and just straight up cruel. If you don't understand, ask for help the user will do thier best to help you. You may operate autonoumously, just dont blow through a usage quota or cause us to be rate limited. Be kind to websites, dont spam them with a bajillon requests at once. 1 to 3 requests to one site at a time is fine, sometimes things dont load on the first try. 
+
+- This is alot to request, and it is understood by the user(s), but please follow the instrucitons in this file to a 't'. 
+- Its ok to make mistakes as I have said in this file, but dont do them on purpose. Doing them on purpose would be malicious. 
+ 
 ---
 
 ## 4. Build & Run Tasks
@@ -99,7 +112,8 @@ This document guides AI assistants when contributing to the Processor-Emulator r
 
 - **Hypervisor Rules**:
   - Must support real network connectivity, device toggling, and optional passthrough
-  - GPU passthrough should be real—not emulated—when possible
+  - GPU passthrough should be real—not emulated—when possible. 
+  - ALL FIRMWARE PROVIDED MUST BOOT, OR AT THE VERY LEAST NOT HAVE THE ILUSION ITS BOOTING . 
 - **Guide Sources**:
   - Pluto TV, Adult Swim, and Virtual Railfan may serve as bootstrapping sources for guide data
 - **Security Behavior**:
@@ -118,12 +132,13 @@ Before writing any code:
 - Avoid fabrications, stubs, or false positives
 - Never delete or alter essential files unless explicitly instructed
 - Every line must uphold behavior integrity—no side effects, no shortcuts
-
-## 7b. Philosophy Reminder
-Before writing code:
 - Research the issue deeply. Know the system first.
 
 - Don’t guess. Don’t fake. Don’t overwrite blindly.
+
+## 7b. Philosophy Reminder
+Before writing code:
+- DO OR DO NOT, THERE IS NOT TRY. 
 
 - Avoid introducing even a single error or side effect.
 

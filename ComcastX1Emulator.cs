@@ -145,6 +145,13 @@ namespace ProcessorEmulator
                 Console.WriteLine($"Memory: {currentVM.MemorySize / (1024 * 1024)} MB");
                 Console.WriteLine($"Devices: {currentVM.Devices.Count}");
                 
+                // Verify firmware compatibility
+                if (!await VerifyFirmwareCompatibility(firmwarePath))
+                {
+                    Console.WriteLine("❌ Firmware is not compatible");
+                    return false;
+                }
+                
                 return true;
             }
             catch (Exception ex)
@@ -164,23 +171,31 @@ namespace ProcessorEmulator
             try
             {
                 Console.WriteLine($"Starting Universal Virtual Machine for {currentVM.Architecture}...");
-                
-                // This will throw an exception if QEMU is not available
+
+                // Verify firmware compatibility
+                bool isCompatible = await VerifyFirmwareCompatibility(currentVM.FirmwarePath);
+                if (!isCompatible)
+                {
+                    throw new InvalidOperationException("Firmware is not compatible with the selected architecture.");
+                }
+
+                // Launch QEMU
                 await LaunchUniversalQemu();
-                
+
+                // Confirm boot success
+                bool bootConfirmed = await ConfirmBootSuccess(currentVM.QemuProcess);
+                if (!bootConfirmed)
+                {
+                    throw new InvalidOperationException("Firmware boot failed. Check QEMU output for details.");
+                }
+
                 currentVM.IsRunning = true;
-                Console.WriteLine("Real QEMU process started successfully");
-                Console.WriteLine($"QEMU PID: {currentVM.QemuProcess?.Id}");
+                Console.WriteLine("✅ Firmware booted successfully");
                 return true;
-            }
-            catch (FileNotFoundException ex)
-            {
-                Console.WriteLine($"QEMU Installation Error: {ex.Message}");
-                throw; // Re-throw so calling code can handle properly
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"VM Start Error: {ex.Message}");
+                Console.WriteLine($"❌ VM Start Error: {ex.Message}");
                 throw; // Re-throw so calling code can handle properly
             }
         }
@@ -769,6 +784,60 @@ namespace ProcessorEmulator
                 UniversalArchitecture.MIPS32 => "Universal MIPS32 Platform",
                 _ => "Universal Multi-Architecture Platform"
             };
+        }
+
+        private async Task<bool> VerifyFirmwareCompatibility(string firmwarePath)
+        {
+            try
+            {
+                Console.WriteLine("🔍 Verifying firmware compatibility...");
+
+                // Example: Check if firmware is ELF format
+                using var stream = File.OpenRead(firmwarePath);
+                var buffer = new byte[4];
+                await stream.ReadAsync(buffer, 0, 4);
+
+                if (buffer[0] == 0x7F && buffer[1] == (byte)'E' && buffer[2] == (byte)'L' && buffer[3] == (byte)'F')
+                {
+                    Console.WriteLine("✅ Firmware is ELF format");
+                    return true;
+                }
+
+                Console.WriteLine("❌ Firmware is not ELF format");
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ Firmware verification failed: {ex.Message}");
+                return false;
+            }
+        }
+
+        private async Task<bool> ConfirmBootSuccess(Process qemuProcess)
+        {
+            try
+            {
+                Console.WriteLine("🔍 Monitoring QEMU output for boot confirmation...");
+
+                using var reader = qemuProcess.StandardOutput;
+                string line;
+                while ((line = await reader.ReadLineAsync()) != null)
+                {
+                    if (line.Contains("Boot successful") || line.Contains("Kernel loaded"))
+                    {
+                        Console.WriteLine("✅ Firmware boot confirmed");
+                        return true;
+                    }
+                }
+
+                Console.WriteLine("❌ Firmware boot not confirmed");
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ Boot confirmation failed: {ex.Message}");
+                return false;
+            }
         }
 
         #endregion
