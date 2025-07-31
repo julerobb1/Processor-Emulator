@@ -555,8 +555,9 @@ namespace ProcessorEmulator
                 // Default to ARM32 for unknown firmware
                 return UniversalArchitecture.ARM32;
             }
-            catch
+            catch (Exception ex)
             {
+                Console.WriteLine($"Error: {ex.Message}");
                 return UniversalArchitecture.Unknown;
             }
         }
@@ -838,6 +839,69 @@ namespace ProcessorEmulator
                 Console.WriteLine($"❌ Boot confirmation failed: {ex.Message}");
                 return false;
             }
+        }
+
+        public async Task<bool> HandleComcastX1Emulation(string firmwarePath)
+        {
+            try
+            {
+                // Validate firmware file
+                if (string.IsNullOrEmpty(firmwarePath) || !File.Exists(firmwarePath))
+                {
+                    ShowTextWindow("Error", new[] { "Firmware file not found." });
+                    return false;
+                }
+
+                // Prepare QEMU command
+                string qemuExecutable = "qemu-system-x86_64"; // Adjust for architecture
+                string qemuArgs = $"-drive file=\"{firmwarePath}\",format=raw -m 512M -nographic";
+
+                // Start QEMU process
+                var processStartInfo = new ProcessStartInfo
+                {
+                    FileName = qemuExecutable,
+                    Arguments = qemuArgs,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                using var process = Process.Start(processStartInfo);
+                if (process == null)
+                {
+                    ShowTextWindow("Error", new[] { "Failed to start QEMU process." });
+                    return false;
+                }
+
+                // Capture output
+                string output = await process.StandardOutput.ReadToEndAsync();
+                string error = await process.StandardError.ReadToEndAsync();
+
+                // Wait for process to exit
+                await process.WaitForExitAsync();
+
+                if (process.ExitCode != 0)
+                {
+                    ShowTextWindow("Error", new[] { "QEMU exited with errors:", error });
+                    return false;
+                }
+
+                // Display success message
+                ShowTextWindow("Success", new[] { "Firmware booted successfully:", output });
+                return true;
+            }
+            catch (Exception ex)
+            {
+                ShowTextWindow("Error", new[] { "An error occurred during emulation:", ex.Message });
+                return false;
+            }
+        }
+
+        private void ShowTextWindow(string title, string[] lines)
+        {
+            // Placeholder for UI integration
+            Debug.WriteLine($"{title}: {string.Join("\n", lines)}");
         }
 
         #endregion
