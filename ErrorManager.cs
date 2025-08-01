@@ -267,6 +267,7 @@ namespace ProcessorEmulator
             
             // All missing error codes
             public const int INVALID_PARAMETER = 1010;
+            public const int INITIALIZATION_FAILED = 1012;
             public const int INITIALIZING = 2001;
             public const int PROCESSING = 2002;
             public const int LOADING = 2003;

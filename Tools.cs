@@ -5,9 +5,44 @@ using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
 using System.Linq;
+using System.Windows;
+using System.Windows.Controls;
 
 namespace ProcessorEmulator.Tools
 {
+    public static class UIHelpers
+    {
+        public static void ShowTextWindow(string title, string content)
+        {
+            var lines = content.Split('\n').ToList();
+            ShowTextWindow(title, lines);
+        }
+        
+        public static void ShowTextWindow(string title, List<string> lines)
+        {
+            var win = new Window
+            {
+                Title = title,
+                Width = 800,
+                Height = 600,
+                Content = new ScrollViewer
+                {
+                    Content = new TextBox
+                    {
+                        Text = string.Join(Environment.NewLine, lines),
+                        IsReadOnly = true,
+                        AcceptsReturn = true,
+                        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                        HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                        FontFamily = new System.Windows.Media.FontFamily("Consolas"),
+                        FontSize = 12
+                    }
+                }
+            };
+            win.Show();
+        }
+    }
+
     // Architecture/ISA detection from binaries or disk images
     public class ArchitectureDetector
     {

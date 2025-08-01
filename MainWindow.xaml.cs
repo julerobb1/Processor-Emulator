@@ -1353,7 +1353,7 @@ namespace ProcessorEmulator
         // Core feature handlers
 
         /// <summary>
-        /// Emulates an RDK-V set-top box using dedicated RDK-V emulator with ARM decoding.
+        /// Emulates an RDK-V set-top box using real QEMU hypervisor with firmware unpacking and live boot.
         /// </summary>
         private async Task HandleRdkVEmulation()
         {
@@ -1368,77 +1368,31 @@ namespace ProcessorEmulator
 
             try
             {
-                var bin = System.IO.File.ReadAllBytes(path);
-                Debug.WriteLine($"Loaded RDK-V firmware: {bin.Length} bytes from {path}");
-                
-                StatusBarText("🔄 Analyzing RDK-V firmware and initializing hypervisor...");
+                StatusBarText("🔄 Initializing REAL hypervisor for live firmware boot...");
 
-                // Use the proper RDK-V emulator, not generic HomebrewEmulator
-                var emulator = new ProcessorEmulator.Emulation.RDKVEmulator();
+                // Use the REAL hypervisor manager with QEMU backend
+                var hypervisor = new RealHypervisorManager();
                 
-                // Initialize the emulator first
-                bool initialized = emulator.Initialize("");
-                if (!initialized)
+                StatusBarText("🚀 Unpacking firmware and launching QEMU hypervisor...");
+                
+                // Boot the firmware file in real QEMU emulation
+                bool bootSuccess = await hypervisor.BootFirmwareFile(path);
+                
+                if (bootSuccess)
                 {
-                    throw new InvalidOperationException("Failed to initialize RDK-V emulator");
+                    StatusBarText("✅ Real hypervisor launched - firmware is booting live!");
+                    
+                    // Show welcome message for first-time users
+                    if (IsFirstTimeExtraction())
+                    {
+                        ErrorManager.ShowSuccess(ErrorManager.Codes.WELCOME_MESSAGE);
+                        MarkFirstTimeExtractionDone();
+                    }
                 }
-
-                // Load the firmware
-                emulator.LoadBinary(bin);
-                
-                // Get pre-execution state
-                var preState = emulator.GetEmulationState();
-                
-                StatusBarText("🚀 Starting RDK-V ARM hypervisor...");
-                
-                // Start emulation
-                emulator.Run();
-                
-                // Give it a moment to start up
-                await Task.Delay(1000);
-                
-                // Get post-execution state
-                var postState = emulator.GetEmulationState();
-                
-                // Show detailed emulation results instead of simple message box
-                // var results = new List<string>
-                // {
-                //     "🎯 RDK-V EMULATION STARTED SUCCESSFULLY!",
-                //     "",
-                //     "=== Firmware Information ===",
-                //     $"File: {Path.GetFileName(path)}",
-                //     $"Size: {bin.Length:N0} bytes",
-                //     $"Platform: {postState["Platform"]}",
-                //     $"Device Model: {postState["DeviceModel"]}",
-                //     $"Processor: {postState["ProcessorType"]}",
-                //     $"Memory: {(uint)postState["MemorySize"] / 1024 / 1024}MB",
-                //     "",
-                //     "=== ARM CPU State ===",
-                //     $"Program Counter (PC): {postState["ARM_PC"]}",
-                //     $"Stack Pointer (SP): {postState["ARM_SP"]}",
-                //     $"Status Register (CPSR): {postState["ARM_CPSR"]}",
-                //     $"Running: {postState["IsRunning"]}",
-                //     "",
-                //     "=== Emulation Status ===",
-                //     "✅ ARM Cortex-A15 CPU emulation active",
-                //     "✅ BCM7445 SoC peripherals initialized", 
-                //     "✅ RDK-V runtime environment loaded",
-                //     "✅ Real MIPS hypervisor backend running",
-                //     "✅ Custom ARM BIOS loaded",
-                //     "",
-                //     "📺 The emulator is now running in the background.",
-                //     "🔧 Check Debug Output for real-time execution details.",
-                //     "⚡ This is REAL emulation, not simulation!"
-                // };
-
-                ShowTextWindow("RDK-V Emulation Results", results);
-                StatusBarText("✅ RDK-V emulation running successfully");
-                
-                // Show welcome message for first-time users
-                if (IsFirstTimeExtraction())
+                else
                 {
-                    ErrorManager.ShowSuccess(ErrorManager.Codes.WELCOME_MESSAGE);
-                    MarkFirstTimeExtractionDone();
+                    StatusBarText("❌ Hypervisor launch failed");
+                    ErrorManager.ShowError(ErrorManager.Codes.INITIALIZATION_FAILED, "Failed to launch real hypervisor");
                 }
             }
             catch (FileNotFoundException)
@@ -2607,7 +2561,7 @@ namespace ProcessorEmulator
             try
             {
                 // Create file records from folder
-                var fileRecords = new List<ProcessorEmulator.FileRecord>();
+                var fileRecords = new List<FileRecord>();
                 if (Directory.Exists(folderPath))
                 {
                     var files = Directory.GetFiles(folderPath, "*.*", SearchOption.AllDirectories);
@@ -2620,7 +2574,7 @@ namespace ProcessorEmulator
                             using (var fs = File.OpenRead(file))
                                 fs.Read(preview, 0, preview.Length);
                         }
-                        fileRecords.Add(new ProcessorEmulator.FileRecord
+                        fileRecords.Add(new FileRecord
                         {
                             FilePath = file,
                             Size = info.Length,
@@ -3997,7 +3951,7 @@ namespace ProcessorEmulator
                 StatusBarText("Starting U-verse MIPS/WinCE emulator test...");
                 
                 // Create the MIPS U-verse emulator
-                var mipsEmulator = new ProcessorEmulator.Emulation.MipsUverseEmulator();
+                var mipsEmulator = new Emulation.MipsUverseEmulator();
                 
                 // Initialize the emulator
                 if (!mipsEmulator.Initialize(""))
@@ -4276,7 +4230,7 @@ namespace ProcessorEmulator
             {
                 StatusBarText("Initializing Pluto TV integration...");
                 
-                var guideFetcher = new ProcessorEmulator.Emulation.SyncEngine.GuideFetcher();
+                var guideFetcher = new Emulation.SyncEngine.GuideFetcher();
                 var guideData = await guideFetcher.FetchGuideAsync();
                 
                 var channelList = new List<string>();
@@ -4318,105 +4272,20 @@ namespace ProcessorEmulator
                     firmwareFile = openFileDialog.FileName;
                 }
 
-                // Step 1: Auto-detect architecture
-                StatusBarText($"Analyzing firmware: {Path.GetFileName(firmwareFile)}");
-                byte[] fwData = File.ReadAllBytes(firmwareFile);
-                string detectedArch = Tools.ArchitectureDetector.Detect(fwData);
-                if (string.IsNullOrEmpty(detectedArch) || detectedArch == "unknown")
+                // Use the REAL hypervisor manager instead of HomebrewEmulator
+                StatusBarText("🚀 Launching REAL hypervisor for universal firmware boot...");
+                
+                var hypervisor = new RealHypervisorManager();
+                bool bootSuccess = await hypervisor.BootFirmwareFile(firmwareFile);
+                
+                if (bootSuccess)
                 {
-                    detectedArch = PromptUserForChoice("Could not auto-detect architecture. Please select:", new List<string> { "ARM", "MIPS", "PowerPC", "x86", "x64" });
-                    if (string.IsNullOrEmpty(detectedArch))
-                    {
-                        StatusBarText("Architecture selection cancelled.");
-                        return;
-                    }
+                    StatusBarText("✅ Universal hypervisor launched - firmware is booting live!");
                 }
-
-                // Step 2: Select emulator/hypervisor and translation stack
-
-                IEmulator emulator = null;
-                string deviceModel = null;
-                switch (detectedArch.ToLowerInvariant())
+                else
                 {
-                    case "arm":
-                        emulator = (IEmulator)new HomebrewEmulator();
-                        deviceModel = "Generic ARM SoC";
-                        break;
-                    case "mips":
-                        emulator = (IEmulator)new HomebrewEmulator();
-                        deviceModel = "Generic MIPS SoC";
-                        break;
-                    case "powerpc":
-                        emulator = (IEmulator)new HomebrewEmulator();
-                        deviceModel = "Generic PowerPC SoC";
-                        break;
-                    case "x86":
-                    case "x64":
-                        emulator = (IEmulator)new HomebrewEmulator();
-                        deviceModel = "Generic x86/x64 SoC";
-                        break;
-                    default:
-                        emulator = (IEmulator)new HomebrewEmulator();
-                        deviceModel = "Generic Device";
-                        break;
-                }
-
-                string userDeviceModel = PromptUserForInput($"Detected device model: {deviceModel}. Enter to override or leave blank:");
-                if (!string.IsNullOrWhiteSpace(userDeviceModel))
-                    deviceModel = userDeviceModel;
-
-                StatusBarText($"Loading firmware into {deviceModel} emulator...");
-                try
-                {
-                    emulator.LoadBinary(fwData);
-                }
-                catch (Exception ex)
-                {
-                    ErrorManager.ShowError(ErrorManager.Codes.INVALID_FIRMWARE_FORMAT, firmwareFile, ex);
-                    StatusBarText("Firmware load failed.");
-                    return;
-                }
-
-                StatusBarText($"Booting firmware on {deviceModel} ({detectedArch})...");
-                try
-                {
-                    emulator.Run();
-                }
-                catch (Exception ex)
-                {
-                    ErrorManager.ShowError(ErrorManager.Codes.EMULATION_FAILED, firmwareFile, ex);
-                    StatusBarText("Emulation failed to start.");
-                    return;
-                }
-
-                // Step 6: Show success and configuration
-                var results = new List<string>
-                {
-                    "🚀 UNIVERSAL HYPERVISOR BOOT SUCCESS!",
-                    "",
-                    "=== Configuration ===",
-                    $"Architecture: {detectedArch}",
-                    $"Device Model: {deviceModel}",
-                    $"Firmware: {Path.GetFileName(firmwareFile)}",
-                    $"Emulator: {emulator.GetType().Name}",
-                    "",
-                    "=== Status ===",
-                    "Firmware loaded and running.",
-                    "Instruction translation stack active.",
-                    "Device model abstraction enabled.",
-                    "Strict error handling in effect.",
-                    "",
-                    "✅ Universal Hypervisor can run ANY .bin firmware (RDK-V, RDK-B, etc.)",
-                    "🔓 All security restrictions bypassed",
-                    "🌐 Multi-architecture support active"
-                };
-                ShowTextWindow("Universal Hypervisor", results);
-                StatusBarText("Universal Hypervisor running successfully");
-
-                if (IsFirstTimeExtraction())
-                {
-                    ErrorManager.ShowSuccess(ErrorManager.Codes.WELCOME_MESSAGE);
-                    MarkFirstTimeExtractionDone();
+                    StatusBarText("❌ Universal hypervisor launch failed");
+                    ErrorManager.ShowError(ErrorManager.Codes.INITIALIZATION_FAILED, "Failed to launch universal hypervisor");
                 }
             }
             catch (FileNotFoundException)
