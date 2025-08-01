@@ -47,14 +47,21 @@ namespace ProcessorEmulator
                     extractedFiles = new ExtractedFiles
                     {
                         KernelPath = firmwarePath, // Use raw firmware as kernel
-                        RootfsPath = null,
-                        DtbPath = null
+                        RootfsPath = null
                     };
                 }
                 else
                 {
                     // Step 2: Extract kernel and rootfs from PACK1 sections
-                var extractedFiles = await ExtractBootableComponents(sections, platformInfo);
+                    extractedFiles = await ExtractBootableComponents(sections, platformInfo);
+                    if (extractedFiles.KernelPath == null)
+                    {
+                        MessageBox.Show("No bootable kernel found in firmware", "Hypervisor Error");
+                        return false;
+                    }
+                }
+
+                // Step 3: Launch real QEMU hypervisor
                 if (extractedFiles.KernelPath == null)
                 {
                     MessageBox.Show("No bootable kernel found in firmware", "Hypervisor Error");
