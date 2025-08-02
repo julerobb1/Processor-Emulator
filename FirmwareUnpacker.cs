@@ -160,7 +160,7 @@ namespace ProcessorEmulator
                     var name = System.Text.Encoding.Unicode.GetString(nameBytes).TrimEnd('\0');
 
                     long partitionSize = (long)((endingLBA - startingLBA + 1) * lbaSize);
-                    if (startingLBA * lbaSize + partitionSize > unpackedData.Length || startingLBA * lbaSize < 0 || partitionSize < 0)
+                    if ((long)startingLBA * lbaSize + partitionSize > unpackedData.Length || (long)startingLBA * lbaSize < 0 || partitionSize < 0)
                     {
                         // Partition is out of bounds, likely a parsing error or corrupted table
                         continue;
