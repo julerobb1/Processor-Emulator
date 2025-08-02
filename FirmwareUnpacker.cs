@@ -61,7 +61,7 @@ namespace ProcessorEmulator
                     if (magic != Pack1Magic)
                     {
                         // This should not happen if FindPack1Offset is correct
-                        throw new FirmwareUnpackException($"Invalid PACK1 magic: {magic}");
+                        throw new FirmwareUnpackException($ "Invalid PACK1 magic: {magic}");
                     }
 
                     // The rest of the logic to unpack the firmware would go here.
