@@ -14,16 +14,16 @@ Write-Host ""
 Write-Host "Checking QEMU installation..." -ForegroundColor Yellow
 $qemuPath = "C:\Program Files\qemu"
 if (Test-Path $qemuPath) {
-    Write-Host "? QEMU found at: $qemuPath" -ForegroundColor Green
+    Write-Host "✅ QEMU found at: $qemuPath" -ForegroundColor Green
     
     # List available architectures
     $qemuExecutables = Get-ChildItem "$qemuPath\qemu-system-*.exe" | Select-Object -First 5
-    Write-Host "?? Available QEMU architectures:" -ForegroundColor Cyan
+    Write-Host "🖥️ Available QEMU architectures:" -ForegroundColor Cyan
     foreach ($exe in $qemuExecutables) {
-        Write-Host "  ? $($exe.Name)" -ForegroundColor White
+        Write-Host "  • $($exe.Name)" -ForegroundColor White
     }
 } else {
-    Write-Host "? QEMU not found! Please install QEMU for Windows." -ForegroundColor Red
+    Write-Host "❌ QEMU not found! Please install QEMU for Windows." -ForegroundColor Red
     exit 1
 }
 
