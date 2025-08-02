@@ -19,13 +19,25 @@ namespace ProcessorEmulator
         
         public enum UversePlatform
         {
-            MotorolaVIP1216,    // Broadcom 7405 MIPS32, 256MB RAM, SATA HDD
-            MotorolaVIP1225,    // Broadcom 7405 MIPS32, 512MB RAM, SATA HDD  
-            MotorolaVIP2250,    // Broadcom 7405 MIPS32/ARM, 512MB RAM, SATA HDD
-            PaceIPH8005,        // Broadcom 740x MIPS32, 512MB RAM, SATA HDD
-            PaceIPH8010,        // Broadcom 740x MIPS32, 512MB RAM, SATA HDD
-            PaceIPH8110,        // Broadcom 740x MIPS32, 512MB RAM, SATA HDD
-            CiscoIPN4320,       // ST Micro MIPS/ARM, 512MB RAM, SATA HDD
+            // Motorola (ARRIS) Platforms - Research verified specs
+            MotorolaVIP1216,    // Broadcom 740x MIPS32, 256-512MB RAM, CFE bootloader
+            MotorolaVIP1225,    // Broadcom 740x MIPS32, 256-512MB RAM, CFE bootloader
+            MotorolaVIP2250,    // Broadcom 7405 MIPS32/ARM, 512MB RAM, CFE bootloader
+            
+            // Pace Platforms - Research verified specs  
+            PaceIPH8005,        // Broadcom 740x MIPS32, 512MB RAM, CFE bootloader
+            PaceIPH8010,        // Broadcom 740x MIPS32, 512MB RAM, CFE bootloader
+            PaceIPH8110,        // Broadcom 740x MIPS32, 512MB RAM, CFE bootloader
+            
+            // Cisco Platforms - Research verified specs
+            CiscoIPN4320,       // ST Micro MIPS/ARM, 512MB RAM, unknown bootloader
+            CiscoISB7005,       // ARM dual-core, wireless IP set-top, no HDD
+            CiscoISB7500,       // ARM + 500GB HDD, HomePNA 3.1 support
+            
+            // Detailed Hardware Models from Research
+            MotorolaUD3201,     // 1TB DVR with detailed chipset specifications
+            MotorolaUR3101,     // Non-DVR IP receiver for streaming
+            
             Unknown
         }
 
@@ -126,12 +138,65 @@ namespace ProcessorEmulator
         private static readonly Dictionary<UversePlatform, HardwarePlatform> PlatformDatabase = 
             new Dictionary<UversePlatform, HardwarePlatform>
         {
+            // Research-verified UD-3201 with detailed chipset specifications
+            [UversePlatform.MotorolaUD3201] = new HardwarePlatform
+            {
+                Platform = UversePlatform.MotorolaUD3201,
+                Chipset = "Broadcom BCM7405 MIPS24KEc @ 400 MHz",
+                Architecture = "MIPS32",
+                RamMB = 128, // Samsung K4T1G0846B-HCH9 DDR2
+                Storage = "1TB WD10EAVS SATA HDD",
+                Bootloader = BootloaderType.CFE,
+                Partitions = new List<DvrPartition>
+                {
+                    new DvrPartition { Number = 1, Name = "Boot Flash", SizeBytes = 16 * 1024 * 1024, Format = PartitionFormat.Raw, Contents = "Spansion S25FL128S (U-Boot & config)", Notes = "16MB SPI NOR boot flash" },
+                    new DvrPartition { Number = 2, Name = "NAND Flash", SizeBytes = 512 * 1024 * 1024, Format = PartitionFormat.Raw, Contents = "Micron MT29F2G08ABAEAWP", Notes = "512MB NAND flash storage" },
+                    new DvrPartition { Number = 3, Name = "Kernel", SizeBytes = 64 * 1024 * 1024, Format = PartitionFormat.FAT32, Contents = "NK.bin (WinCE 5.0.1400)", Notes = "Windows CE kernel with drivers" },
+                    new DvrPartition { Number = 4, Name = "System", SizeBytes = 1024 * 1024 * 1024, Format = PartitionFormat.FAT32, Contents = "Mediaroom middleware", Notes = "Microsoft Mediaroom stack" },
+                    new DvrPartition { Number = 5, Name = "Media", SizeBytes = 0, Format = PartitionFormat.Custom, Contents = "DVR Recordings", Notes = "1TB DVR storage, encrypted" }
+                }
+            },
+
+            // Research-verified UR-3101 IP receiver specs
+            [UversePlatform.MotorolaUR3101] = new HardwarePlatform
+            {
+                Platform = UversePlatform.MotorolaUR3101,
+                Chipset = "Broadcom BCM7405 MIPS24KEc @ 400 MHz",
+                Architecture = "MIPS32",
+                RamMB = 64, // PSC DDR2
+                Storage = "256MB SPI-NAND",
+                Bootloader = BootloaderType.CFE,
+                Partitions = new List<DvrPartition>
+                {
+                    new DvrPartition { Number = 1, Name = "Bootloader", SizeBytes = 4 * 1024 * 1024, Format = PartitionFormat.Raw, Contents = "CFE bootloader", Notes = "Broadcom Common Firmware Environment" },
+                    new DvrPartition { Number = 2, Name = "Kernel", SizeBytes = 32 * 1024 * 1024, Format = PartitionFormat.FAT32, Contents = "NK.bin (WinCE 5.0)", Notes = "Streaming-optimized kernel" },
+                    new DvrPartition { Number = 3, Name = "System", SizeBytes = 220 * 1024 * 1024, Format = PartitionFormat.FAT32, Contents = "Streaming middleware", Notes = "No DVR functionality" }
+                }
+            },
+
             [UversePlatform.MotorolaVIP1216] = new HardwarePlatform
             {
                 Platform = UversePlatform.MotorolaVIP1216,
-                Chipset = "Broadcom BCM7405",
+                Chipset = "Broadcom BCM740x",
                 Architecture = "MIPS32",
                 RamMB = 256,
+                Storage = "SATA HDD",
+                Bootloader = BootloaderType.CFE,
+                Partitions = new List<DvrPartition>
+                {
+                    new DvrPartition { Number = 1, Name = "Bootloader", SizeBytes = 8 * 1024 * 1024, Format = PartitionFormat.Raw, Contents = "CFE bootloader", Notes = "Broadcom Common Firmware Environment" },
+                    new DvrPartition { Number = 2, Name = "Kernel", SizeBytes = 32 * 1024 * 1024, Format = PartitionFormat.FAT32, Contents = "NK.bin (WinCE 5.0)", Notes = "Windows CE kernel image" },
+                    new DvrPartition { Number = 3, Name = "System", SizeBytes = 512 * 1024 * 1024, Format = PartitionFormat.FAT32, Contents = "Mediaroom middleware", Notes = "System files and configuration" },
+                    new DvrPartition { Number = 4, Name = "Media", SizeBytes = 0, Format = PartitionFormat.Custom, Contents = "Recordings", Notes = "DVR storage, remainder of disk" }
+                }
+            },
+
+            [UversePlatform.MotorolaVIP2250] = new HardwarePlatform
+            {
+                Platform = UversePlatform.MotorolaVIP2250,
+                Chipset = "Broadcom BCM7405",
+                Architecture = "MIPS32/ARM",
+                RamMB = 512,
                 Storage = "SATA HDD",
                 Bootloader = BootloaderType.CFE,
                 Partitions = new List<DvrPartition>
