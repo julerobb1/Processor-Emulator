@@ -201,22 +201,6 @@ namespace ProcessorEmulator
                 Bootloader = BootloaderType.CFE,
                 Partitions = new List<DvrPartition>
                 {
-                    new DvrPartition { Number = 1, Name = "Bootloader", SizeBytes = 8 * 1024 * 1024, Format = PartitionFormat.Raw, Contents = "CFE bootloader", Notes = "Broadcom Common Firmware Environment" },
-                    new DvrPartition { Number = 2, Name = "Kernel", SizeBytes = 32 * 1024 * 1024, Format = PartitionFormat.FAT32, Contents = "NK.bin (WinCE 5.0)", Notes = "Windows CE kernel image" },
-                    new DvrPartition { Number = 3, Name = "System", SizeBytes = 512 * 1024 * 1024, Format = PartitionFormat.FAT32, Contents = "Mediaroom middleware", Notes = "System files and configuration" },
-                    new DvrPartition { Number = 4, Name = "Media", SizeBytes = 0, Format = PartitionFormat.Custom, Contents = "Recordings", Notes = "DVR storage, remainder of disk" }
-                }
-            },
-            [UversePlatform.MotorolaVIP2250] = new HardwarePlatform
-            {
-                Platform = UversePlatform.MotorolaVIP2250,
-                Chipset = "Broadcom BCM7405",
-                Architecture = "MIPS32/ARM",
-                RamMB = 512,
-                Storage = "SATA HDD",
-                Bootloader = BootloaderType.CFE,
-                Partitions = new List<DvrPartition>
-                {
                     new DvrPartition { Number = 1, Name = "Bootloader", SizeBytes = 8 * 1024 * 1024, Format = PartitionFormat.Raw, Contents = "CFE bootloader", Notes = "Enhanced CFE with ARM support" },
                     new DvrPartition { Number = 2, Name = "Kernel", SizeBytes = 64 * 1024 * 1024, Format = PartitionFormat.FAT32, Contents = "NK.bin (WinCE 5.0)", Notes = "Enhanced kernel with more drivers" },
                     new DvrPartition { Number = 3, Name = "System", SizeBytes = 1024 * 1024 * 1024, Format = PartitionFormat.FAT32, Contents = "Mediaroom 2.0", Notes = "Enhanced middleware stack" },
