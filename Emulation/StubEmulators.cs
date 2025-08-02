@@ -76,7 +76,7 @@ namespace ProcessorEmulator.Emulation
 
         public void RegisterDevice(IDeviceEmulator device)
         {
-            Console.WriteLine($"{_emulatorName}: Registered device {device.GetType().Name} at MMIO 0x{device.MmioAddress:X}");
+            Console.WriteLine($"{_emulatorName}: Registered device {device.GetType().Name} at MMIO 0x{device.BaseAddress:X}");
         }
     }
 
