@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -78,79 +79,6 @@ namespace ProcessorEmulator
 
             // Find GPT header
             long gptHeaderOffset = -1;
-            byte[] gptMagic = Encoding.ASCII.GetBytes("EFI PART");
-            for (int i = 0; i < unpackedData.Length - gptMagic.Length; i++)
-            {
-                bool found = true;
-                for (int j = 0; j < gptMagic.Length; j++)
-                {
-                    if (unpackedData[i + j] != gptMagic[j])
-                    {
-                        found = false;
-                        break;
-                    }
-                }
-                if (found)
-                {
-                    gptHeaderOffset = i;
-                    break;
-                }
-            }
-
-            if (gptHeaderOffset == -1)
-            {
-                throw new FirmwareUnpackException("GPT header (EFI PART) not found.");
-            }
-
-            using (var reader = new BinaryReader(new MemoryStream(unpackedData)))
-            {
-                reader.BaseStream.Seek(gptHeaderOffset + 72, SeekOrigin.Begin); // Offset to PartitionEntryLBA
-                ulong partitionEntryLBA = reader.ReadUInt64();
-                uint numberOfPartitions = reader.ReadUInt32();
-                uint sizeOfPartitionEntry = reader.ReadUInt32();
-
-                reader.BaseStream.Seek((long)(partitionEntryLBA * lbaSize), SeekOrigin.Begin);
-
-                for (int i = 0; i < numberOfPartitions; i++)
-                {
-                    byte[] entryBytes = reader.ReadBytes((int)sizeOfPartitionEntry);
-                    if (entryBytes.Length < 56) continue; // Not a full entry
-
-                    var partitionTypeGuid = new Guid(new ReadOnlySpan<byte>(entryBytes, 0, 16));
-                    if (partitionTypeGuid == Guid.Empty) continue;
-
-                    var startingLBA = BitConverter.ToUInt64(entryBytes, 32);
-                    var endingLBA = BitConverter.ToUInt64(entryBytes, 40);
-                    var nameBytes = new byte[72];
-                    Array.Copy(entryBytes, 56, nameBytes, 0, Math.Min(72, entryBytes.Length - 56));
-                    var name = Encoding.Unicode.GetString(nameBytes).TrimEnd('\0');
-
-                    long partitionSize = (long)((endingLBA - startingLBA + 1) * lbaSize);
-                    byte[] partitionData = new byte[partitionSize];
-                    Array.Copy(unpackedData, (long)(startingLBA * lbaSize), partitionData, 0, partitionSize);
-
-                    partitions.Add(new PartitionEntry
-                    {
-                        PartitionTypeGuid = partitionTypeGuid,
-                        StartingLBA = startingLBA,
-                        EndingLBA = endingLBA,
-                        Name = name,
-                        Data = partitionData
-                    });
-                }
-            }
-
-            return partitions;
-        }
-    }
-
-        public static System.Collections.Generic.List<PartitionEntry> ParsePartitionTable(byte[] unpackedData)
-        {
-            var partitions = new System.Collections.Generic.List<PartitionEntry>();
-            const int lbaSize = 512; // Logical Block Address size
-
-            // Find GPT header
-            long gptHeaderOffset = -1;
             byte[] gptMagic = System.Text.Encoding.ASCII.GetBytes("EFI PART");
             // Search for GPT at the beginning of the disk, typically at LBA 1
             long searchEnd = Math.Min(lbaSize * 2, unpackedData.Length - gptMagic.Length);
@@ -169,7 +97,9 @@ namespace ProcessorEmulator
                     }
                     if (found)
                     {
-                        gptHeaderOffset = i - 8; // The magic is 8 bytes into the header struct
+                        // The magic string "EFI PART" starts 8 bytes into the GPT Header structure.
+                        // The header itself starts at the beginning of the LBA.
+                        gptHeaderOffset = i - 8; 
                         break;
                     }
                 }
@@ -177,8 +107,34 @@ namespace ProcessorEmulator
 
             if (gptHeaderOffset == -1)
             {
-                throw new FirmwareUnpackException("GPT header (EFI PART) not found at LBA 1.");
+                // Fallback for corrupted/non-standard images: search wider
+                for (long i = 0; i < unpackedData.Length - gptMagic.Length; i++)
+                {
+                    if (unpackedData[i] == gptMagic[0] && unpackedData[i+1] == gptMagic[1] && unpackedData[i+2] == gptMagic[2])
+                    {
+                         bool found = true;
+                        for (int j = 1; j < gptMagic.Length; j++)
+                        {
+                            if (unpackedData[i + j] != gptMagic[j])
+                            {
+                                found = false;
+                                break;
+                            }
+                        }
+                        if(found)
+                        {
+                            gptHeaderOffset = i - 8;
+                            break;
+                        }
+                    }
+                }
             }
+
+            if (gptHeaderOffset == -1)
+            {
+                throw new FirmwareUnpackException("GPT header (EFI PART) not found.");
+            }
+
 
             using (var reader = new System.IO.BinaryReader(new System.IO.MemoryStream(unpackedData)))
             {
@@ -204,7 +160,7 @@ namespace ProcessorEmulator
                     var name = System.Text.Encoding.Unicode.GetString(nameBytes).TrimEnd('\0');
 
                     long partitionSize = (long)((endingLBA - startingLBA + 1) * lbaSize);
-                    if (startingLBA * lbaSize + partitionSize > unpackedData.Length)
+                    if (startingLBA * lbaSize + partitionSize > unpackedData.Length || startingLBA * lbaSize < 0 || partitionSize < 0)
                     {
                         // Partition is out of bounds, likely a parsing error or corrupted table
                         continue;
@@ -224,6 +180,6 @@ namespace ProcessorEmulator
             }
 
             return partitions;
-        }}
-
-
+        }
+    }
+}

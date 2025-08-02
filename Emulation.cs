@@ -59,122 +59,122 @@ namespace ProcessorEmulator.Emulation
     }
 
     // MIPS32 emulator stub
-    public class Mips32Emulator : IEmulator
+        public class Mips32Emulator : IEmulator
     {
-        public void LoadBinary(byte[] binary) { /* TODO */ }
+        public void LoadBinary(byte[] binary, uint loadAddress) { /* TODO */ }
         public void Step() { /* TODO */ }
         public void Run() { /* TODO */ }
-        public void Decompile() { /* TODO */ }
-        public void Recompile(string targetArch) { /* TODO */ }
         
-        // IEmulator properties
-        public uint ProgramCounter { get; private set; } = 0;
+        public uint ProgramCounter { get; set; } = 0;
+        public uint StackPointer { get; set; } = 0;
         public int InstructionCount { get; private set; } = 0;
         public uint CurrentInstruction { get; private set; } = 0;
         public uint[] RegisterState { get; private set; } = new uint[32];
         public byte[] MemoryState { get; private set; } = new byte[1024];
+        public void MapMemory(uint address, byte[] data) { /* TODO */ }
+        public void RegisterDevice(IDeviceEmulator device) { /* TODO */ }
     }
 
     // ARM emulator stub
-    public class ArmEmulator : IEmulator
+        public class ArmEmulator : IEmulator
     {
-        public void LoadBinary(byte[] binary) { /* TODO */ }
+        public void LoadBinary(byte[] binary, uint loadAddress) { /* TODO */ }
         public void Step() { /* TODO */ }
         public void Run() { /* TODO */ }
-        public void Decompile() { /* TODO */ }
-        public void Recompile(string targetArch) { /* TODO */ }
         
-        // IEmulator properties
-        public uint ProgramCounter { get; private set; } = 0;
+        public uint ProgramCounter { get; set; } = 0;
+        public uint StackPointer { get; set; } = 0;
         public int InstructionCount { get; private set; } = 0;
         public uint CurrentInstruction { get; private set; } = 0;
         public uint[] RegisterState { get; private set; } = new uint[16];
         public byte[] MemoryState { get; private set; } = new byte[1024];
+        public void MapMemory(uint address, byte[] data) { /* TODO */ }
+        public void RegisterDevice(IDeviceEmulator device) { /* TODO */ }
     }
 
     // ARM64 emulator stub
-    public class Arm64Emulator : IEmulator
+        public class Arm64Emulator : IEmulator
     {
-        public void LoadBinary(byte[] binary) { /* TODO */ }
+        public void LoadBinary(byte[] binary, uint loadAddress) { /* TODO */ }
         public void Step() { /* TODO */ }
         public void Run() { /* TODO */ }
-        public void Decompile() { /* TODO */ }
-        public void Recompile(string targetArch) { /* TODO */ }
         
-        // IEmulator properties
-        public uint ProgramCounter { get; private set; } = 0;
+        public uint ProgramCounter { get; set; } = 0;
+        public uint StackPointer { get; set; } = 0;
         public int InstructionCount { get; private set; } = 0;
         public uint CurrentInstruction { get; private set; } = 0;
         public uint[] RegisterState { get; private set; } = new uint[32];
         public byte[] MemoryState { get; private set; } = new byte[1024];
+        public void MapMemory(uint address, byte[] data) { /* TODO */ }
+        public void RegisterDevice(IDeviceEmulator device) { /* TODO */ }
     }
 
     // MIPS64 emulator stub
-    public class Mips64Emulator : IEmulator
+        public class Mips64Emulator : IEmulator
     {
-        public void LoadBinary(byte[] binary) { /* TODO */ }
+        public void LoadBinary(byte[] binary, uint loadAddress) { /* TODO */ }
         public void Step() { /* TODO */ }
         public void Run() { /* TODO */ }
-        public void Decompile() { /* TODO */ }
-        public void Recompile(string targetArch) { /* TODO */ }
         
-        // IEmulator properties
-        public uint ProgramCounter { get; private set; } = 0;
+        public uint ProgramCounter { get; set; } = 0;
+        public uint StackPointer { get; set; } = 0;
         public int InstructionCount { get; private set; } = 0;
         public uint CurrentInstruction { get; private set; } = 0;
         public uint[] RegisterState { get; private set; } = new uint[32];
         public byte[] MemoryState { get; private set; } = new byte[1024];
+        public void MapMemory(uint address, byte[] data) { /* TODO */ }
+        public void RegisterDevice(IDeviceEmulator device) { /* TODO */ }
     }
 
     // PowerPC emulator stub
-    public class PowerPcEmulator : IEmulator
+        public class PowerPcEmulator : IEmulator
     {
-        public void LoadBinary(byte[] binary) { /* TODO */ }
+        public void LoadBinary(byte[] binary, uint loadAddress) { /* TODO */ }
         public void Step() { /* TODO */ }
         public void Run() { /* TODO */ }
-        public void Decompile() { /* TODO */ }
-        public void Recompile(string targetArch) { /* TODO */ }
         
-        // IEmulator properties
-        public uint ProgramCounter { get; private set; } = 0;
+        public uint ProgramCounter { get; set; } = 0;
+        public uint StackPointer { get; set; } = 0;
         public int InstructionCount { get; private set; } = 0;
         public uint CurrentInstruction { get; private set; } = 0;
         public uint[] RegisterState { get; private set; } = new uint[32];
         public byte[] MemoryState { get; private set; } = new byte[1024];
+        public void MapMemory(uint address, byte[] data) { /* TODO */ }
+        public void RegisterDevice(IDeviceEmulator device) { /* TODO */ }
     }
 
     // x86 emulator stub
-    public class X86Emulator : IEmulator
+        public class X86Emulator : IEmulator
     {
-        public void LoadBinary(byte[] binary) { /* TODO */ }
+        public void LoadBinary(byte[] binary, uint loadAddress) { /* TODO */ }
         public void Step() { /* TODO */ }
         public void Run() { /* TODO */ }
-        public void Decompile() { /* TODO */ }
-        public void Recompile(string targetArch) { /* TODO */ }
         
-        // IEmulator properties
-        public uint ProgramCounter { get; private set; } = 0;
+        public uint ProgramCounter { get; set; } = 0;
+        public uint StackPointer { get; set; } = 0;
         public int InstructionCount { get; private set; } = 0;
         public uint CurrentInstruction { get; private set; } = 0;
         public uint[] RegisterState { get; private set; } = new uint[8];
         public byte[] MemoryState { get; private set; } = new byte[1024];
+        public void MapMemory(uint address, byte[] data) { /* TODO */ }
+        public void RegisterDevice(IDeviceEmulator device) { /* TODO */ }
     }
 
     // x86-64 emulator stub
-    public class X64Emulator : IEmulator
+        public class X64Emulator : IEmulator
     {
-        public void LoadBinary(byte[] binary) { /* TODO */ }
+        public void LoadBinary(byte[] binary, uint loadAddress) { /* TODO */ }
         public void Step() { /* TODO */ }
         public void Run() { /* TODO */ }
-        public void Decompile() { /* TODO */ }
-        public void Recompile(string targetArch) { /* TODO */ }
         
-        // IEmulator properties
-        public uint ProgramCounter { get; private set; } = 0;
+        public uint ProgramCounter { get; set; } = 0;
+        public uint StackPointer { get; set; } = 0;
         public int InstructionCount { get; private set; } = 0;
         public uint CurrentInstruction { get; private set; } = 0;
         public uint[] RegisterState { get; private set; } = new uint[16];
         public byte[] MemoryState { get; private set; } = new byte[1024];
+        public void MapMemory(uint address, byte[] data) { /* TODO */ }
+        public void RegisterDevice(IDeviceEmulator device) { /* TODO */ }
     }
 
     // Device models for real-time emulation
@@ -250,7 +250,7 @@ namespace ProcessorEmulator.Emulation
     }
 
     // Emulator with CPU and device selection
-    public class HardwareEmulator : IEmulator
+        public class HardwareEmulator : IEmulator
     {
         private ICpuModel cpu;
         private List<IDevice> devices = new();
@@ -259,17 +259,32 @@ namespace ProcessorEmulator.Emulation
             cpu = cpuModel;
             devices.AddRange(deviceModels);
         }
-        public void LoadBinary(byte[] binary) { /* TODO: Load into memory */ }
+        public void LoadBinary(byte[] binary, uint loadAddress) { /* TODO: Load into memory */ }
         public void Step() { cpu.Step(); foreach (var d in devices) d.Tick(); }
         public void Run() { while (true) Step(); }
-        public void Decompile() { /* TODO */ }
-        public void Recompile(string targetArch) { /* TODO */ }
         
-        // IEmulator properties
-        public uint ProgramCounter { get; private set; } = 0;
+        public uint ProgramCounter { get; set; } = 0;
+        public uint StackPointer { get; set; } = 0;
         public int InstructionCount { get; private set; } = 0;
         public uint CurrentInstruction { get; private set; } = 0;
         public uint[] RegisterState { get; private set; } = new uint[32];
         public byte[] MemoryState { get; private set; } = new byte[1024];
+        public void MapMemory(uint address, byte[] data) { /* TODO */ }
+        public void RegisterDevice(IDeviceEmulator device) { /* TODO */ }
+    }
+        public void LoadBinary(byte[] binary, uint loadAddress) { /* TODO: Load into memory */ }
+        public void Step() { cpu.Step(); foreach (var d in devices) d.Tick(); }
+        public void Run() { while (true) Step(); }
+        
+        // IEmulator properties
+        public uint ProgramCounter { get; set; } = 0;
+        public uint StackPointer { get; set; } = 0;
+        public int InstructionCount { get; private set; } = 0;
+        public uint CurrentInstruction { get; private set; } = 0;
+        public uint[] RegisterState { get; private set; } = new uint[32];
+        public byte[] MemoryState { get; private set; } = new byte[1024];
+        public void MapMemory(uint address, byte[] data) { /* TODO */ }
+        public void RegisterDevice(IDeviceEmulator device) { /* TODO */ }
     }
 }
+
