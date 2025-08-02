@@ -14,7 +14,9 @@ namespace ProcessorEmulator.Emulation
         private byte[] originalBinary;
         private uint pc = 0;
         private uint[] regs = new uint[32]; // Multi-architecture registers
-        private Bcm7449SoCManager socManager; // BCM7449 SoC peripheral emulation
+#pragma warning disable CS0649 // Field is never assigned to
+        private Bcm7449SoCManager socManager; // BCM7449 SoC peripheral emulation - reserved for future implementation
+#pragma warning restore CS0649
         private SyncScheduler syncScheduler; // Daily sync engine for guide/entitlements
         private PXRenderer pxRenderer; // Display pipeline renderer - the missing visual link!
         private DisplayWindow displayWindow; // The actual boot screen window!

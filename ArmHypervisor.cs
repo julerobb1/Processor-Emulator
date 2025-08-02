@@ -14,7 +14,9 @@ namespace ProcessorEmulator.Emulation
         // ARM CPU State
         private uint[] registers = new uint[16]; // R0-R15 (PC is R15)
         private uint cpsr = 0x10; // Current Program Status Register (User mode)
-        private uint spsr = 0; // Saved Program Status Register
+#pragma warning disable CS0414 // Field is assigned but never used
+        private uint spsr = 0; // Saved Program Status Register - reserved for exception handling
+#pragma warning restore CS0414
         
         // Memory Management
         private byte[] memory;

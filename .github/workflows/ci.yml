@@ -1,182 +1,36 @@
-name: ✨ Build & Auto Release
+name: CI
 
 on:
   push:
+    branches: [dev]
+  pull_request:
+    branches: [dev]
+on:
+  push:
+    tags:
+      - 'v*'
     branches:
       - main
       - dev
-  pull_request:
-    branches: [dev]
-  workflow_dispatch:
-
-permissions:
-  contents: write
-  packages: write
-  issues: read
-  pull-requests: read
-
+  
 jobs:
   build:
     name: Build on Windows
     runs-on: windows-latest
     steps:
-      - name: 🛎️ Checkout repository
+      - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 🧰 Setup .NET SDK
+      - name: Setup .NET SDK
         uses: actions/setup-dotnet@v3
         with:
           dotnet-version: '6.0.x'
-          
-      - name: 🔧 Enable Windows Desktop for WPF
-        run: |
-          Write-Host "Enabling Windows Desktop development workload..."
-          # This ensures WPF/WinForms are available in GitHub Actions
 
-      - name: 🔍 Verify environment
-        run: |
-          Write-Host "=== Environment Information ==="
-          Write-Host "OS: $env:OS"
-          Write-Host "Architecture: $env:PROCESSOR_ARCHITECTURE"
-          Write-Host ".NET SDK version:"
-          dotnet --version
-          Write-Host ".NET SDKs installed:"
-          dotnet --list-sdks
-          Write-Host "================================"
+      - name: Restore dependencies
+        run: dotnet restore Processor-Emulator.sln
 
-      - name: 🔧 Restore dependencies
-        run: dotnet restore ProcessorEmulator.csproj --verbosity normal
+      - name: Build solution
+        run: dotnet build Processor-Emulator.sln --configuration Release --no-restore
 
-      - name: 🏗️ Build solution
-        run: |
-          Write-Host "Building ProcessorEmulator with Release configuration..."
-          dotnet build ProcessorEmulator.csproj --configuration Release --no-restore --verbosity normal --nologo
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "Build failed with exit code $LASTEXITCODE"
-            exit 1
-          }
-          Write-Host "Build completed successfully!"
-          
-          # Show what was built
-          Write-Host "Build outputs:"
-          if (Test-Path "bin\Release\net6.0-windows\") {
-            Get-ChildItem "bin\Release\net6.0-windows\" | ForEach-Object { Write-Host "  $($_.Name)" }
-          } else {
-            Write-Host "  No build output found at bin\Release\net6.0-windows\"
-          }
-
-      - name: 🏷️ Auto-create version tag (only on main/dev branch pushes)
-        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && github.event_name == 'push'
-        continue-on-error: true
-        run: |
-          # Get the latest tag, or start with v1.0.0 if no tags exist
-          $latestTag = git describe --tags --abbrev=0 2>$null
-          if ($LASTEXITCODE -ne 0) {
-            if ("${{ github.ref }}" -eq "refs/heads/dev") {
-              $newTag = "v1.0.0-dev.$(Get-Date -Format 'yyyyMMddHHmm')"
-            } else {
-              $newTag = "v1.0.0"
-            }
-            Write-Host "No existing tags found. Creating initial tag: $newTag"
-          } else {
-            # Parse the version and increment
-            $version = $latestTag -replace '^v', '' -replace '-.*$', ''
-            $versionParts = $version.Split('.')
-            $major = [int]$versionParts[0]
-            $minor = [int]$versionParts[1]
-            $patch = [int]$versionParts[2]
-            
-            if ("${{ github.ref }}" -eq "refs/heads/dev") {
-              $newTag = "v$major.$minor.$($patch + 1)-dev.$(Get-Date -Format 'yyyyMMddHHmm')"
-            } else {
-              $newTag = "v$major.$minor.$($patch + 1)"
-            }
-            Write-Host "Latest tag: $latestTag, New tag: $newTag"
-          }
-          
-          # Create and push the new tag
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          
-          Write-Host "Creating new tag: $newTag"
-          git tag $newTag
-          
-          Write-Host "Attempting to push tag..."
-          git push origin $newTag 2>&1 | Tee-Object -Variable pushResult
-          if ($LASTEXITCODE -eq 0) {
-            Write-Host "✅ Successfully pushed tag $newTag"
-          } else {
-            Write-Host "⚠️ Failed to push tag (this may be due to permissions, but build succeeded)"
-            Write-Host "Push output: $pushResult"
-          }
-          
-          # Set output for later steps
-          echo "NEW_TAG=$newTag" >> $env:GITHUB_ENV
-
-      - name: 📦 Package binaries
-        if: env.NEW_TAG
-        run: |
-          $timestamp = Get-Date -Format "yyyyMMddHHmm"
-          $tagName = $env:NEW_TAG
-          Write-Host "Creating package for tag: $tagName"
-          
-          # Check if build output exists
-          if (Test-Path "bin\Release\net6.0-windows\") {
-            Write-Host "Build output found, creating package..."
-            New-Item -ItemType Directory -Path "release-package" -Force
-            Copy-Item -Path "bin\Release\net6.0-windows\*" -Destination "release-package\" -Recurse -Force
-            
-            # Also copy important files
-            if (Test-Path "README.md") { Copy-Item "README.md" "release-package\" }
-            if (Test-Path "*.md") { Copy-Item "*.md" "release-package\" }
-            
-            Compress-Archive -Path "release-package\*" -DestinationPath "ProcessorEmulator-$tagName.zip" -Force
-            Write-Host "Package created: ProcessorEmulator-$tagName.zip"
-            
-            # Show package contents
-            Write-Host "Package contents:"
-            Get-ChildItem "release-package" -Recurse | ForEach-Object { Write-Host "  $($_.FullName.Replace((Get-Location).Path + '\release-package\', ''))" }
-          } else {
-            Write-Host "ERROR: Build output not found at bin\Release\net6.0-windows\"
-            Write-Host "Available directories:"
-            if (Test-Path "bin") { Get-ChildItem "bin" -Recurse -Directory | ForEach-Object { Write-Host "  $($_.FullName)" } }
-            exit 1
-          }
-
-      - name: 🚀 Create GitHub Release
-        if: env.NEW_TAG
-        uses: softprops/action-gh-release@v1
-        with:
-          files: ProcessorEmulator-*.zip
-          generate_release_notes: true
-          prerelease: ${{ contains(env.NEW_TAG, 'dev') }}
-          tag_name: ${{ env.NEW_TAG }}
-          name: "Processor Emulator ${{ env.NEW_TAG }}"
-          body: |
-            🎉 **Automated Release**
-            
-            This release was automatically created from the latest `${{ github.ref_name }}` branch.
-            
-            **What's New:**
-            - Enhanced ARM/MIPS/x86 emulation capabilities
-            - VMware-style hypervisor interface
-            - Custom BIOS implementation with DOCSIS security
-            - X1 Platform bootscreen support
-            - Comprehensive error handling with humor
-            - Carl Containment Protocol (for entertainment purposes)
-            
-            **Download the zip file below to get the latest version!**
-            
-            **Branch:** `${{ github.ref_name }}`  
-            **Commit:** `${{ github.sha }}`
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: ✅ Build complete
-        run: echo "Build completed successfully! 🎉"
-
-      # this had better work .. else if it doesn't, welp back to the drawing board. 
-        # --- IGNORE ---
+      - name: Run tests (if any)
+        run: echo "Skipping tests: no test projects defined."
