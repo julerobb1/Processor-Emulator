@@ -376,3 +376,4 @@ namespace ProcessorEmulator.Emulation
         public byte[] MemoryState { get; private set; } = new byte[1024];
     }
 }
+
