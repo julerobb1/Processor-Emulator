@@ -72,69 +72,52 @@ namespace ProcessorEmulator
             }
         }
 
-        public static System.Collections.Generic.List<PartitionEntry> ParsePartitionTable(byte[] unpackedData)
+        /// <summary>
+        /// Finds the offset of the GPT header ("EFI PART").
+        /// </summary>
+        private static long FindGptHeaderOffset(byte[] data, long startOffset)
         {
-            var partitions = new System.Collections.Generic.List<PartitionEntry>();
-            const int lbaSize = 512; // Logical Block Address size
-
-            // Find GPT header
-            long gptHeaderOffset = -1;
-            byte[] gptMagic = System.Text.Encoding.ASCII.GetBytes("EFI PART");
-            // Search for GPT at the beginning of the disk, typically at LBA 1
-            long searchEnd = Math.Min(lbaSize * 2, unpackedData.Length - gptMagic.Length);
-            for (int i = lbaSize; i < searchEnd; i++)
+            byte[] gptMagic = Encoding.ASCII.GetBytes("EFI PART");
+            long searchLimit = data.Length - gptMagic.Length;
+            for (long i = startOffset; i <= searchLimit; i++)
             {
-                if (unpackedData[i] == gptMagic[0])
+                if (data[i] != gptMagic[0]) continue;
+
+                bool found = true;
+                for (int j = 1; j < gptMagic.Length; j++)
                 {
-                    bool found = true;
-                    for (int j = 1; j < gptMagic.Length; j++)
+                    if (data[i + j] != gptMagic[j])
                     {
-                        if (unpackedData[i + j] != gptMagic[j])
-                        {
-                            found = false;
-                            break;
-                        }
-                    }
-                    if (found)
-                    {
-                        // The magic string "EFI PART" starts 8 bytes into the GPT Header structure.
-                        // The header itself starts at the beginning of the LBA.
-                        gptHeaderOffset = i - 8; 
+                        found = false;
                         break;
                     }
                 }
+                if (found)
+                {
+                    return i - 8; // "EFI PART" is at offset 8 in the GPT header
+                }
             }
+            return -1;
+        }
+
+        public static System.Collections.Generic.List<PartitionEntry> ParsePartitionTable(byte[] unpackedData)
+        {
+            var partitions = new System.Collections.Generic.List<PartitionEntry>();
+            const ulong lbaSize = 512; // Logical Block Address size
+
+            // Search for GPT header, typically at LBA 1 (offset 512)
+            long gptHeaderOffset = FindGptHeaderOffset(unpackedData, (long)lbaSize);
 
             if (gptHeaderOffset == -1)
             {
-                // Fallback for corrupted/non-standard images: search wider
-                for (long i = 0; i < unpackedData.Length - gptMagic.Length; i++)
-                {
-                    if (unpackedData[i] == gptMagic[0] && unpackedData[i+1] == gptMagic[1] && unpackedData[i+2] == gptMagic[2])
-                    {
-                         bool found = true;
-                        for (int j = 1; j < gptMagic.Length; j++)
-                        {
-                            if (unpackedData[i + j] != gptMagic[j])
-                            {
-                                found = false;
-                                break;
-                            }
-                        }
-                        if(found)
-                        {
-                            gptHeaderOffset = i - 8;
-                            break;
-                        }
-                    }
-                }
+                // Fallback: search from the beginning of the file if not found at LBA 1
+                gptHeaderOffset = FindGptHeaderOffset(unpackedData, 0);
             }
 
             if (gptHeaderOffset == -1)
             {
                 throw new FirmwareUnpackException("GPT header (EFI PART) not found.");
             }
-
 
             using (var reader = new System.IO.BinaryReader(new System.IO.MemoryStream(unpackedData)))
             {
@@ -159,14 +142,19 @@ namespace ProcessorEmulator
                     Array.Copy(entryBytes, 56, nameBytes, 0, Math.Min(72, entryBytes.Length - 56));
                     var name = System.Text.Encoding.Unicode.GetString(nameBytes).TrimEnd('\0');
 
-                    long partitionSize = (long)((endingLBA - startingLBA + 1) * lbaSize);
-                    if ((long)startingLBA * lbaSize + partitionSize > unpackedData.Length || (long)startingLBA * lbaSize < 0 || partitionSize < 0)
+                    // Perform arithmetic using ulong to avoid ambiguity and overflow
+                    ulong partitionSizeInLbas = endingLBA - startingLBA + 1;
+                    ulong partitionSizeInBytes = partitionSizeInLbas * lbaSize;
+                    ulong startAddress = startingLBA * lbaSize;
+
+                    if (startAddress + partitionSizeInBytes > (ulong)unpackedData.Length)
                     {
-                        // Partition is out of bounds, likely a parsing error or corrupted table
+                        // Partition is out of bounds
                         continue;
                     }
-                    byte[] partitionData = new byte[partitionSize];
-                    Array.Copy(unpackedData, (long)(startingLBA * lbaSize), partitionData, 0, partitionSize);
+                    
+                    byte[] partitionData = new byte[partitionSizeInBytes];
+                    Array.Copy(unpackedData, (long)startAddress, partitionData, 0, (long)partitionSizeInBytes);
 
                     partitions.Add(new PartitionEntry
                     {
