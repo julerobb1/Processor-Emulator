@@ -1,12 +1,132 @@
-using System;
 using System.IO;
+using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
-using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace ProcessorEmulator
 {
-    public class FirmwareUnpacker
+    public static class FirmwareUnpacker
     {
+        private const string Pack1Magic = "PACK1";
+
+        /// <summary>
+        /// Finds the offset of the PACK1 header in a firmware file.
+        /// </summary>
+        /// <param name="stream">The firmware file stream.</param>
+        /// <returns>The offset of the PACK1 header, or -1 if not found.</returns>
+        private static long FindPack1Offset(Stream stream)
+        {
+            const int searchLimit = 0x200000; // 2MB
+            byte[] buffer = new byte[searchLimit];
+            stream.Seek(0, SeekOrigin.Begin); // Ensure we start from the beginning
+            int bytesRead = stream.Read(buffer, 0, buffer.Length);
+            byte[] magicBytes = Encoding.ASCII.GetBytes(Pack1Magic);
+
+            for (int i = 0; i <= bytesRead - magicBytes.Length; i++)
+            {
+                bool found = true;
+                for (int j = 0; j < magicBytes.Length; j++)
+                {
+                    if (buffer[i + j] != magicBytes[j])
+                    {
+                        found = false;
+                        break;
+                    }
+                }
+                if (found)
+                {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
+        public static byte[] UnpackARRISFirmware(byte[] firmwareImage)
+        {
+            using (var stream = new MemoryStream(firmwareImage))
+            {
+                long pack1Offset = FindPack1Offset(stream);
+                if (pack1Offset == -1)
+                {
+                    throw new FirmwareUnpackException("PACK1 magic not found in firmware image.");
+                }
+                stream.Seek(pack1Offset, SeekOrigin.Begin);
+
+                using (var reader = new BinaryReader(stream))
+                {
+                    // Read and verify PACK1 magic
+                    string magic = new string(reader.ReadChars(5));
+                    if (magic != Pack1Magic)
+                    {
+                        // This should not happen if FindPack1Offset is correct
+                        throw new FirmwareUnpackException($"Invalid PACK1 magic: {magic}");
+                    }
+
+                    // The rest of the logic to unpack the firmware would go here.
+                    // For now, we'll just return the rest of the stream.
+                    long remainingLength = stream.Length - stream.Position;
+                    return reader.ReadBytes((int)remainingLength);
+                }
+            }
+        }namespace ProcessorEmulator
+{
+    public static class FirmwareUnpacker
+    {
+        private const string Pack1Magic = "PACK1";
+
+        /// <summary>
+        /// Finds the offset of the PACK1 header in a firmware file.
+        /// </summary>
+        /// <param name="stream">The firmware file stream.</param>
+        /// <returns>The offset of the PACK1 header, or -1 if not found.</returns>
+        private static long FindPack1Offset(Stream stream)
+        {
+            const int searchLimit = 0x200000; // 2MB
+            byte[] buffer = new byte[searchLimit];
+            int bytesRead = stream.Read(buffer, 0, buffer.Length);
+            byte[] magicBytes = Encoding.ASCII.GetBytes(Pack1Magic);
+
+            for (int i = 0; i <= bytesRead - magicBytes.Length; i++)
+            {
+                bool found = true;
+                for (int j = 0; j < magicBytes.Length; j++)
+                {
+                    if (buffer[i + j] != magicBytes[j])
+                    {
+                        found = false;
+                        break;
+                    }
+                }
+                if (found)
+                {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
+        
+                stream.Seek(pack1Offset, SeekOrigin.Begin);
+
+                using (var reader = new BinaryReader(stream))
+                {
+                    // Read and verify PACK1 magic
+                    string magic = new string(reader.ReadChars(5));
+                    if (magic != Pack1Magic)
+                    {
+                        // This should not happen if FindPack1Offset is correct
+                        throw new FirmwareUnpackException($"Invalid PACK1 magic: {magic}");
+                    }
+
+                    // The rest of the logic to unpack the firmware would go here.
+                    // For now, we'll just return the rest of the stream.
+                    long remainingLength = stream.Length - stream.Position;
+                    return reader.ReadBytes((int)remainingLength);
+                }
+            }
+        }
+
         public class FirmwareSection
         {
             public string Name { get; set; }
@@ -213,3 +333,4 @@ namespace ProcessorEmulator
         }
     }
 }
+
