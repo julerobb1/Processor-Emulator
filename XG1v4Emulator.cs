@@ -94,7 +94,7 @@ namespace ProcessorEmulator
                     ChipRevision = "SBUKFSBB1G",
                     CpuCores = 4,
                     CpuFrequency = 1500,
-                    RamSize = 3221225472,  // 3GB (max for uint)
+                    RamSize = (uint)(3UL * 1024 * 1024 * 1024),  // 3GB (max for uint)
                     L2CacheSize = 2048 * 1024,           // 2MB
                     SecureBootEnabled = true,
                     TrustZoneEnabled = true
