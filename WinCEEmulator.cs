@@ -12,7 +12,7 @@ namespace ProcessorEmulator.Emulation
             this.useQEMU = useQEMUFlag;
         }
 
-        public void LoadBinary(byte[] binary)
+        public void LoadBinary(byte[] binary, uint loadAddress)
         {
             if (useQEMU)
             {
@@ -73,21 +73,14 @@ namespace ProcessorEmulator.Emulation
             // Full execution with API translation
         }
 
-        public void Decompile()
-        {
-            // Decompile WinCE binary
-        }
-
-        public void Recompile(string targetArch)
-        {
-            // Recompile for target architecture
-        }
-        
         // IEmulator properties
-        public uint ProgramCounter { get; private set; } = 0;
+        public uint ProgramCounter { get; set; } = 0;
+        public uint StackPointer { get; set; } = 0;
         public int InstructionCount { get; private set; } = 0;
         public uint CurrentInstruction { get; private set; } = 0;
         public uint[] RegisterState { get; private set; } = new uint[16];
         public byte[] MemoryState { get; private set; } = new byte[1024];
+        public void MapMemory(uint address, byte[] data) { /* TODO */ }
+        public void RegisterDevice(IDeviceEmulator device) { /* TODO */ }
     }
 }
