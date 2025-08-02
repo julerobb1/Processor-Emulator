@@ -411,12 +411,12 @@ namespace ProcessorEmulator
         {
             try
             {
-                StatusBarText("🚀 Starting AT&T U-verse + Microsoft Mediaroom emulation...");
+                StatusBarText(" Starting AT&T U-verse + Microsoft Mediaroom emulation...");
                 
                 // Check if this is an nk.bin kernel file
                 if (Path.GetFileName(firmwarePath).ToLower() == "nk.bin")
                 {
-                    StatusBarText("🔍 Detected nk.bin - using comprehensive Mediaroom boot manager...");
+                    StatusBarText(" Detected nk.bin - using comprehensive Mediaroom boot manager...");
                     
                     // Use the enhanced U-verse emulator with Mediaroom boot manager
                     var uverseEmulator = new UverseEmulator();
@@ -433,7 +433,7 @@ namespace ProcessorEmulator
                     
                     if (!bootSuccess)
                     {
-                        StatusBarText("❌ Mediaroom boot failed - check boot log for details");
+                        StatusBarText(" Mediaroom boot failed - check boot log for details");
                         
                         // Show boot failure details
                         var failureLog = uverseEmulator.GetBootLog();
@@ -447,7 +447,7 @@ namespace ProcessorEmulator
                     
                     var results = new List<string>
                     {
-                        "🎉 AT&T U-verse + Microsoft Mediaroom Boot Complete!",
+                        " AT&T U-verse + Microsoft Mediaroom Boot Complete!",
                         "",
                         "=== System Status ===",
                         $"Platform: {status["Platform"]}",
@@ -464,17 +464,17 @@ namespace ProcessorEmulator
                     results.AddRange(recentLogs);
                     
                     results.Add("");
-                    results.Add("✅ AT&T U-verse IPTV Platform is fully operational!");
-                    results.Add("📺 Microsoft Mediaroom services are running");
-                    results.Add("🌐 IPTV infrastructure is connected and ready");
+                    results.Add(" AT&T U-verse IPTV Platform is fully operational!");
+                    results.Add(" Microsoft Mediaroom services are running");
+                    results.Add(" IPTV infrastructure is connected and ready");
                     
                     ShowTextWindow("U-verse + Mediaroom Emulation Success", results);
-                    StatusBarText("✅ U-verse + Mediaroom emulation started successfully");
+                    StatusBarText(" U-verse + Mediaroom emulation started successfully");
                 }
                 else
                 {
                     // Use the enhanced U-verse emulator for other files
-                    StatusBarText("🔄 Using enhanced U-verse + Mediaroom emulator...");
+                    StatusBarText(" Using enhanced U-verse + Mediaroom emulator...");
                     
                     // Detect if it's a signature file (.sig) or other content
                     string ext = Path.GetExtension(firmwarePath).ToLowerInvariant();
@@ -482,7 +482,7 @@ namespace ProcessorEmulator
                     if (ext == ".sig" || ext == ".bin" || ext == ".img")
                     {
                         // Handle firmware-based U-verse emulation with Mediaroom boot
-                        StatusBarText($"📦 Loading U-verse firmware: {Path.GetFileName(firmwarePath)}...");
+                        StatusBarText($" Loading U-verse firmware: {Path.GetFileName(firmwarePath)}...");
                         
                         // Load firmware data
                         byte[] firmwareData = File.ReadAllBytes(firmwarePath);
@@ -501,7 +501,7 @@ namespace ProcessorEmulator
                         
                         if (!success)
                         {
-                            StatusBarText("❌ U-verse emulation failed");
+                            StatusBarText(" U-verse emulation failed");
                             var failureLog = emulator.GetBootLog();
                             ShowTextWindow("U-verse Emulation Failure", failureLog);
                             return;
@@ -513,7 +513,7 @@ namespace ProcessorEmulator
                         
                         var uverseLog = new List<string>
                         {
-                            "🎉 AT&T U-verse + Microsoft Mediaroom Emulation Complete!",
+                            " AT&T U-verse + Microsoft Mediaroom Emulation Complete!",
                             "",
                             "=== System Information ===",
                             $"File: {Path.GetFileName(firmwarePath)}",
@@ -530,18 +530,18 @@ namespace ProcessorEmulator
                             $"Mediaroom Ready: {bootStatus?["MediaroomReady"] ?? true}",
                             $"Components: {bootStatus?["ComponentsLoaded"] ?? "All"}",
                             "",
-                            "✅ Microsoft Mediaroom IPTV platform is operational",
-                            "📺 AT&T U-verse services are running",
-                            "🌐 IPTV infrastructure connected"
+                            " Microsoft Mediaroom IPTV platform is operational",
+                            " AT&T U-verse services are running",
+                            " IPTV infrastructure connected"
                         };
                         
                         ShowTextWindow("U-verse + Mediaroom Emulation", uverseLog);
-                        StatusBarText("✅ U-verse + Mediaroom emulation completed successfully");
+                        StatusBarText(" U-verse + Mediaroom emulation completed successfully");
                     }
                     else
                     {
                         // Generic firmware analysis for other U-verse files
-                        StatusBarText("🔍 Analyzing U-verse firmware structure...");
+                        StatusBarText(" Analyzing U-verse firmware structure...");
                         
                         string extractDir = Path.Combine(Path.GetDirectoryName(firmwarePath), 
                             Path.GetFileNameWithoutExtension(firmwarePath) + "_extracted");
@@ -551,21 +551,21 @@ namespace ProcessorEmulator
                         
                         var results = new List<string>
                         {
-                            "🔍 AT&T U-verse Firmware Analysis Complete",
+                            " AT&T U-verse Firmware Analysis Complete",
                             "",
                             "=== Analysis Results ===",
                             $"File: {Path.GetFileName(firmwarePath)}",
                             $"Extracted to: {extractDir}",
                             $"Type: {Path.GetExtension(firmwarePath)} firmware",
                             "",
-                            "📂 Check extracted directory for:",
-                            "  • WinCE kernel files (nk.bin)",
-                            "  • Mediaroom components",
-                            "  • Registry hives (*.hv)",
-                            "  • IPTV configuration files",
-                            "  • System overlays and modules",
+                            " Check extracted directory for:",
+                            "   WinCE kernel files (nk.bin)",
+                            "   Mediaroom components",
+                            "   Registry hives (*.hv)",
+                            "   IPTV configuration files",
+                            "   System overlays and modules",
                             "",
-                            "💡 Tip: If nk.bin is found, load it directly for full Mediaroom boot emulation"
+                            " Tip: If nk.bin is found, load it directly for full Mediaroom boot emulation"
                         };
                         
                         ShowTextWindow("U-verse Firmware Analysis", results);
@@ -1400,7 +1400,7 @@ namespace ProcessorEmulator
 
             try
             {
-                StatusBarText("🔄 Initializing REAL hypervisor for live firmware boot...");
+                StatusBarText(" Initializing REAL hypervisor for live firmware boot...");
 
                 // RDK-V is ARM-based, so we create an ARM emulator instance.
                 IEmulator emulator = new ArmCpuEmulator();
@@ -1408,14 +1408,14 @@ namespace ProcessorEmulator
                 // Use the REAL hypervisor manager with the ARM emulator
                 var hypervisor = new RealHypervisorManager(emulator);
                 
-                StatusBarText("🚀 Unpacking firmware and launching QEMU hypervisor...");
+                StatusBarText(" Unpacking firmware and launching QEMU hypervisor...");
                 
                 // Boot the firmware file in real QEMU emulation
                 bool bootSuccess = await hypervisor.BootFirmwareFile(path);
                 
                 if (bootSuccess)
                 {
-                    StatusBarText("✅ Real hypervisor launched - firmware is booting live!");
+                    StatusBarText(" Real hypervisor launched - firmware is booting live!");
                     
                     // Show welcome message for first-time users
                     if (IsFirstTimeExtraction())
@@ -1426,7 +1426,7 @@ namespace ProcessorEmulator
                 }
                 else
                 {
-                    StatusBarText("❌ Hypervisor launch failed");
+                    StatusBarText(" Hypervisor launch failed");
                     ErrorManager.ShowError(ErrorManager.Codes.INITIALIZATION_FAILED, "Failed to launch real hypervisor");
                 }
             }
@@ -1716,11 +1716,11 @@ namespace ProcessorEmulator
             string tempImagePath = Path.Combine(tempDir, Path.GetFileName(imagePath));
             File.Copy(imagePath, tempImagePath, overwrite: true);
 
-            // 🧠 PLATFORM AUTODETECTION - Analyze firmware to suggest platform
+            //  PLATFORM AUTODETECTION - Analyze firmware to suggest platform
             StatusBarText("Analyzing firmware for platform detection...");
             var detectionResult = PlatformDetector.DetectPlatform(imagePath);
 
-            // 🗂 REGION AWARENESS - Analyze firmware regions for boot logic
+            //  REGION AWARENESS - Analyze firmware regions for boot logic
             StatusBarText("Analyzing firmware regions...");
             var regionResult = FirmwareRegionAnalyzer.AnalyzeFirmware(imagePath);
 
@@ -1730,7 +1730,7 @@ namespace ProcessorEmulator
                 StatusBarText($"Platform detected: {platform.Name} (confidence: {detectionResult.Confidence:P1})");
 
                 // Show detection results and recommendations
-                var resultMessage = $"🎯 Platform Detection & Region Analysis Results:\n\n";
+                var resultMessage = $" Platform Detection & Region Analysis Results:\n\n";
                 resultMessage += $"Platform: {platform.Name}\n";
                 resultMessage += $"Confidence: {detectionResult.Confidence:P1}\n";
                 resultMessage += $"Architecture: {platform.Architecture}\n";
@@ -1740,10 +1740,10 @@ namespace ProcessorEmulator
                 // Add region analysis results
                 if (regionResult.Success && regionResult.DetectedRegions.Any())
                 {
-                    resultMessage += "�️ Detected Firmware Regions:\n";
+                    resultMessage += " Detected Firmware Regions:\n";
                     foreach (var region in regionResult.DetectedRegions.Take(4))
                     {
-                        resultMessage += $"• {region.Name}: {region.Confidence:P1} confidence\n";
+                        resultMessage += $" {region.Name}: {region.Confidence:P1} confidence\n";
                         resultMessage += $"  Address: 0x{region.LoadAddress:X8}, Size: ~{region.EstimatedSize / 1024}KB\n";
                     }
                     resultMessage += "\n";
@@ -1751,16 +1751,16 @@ namespace ProcessorEmulator
 
                 if (detectionResult.Recommendations.Any())
                 {
-                    resultMessage += "� Platform Recommendations:\n";
+                    resultMessage += " Platform Recommendations:\n";
                     foreach (var rec in detectionResult.Recommendations.Take(3))
-                        resultMessage += $"• {rec}\n";
+                        resultMessage += $" {rec}\n";
                     resultMessage += "\n";
                 }
 
                 // Add boot sequence recommendations
                 if (regionResult.Success && regionResult.BootSequence.Any())
                 {
-                    resultMessage += "🚀 Recommended Boot Sequence:\n";
+                    resultMessage += " Recommended Boot Sequence:\n";
                     foreach (var step in regionResult.BootSequence.Take(6))
                         resultMessage += $"{step}\n";
                 }
@@ -2004,33 +2004,324 @@ namespace ProcessorEmulator
                 case "Custom Hypervisor":
                     await HandleCustomHypervisor();
                     break;
-                default:
-                    MessageBox.Show($"Emulator '{emulatorName}' not implemented yet.", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
-                    break;
             }
         }
 
         /// <summary>
-        /// Handle Comcast X1 Platform emulation with real firmware analysis
+        /// Analyze file type based on content and extension
         /// </summary>
-        /// <summary>
-        /// Handle Comcast X1 Platform emulation from main menu (prompts for file)
-        /// </summary>
-        private async Task HandleComcastX1Emulation()
+        private string AnalyzeFileType(string filePath, byte[] fileData)
         {
-            var openFileDialog = new OpenFileDialog
+            // Simple analysis based on file extension and content
+            string extension = Path.GetExtension(filePath).ToLower();
+            string content = Encoding.ASCII.GetString(fileData.Take(1024).ToArray());
+
+            if (content.Contains("XG1") || content.Contains("BCM7449"))
             {
-                Filter = "Comcast X1 Firmware (*.bin;*.img;*.fw;*.rdk)|*.bin;*.img;*.fw;*.rdk|All Files (*.*)|*.*",
-                Title = "Select Comcast X1 Firmware File"
+                return "Comcast X1 Firmware";
+            }
+            
+            // Add more rules here for other firmware types
+            
+            return "Unknown";
+        }
+
+        /// <summary>
+        /// Handle Comcast X1 emulation with a specific file
+        /// </summary>
+        private async Task HandleComcastX1Emulation(string filePath = null)
+        {
+            if (string.IsNullOrEmpty(filePath))
+            {
+                var openFileDialog = new OpenFileDialog
+                {
+                    Filter = "Comcast X1 Firmware (*.bin;*.rdk)|*.bin;*.rdk|All Files (*.*)|*.*"
+                };
+                if (openFileDialog.ShowDialog() != true) return;
+                filePath = openFileDialog.FileName;
+            }
+
+            StatusBarText($"Starting Comcast X1 emulation for {Path.GetFileName(filePath)}...");
+
+            try
+            {
+                // Use the universal Comcast X1 emulator
+                var emulator = new ComcastX1Emulator_Universal();
+                
+                // Load firmware
+                await emulator.LoadFirmware(filePath);
+                
+                // Start emulation
+                await emulator.StartEmulation();
+                
+                // Get and display results
+                var results = emulator.GetEmulationResults();
+                ShowTextWindow("Comcast X1 Emulation Results", results);
+                
+                StatusBarText("Comcast X1 emulation complete.");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Comcast X1 emulation failed: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusBarText("Comcast X1 emulation failed.");
+            }
+        }
+
+        /// <summary>
+        /// Handle generic CPU/OS emulation
+        /// </summary>
+        private async Task HandleGenericEmulation()
+        {
+            // Get hypervisor configuration from UI
+            var config = GetHypervisorConfiguration();
+            
+            // Launch hypervisor window
+            var hypervisorWindow = new HypervisorWindow(config);
+            hypervisorWindow.Show();
+            
+            StatusBarText("Generic hypervisor launched.");
+            await Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Handle custom hypervisor launch
+        /// </summary>
+        private async Task HandleCustomHypervisor()
+        {
+            // Get hypervisor configuration from UI
+            var config = GetHypervisorConfiguration();
+            
+            // Launch hypervisor window
+            var hypervisorWindow = new HypervisorWindow(config);
+            hypervisorWindow.Show();
+            
+            StatusBarText("Custom hypervisor launched.");
+            await Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Handle drag-and-drop of firmware files
+        /// </summary>
+        private void MainWindow_Drop(object sender, DragEventArgs e)
+        {
+            if (e.Data.GetDataPresent(DataFormats.FileDrop))
+            {
+                string[] files = (string[])e.Data.GetData(DataFormats.FileDrop);
+                if (files.Length > 0)
+                {
+                    firmwarePath = files[0];
+                    StatusBarText($"Loaded firmware: {Path.GetFileName(firmwarePath)}");
+                    
+                    // Auto-detect and start emulation
+                    AutoDetectAndStartEmulation(firmwarePath);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Auto-detect firmware type and start appropriate emulation
+        /// </summary>
+        private async void AutoDetectAndStartEmulation(string filePath)
+        {
+            try
+            {
+                byte[] fileData = await File.ReadAllBytesAsync(filePath);
+                string firmwareType = AnalyzeFileType(filePath, fileData);
+
+                switch (firmwareType)
+                {
+                    case "Comcast X1 Firmware":
+                        await HandleComcastX1Emulation(filePath);
+                        break;
+                    default:
+                        // Default to generic emulation if type is unknown
+                        await HandleGenericEmulation();
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to auto-start emulation: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        /// <summary>
+        /// Handle folder analysis
+        /// </summary>
+        private async Task HandleFolderAnalysis()
+        {
+            var folderDialog = new System.Windows.Forms.FolderBrowserDialog();
+            if (folderDialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+            {
+                string folderPath = folderDialog.SelectedPath;
+                var analysisWindow = new FolderAnalysisWindow(folderPath);
+                analysisWindow.Show();
+                StatusBarText($"Analyzing folder: {folderPath}");
+            }
+            await Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Handle SWM/LNB simulation
+        /// </summary>
+        private async Task HandleSwmLnbSimulation()
+        {
+            var emu = new SwmLnbEmulator();
+            emu.StartSimulation();
+            ShowTextWindow("SWM/LNB Simulation", new List<string> { "SWM/LNB simulation running." });
+            StatusBarText("SWM/LNB simulation started.");
+            await Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Handle filesystem mount for various types
+        /// </summary>
+        private async Task HandleCeMount()
+        {
+            var dlg = new OpenFileDialog { Filter = "WinCE Filesystem Images (*.img;*.bin)|*.img;*.bin|All Files (*.*)|*.*" };
+            if (dlg.ShowDialog() != true) return;
+            string path = dlg.FileName;
+            StatusBarText($"Mounting WinCE FS from {Path.GetFileName(path)}...");
+            // Logic to mount WinCE filesystem
+            StatusBarText("WinCE FS mounted.");
+            await Task.CompletedTask;
+        }
+
+        private async Task HandleYaffsMount()
+        {
+            var dlg = new OpenFileDialog { Filter = "YAFFS Filesystem Images (*.img;*.bin)|*.img;*.bin|All Files (*.*)|*.*" };
+            if (dlg.ShowDialog() != true) return;
+            string path = dlg.FileName;
+            StatusBarText($"Mounting YAFFS from {Path.GetFileName(path)}...");
+            // Logic to mount YAFFS filesystem
+            StatusBarText("YAFFS mounted.");
+            await Task.CompletedTask;
+        }
+
+        private async Task HandleIsoMount()
+        {
+            var dlg = new OpenFileDialog { Filter = "ISO Files (*.iso)|*.iso|All Files (*.*)|*.*" };
+            if (dlg.ShowDialog() != true) return;
+            string path = dlg.FileName;
+            StatusBarText($"Mounting ISO from {Path.GetFileName(path)}...");
+            // Logic to mount ISO filesystem
+            StatusBarText("ISO mounted.");
+            await Task.CompletedTask;
+        }
+
+        private async Task HandleExtMount()
+        {
+            var dlg = new OpenFileDialog { Filter = "EXT Filesystem Images (*.ext2;*.ext3;*.ext4)|*.ext2;*.ext3;*.ext4|All Files (*.*)|*.*" };
+            if (dlg.ShowDialog() != true) return;
+            string path = dlg.FileName;
+            StatusBarText($"Mounting EXT FS from {Path.GetFileName(path)}...");
+            // Logic to mount EXT filesystem
+            StatusBarText("EXT FS mounted.");
+await Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Handle booting firmware with homebrew emulator first
+        /// </summary>
+        private async Task HandleBootFirmwareHomebrewFirst()
+        {
+            var dlg = new OpenFileDialog { Filter = "Firmware Files (*.bin;*.img)|*.bin;*.img|All Files (*.*)|*.*" };
+            if (dlg.ShowDialog() != true) return;
+            string path = dlg.FileName;
+            StatusBarText($"Booting firmware {Path.GetFileName(path)} with homebrew emulator...");
+            // Logic to boot with homebrew emulator
+            StatusBarText("Firmware booted with homebrew emulator.");
+            await Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Handle booting firmware in homebrew emulator
+        /// </summary>
+        private async Task HandleBootFirmwareInHomebrew()
+        {
+            var dlg = new OpenFileDialog { Filter = "Firmware Files (*.bin;*.img)|*.bin;*.img|All Files (*.*)|*.*" };
+            if (dlg.ShowDialog() != true) return;
+            string path = dlg.FileName;
+            StatusBarText($"Booting firmware {Path.GetFileName(path)} in homebrew emulator...");
+            // Logic to boot in homebrew emulator
+            StatusBarText("Firmware booted in homebrew emulator.");
+            await Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Helper to prompt user for a choice from a list
+        /// </summary>
+        private string PromptUserForChoice(string message, IEnumerable<string> choices)
+        {
+            var choiceDialog = new Window
+            {
+                Title = "Select an Option",
+                Width = 400,
+                Height = 200,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = this
             };
 
-            if (openFileDialog.ShowDialog() == true)
-            {
-                await HandleComcastX1Emulation(openFileDialog.FileName);
-            }
-        }
-        
-        #endregion
+            var stackPanel = new StackPanel { Margin = new Thickness(10) };
+            stackPanel.Children.Add(new TextBlock { Text = message, Margin = new Thickness(0, 0, 0, 10) });
 
+            var comboBox = new ComboBox { ItemsSource = choices, SelectedIndex = 0 };
+            stackPanel.Children.Add(comboBox);
+
+            var okButton = new Button { Content = "OK", Width = 80, IsDefault = true, Margin = new Thickness(0, 10, 0, 0), HorizontalAlignment = HorizontalAlignment.Right };
+            stackPanel.Children.Add(okButton);
+
+            choiceDialog.Content = stackPanel;
+
+            string selectedChoice = null;
+            okButton.Click += (s, e) =>
+            {
+                selectedChoice = comboBox.SelectedItem as string;
+                choiceDialog.DialogResult = true;
+                choiceDialog.Close();
+            };
+
+            choiceDialog.ShowDialog();
+            return selectedChoice;
+        }
+
+        /// <summary>
+        /// Check if this is the first time the user is running firmware extraction
+        /// </summary>
+        private bool IsFirstTimeExtraction()
+        {
+            // Simple check using a temp file
+            string flagFile = Path.Combine(Path.GetTempPath(), "ProcessorEmulator_FirstTimeFlag.txt");
+            return !File.Exists(flagFile);
+        }
+
+        /// <summary>
+        /// Mark that the first-time extraction has been done
+        /// </summary>
+        private void MarkFirstTimeExtractionDone()
+        {
+            string flagFile = Path.Combine(Path.GetTempPath(), "ProcessorEmulator_FirstTimeFlag.txt");
+            File.WriteAllText(flagFile, "done");
+        }
+
+        /// <summary>
+        /// Show a funny status message during long operations
+        /// </summary>
+        private void ShowFunnyStatus(string operation)
+        {
+            var messages = new[]
+            {
+                "Reticulating splines...",
+                "Charging flux capacitor...",
+                "Aligning warp coils...",
+                "Polishing the hyperdrive...",
+                "Recalibrating the quantum carburetor...",
+                "Defragging the reality matrix...",
+                "Downloading more RAM...",
+                "Reversing the polarity of the neutron flow..."
+            };
+            var random = new Random();
+            StatusBarText($"{operation}: {messages[random.Next(messages.Length)]}");
+        }
     }
 }

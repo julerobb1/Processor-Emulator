@@ -272,19 +272,4 @@ namespace ProcessorEmulator.Emulation
         public void MapMemory(uint address, byte[] data) { /* TODO */ }
         public void RegisterDevice(IDeviceEmulator device) { /* TODO */ }
     }
-        public void LoadBinary(byte[] binary, uint loadAddress) { /* TODO: Load into memory */ }
-        public void Step() { cpu.Step(); foreach (var d in devices) d.Tick(); }
-        public void Run() { while (true) Step(); }
-        
-        // IEmulator properties
-        public uint ProgramCounter { get; set; } = 0;
-        public uint StackPointer { get; set; } = 0;
-        public int InstructionCount { get; private set; } = 0;
-        public uint CurrentInstruction { get; private set; } = 0;
-        public uint[] RegisterState { get; private set; } = new uint[32];
-        public byte[] MemoryState { get; private set; } = new byte[1024];
-        public void MapMemory(uint address, byte[] data) { /* TODO */ }
-        public void RegisterDevice(IDeviceEmulator device) { /* TODO */ }
-    }
 }
-
