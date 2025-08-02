@@ -241,10 +241,11 @@ namespace ProcessorEmulator
                 var backupPath = HOSTS_FILE_PATH + BACKUP_SUFFIX;
                 if (!File.Exists(backupPath))
                 {
-                    await File.Copy(HOSTS_FILE_PATH, backupPath, true);
+                    File.Copy(HOSTS_FILE_PATH, backupPath, true);
                     Console.WriteLine($"📁 Backed up hosts file to {backupPath}");
                 }
             }
+            await Task.CompletedTask;
         }
         
         private async Task<string> FindDnsmasq()
@@ -366,7 +367,7 @@ namespace ProcessorEmulator
                 
                 if (File.Exists(backupPath))
                 {
-                    await File.Copy(backupPath, HOSTS_FILE_PATH, true);
+                    File.Copy(backupPath, HOSTS_FILE_PATH, true);
                     File.Delete(backupPath);
                     Console.WriteLine("✅ Hosts file restored from backup");
                     

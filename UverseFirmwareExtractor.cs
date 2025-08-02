@@ -278,7 +278,7 @@ namespace ProcessorEmulator
         {
             var signatures = new List<string>();
             var headerHex = BitConverter.ToString(header).Replace("-", "");
-            var headerText = Encoding.ASCII.GetString(header.Take(512).ToArray());
+            var headerText = Encoding.ASCII.GetString(header, 0, Math.Min(512, header.Length));
 
             // Common firmware signatures
             if (headerText.Contains("CFE")) signatures.Add("CFE Bootloader");
@@ -310,10 +310,20 @@ namespace ProcessorEmulator
                 var binwalkOutput = Path.Combine(result.OutputDirectory, "binwalk");
                 Directory.CreateDirectory(binwalkOutput);
 
+                var binwalkParts = binwalkPath.Split(' ');
+                var fileName = binwalkParts[0];
+                var argsStart = "";
+                if (binwalkParts.Length > 1)
+                {
+                    var argsParts = new string[binwalkParts.Length - 1];
+                    Array.Copy(binwalkParts, 1, argsParts, 0, binwalkParts.Length - 1);
+                    argsStart = string.Join(" ", argsParts);
+                }
+                
                 var startInfo = new ProcessStartInfo
                 {
-                    FileName = binwalkPath.Split(' ')[0],
-                    Arguments = $"{string.Join(" ", binwalkPath.Split(' ').Skip(1))} --extract --matryoshka --directory=\"{binwalkOutput}\" \"{firmwarePath}\"",
+                    FileName = fileName,
+                    Arguments = $"{argsStart} --extract --matryoshka --directory=\"{binwalkOutput}\" \"{firmwarePath}\"",
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false,
@@ -562,7 +572,9 @@ namespace ProcessorEmulator
                 var bytesRead = await stream.ReadAsync(cfeData, 0, cfeSize);
 
                 var cfeFile = Path.Combine(result.OutputDirectory, "cfe_bootloader.bin");
-                await File.WriteAllBytesAsync(cfeFile, cfeData.Take(bytesRead).ToArray());
+                var cfeToWrite = new byte[bytesRead];
+                Array.Copy(cfeData, 0, cfeToWrite, 0, bytesRead);
+                await File.WriteAllBytesAsync(cfeFile, cfeToWrite);
 
                 result.Components.Add(new ExtractedComponent
                 {
@@ -602,7 +614,9 @@ namespace ProcessorEmulator
                 var bytesRead = await stream.ReadAsync(ubootData, 0, ubootSize);
 
                 var ubootFile = Path.Combine(result.OutputDirectory, "uboot_bootloader.bin");
-                await File.WriteAllBytesAsync(ubootFile, ubootData.Take(bytesRead).ToArray());
+                var ubootToWrite = new byte[bytesRead];
+                Array.Copy(ubootData, 0, ubootToWrite, 0, bytesRead);
+                await File.WriteAllBytesAsync(ubootFile, ubootToWrite);
 
                 result.Components.Add(new ExtractedComponent
                 {
@@ -777,7 +791,9 @@ namespace ProcessorEmulator
                     stream.Seek(position, SeekOrigin.Begin);
                     var bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length);
                     
-                    var signatureOffset = FindSignature(buffer.Take(bytesRead).ToArray(), signature);
+                    var bufferToSearch = new byte[bytesRead];
+                    Array.Copy(buffer, 0, bufferToSearch, 0, bytesRead);
+                    var signatureOffset = FindSignature(bufferToSearch, signature);
                     if (signatureOffset >= 0)
                     {
                         var actualOffset = position + signatureOffset;
@@ -791,7 +807,9 @@ namespace ProcessorEmulator
                         var fsBytes = await stream.ReadAsync(fsData, 0, (int)fsSize);
                         
                         var fsFile = Path.Combine(result.OutputDirectory, $"{fsType.ToLower()}_0x{actualOffset:X}.bin");
-                        await File.WriteAllBytesAsync(fsFile, fsData.Take(fsBytes).ToArray());
+                        var fsToWrite = new byte[fsBytes];
+                        Array.Copy(fsData, 0, fsToWrite, 0, fsBytes);
+                        await File.WriteAllBytesAsync(fsFile, fsToWrite);
 
                         result.Components.Add(new ExtractedComponent
                         {
@@ -871,8 +889,9 @@ namespace ProcessorEmulator
                 // Check for text content
                 if (IsTextContent(sample))
                 {
-                    var textSample = Encoding.UTF8.GetString(sample).Take(500);
-                    component.Metadata["TextSample"] = new string(textSample.ToArray());
+                    var fullText = Encoding.UTF8.GetString(sample);
+                    var textSample = fullText.Length > 500 ? fullText.Substring(0, 500) : fullText;
+                    component.Metadata["TextSample"] = textSample;
                 }
             }
             catch (Exception ex)
@@ -883,8 +902,13 @@ namespace ProcessorEmulator
 
         private string AnalyzeContentType(byte[] sample)
         {
-            var hex = BitConverter.ToString(sample.Take(16).ToArray()).Replace("-", "");
-            var text = Encoding.ASCII.GetString(sample.Take(64).ToArray());
+            var hexBytes = new byte[Math.Min(16, sample.Length)];
+            Array.Copy(sample, 0, hexBytes, 0, hexBytes.Length);
+            var hex = BitConverter.ToString(hexBytes).Replace("-", "");
+            
+            var textBytes = new byte[Math.Min(64, sample.Length)];
+            Array.Copy(sample, 0, textBytes, 0, textBytes.Length);
+            var text = Encoding.ASCII.GetString(textBytes);
 
             if (hex.StartsWith("7F454C46")) return "ELF Executable";
             if (hex.StartsWith("504B0304")) return "ZIP Archive";
@@ -899,7 +923,12 @@ namespace ProcessorEmulator
 
         private bool IsTextContent(byte[] sample)
         {
-            var printableCount = sample.Count(b => b >= 32 && b <= 126);
+            int printableCount = 0;
+            foreach (byte b in sample)
+            {
+                if (b >= 32 && b <= 126)
+                    printableCount++;
+            }
             return (double)printableCount / sample.Length > 0.7; // 70% printable chars
         }
 

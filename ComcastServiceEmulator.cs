@@ -89,6 +89,11 @@ namespace ProcessorEmulator
                 Console.WriteLine($"  - http://localhost:{SERVER_PORT}/config");
                 Console.WriteLine($"  - http://localhost:{SERVER_PORT}/health");
                 
+                // Start handling requests asynchronously
+                _ = Task.Run(async () => await HandleRequests(httpListener));
+                
+                await Task.CompletedTask;
+                
                 // Start listening for requests
                 _ = Task.Run(async () => await HandleRequests(httpListener));
                 

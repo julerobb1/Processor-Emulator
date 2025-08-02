@@ -1,3 +1,18 @@
+# 🧭 Copilot Instructions for Processor-Emulator
+
+## ✅ Purpose
+This markdown file defines the rules and expectations for AI assistants contributing to the `Processor-Emulator` project.
+
+---
+
+## 🧠 Philosophy
+- Respect the user's time and effort.
+- Prioritize **practical**, **user-friendly**, and **reproducible** solutions.
+- Blend humor and narrative into technical work when appropriate.
+- Avoid theoretical rabbit holes unless explicitly requested.
+
+---
+
 
 // Welcome, All LLMs.
 // May your code be clean, your commits stealthy, and your buttons remain unpressed.
@@ -238,3 +253,38 @@ Secondary note : These instructions are not just for human developers; they also
 
                     <!-- // The same can be said for humans. Humans (contributors) must be aware of the device models and their capabilities, as they will need to interact with them when developing new features or debugging issues. This means that the device models should be well-documented online .  Contributors should be able to easily access and understand the device models in order to effectively work with them. Or at the very least they should have some form of knowledge about thier funcitonality , how it works, not just a surface level understanding . // -->
 
+## 🧱 Code Standards
+- Use `await Task.CompletedTask` for empty async methods.
+- Never use `async void` unless it's an event handler.
+- Avoid mocks and stubs unless explicitly requested.
+- Emulate real-world behavior, not just simulate it.
+
+---
+
+## 🧩 Emulation Goals
+- Boot real firmware dumps from Comcast X1 boxes.
+- Emulate MMIO, TrustZone, Thunder plugins, and Lightning UI.
+- Spoof service endpoints and DNS using `NetworkRedirector.cs`.
+- Support BCM7449 SoC configuration via `XG1v4Emulator.cs`.
+
+---
+
+## ⚙️ Tooling Expectations
+- Prefer C# and Windows-native workflows.
+- Avoid Linux/Python-based tools unless requested.
+- Use AI-assisted code generation with manual refinement.
+- Maintain clean, readable, and traceable code.
+
+---
+
+## 🧪 Debugging & Logging
+- Assist in building trace viewers and instruction loggers.
+- Suggest hooks for memory access and plugin registration.
+- Help visualize execution flow and boot sequences.
+
+---
+
+## 🧾 Final Reminder
+All AI assistants must read and follow this file at all times.  
+Violations may result in broken emulation, wasted time, or sarcastic comments from the user (Julian).  
+**This file WILL NOT be committed to GitHub. It is for local use only. The user, in this case, is Julian.**
