@@ -1,379 +1,142 @@
 using System;
+using System.Collections.Generic;
 
 namespace ProcessorEmulator.Emulation
 {
-    // Do not redefine IEmulator here. It should be defined only once in your project.
+    // Base class for stub emulators to avoid code duplication
+    public abstract class StubEmulatorBase : IEmulator
+    {
+        public uint ProgramCounter { get; set; } = 0;
+        public uint StackPointer { get; set; } = 0;
+        public int InstructionCount { get; protected set; } = 0;
+        public uint CurrentInstruction { get; protected set; } = 0;
+        public uint[] RegisterState { get; protected set; }
+        public byte[] MemoryState { get; protected set; } = new byte[1024 * 1024]; // 1MB memory for stubs
 
-    public class Sparc64Emulator : IEmulator
-    {
-        public void LoadBinary(byte[] binary) 
-        { 
-            Console.WriteLine("Sparc64Emulator: LoadBinary called."); 
+        private readonly string _emulatorName;
+
+        protected StubEmulatorBase(string emulatorName, int numRegisters)
+        {
+            _emulatorName = emulatorName;
+            RegisterState = new uint[numRegisters];
         }
-        public void Run() 
-        { 
-            Console.WriteLine("Sparc64Emulator: Run called."); 
+
+        public void LoadBinary(byte[] binary, uint loadAddress)
+        {
+            Console.WriteLine($"{_emulatorName}: LoadBinary called. Load address: 0x{loadAddress:X}");
+            // Acknowledge the binary by storing a small part of it, for example.
+            int lengthToCopy = Math.Min(binary.Length, MemoryState.Length - (int)loadAddress);
+            if (loadAddress + lengthToCopy > MemoryState.Length)
+            {
+                // Handle cases where the binary exceeds memory capacity
+                lengthToCopy = MemoryState.Length - (int)loadAddress;
+            }
+
+            if (lengthToCopy > 0)
+            {
+                Array.Copy(binary, 0, MemoryState, loadAddress, lengthToCopy);
+            }
         }
-        public void Step() 
-        { 
-            Console.WriteLine("Sparc64Emulator: Step called."); 
+
+        public void Run()
+        {
+            Console.WriteLine($"{_emulatorName}: Run called.");
         }
-        public void Decompile() 
-        { 
-            Console.WriteLine("Sparc64Emulator: Decompile called."); 
+
+        public void Step()
+        {
+            Console.WriteLine($"{_emulatorName}: Step called.");
         }
-        public void Recompile(string code) 
-        { 
-            Console.WriteLine("Sparc64Emulator: Recompile called with code: " + code); 
+
+        public void Decompile()
+        {
+            Console.WriteLine($"{_emulatorName}: Decompile called.");
         }
-        
-        // IEmulator properties
-        public uint ProgramCounter { get; private set; } = 0;
-        public int InstructionCount { get; private set; } = 0;
-        public uint CurrentInstruction { get; private set; } = 0;
-        public uint[] RegisterState { get; private set; } = new uint[32];
-        public byte[] MemoryState { get; private set; } = new byte[1024];
+
+        public void Recompile(string code)
+        {
+            Console.WriteLine($"{_emulatorName}: Recompile called with code: {code}");
+        }
+
+        public void MapMemory(uint address, byte[] data)
+        {
+            Console.WriteLine($"{_emulatorName}: Mapping {data.Length} bytes to 0x{address:X}");
+            int lengthToCopy = Math.Min(data.Length, MemoryState.Length - (int)address);
+             if (address + lengthToCopy > MemoryState.Length)
+            {
+                // Handle cases where the data exceeds memory capacity
+                lengthToCopy = MemoryState.Length - (int)address;
+            }
+
+            if (lengthToCopy > 0)
+            {
+                Array.Copy(data, 0, MemoryState, address, lengthToCopy);
+            }
+        }
+
+        public void RegisterDevice(IDeviceEmulator device)
+        {
+            Console.WriteLine($"{_emulatorName}: Registered device {device.GetType().Name} at MMIO 0x{device.MmioAddress:X}");
+        }
     }
-    
-    public class AlphaEmulator : IEmulator
+
+    public class Sparc64Emulator : StubEmulatorBase
     {
-        public void LoadBinary(byte[] binary) 
-        { 
-            Console.WriteLine("AlphaEmulator: LoadBinary called."); 
-        }
-        public void Run() 
-        { 
-            Console.WriteLine("AlphaEmulator: Run called."); 
-        }
-        public void Step() 
-        { 
-            Console.WriteLine("AlphaEmulator: Step called."); 
-        }
-        public void Decompile() 
-        { 
-            Console.WriteLine("AlphaEmulator: Decompile called."); 
-        }
-        public void Recompile(string code) 
-        { 
-            Console.WriteLine("AlphaEmulator: Recompile called with code: " + code); 
-        }
-        
-        // IEmulator properties
-        public uint ProgramCounter { get; private set; } = 0;
-        public int InstructionCount { get; private set; } = 0;
-        public uint CurrentInstruction { get; private set; } = 0;
-        public uint[] RegisterState { get; private set; } = new uint[32];
-        public byte[] MemoryState { get; private set; } = new byte[1024];
+        public Sparc64Emulator() : base("Sparc64Emulator", 32) { }
     }
-    
-    public class SuperHEmulator : IEmulator
+
+    public class AlphaEmulator : StubEmulatorBase
     {
-        public void LoadBinary(byte[] binary) 
-        { 
-            Console.WriteLine("SuperHEmulator: LoadBinary called."); 
-        }
-        public void Run() 
-        { 
-            Console.WriteLine("SuperHEmulator: Run called."); 
-        }
-        public void Step() 
-        { 
-            Console.WriteLine("SuperHEmulator: Step called."); 
-        }
-        public void Decompile() 
-        { 
-            Console.WriteLine("SuperHEmulator: Decompile called."); 
-        }
-        public void Recompile(string code) 
-        { 
-            Console.WriteLine("SuperHEmulator: Recompile called with code: " + code); 
-        }
-        
-        // IEmulator properties
-        public uint ProgramCounter { get; private set; } = 0;
-        public int InstructionCount { get; private set; } = 0;
-        public uint CurrentInstruction { get; private set; } = 0;
-        public uint[] RegisterState { get; private set; } = new uint[16];
-        public byte[] MemoryState { get; private set; } = new byte[1024];
+        public AlphaEmulator() : base("AlphaEmulator", 32) { }
     }
-    
-    public class RiscV32Emulator : IEmulator
+
+    public class SuperHEmulator : StubEmulatorBase
     {
-        public void LoadBinary(byte[] binary) 
-        { 
-            Console.WriteLine("RiscV32Emulator: LoadBinary called."); 
-        }
-        public void Run() 
-        { 
-            Console.WriteLine("RiscV32Emulator: Run called."); 
-        }
-        public void Step() 
-        { 
-            Console.WriteLine("RiscV32Emulator: Step called."); 
-        }
-        public void Decompile() 
-        { 
-            Console.WriteLine("RiscV32Emulator: Decompile called."); 
-        }
-        public void Recompile(string code) 
-        { 
-            Console.WriteLine("RiscV32Emulator: Recompile called with code: " + code); 
-        }
-        
-        // IEmulator properties
-        public uint ProgramCounter { get; private set; } = 0;
-        public int InstructionCount { get; private set; } = 0;
-        public uint CurrentInstruction { get; private set; } = 0;
-        public uint[] RegisterState { get; private set; } = new uint[32];
-        public byte[] MemoryState { get; private set; } = new byte[1024];
+        public SuperHEmulator() : base("SuperHEmulator", 16) { }
     }
-    
-    public class RiscV64Emulator : IEmulator
+
+    public class RiscV32Emulator : StubEmulatorBase
     {
-        public void LoadBinary(byte[] binary) 
-        { 
-            Console.WriteLine("RiscV64Emulator: LoadBinary called."); 
-        }
-        public void Run() 
-        { 
-            Console.WriteLine("RiscV64Emulator: Run called."); 
-        }
-        public void Step() 
-        { 
-            Console.WriteLine("RiscV64Emulator: Step called."); 
-        }
-        public void Decompile() 
-        { 
-            Console.WriteLine("RiscV64Emulator: Decompile called."); 
-        }
-        public void Recompile(string code) 
-        { 
-            Console.WriteLine("RiscV64Emulator: Recompile called with code: " + code); 
-        }
-        
-        // IEmulator properties
-        public uint ProgramCounter { get; private set; } = 0;
-        public int InstructionCount { get; private set; } = 0;
-        public uint CurrentInstruction { get; private set; } = 0;
-        public uint[] RegisterState { get; private set; } = new uint[32];
-        public byte[] MemoryState { get; private set; } = new byte[1024];
+        public RiscV32Emulator() : base("RiscV32Emulator", 32) { }
     }
-    
-    public class S390XEmulator : IEmulator
+
+    public class RiscV64Emulator : StubEmulatorBase
     {
-        public void LoadBinary(byte[] binary) 
-        { 
-            Console.WriteLine("S390XEmulator: LoadBinary called."); 
-        }
-        public void Run() 
-        { 
-            Console.WriteLine("S390XEmulator: Run called."); 
-        }
-        public void Step() 
-        { 
-            Console.WriteLine("S390XEmulator: Step called."); 
-        }
-        public void Decompile() 
-        { 
-            Console.WriteLine("S390XEmulator: Decompile called."); 
-        }
-        public void Recompile(string code) 
-        { 
-            Console.WriteLine("S390XEmulator: Recompile called with code: " + code); 
-        }
-        
-        // IEmulator properties
-        public uint ProgramCounter { get; private set; } = 0;
-        public int InstructionCount { get; private set; } = 0;
-        public uint CurrentInstruction { get; private set; } = 0;
-        public uint[] RegisterState { get; private set; } = new uint[16];
-        public byte[] MemoryState { get; private set; } = new byte[1024];
+        public RiscV64Emulator() : base("RiscV64Emulator", 32) { }
     }
-    
-    public class HppaEmulator : IEmulator
+
+    public class S390XEmulator : StubEmulatorBase
     {
-        public void LoadBinary(byte[] binary) 
-        { 
-            Console.WriteLine("HppaEmulator: LoadBinary called."); 
-        }
-        public void Run() 
-        { 
-            Console.WriteLine("HppaEmulator: Run called."); 
-        }
-        public void Step() 
-        { 
-            Console.WriteLine("HppaEmulator: Step called."); 
-        }
-        public void Decompile() 
-        { 
-            Console.WriteLine("HppaEmulator: Decompile called."); 
-        }
-        public void Recompile(string code) 
-        { 
-            Console.WriteLine("HppaEmulator: Recompile called with code: " + code); 
-        }
-        
-        // IEmulator properties
-        public uint ProgramCounter { get; private set; } = 0;
-        public int InstructionCount { get; private set; } = 0;
-        public uint CurrentInstruction { get; private set; } = 0;
-        public uint[] RegisterState { get; private set; } = new uint[32];
-        public byte[] MemoryState { get; private set; } = new byte[1024];
+        public S390XEmulator() : base("S390XEmulator", 16) { }
     }
-    
-    public class MicroBlazeEmulator : IEmulator
+
+    public class HppaEmulator : StubEmulatorBase
     {
-        public void LoadBinary(byte[] binary) 
-        { 
-            Console.WriteLine("MicroBlazeEmulator: LoadBinary called."); 
-        }
-        public void Run() 
-        { 
-            Console.WriteLine("MicroBlazeEmulator: Run called."); 
-        }
-        public void Step() 
-        { 
-            Console.WriteLine("MicroBlazeEmulator: Step called."); 
-        }
-        public void Decompile() 
-        { 
-            Console.WriteLine("MicroBlazeEmulator: Decompile called."); 
-        }
-        public void Recompile(string code) 
-        { 
-            Console.WriteLine("MicroBlazeEmulator: Recompile called with code: " + code); 
-        }
-        
-        // IEmulator properties
-        public uint ProgramCounter { get; private set; } = 0;
-        public int InstructionCount { get; private set; } = 0;
-        public uint CurrentInstruction { get; private set; } = 0;
-        public uint[] RegisterState { get; private set; } = new uint[32];
-        public byte[] MemoryState { get; private set; } = new byte[1024];
+        public HppaEmulator() : base("HppaEmulator", 32) { }
     }
-    
-    public class CrisEmulator : IEmulator
+
+    public class MicroBlazeEmulator : StubEmulatorBase
     {
-        public void LoadBinary(byte[] binary) 
-        { 
-            Console.WriteLine("CrisEmulator: LoadBinary called."); 
-        }
-        public void Run() 
-        { 
-            Console.WriteLine("CrisEmulator: Run called."); 
-        }
-        public void Step() 
-        { 
-            Console.WriteLine("CrisEmulator: Step called."); 
-        }
-        public void Decompile() 
-        { 
-            Console.WriteLine("CrisEmulator: Decompile called."); 
-        }
-        public void Recompile(string code) 
-        { 
-            Console.WriteLine("CrisEmulator: Recompile called with code: " + code); 
-        }
-        
-        // IEmulator properties
-        public uint ProgramCounter { get; private set; } = 0;
-        public int InstructionCount { get; private set; } = 0;
-        public uint CurrentInstruction { get; private set; } = 0;
-        public uint[] RegisterState { get; private set; } = new uint[16];
-        public byte[] MemoryState { get; private set; } = new byte[1024];
+        public MicroBlazeEmulator() : base("MicroBlazeEmulator", 32) { }
     }
-    
-    public class Lm32Emulator : IEmulator
+
+    public class CrisEmulator : StubEmulatorBase
     {
-        public void LoadBinary(byte[] binary) 
-        { 
-            Console.WriteLine("Lm32Emulator: LoadBinary called."); 
-        }
-        public void Run() 
-        { 
-            Console.WriteLine("Lm32Emulator: Run called."); 
-        }
-        public void Step() 
-        { 
-            Console.WriteLine("Lm32Emulator: Step called."); 
-        }
-        public void Decompile() 
-        { 
-            Console.WriteLine("Lm32Emulator: Decompile called."); 
-        }
-        public void Recompile(string code) 
-        { 
-            Console.WriteLine("Lm32Emulator: Recompile called with code: " + code); 
-        }
-        
-        // IEmulator properties
-        public uint ProgramCounter { get; private set; } = 0;
-        public int InstructionCount { get; private set; } = 0;
-        public uint CurrentInstruction { get; private set; } = 0;
-        public uint[] RegisterState { get; private set; } = new uint[32];
-        public byte[] MemoryState { get; private set; } = new byte[1024];
+        public CrisEmulator() : base("CrisEmulator", 16) { }
     }
-    
-    public class M68KEmulator : IEmulator
+
+    public class Lm32Emulator : StubEmulatorBase
     {
-        public void LoadBinary(byte[] binary) 
-        { 
-            Console.WriteLine("M68KEmulator: LoadBinary called."); 
-        }
-        public void Run() 
-        { 
-            Console.WriteLine("M68KEmulator: Run called."); 
-        }
-        public void Step() 
-        { 
-            Console.WriteLine("M68KEmulator: Step called."); 
-        }
-        public void Decompile() 
-        { 
-            Console.WriteLine("M68KEmulator: Decompile called."); 
-        }
-        public void Recompile(string code) 
-        { 
-            Console.WriteLine("M68KEmulator: Recompile called with code: " + code); 
-        }
-        
-        // IEmulator properties
-        public uint ProgramCounter { get; private set; } = 0;
-        public int InstructionCount { get; private set; } = 0;
-        public uint CurrentInstruction { get; private set; } = 0;
-        public uint[] RegisterState { get; private set; } = new uint[16];
-        public byte[] MemoryState { get; private set; } = new byte[1024];
+        public Lm32Emulator() : base("Lm32Emulator", 32) { }
     }
-    
-    public class XtensaEmulator : IEmulator
+
+    public class M68KEmulator : StubEmulatorBase
     {
-        public void LoadBinary(byte[] binary) 
-        { 
-            Console.WriteLine("XtensaEmulator: LoadBinary called."); 
-        }
-        public void Run() 
-        { 
-            Console.WriteLine("XtensaEmulator: Run called."); 
-        }
-        public void Step() 
-        { 
-            Console.WriteLine("XtensaEmulator: Step called."); 
-        }
-        public void Decompile() 
-        { 
-            Console.WriteLine("XtensaEmulator: Decompile called."); 
-        }
-        public void Recompile(string code) 
-        { 
-            Console.WriteLine("XtensaEmulator: Recompile called with code: " + code); 
-        }
-        
-        // IEmulator properties
-        public uint ProgramCounter { get; private set; } = 0;
-        public int InstructionCount { get; private set; } = 0;
-        public uint CurrentInstruction { get; private set; } = 0;
-        public uint[] RegisterState { get; private set; } = new uint[32];
-        public byte[] MemoryState { get; private set; } = new byte[1024];
+        public M68KEmulator() : base("M68KEmulator", 16) { }
+    }
+
+    public class XtensaEmulator : StubEmulatorBase
+    {
+        public XtensaEmulator() : base("XtensaEmulator", 32) { }
     }
 }
-
