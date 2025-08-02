@@ -2,19 +2,20 @@ using System;
 
 namespace ProcessorEmulator
 {
-    public class MocaTunersStub 
+    public class MocaTunersStub : IDeviceEmulator
     {
-        private readonly uint _baseAddress;
+        public uint BaseAddress { get; }
+        public uint Size => 0x1000; // 4KB size for the device
 
         public MocaTunersStub(uint baseAddress)
         {
-            _baseAddress = baseAddress;
-            Console.WriteLine($"MoCA Tuner Stub initialized at 0x{_baseAddress:X8}");
+            BaseAddress = baseAddress;
+            Console.WriteLine($"MoCA Tuner Stub initialized at 0x{BaseAddress:X8}");
         }
 
         public uint Read(uint address)
         {
-            uint offset = address - _baseAddress;
+            uint offset = address - BaseAddress;
             Console.WriteLine($"MoCA Tuner Stub: Read from 0x{address:X8} (offset 0x{offset:X})");
             // Return a vendor/device ID or other meaningful value
             if (offset == 0x0)
@@ -26,7 +27,7 @@ namespace ProcessorEmulator
 
         public void Write(uint address, uint value)
         {
-            uint offset = address - _baseAddress;
+            uint offset = address - BaseAddress;
             Console.WriteLine($"MoCA Tuner Stub: Write to 0x{address:X8} (offset 0x{offset:X}) with value 0x{value:X}");
             // Handle writes if necessary
         }

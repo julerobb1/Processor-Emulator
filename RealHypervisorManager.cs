@@ -52,14 +52,48 @@ namespace ProcessorEmulator
                 // Step 2: Post-Unpack Loading
                 MessageBox.Show("Starting post-unpack loading...", "Hypervisor");
 
-                // TODO: Implement the new loading logic here
                 // 1. Parse Partition Table
-                // 2. Map Memory
-                // 3. Init Device Stubs
-                // 4. Set PC/SP
-                // 5. Launch
+                var partitions = FirmwareUnpacker.ParsePartitionTable(unpackedData);
+                string partitionInfo = "Found Partitions:\n";
+                foreach (var p in partitions)
+                {
+                    partitionInfo += $"- {p.Name} ({p.Data.Length / 1024} KB)\n";
+                }
+                MessageBox.Show(partitionInfo, "Partition Table");
 
-                MessageBox.Show("Post-unpack loading logic is not yet fully implemented.", "TODO");
+                // 2. Map Memory
+                uint kernelAddress = 0;
+                foreach (var partition in partitions)
+                {
+                    // A simple mapping strategy, real bootloaders are more complex
+                    uint loadAddress = (uint)(partition.StartingLBA * 512);
+                    _hypervisor.MapMemory(loadAddress, partition.Data);
+
+                    if (partition.Name.ToLower().Contains("kernel") || partition.Name.ToLower().Contains("boot"))
+                    {
+                        kernelAddress = loadAddress;
+                    }
+                }
+
+                if (kernelAddress == 0)
+                {
+                    MessageBox.Show("Could not find a 'kernel' or 'boot' partition.", "Boot Error");
+                    return false;
+                }
+
+                // 3. Init Device Stubs
+                var mocaTuner = new MocaTunersStub(0x10048000); // Example address
+                _hypervisor.RegisterDevice(mocaTuner);
+                MessageBox.Show("MoCA Tuner device stub registered.", "Device Emulation");
+
+                // 4. Set PC/SP
+                _hypervisor.ProgramCounter = kernelAddress;
+                _hypervisor.StackPointer = 0x01000000; // Example stack pointer
+                MessageBox.Show($"PC set to 0x{_hypervisor.ProgramCounter:X8}, SP set to 0x{_hypervisor.StackPointer:X8}", "CPU State");
+
+                // 5. Launch
+                MessageBox.Show("Handing off to emulator. Starting execution...", "Launch");
+                _hypervisor.Run();
 
                 return true;
             }
