@@ -2154,7 +2154,19 @@ namespace ProcessorEmulator
             if (folderDialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
             {
                 string folderPath = folderDialog.SelectedPath;
-                var analysisWindow = new FolderAnalysisWindow(folderPath);
+                // Build List<FileRecord> from folder contents
+                var files = System.IO.Directory.GetFiles(folderPath);
+                var items = new List<FileRecord>();
+                foreach (var file in files)
+                {
+                    items.Add(new FileRecord
+                    {
+                        FilePath = file,
+                        Size = new System.IO.FileInfo(file).Length,
+                        HexPreview = ""
+                    });
+                }
+                var analysisWindow = new FolderAnalysisWindow(items);
                 analysisWindow.Show();
                 StatusBarText($"Analyzing folder: {folderPath}");
             }
@@ -2166,7 +2178,7 @@ namespace ProcessorEmulator
         /// </summary>
         private async Task HandleSwmLnbSimulation()
         {
-            var emu = new SwmLnbEmulator();
+            var emu = new ProcessorEmulator.Emulation.SwmLnbEmulator();
             emu.StartSimulation();
             ShowTextWindow("SWM/LNB Simulation", new List<string> { "SWM/LNB simulation running." });
             StatusBarText("SWM/LNB simulation started.");
