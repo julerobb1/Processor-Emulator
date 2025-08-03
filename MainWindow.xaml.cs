@@ -2056,7 +2056,7 @@ namespace ProcessorEmulator
                 
                 // Get and display results
                 var results = emulator.GetEmulationResults();
-                ShowTextWindow("Comcast X1 Emulation Results", results);
+                ShowTextWindow("Comcast X1 Emulation Results", new List<string> { results.ToString() });
                 
                 StatusBarText("Comcast X1 emulation complete.");
             }
@@ -2178,8 +2178,7 @@ namespace ProcessorEmulator
         /// </summary>
         private async Task HandleSwmLnbSimulation()
         {
-            var emu = new ProcessorEmulator.Emulation.SwmLnbEmulator();
-            emu.StartSimulation();
+            ProcessorEmulator.Emulation.SwmLnbEmulator.SendChannelMap();
             ShowTextWindow("SWM/LNB Simulation", new List<string> { "SWM/LNB simulation running." });
             StatusBarText("SWM/LNB simulation started.");
             await Task.CompletedTask;
@@ -2334,6 +2333,49 @@ await Task.CompletedTask;
             };
             var random = new Random();
             StatusBarText($"{operation}: {messages[random.Next(messages.Length)]}");
+        }
+
+        // Missing event handlers referenced in XAML
+        private void RdkVEmulator_Click(object sender, RoutedEventArgs e)
+        {
+            _ = HandleRdkVEmulation();
+        }
+
+        private void BrowseFirmwareButton_Click(object sender, RoutedEventArgs e)
+        {
+            var openFileDialog = new OpenFileDialog
+            {
+                Filter = "Firmware Files (*.bin;*.img;*.rdk)|*.bin;*.img;*.rdk|All Files (*.*)|*.*"
+            };
+            if (openFileDialog.ShowDialog() == true)
+            {
+                firmwarePath = openFileDialog.FileName;
+                StatusBarText($"Selected firmware: {Path.GetFileName(firmwarePath)}");
+            }
+        }
+
+        private void AnalyzeAllDvrData_Click(object sender, RoutedEventArgs e)
+        {
+            StatusBarText("Analyzing all DVR data...");
+            // Implement DVR data analysis
+        }
+
+        private void ListDvrFirmware_Click(object sender, RoutedEventArgs e)
+        {
+            StatusBarText("Listing DVR firmware...");
+            // Implement DVR firmware listing
+        }
+
+        private void ScanDvrData_Click(object sender, RoutedEventArgs e)
+        {
+            StatusBarText("Scanning DVR data...");
+            // Implement DVR data scanning
+        }
+
+        private void AnalyzeFirmware_Click(object sender, RoutedEventArgs e)
+        {
+            StatusBarText("Analyzing firmware...");
+            // Implement firmware analysis
         }
     }
 }
