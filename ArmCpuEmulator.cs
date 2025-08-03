@@ -39,8 +39,7 @@ namespace ProcessorEmulator.Emulation
         {
             while (true)
             {
-                uint instruction = FetchInstruction();
-                DecodeAndExecute(instruction);
+                Step();
             }
         }
 
