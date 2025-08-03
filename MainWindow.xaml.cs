@@ -474,7 +474,7 @@ namespace ProcessorEmulator
                     
                     if (File.Exists(nkExePath))
                     {
-                        StatusBarText("Found nk.exe - booting real WinCE kernel via QEMU ARM...");
+                        StatusBarText("Found nk.exe - booting real WinCE kernel via QEMU MIPS...");
                         var qemuEmulator = new RealQemuEmulator();
                         bool bootSuccess = await qemuEmulator.BootWinCEFirmware(nkExePath, 
                             File.Exists(registryPath) ? registryPath : null);
@@ -486,7 +486,7 @@ namespace ProcessorEmulator
                             {
                                 "🎉 REAL FIRMWARE BOOT SUCCESS!",
                                 "",
-                                "✅ QEMU ARM emulation started successfully",
+                                "✅ QEMU MIPS emulation started successfully",
                                 $"✅ WinCE Kernel: {Path.GetFileName(nkExePath)}",
                                 $"✅ Registry: {(File.Exists(registryPath) ? "boot.hv loaded" : "Using defaults")}",
                                 $"✅ QEMU Path: {qemuEmulator.GetQemuPath()}",

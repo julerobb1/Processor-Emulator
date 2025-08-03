@@ -24,6 +24,38 @@ namespace ProcessorEmulator
             qemuPath = QemuInstaller.FindQemuPath();
         }
 
+        private async Task<bool> IsMipsArchitecture(string filePath)
+        {
+            try
+            {
+                // Read first 200 bytes to check PE header
+                var bytes = new byte[200];
+                using (var fs = File.OpenRead(filePath))
+                {
+                    await fs.ReadAsync(bytes, 0, bytes.Length);
+                }
+                
+                // Check if it's a PE file (MZ header)
+                if (bytes[0] != 0x4D || bytes[1] != 0x5A) // "MZ"
+                    return false;
+                
+                // Get PE offset
+                int peOffset = BitConverter.ToInt32(bytes, 60);
+                if (peOffset >= bytes.Length - 6)
+                    return false;
+                
+                // Read machine type from PE header
+                ushort machineType = BitConverter.ToUInt16(bytes, peOffset + 4);
+                
+                // 0x166 = MIPS, 0x1c2 = ARM
+                return machineType == 0x166;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private void FindQemuInstallation()
         {
             // Removed - now using QemuInstaller.FindQemuPath()
@@ -31,8 +63,18 @@ namespace ProcessorEmulator
 
         public async Task<bool> BootWinCEFirmware(string nkBinPath, string registryPath = null)
         {
-            if (string.IsNullOrEmpty(qemuPath))
+            // Determine if this is MIPS or ARM based on file path and content
+            bool isMips = nkBinPath.Contains("Uverse", StringComparison.OrdinalIgnoreCase) || 
+                         await IsMipsArchitecture(nkBinPath);
+            
+            // Find appropriate QEMU executable
+            string qemuExe = isMips ? "qemu-system-mips.exe" : "qemu-system-arm.exe";
+            string actualQemuPath = qemuPath?.Replace("qemu-system-arm.exe", qemuExe).Replace("qemu-system-mips.exe", qemuExe);
+            
+            if (string.IsNullOrEmpty(actualQemuPath) || !File.Exists(actualQemuPath))
             {
+                MessageBox.Show($"{qemuExe} not found!\n\nPlease install QEMU with {(isMips ? "MIPS" : "ARM")} support.", 
+                    "QEMU Required", MessageBoxButton.OK, MessageBoxImage.Error);
                 await QemuInstaller.TryAutoInstallViaChocolatey();
                 return false;
             }
@@ -45,17 +87,37 @@ namespace ProcessorEmulator
 
             try
             {
-                // Create QEMU arguments for ARM WinCE boot
-                var args = new List<string>
+                // Create QEMU arguments based on architecture
+                var args = new List<string>();
+                
+                if (isMips)
                 {
-                    "-M", "versatilepb",  // ARM versatile platform board
-                    "-cpu", "arm1176",    // ARM11 CPU (common in set-top boxes)
-                    "-m", "256",          // 256MB RAM
-                    "-kernel", $"\"{nkBinPath}\"",  // WinCE kernel
-                    "-serial", "stdio",   // Serial output to console
-                    "-display", "sdl",    // SDL graphics display
-                    "-no-reboot"          // Don't reboot on crash
-                };
+                    // MIPS configuration for U-verse and similar devices
+                    args.AddRange(new[]
+                    {
+                        "-M", "malta",        // MIPS Malta platform board
+                        "-cpu", "24Kf",       // MIPS 24Kf CPU
+                        "-m", "256",          // 256MB RAM
+                        "-kernel", $"\"{nkBinPath}\"",  // WinCE kernel
+                        "-serial", "stdio",   // Serial output to console
+                        "-display", "sdl",    // SDL graphics display
+                        "-no-reboot"          // Don't reboot on crash
+                    });
+                }
+                else
+                {
+                    // ARM configuration for other devices
+                    args.AddRange(new[]
+                    {
+                        "-M", "versatilepb",  // ARM versatile platform board
+                        "-cpu", "arm1176",    // ARM11 CPU
+                        "-m", "256",          // 256MB RAM
+                        "-kernel", $"\"{nkBinPath}\"",  // WinCE kernel
+                        "-serial", "stdio",   // Serial output to console
+                        "-display", "sdl",    // SDL graphics display
+                        "-no-reboot"          // Don't reboot on crash
+                    });
+                }
 
                 // If we have registry/filesystem files, add them
                 if (!string.IsNullOrEmpty(registryPath) && File.Exists(registryPath))
@@ -71,7 +133,7 @@ namespace ProcessorEmulator
                 {
                     StartInfo = new ProcessStartInfo
                     {
-                        FileName = qemuPath,
+                        FileName = actualQemuPath,  // Use architecture-specific QEMU
                         Arguments = qemuArgs,
                         UseShellExecute = false,
                         CreateNoWindow = false,

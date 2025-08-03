@@ -15,9 +15,13 @@ namespace ProcessorEmulator.Tools
     {
         private static readonly string[] QemuPaths = 
         {
+            @"C:\Program Files\qemu\qemu-system-mips.exe",  // MIPS for U-verse
             @"C:\Program Files\qemu\qemu-system-arm.exe",
+            @"C:\qemu\qemu-system-mips.exe",
             @"C:\qemu\qemu-system-arm.exe",
+            @"C:\msys64\mingw64\bin\qemu-system-mips.exe",
             @"C:\msys64\mingw64\bin\qemu-system-arm.exe",
+            @"C:\tools\qemu\qemu-system-mips.exe",
             @"C:\tools\qemu\qemu-system-arm.exe"
         };
 
@@ -113,7 +117,7 @@ To boot real ARM/MIPS firmware, you need QEMU installed:
             MessageBox.Show(message, "Install QEMU for Real Emulation", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
-        public static async Task<bool> TryAutoInstallViaChocolatey()
+        public static Task<bool> TryAutoInstallViaChocolatey()
         {
             try
             {
@@ -141,12 +145,12 @@ To boot real ARM/MIPS firmware, you need QEMU installed:
                         "• You'll then be able to boot real firmware!",
                         "Installation Started", MessageBoxButton.OK, MessageBoxImage.Information);
 
-                    return true;
+                    return Task.FromResult(true);
                 }
                 else
                 {
                     ShowInstallationInstructions();
-                    return false;
+                    return Task.FromResult(false);
                 }
             }
             catch (Exception ex)
@@ -154,7 +158,7 @@ To boot real ARM/MIPS firmware, you need QEMU installed:
                 MessageBox.Show($"Auto-installation failed: {ex.Message}\n\nPlease install manually.", 
                     "Installation Error", MessageBoxButton.OK, MessageBoxImage.Warning);
                 ShowInstallationInstructions();
-                return false;
+                return Task.FromResult(false);
             }
         }
 
