@@ -250,6 +250,19 @@ namespace ProcessorEmulator
                     };
                 }
 
+                // Firmware path text box - sync with firmwarePath variable
+                if (FirmwarePathTextBox != null)
+                {
+                    FirmwarePathTextBox.TextChanged += (s, e) =>
+                    {
+                        firmwarePath = FirmwarePathTextBox.Text;
+                        if (!string.IsNullOrEmpty(firmwarePath))
+                        {
+                            StatusBarText($"Firmware path: {Path.GetFileName(firmwarePath)}");
+                        }
+                    };
+                }
+
                 Debug.WriteLine("[MainWindow] Dropdown handlers initialized successfully");
             }
             catch (Exception ex)
@@ -468,13 +481,31 @@ namespace ProcessorEmulator
                 {
                     StatusBarText("REAL BOOT: Starting QEMU to boot actual U-verse firmware...");
                     
-                    // Check if this is the nk.exe WinCE kernel
-                    string nkExePath = Path.Combine(Path.GetDirectoryName(firmwarePath), "nk.exe");
-                    string registryPath = Path.Combine(Path.GetDirectoryName(firmwarePath), "boot.hv");
+                    string nkExePath = null;
+                    string registryPath = null;
+                    
+                    // If user selected the nk.bin directory, look inside it for nk.exe
+                    if (Directory.Exists(firmwarePath) && Path.GetFileName(firmwarePath) == "nk.bin")
+                    {
+                        nkExePath = Path.Combine(firmwarePath, "nk.exe");
+                        registryPath = Path.Combine(firmwarePath, "boot.hv");
+                    }
+                    // If user selected nk.exe directly
+                    else if (Path.GetFileName(firmwarePath) == "nk.exe")
+                    {
+                        nkExePath = firmwarePath;
+                        registryPath = Path.Combine(Path.GetDirectoryName(firmwarePath), "boot.hv");
+                    }
+                    // Otherwise, look for nk.exe in the same directory
+                    else
+                    {
+                        nkExePath = Path.Combine(Path.GetDirectoryName(firmwarePath), "nk.exe");
+                        registryPath = Path.Combine(Path.GetDirectoryName(firmwarePath), "boot.hv");
+                    }
                     
                     if (File.Exists(nkExePath))
                     {
-                        StatusBarText("Found nk.exe - booting real WinCE kernel via QEMU MIPS...");
+                        StatusBarText("Found nk.exe - launching REAL QEMU MIPS emulation...");
                         var qemuEmulator = new RealQemuEmulator();
                         bool bootSuccess = await qemuEmulator.BootWinCEFirmware(nkExePath, 
                             File.Exists(registryPath) ? registryPath : null);
@@ -482,62 +513,39 @@ namespace ProcessorEmulator
                         if (bootSuccess)
                         {
                             StatusBarText("SUCCESS: Real U-verse WinCE firmware booted in QEMU!");
-                            var results = new List<string>
-                            {
-                                "🎉 REAL FIRMWARE BOOT SUCCESS!",
-                                "",
-                                "✅ QEMU MIPS emulation started successfully",
-                                $"✅ WinCE Kernel: {Path.GetFileName(nkExePath)}",
-                                $"✅ Registry: {(File.Exists(registryPath) ? "boot.hv loaded" : "Using defaults")}",
-                                $"✅ QEMU Path: {qemuEmulator.GetQemuPath()}",
-                                "",
-                                "🖥️ QEMU window should be open showing actual boot process",
-                                "📺 This is REAL U-verse firmware running on ARM emulation",
-                                "🔧 Watch console output for detailed boot messages",
-                                "",
-                                "⚠️ If QEMU window doesn't appear, install QEMU from:",
-                                "   https://qemu.weilnetz.de/w64/",
-                                "   or use: choco install qemu"
-                            };
-                            ShowTextWindow("REAL U-verse Firmware Boot", results);
+                            return; // Exit here - QEMU is running
                         }
                         else
                         {
-                            StatusBarText("QEMU boot failed - check QEMU installation");
-                            ShowTextWindow("QEMU Boot Failed", new List<string> 
-                            { 
-                                "❌ Failed to start QEMU",
+                            StatusBarText("QEMU launch failed - check QEMU installation");
+                            var failureResults = new List<string>
+                            {
+                                "❌ QEMU Failed to Launch",
                                 "",
-                                "💡 To boot real firmware, you need QEMU installed:",
-                                "   1. Download from https://qemu.weilnetz.de/w64/",
-                                "   2. Install to C:\\Program Files\\qemu\\",
-                                "   3. Or use: choco install qemu",
-                                "   4. Ensure qemu-system-arm.exe is in PATH"
-                            });
+                                $"Attempted to boot: {Path.GetFileName(nkExePath)}",
+                                $"QEMU Path: {qemuEmulator.GetQemuPath() ?? "Not found"}",
+                                "",
+                                "💡 Troubleshooting:",
+                                "1. Install QEMU: choco install qemu",
+                                "2. Or download from: https://qemu.weilnetz.de/w64/",
+                                "3. Ensure qemu-system-mips.exe is in PATH"
+                            };
+                            ShowTextWindow("QEMU Launch Failed", failureResults);
+                            return;
                         }
-                        return;
                     }
                     else
                     {
-                        // Try to boot the selected file directly
-                        StatusBarText("Attempting direct firmware boot via QEMU...");
-                        var qemuEmulator = new RealQemuEmulator();
-                        bool bootSuccess = false;
-                        
-                        if (Path.GetExtension(firmwarePath).ToLower() == ".bin")
+                        StatusBarText($"nk.exe not found at: {nkExePath}");
+                        ShowTextWindow("Firmware Not Found", new List<string>
                         {
-                            // Assume ARM WinCE
-                            bootSuccess = await qemuEmulator.BootWinCEFirmware(firmwarePath);
-                        }
-                        
-                        if (bootSuccess)
-                        {
-                            StatusBarText("Real firmware boot started in QEMU!");
-                        }
-                        else
-                        {
-                            StatusBarText("QEMU boot failed - check file format and QEMU installation");
-                        }
+                            "❌ WinCE Kernel Not Found",
+                            "",
+                            $"Expected: {nkExePath}",
+                            $"Selected: {firmwarePath}",
+                            "",
+                            "💡 Please select the nk.bin folder or nk.exe file directly"
+                        });
                         return;
                     }
                 }
@@ -2515,6 +2523,13 @@ await Task.CompletedTask;
             if (openFileDialog.ShowDialog() == true)
             {
                 firmwarePath = openFileDialog.FileName;
+                
+                // Update the UI text field
+                if (FirmwarePathTextBox != null)
+                {
+                    FirmwarePathTextBox.Text = firmwarePath;
+                }
+                
                 StatusBarText($"Selected firmware: {Path.GetFileName(firmwarePath)}");
             }
         }
