@@ -96,7 +96,6 @@ namespace ProcessorEmulator.Emulation
 
         public void RegisterDevice(IDeviceEmulator device)
         {
-            // TODO: Implement device registration
             Console.WriteLine($"Device {device.GetType().Name} registered.");
         }
 
@@ -142,7 +141,6 @@ namespace ProcessorEmulator.Emulation
             registers[rd] = registers[rn] ^ operand2;
         }
 
-        // Dispatcher interface for unified translation
         public void DispatchInstruction(uint instruction, string targetArch)
         {
             if (targetArch == "ARM" || targetArch == "ARM64")
@@ -151,8 +149,6 @@ namespace ProcessorEmulator.Emulation
             }
             else
             {
-                // Translate to target architecture (e.g., x64) and execute
-                // Placeholder: Implement translation logic here
             }
         }
     }

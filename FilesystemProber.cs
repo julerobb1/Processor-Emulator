@@ -5,6 +5,21 @@ namespace ProcessorEmulator.Tools
 {
     public class FilesystemProber
     {
+        public static string Probe(string filePath)
+        {
+            byte[] fileData = File.ReadAllBytes(filePath);
+
+            if (fileData.Length > 2 && fileData[0] == 0x1F && fileData[1] == 0x8B)
+            {
+                return "GZIP";
+            }
+            if (fileData.Length > 4 && fileData[0] == 0x7F && fileData[1] == 'E' && fileData[2] == 'L' && fileData[3] == 'F')
+            {
+                return "ELF";
+            }
+            return "Unknown";
+        }
+
         public static void ProbeDrive(string drivePath)
         {
             Console.WriteLine($"Probing drive: {drivePath}");
