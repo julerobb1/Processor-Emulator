@@ -47,6 +47,7 @@
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
@@ -77,6 +78,14 @@
                                         Click="WindowsCEExecutor_Click" ToolTip="Execute Windows CE binaries on x64"/>
                                 <Button Grid.Row="2" Grid.Column="2" Content="Universal Hypervisor" Margin="2" Padding="5" Height="35"
                                         Click="UniversalHypervisor_Click" ToolTip="Universal multi-architecture hypervisor"/>
+                                
+                                <!-- Fourth Row - Process Management -->
+                                <Button Grid.Row="3" Grid.Column="0" Content="Stop All Processes" Margin="2" Padding="5" Height="35"
+                                        Click="StopAllProcesses_Click" ToolTip="Stop all running Windows CE processes" Background="#FF6B6B"/>
+                                <Button Grid.Row="3" Grid.Column="1" Content="Show Running Processes" Margin="2" Padding="5" Height="35"
+                                        Click="ShowRunningProcesses_Click" ToolTip="Display currently running processes"/>
+                                <Button Grid.Row="3" Grid.Column="2" Content="Process Monitor" Margin="2" Padding="5" Height="35"
+                                        Click="ProcessMonitor_Click" ToolTip="Real-time process monitoring"/>
                             </Grid>
                         </GroupBox>
                         

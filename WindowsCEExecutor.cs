@@ -6,9 +6,26 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Diagnostics;
 using System.Text;
+using System.Linq;
+using System.Threading;
 
 namespace ProcessorEmulator
 {
+    /// <summary>
+    /// Information about a running Windows CE process
+    /// </summary>
+    public class ProcessInfo
+    {
+        public string ProcessId { get; set; }
+        public string ExePath { get; set; }
+        public PEArchitecture Architecture { get; set; }
+        public DateTime StartTime { get; set; }
+        public DateTime? StopTime { get; set; }
+        public bool IsRunning { get; set; }
+        public int ExitCode { get; set; }
+        public TimeSpan RunTime => (StopTime ?? DateTime.Now) - StartTime;
+    }
+
     /// <summary>
     /// Result of Windows CE binary execution
     /// </summary>
@@ -20,11 +37,14 @@ namespace ProcessorEmulator
         public int ExitCode { get; set; }
         public string Error { get; set; }
         public List<string> Log { get; set; } = new List<string>();
+        public string ProcessId { get; set; }
+        public TimeSpan ExecutionTime { get; set; }
     }
 
     /// <summary>
     /// Windows CE PE Executable Cross-Platform Executor
     /// Runs Windows CE ARM/MIPS binaries on x64 hosts through binary translation
+    /// Supports concurrent execution of multiple processes
     /// </summary>
     public class WindowsCEExecutor
     {
@@ -32,6 +52,7 @@ namespace ProcessorEmulator
         private readonly PEImageLoader peLoader;
         private readonly InstructionTranslator translator;
         private readonly WindowsCEApiEmulator apiEmulator;
+        private readonly object processLock = new object();
 
         public WindowsCEExecutor()
         {
@@ -42,10 +63,85 @@ namespace ProcessorEmulator
         }
 
         /// <summary>
+        /// Get list of currently running processes
+        /// </summary>
+        public List<ProcessInfo> GetRunningProcesses()
+        {
+            lock (processLock)
+            {
+                return runningProcesses.Values.Select(p => new ProcessInfo
+                {
+                    ProcessId = p.ProcessId,
+                    ExePath = p.ExePath,
+                    Architecture = p.PEImage?.Architecture ?? PEArchitecture.Unknown,
+                    StartTime = p.StartTime,
+                    IsRunning = p.IsRunning,
+                    ExitCode = p.ExitCode
+                }).ToList();
+            }
+        }
+
+        /// <summary>
+        /// Execute multiple Windows CE binaries concurrently
+        /// </summary>
+        public async Task<List<WindowsCEExecutionResult>> ExecuteMultipleAsync(string[] exePaths, string[][] args = null)
+        {
+            var tasks = new List<Task<WindowsCEExecutionResult>>();
+            
+            for (int i = 0; i < exePaths.Length; i++)
+            {
+                var path = exePaths[i];
+                var processArgs = args?[i];
+                
+                // Launch each process in parallel
+                tasks.Add(Task.Run(async () => await ExecuteAsync(path, processArgs)));
+            }
+
+            return (await Task.WhenAll(tasks)).ToList();
+        }
+
+        /// <summary>
+        /// Stop a running process by process ID
+        /// </summary>
+        public bool StopProcess(string processId)
+        {
+            lock (processLock)
+            {
+                if (runningProcesses.TryGetValue(processId, out var context))
+                {
+                    context.IsRunning = false;
+                    context.ExitCode = -1;
+                    context.StopTime = DateTime.Now;
+                    Console.WriteLine($"🛑 Stopped process: {processId}");
+                    return true;
+                }
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Stop all running processes
+        /// </summary>
+        public void StopAllProcesses()
+        {
+            lock (processLock)
+            {
+                foreach (var context in runningProcesses.Values.Where(p => p.IsRunning))
+                {
+                    context.IsRunning = false;
+                    context.ExitCode = -1;
+                    context.StopTime = DateTime.Now;
+                }
+                Console.WriteLine($"🛑 Stopped all {runningProcesses.Count} processes");
+            }
+        }
+
+        /// <summary>
         /// Execute Windows CE binary on x64 host
         /// </summary>
         public async Task<WindowsCEExecutionResult> ExecuteAsync(string exePath, string[] args = null)
         {
+            var startTime = DateTime.Now;
             var result = new WindowsCEExecutionResult();
             var log = result.Log;
 
@@ -76,8 +172,10 @@ namespace ProcessorEmulator
                     log.Add("⚠️ Not a Windows CE executable, attempting generic PE execution...");
                 }
 
-                // Step 3: Create process context
-                var processId = $"wince_{Path.GetFileNameWithoutExtension(exePath)}_{DateTime.Now.Ticks}";
+                // Step 3: Create process context with thread-safe ID generation
+                var processId = $"wince_{Path.GetFileNameWithoutExtension(exePath)}_{DateTime.Now.Ticks}_{Thread.CurrentThread.ManagedThreadId}";
+                result.ProcessId = processId;
+                
                 var context = new ProcessContext
                 {
                     ProcessId = processId,
@@ -86,10 +184,16 @@ namespace ProcessorEmulator
                     PEImage = peImage,
                     VirtualMemory = new VirtualMemoryManager(),
                     IsRunning = true,
-                    StartTime = DateTime.Now
+                    StartTime = startTime
                 };
 
-                runningProcesses[processId] = context;
+                // Register process in thread-safe manner
+                lock (processLock)
+                {
+                    runningProcesses[processId] = context;
+                }
+
+                log.Add($"🆔 Process ID: {processId}");
 
                 // Step 4: Set up virtual memory space
                 log.Add("🗺️ Setting up virtual memory space...");
@@ -103,9 +207,21 @@ namespace ProcessorEmulator
                 log.Add("🚀 Starting execution...");
                 var exitCode = await ExecuteProcessAsync(context);
 
+                // Step 7: Clean up and return results
+                lock (processLock)
+                {
+                    if (runningProcesses.ContainsKey(processId))
+                    {
+                        context.IsRunning = false;
+                        context.ExitCode = exitCode;
+                        context.StopTime = DateTime.Now;
+                    }
+                }
+
                 result.ExitCode = exitCode;
                 result.Success = exitCode == 0;
-                log.Add($"✅ Process completed with exit code: {exitCode}");
+                result.ExecutionTime = DateTime.Now - startTime;
+                log.Add($"✅ Process completed with exit code: {exitCode} in {result.ExecutionTime.TotalMilliseconds:F0}ms");
                 
                 return result;
             }
@@ -113,7 +229,23 @@ namespace ProcessorEmulator
             {
                 result.Error = ex.Message;
                 result.Success = false;
+                result.ExecutionTime = DateTime.Now - startTime;
                 log.Add($"❌ Execution failed: {ex.Message}");
+                
+                // Clean up failed process
+                if (!string.IsNullOrEmpty(result.ProcessId))
+                {
+                    lock (processLock)
+                    {
+                        if (runningProcesses.TryGetValue(result.ProcessId, out var context))
+                        {
+                            context.IsRunning = false;
+                            context.ExitCode = -1;
+                            context.StopTime = DateTime.Now;
+                        }
+                    }
+                }
+                
                 return result;
             }
         }
@@ -333,6 +465,8 @@ namespace ProcessorEmulator
         public uint StackPointer { get; set; }
         public bool IsRunning { get; set; }
         public DateTime StartTime { get; set; }
+        public DateTime? StopTime { get; set; }
+        public int ExitCode { get; set; }
     }
 
     public class CPUState

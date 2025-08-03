@@ -138,7 +138,7 @@ namespace ProcessorEmulator
             {
                 var immediate = operand2 & 0xFF;
                 var rotate = (operand2 >> 8) & 0xF;
-                var value = RotateRight(immediate, rotate * 2);
+                var value = RotateRight(immediate, (int)(rotate * 2));
                 cpu.Registers[rd] = value;
             }
             

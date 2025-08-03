@@ -2571,6 +2571,9 @@ await Task.CompletedTask;
         private void GenericEmulation_Click(object sender, RoutedEventArgs e) => _ = HandleGenericEmulation();
         private void WindowsCEExecutor_Click(object sender, RoutedEventArgs e) => _ = HandleWindowsCEExecution();
         private void UniversalHypervisor_Click(object sender, RoutedEventArgs e) => _ = HandleCustomHypervisor();
+        private void StopAllProcesses_Click(object sender, RoutedEventArgs e) => _ = HandleStopAllProcesses();
+        private void ShowRunningProcesses_Click(object sender, RoutedEventArgs e) => _ = HandleShowRunningProcesses();
+        private void ProcessMonitor_Click(object sender, RoutedEventArgs e) => _ = HandleProcessMonitor();
         private void ExtractFirmware_Click(object sender, RoutedEventArgs e) => _ = HandleFirmwareExtraction();
         private void DetectFileType_Click(object sender, RoutedEventArgs e) => _ = HandleFileTypeDetection();
         private void ExecutableAnalysis_Click(object sender, RoutedEventArgs e) => _ = HandleExecutableAnalysis();
@@ -2617,12 +2620,13 @@ await Task.CompletedTask;
         {
             try
             {
-                // Prompt user to select Windows CE binary
+                // Prompt user to select Windows CE binaries (allow multiple selection)
                 var openFileDialog = new OpenFileDialog
                 {
-                    Title = "Select Windows CE Binary",
+                    Title = "Select Windows CE Binaries",
                     Filter = "Windows CE Executables (*.exe)|*.exe|All Files (*.*)|*.*",
-                    InitialDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data", "DVR", "Uverse_Stuff")
+                    InitialDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data", "DVR", "Uverse_Stuff"),
+                    Multiselect = true
                 };
 
                 if (openFileDialog.ShowDialog() != true)
@@ -2631,54 +2635,154 @@ await Task.CompletedTask;
                     return;
                 }
 
-                string binaryPath = openFileDialog.FileName;
-                StatusBarText($"Loading Windows CE binary: {Path.GetFileName(binaryPath)}");
+                string[] binaryPaths = openFileDialog.FileNames;
+                StatusBarText($"Loading {binaryPaths.Length} Windows CE binaries...");
+
+                // Ask user if they want concurrent or sequential execution
+                var executionChoice = MessageBox.Show(
+                    $"Execute {binaryPaths.Length} binaries:\n\n" +
+                    "YES = Concurrently (all at once)\n" +
+                    "NO = Sequentially (one after another)\n" +
+                    "CANCEL = Abort execution",
+                    "Execution Mode",
+                    MessageBoxButton.YesNoCancel,
+                    MessageBoxImage.Question);
+
+                if (executionChoice == MessageBoxResult.Cancel)
+                {
+                    StatusBarText("Windows CE execution cancelled");
+                    return;
+                }
+
+                bool concurrent = executionChoice == MessageBoxResult.Yes;
 
                 // Initialize Windows CE executor
                 var executor = new WindowsCEExecutor();
-                var result = await executor.ExecuteAsync(binaryPath);
+                List<WindowsCEExecutionResult> results;
+
+                if (concurrent)
+                {
+                    StatusBarText($"Executing {binaryPaths.Length} binaries concurrently...");
+                    results = await executor.ExecuteMultipleAsync(binaryPaths);
+                }
+                else
+                {
+                    StatusBarText($"Executing {binaryPaths.Length} binaries sequentially...");
+                    results = new List<WindowsCEExecutionResult>();
+                    
+                    for (int i = 0; i < binaryPaths.Length; i++)
+                    {
+                        StatusBarText($"Executing binary {i + 1}/{binaryPaths.Length}: {Path.GetFileName(binaryPaths[i])}");
+                        var result = await executor.ExecuteAsync(binaryPaths[i]);
+                        results.Add(result);
+                    }
+                }
 
                 // Display execution results
                 var logEntries = new List<string>
                 {
-                    "=== Windows CE Binary Execution Results ===",
-                    $"Binary: {Path.GetFileName(binaryPath)}",
-                    $"Architecture: {result.Architecture}",
-                    $"Entry Point: 0x{result.EntryPoint:X8}",
-                    $"Execution Status: {(result.Success ? "SUCCESS" : "FAILED")}",
-                    $"Exit Code: {result.ExitCode}",
-                    "",
-                    "=== Execution Log ==="
+                    "=== Windows CE Multi-Binary Execution Results ===",
+                    $"Execution Mode: {(concurrent ? "Concurrent" : "Sequential")}",
+                    $"Total Binaries: {binaryPaths.Length}",
+                    $"Successful: {results.Count(r => r.Success)}",
+                    $"Failed: {results.Count(r => !r.Success)}",
+                    ""
                 };
 
-                if (result.Log != null)
+                for (int i = 0; i < results.Count; i++)
                 {
-                    logEntries.AddRange(result.Log);
-                }
-
-                if (!result.Success && !string.IsNullOrEmpty(result.Error))
-                {
+                    var result = results[i];
+                    var binary = Path.GetFileName(binaryPaths[i]);
+                    
+                    logEntries.Add($"=== {i + 1}. {binary} ===");
+                    logEntries.Add($"Process ID: {result.ProcessId}");
+                    logEntries.Add($"Architecture: {result.Architecture}");
+                    logEntries.Add($"Entry Point: 0x{result.EntryPoint:X8}");
+                    logEntries.Add($"Status: {(result.Success ? "SUCCESS" : "FAILED")}");
+                    logEntries.Add($"Exit Code: {result.ExitCode}");
+                    logEntries.Add($"Execution Time: {result.ExecutionTime.TotalMilliseconds:F0}ms");
+                    
+                    if (!result.Success && !string.IsNullOrEmpty(result.Error))
+                    {
+                        logEntries.Add($"Error: {result.Error}");
+                    }
+                    
+                    // Add recent log entries (last 5 lines)
+                    if (result.Log != null && result.Log.Count > 0)
+                    {
+                        logEntries.Add("Recent Log:");
+                        var recentLogs = result.Log.TakeLast(5);
+                        foreach (var log in recentLogs)
+                        {
+                            logEntries.Add($"  {log}");
+                        }
+                    }
+                    
                     logEntries.Add("");
-                    logEntries.Add("=== Error Details ===");
-                    logEntries.Add(result.Error);
                 }
 
-                ShowTextWindow($"Windows CE Execution - {Path.GetFileName(binaryPath)}", logEntries);
-                
-                if (result.Success)
+                // Show running processes
+                var runningProcesses = executor.GetRunningProcesses();
+                if (runningProcesses.Any(p => p.IsRunning))
                 {
-                    StatusBarText($"Windows CE execution completed successfully (exit code: {result.ExitCode})");
+                    logEntries.Add("=== Currently Running Processes ===");
+                    foreach (var proc in runningProcesses.Where(p => p.IsRunning))
+                    {
+                        logEntries.Add($"• {Path.GetFileName(proc.ExePath)} (PID: {proc.ProcessId})");
+                        logEntries.Add($"  Runtime: {proc.RunTime.TotalSeconds:F1}s");
+                    }
+                    logEntries.Add("");
+                    logEntries.Add("Use 'Stop All Processes' button to terminate running executables.");
                 }
-                else
+
+                ShowTextWindow($"Windows CE Multi-Execution Results ({binaryPaths.Length} binaries)", logEntries);
+                
+                int successCount = results.Count(r => r.Success);
+                StatusBarText($"Windows CE execution completed: {successCount}/{binaryPaths.Length} successful");
+
+                // Offer to show individual process details
+                if (results.Count > 1)
                 {
-                    StatusBarText($"Windows CE execution failed: {result.Error}");
+                    var detailChoice = MessageBox.Show(
+                        "Would you like to see detailed logs for individual processes?",
+                        "View Details",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Question);
+
+                    if (detailChoice == MessageBoxResult.Yes)
+                    {
+                        for (int i = 0; i < results.Count; i++)
+                        {
+                            var result = results[i];
+                            var binary = Path.GetFileName(binaryPaths[i]);
+                            
+                            var detailLog = new List<string>
+                            {
+                                $"=== Detailed Log for {binary} ===",
+                                $"Process ID: {result.ProcessId}",
+                                $"Architecture: {result.Architecture}",
+                                $"Entry Point: 0x{result.EntryPoint:X8}",
+                                $"Status: {(result.Success ? "SUCCESS" : "FAILED")}",
+                                $"Exit Code: {result.ExitCode}",
+                                $"Execution Time: {result.ExecutionTime.TotalMilliseconds:F0}ms",
+                                ""
+                            };
+
+                            if (result.Log != null)
+                            {
+                                detailLog.AddRange(result.Log);
+                            }
+
+                            ShowTextWindow($"Detailed Log - {binary}", detailLog);
+                        }
+                    }
                 }
             }
             catch (Exception ex)
             {
                 var errorLog = new List<string>
                 {
-                    "=== Windows CE Execution Error ===",
+                    "=== Windows CE Multi-Execution Error ===",
                     $"Error: {ex.Message}",
                     $"Type: {ex.GetType().Name}",
                     "",
@@ -2686,9 +2790,164 @@ await Task.CompletedTask;
                     ex.StackTrace
                 };
 
-                ShowTextWindow("Windows CE Execution Error", errorLog);
+                ShowTextWindow("Windows CE Multi-Execution Error", errorLog);
                 StatusBarText($"Windows CE execution error: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// Stop all running Windows CE processes
+        /// </summary>
+        private async Task HandleStopAllProcesses()
+        {
+            try
+            {
+                var executor = new WindowsCEExecutor();
+                var runningProcesses = executor.GetRunningProcesses();
+                var activeProcesses = runningProcesses.Where(p => p.IsRunning).ToList();
+
+                if (!activeProcesses.Any())
+                {
+                    StatusBarText("No running processes to stop");
+                    MessageBox.Show("No Windows CE processes are currently running.", "No Active Processes", 
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                var confirmResult = MessageBox.Show(
+                    $"Stop {activeProcesses.Count} running Windows CE processes?\n\n" +
+                    string.Join("\n", activeProcesses.Select(p => $"• {Path.GetFileName(p.ExePath)} (Runtime: {p.RunTime.TotalSeconds:F1}s)")),
+                    "Confirm Stop All Processes",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question);
+
+                if (confirmResult == MessageBoxResult.Yes)
+                {
+                    executor.StopAllProcesses();
+                    StatusBarText($"Stopped {activeProcesses.Count} Windows CE processes");
+                    
+                    var logEntries = new List<string>
+                    {
+                        "=== Stopped Windows CE Processes ===",
+                        $"Total Processes Stopped: {activeProcesses.Count}",
+                        ""
+                    };
+
+                    foreach (var proc in activeProcesses)
+                    {
+                        logEntries.Add($"• {Path.GetFileName(proc.ExePath)}");
+                        logEntries.Add($"  Process ID: {proc.ProcessId}");
+                        logEntries.Add($"  Runtime: {proc.RunTime.TotalSeconds:F1}s");
+                        logEntries.Add("");
+                    }
+
+                    ShowTextWindow("Stopped Processes", logEntries);
+                }
+                else
+                {
+                    StatusBarText("Process termination cancelled");
+                }
+            }
+            catch (Exception ex)
+            {
+                StatusBarText($"Error stopping processes: {ex.Message}");
+                MessageBox.Show($"Error stopping processes: {ex.Message}", "Error", 
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+
+            await Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Show currently running Windows CE processes
+        /// </summary>
+        private async Task HandleShowRunningProcesses()
+        {
+            try
+            {
+                var executor = new WindowsCEExecutor();
+                var processes = executor.GetRunningProcesses();
+
+                var logEntries = new List<string>
+                {
+                    "=== Windows CE Process Status ===",
+                    $"Total Processes: {processes.Count}",
+                    $"Running: {processes.Count(p => p.IsRunning)}",
+                    $"Stopped: {processes.Count(p => !p.IsRunning)}",
+                    ""
+                };
+
+                if (processes.Any())
+                {
+                    logEntries.Add("=== Process Details ===");
+                    foreach (var proc in processes.OrderByDescending(p => p.IsRunning).ThenBy(p => p.StartTime))
+                    {
+                        var status = proc.IsRunning ? "🟢 RUNNING" : "🔴 STOPPED";
+                        logEntries.Add($"{status} {Path.GetFileName(proc.ExePath)}");
+                        logEntries.Add($"  Process ID: {proc.ProcessId}");
+                        logEntries.Add($"  Architecture: {proc.Architecture}");
+                        logEntries.Add($"  Started: {proc.StartTime:HH:mm:ss}");
+                        
+                        if (proc.IsRunning)
+                        {
+                            logEntries.Add($"  Runtime: {proc.RunTime.TotalSeconds:F1}s");
+                        }
+                        else
+                        {
+                            logEntries.Add($"  Stopped: {proc.StopTime?.ToString("HH:mm:ss") ?? "Unknown"}");
+                            logEntries.Add($"  Exit Code: {proc.ExitCode}");
+                            logEntries.Add($"  Total Runtime: {proc.RunTime.TotalSeconds:F1}s");
+                        }
+                        
+                        logEntries.Add("");
+                    }
+                }
+                else
+                {
+                    logEntries.Add("No Windows CE processes have been executed yet.");
+                }
+
+                ShowTextWindow("Windows CE Process Status", logEntries);
+                StatusBarText($"Displayed status for {processes.Count} processes");
+            }
+            catch (Exception ex)
+            {
+                StatusBarText($"Error retrieving process status: {ex.Message}");
+                MessageBox.Show($"Error retrieving process status: {ex.Message}", "Error", 
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+
+            await Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Open process monitor for real-time updates
+        /// </summary>
+        private async Task HandleProcessMonitor()
+        {
+            try
+            {
+                StatusBarText("Process monitor not implemented yet - use 'Show Running Processes' for current status");
+                
+                // For now, just show current status with refresh option
+                var choice = MessageBox.Show(
+                    "Process Monitor is not yet implemented.\n\n" +
+                    "Would you like to see the current process status instead?",
+                    "Process Monitor",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Information);
+
+                if (choice == MessageBoxResult.Yes)
+                {
+                    await HandleShowRunningProcesses();
+                }
+            }
+            catch (Exception ex)
+            {
+                StatusBarText($"Process monitor error: {ex.Message}");
+            }
+
+            await Task.CompletedTask;
         }
     }
 }
