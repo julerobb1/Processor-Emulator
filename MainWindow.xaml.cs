@@ -411,7 +411,42 @@ namespace ProcessorEmulator
         {
             try
             {
+                // Ensure firmware path is set; prompt for U-verse dump if not selected
+                if (string.IsNullOrEmpty(firmwarePath) || !File.Exists(firmwarePath))
+                {
+                    var dlg = new OpenFileDialog
+                    {
+                        Title = "Select U-verse Firmware Dump",
+                        InitialDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data", "DVR", "Uverse_Stuff"),
+                        Filter = "Firmware Dumps (*.bin;*.img;*.rdk)|*.bin;*.img;*.rdk|All Files (*.*)|*.*"
+                    };
+                    if (dlg.ShowDialog() != true) return;
+                    firmwarePath = dlg.FileName;
+                    StatusBarText($"Selected U-verse dump: {Path.GetFileName(firmwarePath)}");
+                }
                 StatusBarText(" Starting AT&T U-verse + Microsoft Mediaroom emulation...");
+                // If this is a raw U-verse dump under Data/DVR/Uverse_Stuff, use SimpleFirmwareEmulator fallback
+                string uverseDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data", "DVR", "Uverse_Stuff");
+                if (firmwarePath.StartsWith(uverseDir, StringComparison.OrdinalIgnoreCase))
+                {
+                    StatusBarText("Booting U-verse dump via SimpleFirmwareEmulator...");
+                    var simpleEmu = new SimpleFirmwareEmulator();
+                    byte[] dumpData = File.ReadAllBytes(firmwarePath);
+                    if (!await simpleEmu.LoadFirmware(dumpData))
+                    {
+                        ShowTextWindow("U-verse Dump Emulation Failure", new List<string>{ "Failed to load firmware dump." });
+                        return;
+                    }
+                    bool started = await simpleEmu.StartEmulation();
+                    if (!started)
+                    {
+                        ShowTextWindow("U-verse Dump Emulation Failure", new List<string>{ "Emulation failed to start." });
+                        return;
+                    }
+                    ShowTextWindow("U-verse Dump Emulation Success", new List<string>{ "U-verse dump booted successfully!" });
+                    StatusBarText("U-verse dump booted successfully");
+                    return;
+                }
                 
                 // Check if this is an nk.bin kernel file
                 if (Path.GetFileName(firmwarePath).ToLower() == "nk.bin")
