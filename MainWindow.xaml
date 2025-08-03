@@ -73,8 +73,8 @@
                                 <!-- Third Row -->
                                 <Button Grid.Row="2" Grid.Column="0" Content="PowerPC Demo" Margin="2" Padding="5" Height="35"
                                         Click="PowerPCDemo_Click" ToolTip="PowerPC bootloader demo"/>
-                                <Button Grid.Row="2" Grid.Column="1" Content="Generic Emulation" Margin="2" Padding="5" Height="35"
-                                        Click="GenericEmulation_Click" ToolTip="Generic CPU/OS emulation"/>
+                                <Button Grid.Row="2" Grid.Column="1" Content="Windows CE Executor" Margin="2" Padding="5" Height="35"
+                                        Click="WindowsCEExecutor_Click" ToolTip="Execute Windows CE binaries on x64"/>
                                 <Button Grid.Row="2" Grid.Column="2" Content="Universal Hypervisor" Margin="2" Padding="5" Height="35"
                                         Click="UniversalHypervisor_Click" ToolTip="Universal multi-architecture hypervisor"/>
                             </Grid>

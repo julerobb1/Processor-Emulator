@@ -403,6 +403,9 @@ namespace ProcessorEmulator
                 case "Custom Hypervisor":
                     await HandleCustomHypervisor();
                     break;
+                case "Windows CE Binary Execution":
+                    await HandleWindowsCEExecution();
+                    break;
                 default:
                     MessageBox.Show("Not implemented yet.", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
                     break;
@@ -2566,6 +2569,7 @@ await Task.CompletedTask;
         private void DishVxWorks_Click(object sender, RoutedEventArgs e) => _ = HandleDishVxWorks();
         private void PowerPCDemo_Click(object sender, RoutedEventArgs e) => _ = HandlePowerPCDemo();
         private void GenericEmulation_Click(object sender, RoutedEventArgs e) => _ = HandleGenericEmulation();
+        private void WindowsCEExecutor_Click(object sender, RoutedEventArgs e) => _ = HandleWindowsCEExecution();
         private void UniversalHypervisor_Click(object sender, RoutedEventArgs e) => _ = HandleCustomHypervisor();
         private void ExtractFirmware_Click(object sender, RoutedEventArgs e) => _ = HandleFirmwareExtraction();
         private void DetectFileType_Click(object sender, RoutedEventArgs e) => _ = HandleFileTypeDetection();
@@ -2605,5 +2609,86 @@ await Task.CompletedTask;
         private async Task HandleBoltMemTest() => StatusBarText("BOLT memory test started");
         private async Task HandleBoltShowDtb() => StatusBarText("BOLT DTB display started");
         private async Task HandleBoltDumpMemory() => StatusBarText("BOLT memory dump started");
+
+        /// <summary>
+        /// Handle Windows CE binary execution using cross-platform translation
+        /// </summary>
+        private async Task HandleWindowsCEExecution()
+        {
+            try
+            {
+                // Prompt user to select Windows CE binary
+                var openFileDialog = new OpenFileDialog
+                {
+                    Title = "Select Windows CE Binary",
+                    Filter = "Windows CE Executables (*.exe)|*.exe|All Files (*.*)|*.*",
+                    InitialDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data", "DVR", "Uverse_Stuff")
+                };
+
+                if (openFileDialog.ShowDialog() != true)
+                {
+                    StatusBarText("Windows CE execution cancelled");
+                    return;
+                }
+
+                string binaryPath = openFileDialog.FileName;
+                StatusBarText($"Loading Windows CE binary: {Path.GetFileName(binaryPath)}");
+
+                // Initialize Windows CE executor
+                var executor = new WindowsCEExecutor();
+                var result = await executor.ExecuteAsync(binaryPath);
+
+                // Display execution results
+                var logEntries = new List<string>
+                {
+                    "=== Windows CE Binary Execution Results ===",
+                    $"Binary: {Path.GetFileName(binaryPath)}",
+                    $"Architecture: {result.Architecture}",
+                    $"Entry Point: 0x{result.EntryPoint:X8}",
+                    $"Execution Status: {(result.Success ? "SUCCESS" : "FAILED")}",
+                    $"Exit Code: {result.ExitCode}",
+                    "",
+                    "=== Execution Log ==="
+                };
+
+                if (result.Log != null)
+                {
+                    logEntries.AddRange(result.Log);
+                }
+
+                if (!result.Success && !string.IsNullOrEmpty(result.Error))
+                {
+                    logEntries.Add("");
+                    logEntries.Add("=== Error Details ===");
+                    logEntries.Add(result.Error);
+                }
+
+                ShowTextWindow($"Windows CE Execution - {Path.GetFileName(binaryPath)}", logEntries);
+                
+                if (result.Success)
+                {
+                    StatusBarText($"Windows CE execution completed successfully (exit code: {result.ExitCode})");
+                }
+                else
+                {
+                    StatusBarText($"Windows CE execution failed: {result.Error}");
+                }
+            }
+            catch (Exception ex)
+            {
+                var errorLog = new List<string>
+                {
+                    "=== Windows CE Execution Error ===",
+                    $"Error: {ex.Message}",
+                    $"Type: {ex.GetType().Name}",
+                    "",
+                    "=== Stack Trace ===",
+                    ex.StackTrace
+                };
+
+                ShowTextWindow("Windows CE Execution Error", errorLog);
+                StatusBarText($"Windows CE execution error: {ex.Message}");
+            }
+        }
     }
 }

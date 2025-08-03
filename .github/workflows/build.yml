@@ -1,8 +1,9 @@
-name: Build and Test
+name: Production Release
 
 on:
   push:
-    branches: [ "main", "dev" ]
+    branches: [ "main" ]
+    tags: [ "v*" ]
   pull_request:
     branches: [ "main" ]
 
@@ -26,3 +27,18 @@ jobs:
       
     - name: Test
       run: dotnet test ProcessorEmulator.csproj --no-build --configuration Release --verbosity normal
+      
+    - name: Publish
+      if: startsWith(github.ref, 'refs/tags/')
+      run: dotnet publish ProcessorEmulator.csproj --configuration Release --output ./publish
+      
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        draft: false
+        prerelease: false
