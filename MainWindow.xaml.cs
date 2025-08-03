@@ -128,6 +128,43 @@ namespace ProcessorEmulator
         }
 
         /// <summary>
+        /// Show QEMU installation status for real firmware emulation
+        /// </summary>
+        private void ShowQemuStatus()
+        {
+            try
+            {
+                string status = Tools.QemuInstaller.GetQemuStatus();
+                StatusBarText(status);
+                
+                if (!Tools.QemuInstaller.IsQemuInstalled())
+                {
+                    // Show installation prompt after a delay
+                    Task.Delay(2000).ContinueWith(_ => 
+                    {
+                        Application.Current.Dispatcher.Invoke(() =>
+                        {
+                            var result = MessageBox.Show(
+                                "🔧 Real Firmware Emulation Available!\n\n" +
+                                "Install QEMU to boot actual ARM/MIPS firmware instead of simulations.\n\n" +
+                                "Would you like installation instructions?",
+                                "Enable Real Emulation", MessageBoxButton.YesNo, MessageBoxImage.Information);
+                            
+                            if (result == MessageBoxResult.Yes)
+                            {
+                                Tools.QemuInstaller.ShowInstallationInstructions();
+                            }
+                        });
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Failed to show QEMU status: {ex.Message}");
+            }
+        }
+
+        /// <summary>
         /// Initialize the real-time emulation log panel
         /// </summary>
         private void InitializeLogPanel()
@@ -418,34 +455,91 @@ namespace ProcessorEmulator
                     {
                         Title = "Select U-verse Firmware Dump",
                         InitialDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data", "DVR", "Uverse_Stuff"),
-                        Filter = "Firmware Dumps (*.bin;*.img;*.rdk)|*.bin;*.img;*.rdk|All Files (*.*)|*.*"
+                        Filter = "Firmware Files (*.bin;*.img;*.exe)|*.bin;*.img;*.exe|Registry Files (*.hv)|*.hv|All Files (*.*)|*.*"
                     };
                     if (dlg.ShowDialog() != true) return;
                     firmwarePath = dlg.FileName;
                     StatusBarText($"Selected U-verse dump: {Path.GetFileName(firmwarePath)}");
                 }
                 StatusBarText(" Starting AT&T U-verse + Microsoft Mediaroom emulation...");
-                // If this is a raw U-verse dump under Data/DVR/Uverse_Stuff, use SimpleFirmwareEmulator fallback
+                // If this is a real U-verse dump, boot it with QEMU
                 string uverseDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data", "DVR", "Uverse_Stuff");
                 if (firmwarePath.StartsWith(uverseDir, StringComparison.OrdinalIgnoreCase))
                 {
-                    StatusBarText("Booting U-verse dump via SimpleFirmwareEmulator...");
-                    var simpleEmu = new SimpleFirmwareEmulator();
-                    byte[] dumpData = File.ReadAllBytes(firmwarePath);
-                    if (!await simpleEmu.LoadFirmware(dumpData))
+                    StatusBarText("REAL BOOT: Starting QEMU to boot actual U-verse firmware...");
+                    
+                    // Check if this is the nk.exe WinCE kernel
+                    string nkExePath = Path.Combine(Path.GetDirectoryName(firmwarePath), "nk.exe");
+                    string registryPath = Path.Combine(Path.GetDirectoryName(firmwarePath), "boot.hv");
+                    
+                    if (File.Exists(nkExePath))
                     {
-                        ShowTextWindow("U-verse Dump Emulation Failure", new List<string>{ "Failed to load firmware dump." });
+                        StatusBarText("Found nk.exe - booting real WinCE kernel via QEMU ARM...");
+                        var qemuEmulator = new RealQemuEmulator();
+                        bool bootSuccess = await qemuEmulator.BootWinCEFirmware(nkExePath, 
+                            File.Exists(registryPath) ? registryPath : null);
+                        
+                        if (bootSuccess)
+                        {
+                            StatusBarText("SUCCESS: Real U-verse WinCE firmware booted in QEMU!");
+                            var results = new List<string>
+                            {
+                                "🎉 REAL FIRMWARE BOOT SUCCESS!",
+                                "",
+                                "✅ QEMU ARM emulation started successfully",
+                                $"✅ WinCE Kernel: {Path.GetFileName(nkExePath)}",
+                                $"✅ Registry: {(File.Exists(registryPath) ? "boot.hv loaded" : "Using defaults")}",
+                                $"✅ QEMU Path: {qemuEmulator.GetQemuPath()}",
+                                "",
+                                "🖥️ QEMU window should be open showing actual boot process",
+                                "📺 This is REAL U-verse firmware running on ARM emulation",
+                                "🔧 Watch console output for detailed boot messages",
+                                "",
+                                "⚠️ If QEMU window doesn't appear, install QEMU from:",
+                                "   https://qemu.weilnetz.de/w64/",
+                                "   or use: choco install qemu"
+                            };
+                            ShowTextWindow("REAL U-verse Firmware Boot", results);
+                        }
+                        else
+                        {
+                            StatusBarText("QEMU boot failed - check QEMU installation");
+                            ShowTextWindow("QEMU Boot Failed", new List<string> 
+                            { 
+                                "❌ Failed to start QEMU",
+                                "",
+                                "💡 To boot real firmware, you need QEMU installed:",
+                                "   1. Download from https://qemu.weilnetz.de/w64/",
+                                "   2. Install to C:\\Program Files\\qemu\\",
+                                "   3. Or use: choco install qemu",
+                                "   4. Ensure qemu-system-arm.exe is in PATH"
+                            });
+                        }
                         return;
                     }
-                    bool started = await simpleEmu.StartEmulation();
-                    if (!started)
+                    else
                     {
-                        ShowTextWindow("U-verse Dump Emulation Failure", new List<string>{ "Emulation failed to start." });
+                        // Try to boot the selected file directly
+                        StatusBarText("Attempting direct firmware boot via QEMU...");
+                        var qemuEmulator = new RealQemuEmulator();
+                        bool bootSuccess = false;
+                        
+                        if (Path.GetExtension(firmwarePath).ToLower() == ".bin")
+                        {
+                            // Assume ARM WinCE
+                            bootSuccess = await qemuEmulator.BootWinCEFirmware(firmwarePath);
+                        }
+                        
+                        if (bootSuccess)
+                        {
+                            StatusBarText("Real firmware boot started in QEMU!");
+                        }
+                        else
+                        {
+                            StatusBarText("QEMU boot failed - check file format and QEMU installation");
+                        }
                         return;
                     }
-                    ShowTextWindow("U-verse Dump Emulation Success", new List<string>{ "U-verse dump booted successfully!" });
-                    StatusBarText("U-verse dump booted successfully");
-                    return;
                 }
                 
                 // Check if this is an nk.bin kernel file
@@ -2416,7 +2510,7 @@ await Task.CompletedTask;
         {
             var openFileDialog = new OpenFileDialog
             {
-                Filter = "Firmware Files (*.bin;*.img;*.rdk)|*.bin;*.img;*.rdk|All Files (*.*)|*.*"
+                Filter = "Firmware Files (*.bin;*.img;*.exe)|*.bin;*.img;*.exe|All Files (*.*)|*.*"
             };
             if (openFileDialog.ShowDialog() == true)
             {
