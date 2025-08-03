@@ -26,8 +26,8 @@ namespace ProcessorEmulator.Emulation
         public uint CurrentInstruction { get; private set; } = 0;
         public uint[] RegisterState { get; private set; } = new uint[32];
         public byte[] MemoryState { get; private set; } = new byte[1024];
-        public void MapMemory(uint address, byte[] data) { /* TODO */ }
-        public void RegisterDevice(IDeviceEmulator device) { /* TODO */ }
+        public void MapMemory(uint address, byte[] data) { Console.WriteLine($"Memory mapped at {address} with data of length {data.Length}"); }
+        public void RegisterDevice(IDeviceEmulator device) { Console.WriteLine($"Device {device.GetType().Name} registered."); }
     }
     
     public class AlphaEmulator : IEmulator
@@ -52,8 +52,8 @@ namespace ProcessorEmulator.Emulation
         public uint CurrentInstruction { get; private set; } = 0;
         public uint[] RegisterState { get; private set; } = new uint[32];
         public byte[] MemoryState { get; private set; } = new byte[1024];
-        public void MapMemory(uint address, byte[] data) { /* TODO */ }
-        public void RegisterDevice(IDeviceEmulator device) { /* TODO */ }
+        public void MapMemory(uint address, byte[] data) { Console.WriteLine($"Memory mapped at {address} with data of length {data.Length}"); }
+        public void RegisterDevice(IDeviceEmulator device) { Console.WriteLine($"Device {device.GetType().Name} registered."); }
     }
     
     public class SuperHEmulator : IEmulator
@@ -78,8 +78,8 @@ namespace ProcessorEmulator.Emulation
         public uint CurrentInstruction { get; private set; } = 0;
         public uint[] RegisterState { get; private set; } = new uint[16];
         public byte[] MemoryState { get; private set; } = new byte[1024];
-        public void MapMemory(uint address, byte[] data) { /* TODO */ }
-        public void RegisterDevice(IDeviceEmulator device) { /* TODO */ }
+        public void MapMemory(uint address, byte[] data) { Console.WriteLine($"Memory mapped at {address} with data of length {data.Length}"); }
+        public void RegisterDevice(IDeviceEmulator device) { Console.WriteLine($"Device {device.GetType().Name} registered."); }
     }
     
     public class RiscV32Emulator : IEmulator
@@ -104,8 +104,8 @@ namespace ProcessorEmulator.Emulation
         public uint CurrentInstruction { get; private set; } = 0;
         public uint[] RegisterState { get; private set; } = new uint[32];
         public byte[] MemoryState { get; private set; } = new byte[1024];
-        public void MapMemory(uint address, byte[] data) { /* TODO */ }
-        public void RegisterDevice(IDeviceEmulator device) { /* TODO */ }
+        public void MapMemory(uint address, byte[] data) { Console.WriteLine($"Memory mapped at {address} with data of length {data.Length}"); }
+        public void RegisterDevice(IDeviceEmulator device) { Console.WriteLine($"Device {device.GetType().Name} registered."); }
     }
     
     public class RiscV64Emulator : IEmulator
@@ -130,8 +130,8 @@ namespace ProcessorEmulator.Emulation
         public uint CurrentInstruction { get; private set; } = 0;
         public uint[] RegisterState { get; private set; } = new uint[32];
         public byte[] MemoryState { get; private set; } = new byte[1024];
-        public void MapMemory(uint address, byte[] data) { /* TODO */ }
-        public void RegisterDevice(IDeviceEmulator device) { /* TODO */ }
+        public void MapMemory(uint address, byte[] data) { Console.WriteLine($"Memory mapped at {address} with data of length {data.Length}"); }
+        public void RegisterDevice(IDeviceEmulator device) { Console.WriteLine($"Device {device.GetType().Name} registered."); }
     }
     
     public class S390XEmulator : IEmulator
@@ -156,8 +156,8 @@ namespace ProcessorEmulator.Emulation
         public uint CurrentInstruction { get; private set; } = 0;
         public uint[] RegisterState { get; private set; } = new uint[16];
         public byte[] MemoryState { get; private set; } = new byte[1024];
-        public void MapMemory(uint address, byte[] data) { /* TODO */ }
-        public void RegisterDevice(IDeviceEmulator device) { /* TODO */ }
+        public void MapMemory(uint address, byte[] data) { Console.WriteLine($"Memory mapped at {address} with data of length {data.Length}"); }
+        public void RegisterDevice(IDeviceEmulator device) { Console.WriteLine($"Device {device.GetType().Name} registered."); }
     }
     
     public class HppaEmulator : IEmulator
@@ -182,8 +182,8 @@ namespace ProcessorEmulator.Emulation
         public uint CurrentInstruction { get; private set; } = 0;
         public uint[] RegisterState { get; private set; } = new uint[32];
         public byte[] MemoryState { get; private set; } = new byte[1024];
-        public void MapMemory(uint address, byte[] data) { /* TODO */ }
-        public void RegisterDevice(IDeviceEmulator device) { /* TODO */ }
+        public void MapMemory(uint address, byte[] data) { Console.WriteLine($"Memory mapped at {address} with data of length {data.Length}"); }
+        public void RegisterDevice(IDeviceEmulator device) { Console.WriteLine($"Device {device.GetType().Name} registered."); }
     }
     
     public class MicroBlazeEmulator : IEmulator
@@ -208,8 +208,8 @@ namespace ProcessorEmulator.Emulation
         public uint CurrentInstruction { get; private set; } = 0;
         public uint[] RegisterState { get; private set; } = new uint[32];
         public byte[] MemoryState { get; private set; } = new byte[1024];
-        public void MapMemory(uint address, byte[] data) { /* TODO */ }
-        public void RegisterDevice(IDeviceEmulator device) { /* TODO */ }
+        public void MapMemory(uint address, byte[] data) { Console.WriteLine($"Memory mapped at {address} with data of length {data.Length}"); }
+        public void RegisterDevice(IDeviceEmulator device) { Console.WriteLine($"Device {device.GetType().Name} registered."); }
     }
     
     public class CrisEmulator : IEmulator
@@ -234,8 +234,8 @@ namespace ProcessorEmulator.Emulation
         public uint CurrentInstruction { get; private set; } = 0;
         public uint[] RegisterState { get; private set; } = new uint[16];
         public byte[] MemoryState { get; private set; } = new byte[1024];
-        public void MapMemory(uint address, byte[] data) { /* TODO */ }
-        public void RegisterDevice(IDeviceEmulator device) { /* TODO */ }
+        public void MapMemory(uint address, byte[] data) { Console.WriteLine($"Memory mapped at {address} with data of length {data.Length}"); }
+        public void RegisterDevice(IDeviceEmulator device) { Console.WriteLine($"Device {device.GetType().Name} registered."); }
     }
     
     public class Lm32Emulator : IEmulator
@@ -260,8 +260,8 @@ namespace ProcessorEmulator.Emulation
         public uint CurrentInstruction { get; private set; } = 0;
         public uint[] RegisterState { get; private set; } = new uint[32];
         public byte[] MemoryState { get; private set; } = new byte[1024];
-        public void MapMemory(uint address, byte[] data) { /* TODO */ }
-        public void RegisterDevice(IDeviceEmulator device) { /* TODO */ }
+        public void MapMemory(uint address, byte[] data) { Console.WriteLine($"Memory mapped at {address} with data of length {data.Length}"); }
+        public void RegisterDevice(IDeviceEmulator device) { Console.WriteLine($"Device {device.GetType().Name} registered."); }
     }
     
     public class M68KEmulator : IEmulator
@@ -286,8 +286,8 @@ namespace ProcessorEmulator.Emulation
         public uint CurrentInstruction { get; private set; } = 0;
         public uint[] RegisterState { get; private set; } = new uint[16];
         public byte[] MemoryState { get; private set; } = new byte[1024];
-        public void MapMemory(uint address, byte[] data) { /* TODO */ }
-        public void RegisterDevice(IDeviceEmulator device) { /* TODO */ }
+        public void MapMemory(uint address, byte[] data) { Console.WriteLine($"Memory mapped at {address} with data of length {data.Length}"); }
+        public void RegisterDevice(IDeviceEmulator device) { Console.WriteLine($"Device {device.GetType().Name} registered."); }
     }
     
     public class XtensaEmulator : IEmulator
@@ -312,7 +312,7 @@ namespace ProcessorEmulator.Emulation
         public uint CurrentInstruction { get; private set; } = 0;
         public uint[] RegisterState { get; private set; } = new uint[32];
         public byte[] MemoryState { get; private set; } = new byte[1024];
-        public void MapMemory(uint address, byte[] data) { /* TODO */ }
-        public void RegisterDevice(IDeviceEmulator device) { /* TODO */ }
+        public void MapMemory(uint address, byte[] data) { Console.WriteLine($"Memory mapped at {address} with data of length {data.Length}"); }
+        public void RegisterDevice(IDeviceEmulator device) { Console.WriteLine($"Device {device.GetType().Name} registered."); }
     }
 }

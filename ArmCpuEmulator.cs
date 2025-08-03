@@ -2,7 +2,7 @@ using System;
 
 namespace ProcessorEmulator.Emulation
 {
-    public class ArmCpuEmulator
+    public class ArmCpuEmulator : IEmulator
     {
         private const int RegisterCount = 16; // R0-R15
         private const int MemorySize = 1024 * 1024; // 1 MB
@@ -10,11 +10,23 @@ namespace ProcessorEmulator.Emulation
         private byte[] memory;
         private uint programCounter;
 
+        public uint ProgramCounter { get => programCounter; set => programCounter = value; }
+        public uint StackPointer { get; set; }
+        public int InstructionCount { get; private set; }
+        public uint CurrentInstruction { get; private set; }
+        public uint[] RegisterState => registers;
+        public byte[] MemoryState => memory;
+
         public ArmCpuEmulator()
         {
             registers = new uint[RegisterCount];
             memory = new byte[MemorySize];
             programCounter = 0x0;
+        }
+
+        public void LoadBinary(byte[] binary, uint loadAddress)
+        {
+            LoadProgram(binary, loadAddress);
         }
 
         public void LoadProgram(byte[] program, uint startAddress)
@@ -30,6 +42,12 @@ namespace ProcessorEmulator.Emulation
                 uint instruction = FetchInstruction();
                 DecodeAndExecute(instruction);
             }
+        }
+
+        public void Step()
+        {
+            uint instruction = FetchInstruction();
+            DecodeAndExecute(instruction);
         }
 
         private uint FetchInstruction()
@@ -66,6 +84,21 @@ namespace ProcessorEmulator.Emulation
                 default:
                     throw new NotSupportedException($"Opcode {opcode:X3} not supported.");
             }
+        }
+
+        public void MapMemory(uint address, byte[] data)
+        {
+            if (address + data.Length > memory.Length)
+            {
+                throw new ArgumentOutOfRangeException("Memory map exceeds available memory.");
+            }
+            Array.Copy(data, 0, memory, address, data.Length);
+        }
+
+        public void RegisterDevice(IDeviceEmulator device)
+        {
+            // TODO: Implement device registration
+            Console.WriteLine($"Device {device.GetType().Name} registered.");
         }
 
         private void ExecuteAdd(uint instruction)
