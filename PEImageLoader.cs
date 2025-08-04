@@ -10,10 +10,11 @@ namespace ProcessorEmulator
     {
         Unknown = 0,
         x86 = 0x14c,
-        ARM = 0x1c0,
-        ARMThumb = 0x1c2,
-        MIPS = 0x166,
-        MIPS16 = 0x266,
+        ARM = 0x166,     // ARM (little endian) - corrected value
+        ARMThumb = 0x1c0, // ARM Thumb
+        ARM64 = 0x1c2,   // ARM64 (was ARMThumb)
+        MIPS = 0x366,    // MIPS
+        MIPS16 = 0x266,  // MIPS16
         x64 = 0x8664
     }
 
@@ -101,10 +102,10 @@ namespace ProcessorEmulator
             if (BitConverter.ToUInt16(data, 0) != 0x5A4D) // "MZ"
                 throw new InvalidDataException("Invalid DOS header");
 
-            // Get PE header offset
+            // Get PE header offset with bounds checking
             var peOffset = BitConverter.ToUInt32(data, 0x3C);
-            if (peOffset >= data.Length - 4)
-                throw new InvalidDataException("Invalid PE offset");
+            if (peOffset >= data.Length - 24) // Need at least 24 bytes for PE signature + COFF header
+                throw new InvalidDataException($"Invalid PE offset: 0x{peOffset:X} (file size: {data.Length})");
 
             // Check PE signature
             if (BitConverter.ToUInt32(data, (int)peOffset) != 0x00004550) // "PE\0\0"
@@ -112,8 +113,11 @@ namespace ProcessorEmulator
 
             var pe = new PEImageInfo { RawData = data };
 
-            // Parse COFF header
+            // Parse COFF header with bounds checking
             var coffOffset = (int)peOffset + 4;
+            if (coffOffset + 20 > data.Length)
+                throw new InvalidDataException("COFF header extends beyond file");
+
             var machine = BitConverter.ToUInt16(data, coffOffset);
             pe.Architecture = (PEArchitecture)machine;
 
@@ -123,32 +127,49 @@ namespace ProcessorEmulator
             Console.WriteLine($"🔍 Machine Type: 0x{machine:X4} ({pe.Architecture})");
             Console.WriteLine($"📦 Sections: {numberOfSections}");
 
-            // Parse optional header
+            // Validate section count and optional header size
+            if (numberOfSections > 96) // Reasonable limit
+                throw new InvalidDataException($"Too many sections: {numberOfSections}");
+
+            // Parse optional header with bounds checking
             var optionalHeaderOffset = coffOffset + 20;
             if (sizeOfOptionalHeader > 0)
             {
-                var magic = BitConverter.ToUInt16(data, optionalHeaderOffset);
-                var is32Bit = magic == 0x10B;
-                
-                if (is32Bit)
+                if (optionalHeaderOffset + sizeOfOptionalHeader > data.Length)
+                    throw new InvalidDataException("Optional header extends beyond file");
+
+                if (sizeOfOptionalHeader >= 2) // At least magic number
                 {
-                    pe.EntryPoint = BitConverter.ToUInt32(data, optionalHeaderOffset + 16);
-                    pe.ImageBase = BitConverter.ToUInt32(data, optionalHeaderOffset + 28);
-                    pe.SizeOfImage = BitConverter.ToUInt32(data, optionalHeaderOffset + 56);
-                    pe.Subsystem = (PESubsystem)BitConverter.ToUInt16(data, optionalHeaderOffset + 68);
-                }
-                else
-                {
-                    // PE32+ format
-                    pe.EntryPoint = BitConverter.ToUInt32(data, optionalHeaderOffset + 16);
-                    pe.ImageBase = (uint)BitConverter.ToUInt64(data, optionalHeaderOffset + 24); // Truncate for 32-bit compat
-                    pe.SizeOfImage = BitConverter.ToUInt32(data, optionalHeaderOffset + 56);
-                    pe.Subsystem = (PESubsystem)BitConverter.ToUInt16(data, optionalHeaderOffset + 68);
+                    var magic = BitConverter.ToUInt16(data, optionalHeaderOffset);
+                    var is32Bit = magic == 0x10B;
+                    
+                    if (is32Bit && sizeOfOptionalHeader >= 96) // Standard PE32 optional header size
+                    {
+                        pe.EntryPoint = BitConverter.ToUInt32(data, optionalHeaderOffset + 16);
+                        pe.ImageBase = BitConverter.ToUInt32(data, optionalHeaderOffset + 28);
+                        pe.SizeOfImage = BitConverter.ToUInt32(data, optionalHeaderOffset + 56);
+                        pe.Subsystem = (PESubsystem)BitConverter.ToUInt16(data, optionalHeaderOffset + 68);
+                    }
+                    else if (!is32Bit && sizeOfOptionalHeader >= 112) // Standard PE32+ optional header size
+                    {
+                        // PE32+ format
+                        pe.EntryPoint = BitConverter.ToUInt32(data, optionalHeaderOffset + 16);
+                        pe.ImageBase = (uint)BitConverter.ToUInt64(data, optionalHeaderOffset + 24); // Truncate for 32-bit compat
+                        pe.SizeOfImage = BitConverter.ToUInt32(data, optionalHeaderOffset + 56);
+                        pe.Subsystem = (PESubsystem)BitConverter.ToUInt16(data, optionalHeaderOffset + 68);
+                    }
+                    else
+                    {
+                        Console.WriteLine($"⚠️ Unusual optional header size: {sizeOfOptionalHeader} (magic: 0x{magic:X})");
+                    }
                 }
             }
 
-            // Parse sections
+            // Parse sections with bounds checking
             var sectionHeaderOffset = optionalHeaderOffset + sizeOfOptionalHeader;
+            if (sectionHeaderOffset + (numberOfSections * 40) > data.Length)
+                throw new InvalidDataException("Section headers extend beyond file");
+
             for (int i = 0; i < numberOfSections; i++)
             {
                 var sectionOffset = sectionHeaderOffset + (i * 40);
@@ -162,12 +183,16 @@ namespace ProcessorEmulator
                     Characteristics = BitConverter.ToUInt32(data, sectionOffset + 36)
                 };
 
-                // Copy section data
-                if (section.RawSize > 0 && section.RawOffset < data.Length)
+                // Copy section data with bounds checking
+                if (section.RawSize > 0 && section.RawOffset < data.Length && section.RawOffset + section.RawSize <= data.Length)
                 {
                     var dataSize = Math.Min(section.RawSize, (uint)(data.Length - section.RawOffset));
                     section.RawData = new byte[dataSize];
                     Array.Copy(data, section.RawOffset, section.RawData, 0, dataSize);
+                }
+                else if (section.RawSize > 0)
+                {
+                    Console.WriteLine($"⚠️ Section {section.Name} has invalid data offset/size: 0x{section.RawOffset:X}/0x{section.RawSize:X}");
                 }
 
                 pe.Sections.Add(section);
