@@ -1,0 +1,6 @@
+# Disable Markdown style checks by Codacy
+engines:
+  markdownlint:
+    enabled: false
+  roslyn:
+    enabled: false
