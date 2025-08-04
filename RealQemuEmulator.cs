@@ -179,6 +179,9 @@ namespace ProcessorEmulator
         }
 
         public bool IsRunning => isRunning && qemuProcess != null && !qemuProcess.HasExited;
-        public string GetQemuPath() => qemuPath;
+        public string GetQemuPath()
+        {
+            return qemuPath;
+        }
     }
 }

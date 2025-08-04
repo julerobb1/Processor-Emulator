@@ -77,8 +77,10 @@ namespace ProcessorEmulator.Tools
         /// <summary>
         /// Get current IF frequency
         /// </summary>
-        public int GetCurrentIf() =>
-            bandFrequencies.TryGetValue(currentBand, out var freq) ? freq : 0;
+        public int GetCurrentIf()
+        {
+            return bandFrequencies.TryGetValue(currentBand, out var freq) ? freq : 0;
+        }
 
         /// <summary>
         /// Begin streaming the mapped signal for the selected band/channel.

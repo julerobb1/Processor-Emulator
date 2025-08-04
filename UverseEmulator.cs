@@ -27,17 +27,26 @@ namespace ProcessorEmulator
         private MediaroomBootManager bootManager;
         private bool isInitialized = false;
         private bool isBootSequenceComplete = false;
-        
+
         #endregion
-        
+
         #region Implementation
-        
-        public string GetName() => "AT&T U-verse + Mediaroom Emulator";
-        
-        public string GetDescription() => "Complete AT&T U-verse IPTV platform with Microsoft Mediaroom boot manager";
-        
-        public string GetSupportedPlatforms() => "AT&T U-verse, Microsoft Mediaroom, WinCE MIPS";
-        
+
+        public string GetName()
+        {
+            return "AT&T U-verse + Mediaroom Emulator";
+        }
+
+        public string GetDescription()
+        {
+            return "Complete AT&T U-verse IPTV platform with Microsoft Mediaroom boot manager";
+        }
+
+        public string GetSupportedPlatforms()
+        {
+            return "AT&T U-verse, Microsoft Mediaroom, WinCE MIPS";
+        }
+
         public bool CanEmulate(byte[] bootImage)
         {
             if (bootImage == null || bootImage.Length < 16)
@@ -139,11 +148,17 @@ namespace ProcessorEmulator
         
         // Support for old interface methods
         public string ChipsetName => GetName();
-        
-        public bool Initialize(string configPath) => true;
-        
-        public byte[] ReadRegister(uint address) => new byte[4];
-        
+
+        public bool Initialize(string configPath)
+        {
+            return true;
+        }
+
+        public byte[] ReadRegister(uint address)
+        {
+            return new byte[4];
+        }
+
         public void WriteRegister(uint address, byte[] data) { }
         
         public void LoadBootImage(string filePath)

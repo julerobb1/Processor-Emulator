@@ -466,12 +466,31 @@ namespace ProcessorEmulator.Emulation
             isRunning = false;
             Debug.WriteLine("[ArmHypervisor] Stopped");
         }
-        
-        public uint GetRegister(int index) => registers[index];
-        public void SetRegister(int index, uint value) => registers[index] = value;
-        public uint GetPC() => registers[15];
-        public uint GetCPSR() => cpsr;
-        public uint GetInstructionCount() => instructionCount;
+
+        public uint GetRegister(int index)
+        {
+            return registers[index];
+        }
+
+        public void SetRegister(int index, uint value)
+        {
+            registers[index] = value;
+        }
+
+        public uint GetPC()
+        {
+            return registers[15];
+        }
+
+        public uint GetCPSR()
+        {
+            return cpsr;
+        }
+
+        public uint GetInstructionCount()
+        {
+            return instructionCount;
+        }
     }
     
     internal class CompiledBlock

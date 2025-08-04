@@ -61,10 +61,15 @@ namespace ProcessorEmulator.Tools
             // Simulate FSK burst here if needed
         }
 
-        public int GetCurrentIf() =>
-            bandFrequencies.TryGetValue(currentBand, out var freq) ? freq : 0;
+        public int GetCurrentIf()
+        {
+            return bandFrequencies.TryGetValue(currentBand, out var freq) ? freq : 0;
+        }
 
-        public Stream GetSignalStream() => signalStream;
+        public Stream GetSignalStream()
+        {
+            return signalStream;
+        }
 
         // Event raised when signal data is available for the selected band
         public event Action<byte[]> OnSignalData;

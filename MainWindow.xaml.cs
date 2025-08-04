@@ -2562,56 +2562,289 @@ await Task.CompletedTask;
         }
 
         // Additional missing event handlers
-        private void UverseEmulator_Click(object sender, RoutedEventArgs e) => _ = HandleUverseEmulation();
-        private void ComcastX1Emulator_Click(object sender, RoutedEventArgs e) => _ = HandleComcastX1Emulation();
-        private void DirectvAnalysis_Click(object sender, RoutedEventArgs e) => _ = HandleDirectvAnalysis();
-        private void RdkBEmulator_Click(object sender, RoutedEventArgs e) => _ = HandleRdkBEmulation();
-        private void DishVxWorks_Click(object sender, RoutedEventArgs e) => _ = HandleDishVxWorks();
-        private void PowerPCDemo_Click(object sender, RoutedEventArgs e) => _ = HandlePowerPCDemo();
-        private void GenericEmulation_Click(object sender, RoutedEventArgs e) => _ = HandleGenericEmulation();
-        private void WindowsCEExecutor_Click(object sender, RoutedEventArgs e) => _ = HandleWindowsCEExecution();
-        private void UniversalHypervisor_Click(object sender, RoutedEventArgs e) => _ = HandleCustomHypervisor();
-        private void StopAllProcesses_Click(object sender, RoutedEventArgs e) => _ = HandleStopAllProcesses();
-        private void ShowRunningProcesses_Click(object sender, RoutedEventArgs e) => _ = HandleShowRunningProcesses();
-        private void ProcessMonitor_Click(object sender, RoutedEventArgs e) => _ = HandleProcessMonitor();
-        private void ExtractFirmware_Click(object sender, RoutedEventArgs e) => _ = HandleFirmwareExtraction();
-        private void DetectFileType_Click(object sender, RoutedEventArgs e) => _ = HandleFileTypeDetection();
-        private void ExecutableAnalysis_Click(object sender, RoutedEventArgs e) => _ = HandleExecutableAnalysis();
-        private void CrossCompile_Click(object sender, RoutedEventArgs e) => _ = HandleCrossCompile();
-        private void AnalyzeFolder_Click(object sender, RoutedEventArgs e) => _ = HandleFolderAnalysis();
-        private void SummarizeDvrData_Click(object sender, RoutedEventArgs e) => _ = HandleDvrDataSummary();
-        private void MountIso_Click(object sender, RoutedEventArgs e) => _ = HandleIsoMount();
-        private void MountExt_Click(object sender, RoutedEventArgs e) => _ = HandleExtMount();
-        private void MountFat_Click(object sender, RoutedEventArgs e) => _ = HandleFatMount();
-        private void MountSquashFs_Click(object sender, RoutedEventArgs e) => _ = HandleSquashFsMount();
-        private void MountYaffs_Click(object sender, RoutedEventArgs e) => _ = HandleYaffsMount();
-        private void MountCe_Click(object sender, RoutedEventArgs e) => _ = HandleCeMount();
-        private void ProbeFilesystem_Click(object sender, RoutedEventArgs e) => _ = HandleFilesystemProbe();
-        private void LinuxFsReadWrite_Click(object sender, RoutedEventArgs e) => _ = HandleLinuxFsReadWrite();
-        private void SimulateSwmLnb_Click(object sender, RoutedEventArgs e) => _ = HandleSwmLnbSimulation();
-        private void InitBoltButton_Click(object sender, RoutedEventArgs e) => _ = HandleBoltInit();
-        private void BoltCliButton_Click(object sender, RoutedEventArgs e) => _ = HandleBoltCli();
-        private void LoadFirmwareButton_Click(object sender, RoutedEventArgs e) => _ = HandleBoltLoadFirmware();
-        private void BoltBrowseFirmwareButton_Click(object sender, RoutedEventArgs e) => _ = HandleBoltBrowseFirmware();
-        private void MemTestButton_Click(object sender, RoutedEventArgs e) => _ = HandleBoltMemTest();
-        private void ShowDtbButton_Click(object sender, RoutedEventArgs e) => _ = HandleBoltShowDtb();
-        private void DumpMemoryButton_Click(object sender, RoutedEventArgs e) => _ = HandleBoltDumpMemory();
+        private void UverseEmulator_Click(object sender, RoutedEventArgs e)
+        {
+            _ = HandleUverseEmulation();
+        }
+
+
+        private void ComcastX1Emulator_Click(object sender, RoutedEventArgs e)
+        {
+            _ = HandleComcastX1Emulation();
+        }
+
+
+        private void DirectvAnalysis_Click(object sender, RoutedEventArgs e)
+        {
+            _ = HandleDirectvAnalysis();
+        }
+
+
+        private void RdkBEmulator_Click(object sender, RoutedEventArgs e)
+        {
+            _ = HandleRdkBEmulation();
+        }
+
+
+        private void DishVxWorks_Click(object sender, RoutedEventArgs e)
+        {
+            _ = HandleDishVxWorks();
+        }
+
+
+        private void PowerPCDemo_Click(object sender, RoutedEventArgs e)
+        {
+            _ = HandlePowerPCDemo();
+        }
+
+
+        private void GenericEmulation_Click(object sender, RoutedEventArgs e)
+        {
+            _ = HandleGenericEmulation();
+        }
+
+
+        private void WindowsCEExecutor_Click(object sender, RoutedEventArgs e)
+        {
+            _ = HandleWindowsCEExecution();
+        }
+
+
+        private void UniversalHypervisor_Click(object sender, RoutedEventArgs e)
+        {
+            _ = HandleCustomHypervisor();
+        }
+
+
+        private void StopAllProcesses_Click(object sender, RoutedEventArgs e)
+        {
+            _ = HandleStopAllProcesses();
+        }
+
+
+        private void ShowRunningProcesses_Click(object sender, RoutedEventArgs e)
+        {
+            _ = HandleShowRunningProcesses();
+        }
+
+
+        private void ProcessMonitor_Click(object sender, RoutedEventArgs e)
+        {
+            _ = HandleProcessMonitor();
+        }
+
+
+        private void ExtractFirmware_Click(object sender, RoutedEventArgs e)
+        {
+            _ = HandleFirmwareExtraction();
+        }
+
+
+        private void DetectFileType_Click(object sender, RoutedEventArgs e)
+        {
+            _ = HandleFileTypeDetection();
+        }
+
+
+        private void ExecutableAnalysis_Click(object sender, RoutedEventArgs e)
+        {
+            _ = HandleExecutableAnalysis();
+        }
+
+
+        private void CrossCompile_Click(object sender, RoutedEventArgs e)
+        {
+            _ = HandleCrossCompile();
+        }
+
+
+        private void AnalyzeFolder_Click(object sender, RoutedEventArgs e)
+        {
+            _ = HandleFolderAnalysis();
+        }
+
+
+        private void SummarizeDvrData_Click(object sender, RoutedEventArgs e)
+        {
+            _ = HandleDvrDataSummary();
+        }
+
+
+        private void MountIso_Click(object sender, RoutedEventArgs e)
+        {
+            _ = HandleIsoMount();
+        }
+
+
+        private void MountExt_Click(object sender, RoutedEventArgs e)
+        {
+            _ = HandleExtMount();
+        }
+
+
+        private void MountFat_Click(object sender, RoutedEventArgs e)
+        {
+            _ = HandleFatMount();
+        }
+
+
+        private void MountSquashFs_Click(object sender, RoutedEventArgs e)
+        {
+            _ = HandleSquashFsMount();
+        }
+
+
+        private void MountYaffs_Click(object sender, RoutedEventArgs e)
+        {
+            _ = HandleYaffsMount();
+        }
+
+
+        private void MountCe_Click(object sender, RoutedEventArgs e)
+        {
+            _ = HandleCeMount();
+        }
+
+
+        private void ProbeFilesystem_Click(object sender, RoutedEventArgs e)
+        {
+            _ = HandleFilesystemProbe();
+        }
+
+
+        private void LinuxFsReadWrite_Click(object sender, RoutedEventArgs e)
+        {
+            _ = HandleLinuxFsReadWrite();
+        }
+
+
+        private void SimulateSwmLnb_Click(object sender, RoutedEventArgs e)
+        {
+            _ = HandleSwmLnbSimulation();
+        }
+
+
+        private void InitBoltButton_Click(object sender, RoutedEventArgs e)
+        {
+            _ = HandleBoltInit();
+        }
+
+
+        private void BoltCliButton_Click(object sender, RoutedEventArgs e)
+        {
+            _ = HandleBoltCli();
+        }
+
+
+        private void LoadFirmwareButton_Click(object sender, RoutedEventArgs e)
+        {
+            _ = HandleBoltLoadFirmware();
+        }
+
+
+        private void BoltBrowseFirmwareButton_Click(object sender, RoutedEventArgs e)
+        {
+            _ = HandleBoltBrowseFirmware();
+        }
+
+
+        private void MemTestButton_Click(object sender, RoutedEventArgs e)
+        {
+            _ = HandleBoltMemTest();
+        }
+
+
+        private void ShowDtbButton_Click(object sender, RoutedEventArgs e)
+        {
+            _ = HandleBoltShowDtb();
+        }
+
+
+        private void DumpMemoryButton_Click(object sender, RoutedEventArgs e)
+        {
+            _ = HandleBoltDumpMemory();
+        }
 
         // Stub implementations for missing handlers
-        private async Task HandleDishVxWorks() => StatusBarText("Dish VxWorks analysis started");
-        private async Task HandlePowerPCDemo() => StatusBarText("PowerPC demo started");
-        private async Task HandleFirmwareExtraction() => StatusBarText("Firmware extraction started");
-        private async Task HandleFileTypeDetection() => StatusBarText("File type detection started");
-        private async Task HandleDvrDataSummary() => StatusBarText("DVR data summary started");
-        private async Task HandleFatMount() => StatusBarText("FAT filesystem mounted");
-        private async Task HandleSquashFsMount() => StatusBarText("SquashFS mounted");
-        private async Task HandleBoltInit() => StatusBarText("BOLT initialization started");
-        private async Task HandleBoltCli() => StatusBarText("BOLT CLI started");
-        private async Task HandleBoltLoadFirmware() => StatusBarText("BOLT firmware loading started");
-        private async Task HandleBoltBrowseFirmware() => StatusBarText("BOLT firmware browsing started");
-        private async Task HandleBoltMemTest() => StatusBarText("BOLT memory test started");
-        private async Task HandleBoltShowDtb() => StatusBarText("BOLT DTB display started");
-        private async Task HandleBoltDumpMemory() => StatusBarText("BOLT memory dump started");
+
+        private async Task HandleDishVxWorks()
+        {
+            StatusBarText("Dish VxWorks analysis started");
+        }
+
+
+        private async Task HandlePowerPCDemo()
+        {
+            StatusBarText("PowerPC demo started");
+        }
+
+
+        private async Task HandleFirmwareExtraction()
+        {
+            StatusBarText("Firmware extraction started");
+        }
+
+
+        private async Task HandleFileTypeDetection()
+        {
+            StatusBarText("File type detection started");
+        }
+
+
+        private async Task HandleDvrDataSummary()
+        {
+            StatusBarText("DVR data summary started");
+        }
+
+
+        private async Task HandleFatMount()
+        {
+            StatusBarText("FAT filesystem mounted");
+        }
+
+
+        private async Task HandleSquashFsMount()
+        {
+            StatusBarText("SquashFS mounted");
+        }
+
+
+        private async Task HandleBoltInit()
+        {
+            StatusBarText("BOLT initialization started");
+        }
+
+
+        private async Task HandleBoltCli()
+        {
+            StatusBarText("BOLT CLI started");
+        }
+
+        private async Task HandleBoltLoadFirmware()
+        {
+            StatusBarText("BOLT firmware loading started");
+        }
+
+        private async Task HandleBoltBrowseFirmware()
+        {
+            StatusBarText("BOLT firmware browsing started");
+        }
+
+        private async Task HandleBoltMemTest()
+        {
+            StatusBarText("BOLT memory test started");
+        }
+
+        private async Task HandleBoltShowDtb()
+        {
+            StatusBarText("BOLT DTB display started");
+        }
+
+        private async Task HandleBoltDumpMemory()
+        {
+            StatusBarText("BOLT memory dump started");
+        }
+
 
         /// <summary>
         /// Handle Windows CE binary execution using cross-platform translation

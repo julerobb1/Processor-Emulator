@@ -238,7 +238,10 @@ namespace BoltDemo
         public bool IsInitialized => socInitialized;
         public uint EntryPoint => entryPoint;
         public uint DeviceTreeAddress => DTB_ADDRESS;
-        public Dictionary<uint, uint> GetMemoryMap() => new Dictionary<uint, uint>(memory);
+        public Dictionary<uint, uint> GetMemoryMap()
+        {
+            return new Dictionary<uint, uint>(memory);
+        }
     }
 
     class Program
