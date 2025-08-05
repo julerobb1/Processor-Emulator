@@ -202,7 +202,7 @@ namespace ProcessorEmulator
 
         public void FreeMemory(uint address)
         {
-            UnmapRegion(address);
+            if (address != 0) UnmapRegion(address);
         }
     }
 
