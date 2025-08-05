@@ -1,0 +1,34 @@
+name: Prod Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  prod:
+    name: Production Release Build
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '6.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore ProcessorEmulator.csproj
+
+      - name: Build solution (Release)
+        run: dotnet build ProcessorEmulator.csproj --configuration Release --no-restore
+
+      - name: Publish artifacts
+        run: dotnet publish ProcessorEmulator.csproj --configuration Release --output prod-artifacts
+
+      - name: Upload Production Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: prod-build-${{ github.run_number }}
+          path: prod-artifacts
