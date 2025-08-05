@@ -274,31 +274,31 @@ namespace ProcessorEmulator
                     var sectionSize = BitConverter.ToUInt32(packData, offset + 4);
                     offset += 8;
                     
-                    if (offset + sectionSize > packData.Length)
-                        break;
-                    
-                    var sectionData = new byte[sectionSize];
-                    Array.Copy(packData, offset, sectionData, 0, (int)sectionSize);
-                    
-                    switch (sectionType)
+                    if (sectionSize > 0 && offset + sectionSize <= packData.Length)
                     {
-                        case "KERN":
-                            Console.WriteLine($"📋 Found kernel section ({sectionSize:N0} bytes)");
-                            analysis.KernelImage = sectionData;
-                            analysis.EntryPoint = ExtractKernelEntryPoint(sectionData);
-                            break;
-                        case "ROOT":
-                            Console.WriteLine($"📁 Found rootfs section ({sectionSize:N0} bytes)");
-                            analysis.RootfsImage = sectionData;
-                            break;
-                        case "BOOT":
-                            Console.WriteLine($"🔧 Found bootloader section ({sectionSize:N0} bytes)");
-                            analysis.BootloaderImage = sectionData;
-                            break;
-                        case "DTBL":
-                            Console.WriteLine($"🌳 Found device tree section ({sectionSize:N0} bytes)");
-                            analysis.DeviceTreeBlob = sectionData;
-                            break;
+                        var sectionData = new byte[sectionSize];
+                        Array.Copy(packData, offset, sectionData, 0, (int)sectionSize);
+                        
+                        switch (sectionType)
+                        {
+                            case "KERN":
+                                Console.WriteLine($"📋 Found kernel section ({sectionSize:N0} bytes)");
+                                analysis.KernelImage = sectionData;
+                                analysis.EntryPoint = ExtractKernelEntryPoint(sectionData);
+                                break;
+                            case "ROOT":
+                                Console.WriteLine($"📁 Found rootfs section ({sectionSize:N0} bytes)");
+                                analysis.RootfsImage = sectionData;
+                                break;
+                            case "BOOT":
+                                Console.WriteLine($"🔧 Found bootloader section ({sectionSize:N0} bytes)");
+                                analysis.BootloaderImage = sectionData;
+                                break;
+                            case "DTBL":
+                                Console.WriteLine($"🌳 Found device tree section ({sectionSize:N0} bytes)");
+                                analysis.DeviceTreeBlob = sectionData;
+                                break;
+                        }
                     }
                     
                     offset += (int)sectionSize;
