@@ -165,6 +165,8 @@ namespace ProcessorEmulator
         /// </summary>
         private static async Task DetectSignatures(byte[] firmwareData, FirmwareAnalysisResult result)
         {
+            if (firmwareData == null) throw new ArgumentNullException(nameof(firmwareData));
+
             await Task.Run(() =>
             {
                 string firmwareHex = BitConverter.ToString(firmwareData, 0, Math.Min(4096, firmwareData.Length)).Replace("-", "");
