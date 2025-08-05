@@ -292,7 +292,7 @@ namespace ProcessorEmulator
             var pattern = ReadWideString(memory, patternPtr);
             
             Console.WriteLine($"🔍 FindFirstFileW: {pattern}");
-            cpu.Registers[0] = 0xFFFFFFFF; // INVALID_HANDLE_VALUE (no files found)
+            if (cpu.Registers != null && cpu.Registers.Length > 0) cpu.Registers[0] = 0xFFFFFFFF; // INVALID_HANDLE_VALUE (no files found)
             await Task.CompletedTask;
             return new ExecutionResult { ShouldExit = false };
         }
