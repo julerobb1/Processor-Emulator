@@ -387,8 +387,7 @@ namespace ProcessorEmulator
         {
             // Simplified NK.bin header parsing
             // Real NK.bin has complex ROMHDR structure
-            if (kernelData.Length < 128)
-                return (WINCE_KERNEL_BASE, WINCE_KERNEL_BASE, (uint)kernelData.Length);
+            if (kernelData == null || kernelData.Length < 128) return (WINCE_KERNEL_BASE, WINCE_KERNEL_BASE, (uint)(kernelData?.Length ?? 0));
             
             // Look for entry point in typical locations
             uint entryPoint = BitConverter.ToUInt32(kernelData, 20);
