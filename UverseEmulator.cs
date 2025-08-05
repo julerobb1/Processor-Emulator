@@ -53,7 +53,7 @@ namespace ProcessorEmulator
                 return false;
             
             // Check for U-verse/Mediaroom signatures
-            string header = System.Text.Encoding.ASCII.GetString(bootImage, 0, Math.Min(bootImage.Length, 512));
+            string header = bootImage != null ? System.Text.Encoding.ASCII.GetString(bootImage, 0, Math.Min(bootImage.Length, 512)) : string.Empty;
             return header.Contains("U-verse") || 
                    header.Contains("Mediaroom") || 
                    header.Contains("IPTV") ||
