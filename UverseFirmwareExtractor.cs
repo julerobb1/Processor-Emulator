@@ -448,7 +448,7 @@ namespace ProcessorEmulator
             }
             catch (Exception ex)
             {
-                result.Errors.Add($"Partition table analysis error: {ex.Message}");
+                if (result.Errors != null) result.Errors.Add($"Partition table analysis error: {ex.Message}");
             }
         }
 
