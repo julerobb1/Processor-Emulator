@@ -481,14 +481,14 @@ namespace ProcessorEmulator.Tools
                 analysis.DevTestEndpoints,
                 analysis.RegionalEndpoints,
                 analysis.ServiceCategories,
-                analysis.PotentialFirmwareUrls,
+                PotentialFirmwareUrls = analysis.PotentialFirmwareUrls ?? new List<string>(),
                 summary = new
                 {
                     firmwareEndpointCount = analysis.FirmwareEndpoints.Count,
                     updateEndpointCount = analysis.UpdateEndpoints.Count,
                     rdkEndpointCount = analysis.RDKEndpoints.Count,
                     devTestEndpointCount = analysis.DevTestEndpoints.Count,
-                    totalFirmwareUrls = analysis.PotentialFirmwareUrls.Count
+                    totalFirmwareUrls = analysis.PotentialFirmwareUrls?.Count ?? 0
                 }
             };
             
@@ -544,7 +544,7 @@ namespace ProcessorEmulator.Tools
             Console.WriteLine($"📱 RDK Endpoints: {analysis.RDKEndpoints.Count}");
             Console.WriteLine($"🧪 Dev/Test Endpoints: {analysis.DevTestEndpoints.Count}");
             Console.WriteLine($"🌍 Regional Endpoints: {analysis.RegionalEndpoints.Count}");
-            Console.WriteLine($"🔗 Generated Firmware URLs: {analysis.PotentialFirmwareUrls.Count}");
+            Console.WriteLine($"🔗 Generated Firmware URLs: {analysis.PotentialFirmwareUrls?.Count ?? 0}");
             Console.WriteLine();
             
             Console.WriteLine("📋 Service Categories:");
