@@ -466,7 +466,7 @@ namespace ProcessorEmulator
                     
                 case DVRPlatform.Xfinity_XG1v4_Broadcom:
                 case DVRPlatform.Xfinity_XG2_Intel:
-                    report.Add("Platform Type: Comcast Xfinity X1 (RDK-V Linux)");
+                    if (report != null) report.Add("Platform Type: Comcast Xfinity X1 (RDK-V Linux)");
                     report.Add("Key Components:");
                     report.Add("  • BOLT/U-Boot bootloader with secure boot");
                     report.Add("  • Linux kernel with SquashFS rootfs");
