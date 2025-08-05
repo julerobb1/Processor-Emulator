@@ -2,16 +2,11 @@ name: CI
 
 on:
   push:
-    branches: [dev]
+    # Only run CI on version tag pushes
+    tags: ['v*']
   pull_request:
+    # Run CI on PRs targeting dev
     branches: [dev]
-on:
-  push:
-    tags:
-      - 'v*'
-    branches:
-      - main
-      - dev
   
 jobs:
   build:
