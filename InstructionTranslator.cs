@@ -190,7 +190,7 @@ namespace ProcessorEmulator
                     }
                     catch (MemoryAccessException)
                     {
-                        cpu.Registers[i] = 0;
+                        if (cpu.Registers != null && i >= 0 && i < cpu.Registers.Length) cpu.Registers[i] = 0;
                     }
                 }
             }
