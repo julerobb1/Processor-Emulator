@@ -431,7 +431,7 @@ namespace ProcessorEmulator
         
         private void LogRequest(HttpListenerRequest request)
         {
-            var endpoint = request.Url.AbsolutePath.TrimStart('/').Split('/')[0];
+            var endpoint = request.Url?.AbsolutePath.TrimStart('/').Split('/')[0] ?? "root";
             if (string.IsNullOrEmpty(endpoint)) endpoint = "root";
             
             if (!requestLog.ContainsKey(endpoint))
