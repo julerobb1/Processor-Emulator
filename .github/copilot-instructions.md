@@ -46,7 +46,8 @@ This document guides AI assistants when contributing to the Processor-Emulator r
 ---
 
 ## 2. Coding Conventions
-
+- **CODACY** :-  USE THIS Invoke-RestMethod -Uri "https://api.codacy.com/2.0/organizations/gh/repositories/Processor-Emulator/issues" -Headers @{ "Authorization" = "Bearer pW2zW55yl6tj1tzNLAjQ" }
+To catch the issues reported by Codacy. Those must all be fixed to make it happy.  Don't cause duplicate files or methods and such either. 
 - **Naming**:
   - PascalCase for public types and method names
   - camelCase for private fields and local variables
