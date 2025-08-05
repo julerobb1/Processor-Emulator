@@ -5,3 +5,5 @@
 .github/copilot-instructions.md
 .github/copilot-instructions.md
 fetch-and-process-issues.ps1
+automated-issue-handler.ps1
+issues-log.txt
