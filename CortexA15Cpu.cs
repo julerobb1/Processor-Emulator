@@ -289,7 +289,7 @@ namespace ProcessorEmulator
             bool link = (instruction & 0x01000000) != 0;
             int offset = (int)(instruction & 0x00FFFFFF);
             
-            if ((offset & 0x00800000) != 0)
+            if ((offset & 0x00800000) != 0) { offset |= unchecked((int)0xFF000000); } // Sign extend
                 offset |= unchecked((int)0xFF000000); // Sign extend
             
             if (link)
