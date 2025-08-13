@@ -148,7 +148,7 @@ namespace ProcessorEmulator
             for (uint i = 0; i < maxLength; i++)
             {
                 var b = ReadByte(address + i);
-                if (b == 0) break;
+                if (b == 0) { break; }
                 bytes.Add(b);
             }
             return System.Text.Encoding.UTF8.GetString(bytes.ToArray());
