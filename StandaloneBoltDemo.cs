@@ -13,7 +13,7 @@ namespace BoltDemo
     /// </summary>
     public class BoltBootloader
     {
-        private Dictionary<uint, uint> memory;
+    private readonly Dictionary<long, long> memory;
         private Dictionary<string, object> deviceTree;
         private bool socInitialized;
         private uint entryPoint;
@@ -26,7 +26,7 @@ namespace BoltDemo
 
         public BoltBootloader()
         {
-            memory = new Dictionary<uint, uint>();
+            memory = new Dictionary<long, long>();
             deviceTree = new Dictionary<string, object>();
             socInitialized = false;
             entryPoint = KERNEL_ENTRY;
@@ -118,20 +118,20 @@ namespace BoltDemo
             return LoadRawBinary(elfData, entryPoint);
         }
 
-        private bool LoadRawBinary(byte[] data, uint loadAddress)
+    private bool LoadRawBinary(byte[] data, long loadAddress)
         {
             Console.WriteLine($"BOLT: Loading {data.Length} bytes at 0x{loadAddress:X8}");
 
             for (int i = 0; i < data.Length; i += 4)
             {
-                uint addr = loadAddress + (uint)i;
-                uint value = 0;
+                long addr = loadAddress + i;
+                long value = 0;
 
                 for (int j = 0; j < 4 && i + j < data.Length; j++)
                 {
-                    value |= (uint)(data[i + j] << (j * 8));
+                    value |= ((long)data[i + j] << (j * 8));
                 }
-
+                // Always write to memory
                 memory[addr] = value;
             }
 
@@ -236,11 +236,11 @@ namespace BoltDemo
         }
 
         public bool IsInitialized => socInitialized;
-        public uint EntryPoint => entryPoint;
-        public uint DeviceTreeAddress => DTB_ADDRESS;
-        public Dictionary<uint, uint> GetMemoryMap()
+    public long EntryPoint => entryPoint;
+    public long DeviceTreeAddress => DTB_ADDRESS;
+    public Dictionary<long, long> GetMemoryMap()
         {
-            return new Dictionary<uint, uint>(memory);
+            return new Dictionary<long, long>(memory);
         }
     }
 
