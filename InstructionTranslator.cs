@@ -83,7 +83,7 @@ namespace ProcessorEmulator
 
             // Check for specific instruction patterns
             if ((instruction & 0x0FFFFFF0) == 0x012FFF10) return instructionHandlers[0xE12FFF1E]; // BX
-            if ((instruction & 0x0F000000) == 0x0B000000) return instructionHandlers[0xEB000000]; // BL
+            if ((instruction & 0x0F000000) == 0x0B000000) { return instructionHandlers[0xEB000000]; } // BL
             if ((instruction & 0x0F000000) == 0x0F000000) return instructionHandlers[0xEF000000]; // SVC
             if ((instruction & 0x0FBF0000) == 0x01A00000) return instructionHandlers[0xE1A00000]; // MOV
             if ((instruction & 0x0C100000) == 0x04100000) return instructionHandlers[0xE59F0000]; // LDR
