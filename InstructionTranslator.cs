@@ -225,7 +225,7 @@ namespace ProcessorEmulator
             
             // Check if this is an API call
             var result = await api.HandleFunctionCallAsync(targetAddr, cpu, memory);
-            if (result.ShouldExit || result.NewPC != 0)
+            if (result.ShouldExit || result.NewPC != 0) {
                 return result;
             
             await Task.CompletedTask;
