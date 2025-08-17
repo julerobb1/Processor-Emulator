@@ -32,10 +32,10 @@ namespace ProcessorEmulator
         public struct BCM7449Config
         {
             public string ChipRevision;
-            public uint CpuCores;
-            public uint CpuFrequency;    // MHz
-            public uint RamSize;         // Bytes (max 4GB for uint)
-            public uint L2CacheSize;     // Bytes
+            public long CpuCores;
+            public long CpuFrequency;    // MHz
+            public long RamSize;         // Bytes (max 4GB for uint)
+            public long L2CacheSize;     // Bytes
             public bool SecureBootEnabled;
             public bool TrustZoneEnabled;
         }
@@ -692,13 +692,13 @@ namespace ProcessorEmulator
             return Initialize().Result;
         }
         
-        public byte[] ReadRegister(uint address)
+    public byte[] ReadRegister(long address)
         {
             // Implement BCM7449 register reading
             return cpuCore?.ReadRegister(address) ?? new byte[4];
         }
         
-        public void WriteRegister(uint address, byte[] data)
+    public void WriteRegister(long address, byte[] data)
         {
             // Implement BCM7449 register writing
             cpuCore?.WriteRegister(address, data);

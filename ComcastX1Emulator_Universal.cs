@@ -11,13 +11,13 @@ namespace ProcessorEmulator.Tools
 			return true;
 		}
 
-		public byte[] ReadRegister(uint address)
+	public byte[] ReadRegister(long address)
 		{
 			// Stub: returns dummy data
 			return new byte[4];
 		}
 
-		public void WriteRegister(uint address, byte[] data)
+	public void WriteRegister(long address, byte[] data)
 		{
 			// Stub: does nothing
 		}

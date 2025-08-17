@@ -13,19 +13,19 @@ namespace ProcessorEmulator
         
         public struct ArmRegisters
         {
-            public uint R0, R1, R2, R3, R4, R5, R6, R7;
-            public uint R8, R9, R10, R11, R12;
-            public uint SP;  // Stack Pointer (R13)
-            public uint LR;  // Link Register (R14)
-            public uint PC;  // Program Counter (R15)
-            public uint CPSR; // Current Program Status Register
+            public long R0, R1, R2, R3, R4, R5, R6, R7;
+            public long R8, R9, R10, R11, R12;
+            public long SP;  // Stack Pointer (R13)
+            public long LR;  // Link Register (R14)
+            public long PC;  // Program Counter (R15)
+            public long CPSR; // Current Program Status Register
         }
         
         public struct MmuState
         {
             public bool Enabled;
-            public uint TranslationTableBase;
-            public uint DomainAccessControl;
+            public long TranslationTableBase;
+            public long DomainAccessControl;
             public bool InstructionCacheEnabled;
             public bool DataCacheEnabled;
         }
@@ -35,7 +35,7 @@ namespace ProcessorEmulator
             public bool L1InstructionEnabled;
             public bool L1DataEnabled;
             public bool L2Enabled;
-            public uint CacheSize;
+            public long CacheSize;
         }
         
         #endregion
@@ -232,8 +232,8 @@ namespace ProcessorEmulator
         {
             try
             {
-                // Fetch instruction from memory
-                uint instruction = FetchInstruction(registers.PC);
+                // Only one definition needed, with explicit cast
+                uint instruction = FetchInstruction((uint)registers.PC);
                 
                 // Decode and execute (simplified simulation)
                 DecodeAndExecute(instruction);
@@ -303,7 +303,7 @@ namespace ProcessorEmulator
             // Simplified load/store execution
             // Real implementation would handle all addressing modes
             
-            uint address = registers.R0; // Simplified addressing
+                uint address = (uint)registers.R0; // Simplified addressing
             
             if ((instruction & 0x00100000) != 0)
             {
@@ -313,7 +313,7 @@ namespace ProcessorEmulator
             else
             {
                 // Store
-                memory.WriteWord(address, registers.R0);
+                memory.WriteWord(address, (uint)registers.R0);
             }
         }
         
@@ -341,10 +341,10 @@ namespace ProcessorEmulator
         {
             return regNum switch
             {
-                0 => registers.R0, 1 => registers.R1, 2 => registers.R2, 3 => registers.R3,
-                4 => registers.R4, 5 => registers.R5, 6 => registers.R6, 7 => registers.R7,
-                8 => registers.R8, 9 => registers.R9, 10 => registers.R10, 11 => registers.R11,
-                12 => registers.R12, 13 => registers.SP, 14 => registers.LR, 15 => registers.PC,
+                    0 => (uint)registers.R0, 1 => (uint)registers.R1, 2 => (uint)registers.R2, 3 => (uint)registers.R3,
+                    4 => (uint)registers.R4, 5 => (uint)registers.R5, 6 => (uint)registers.R6, 7 => (uint)registers.R7,
+                    8 => (uint)registers.R8, 9 => (uint)registers.R9, 10 => (uint)registers.R10, 11 => (uint)registers.R11,
+                    12 => (uint)registers.R12, 13 => (uint)registers.SP, 14 => (uint)registers.LR, 15 => (uint)registers.PC,
                 _ => 0
             };
         }
@@ -376,20 +376,22 @@ namespace ProcessorEmulator
         
         #region Debug Access
         
-        public uint ReadRegister(string registerName)
+    [CLSCompliant(false)]
+    [CLSCompliant(false)]
+    public uint ReadRegister(string registerName)
         {
             return registerName.ToUpper() switch
             {
-                "R0" => registers.R0, "R1" => registers.R1, "R2" => registers.R2, "R3" => registers.R3,
-                "R4" => registers.R4, "R5" => registers.R5, "R6" => registers.R6, "R7" => registers.R7,
-                "R8" => registers.R8, "R9" => registers.R9, "R10" => registers.R10, "R11" => registers.R11,
-                "R12" => registers.R12, "SP" => registers.SP, "LR" => registers.LR, "PC" => registers.PC,
-                "CPSR" => registers.CPSR,
+                "R0" => (uint)registers.R0, "R1" => (uint)registers.R1, "R2" => (uint)registers.R2, "R3" => (uint)registers.R3,
+                "R4" => (uint)registers.R4, "R5" => (uint)registers.R5, "R6" => (uint)registers.R6, "R7" => (uint)registers.R7,
+                "R8" => (uint)registers.R8, "R9" => (uint)registers.R9, "R10" => (uint)registers.R10, "R11" => (uint)registers.R11,
+                "R12" => (uint)registers.R12, "SP" => (uint)registers.SP, "LR" => (uint)registers.LR, "PC" => (uint)registers.PC,
+                "CPSR" => (uint)registers.CPSR,
                 _ => 0
             };
         }
         
-        public byte[] ReadRegister(uint address)
+    public byte[] ReadRegister(long address)
         {
             // Memory-mapped register access for BCM7449 SoC
             if (memory != null)
@@ -397,14 +399,15 @@ namespace ProcessorEmulator
                 var data = new byte[4];
                 for (int i = 0; i < 4; i++)
                 {
-                    data[i] = memory.ReadByte(address + (uint)i);
+                    data[i] = memory.ReadByte((uint)(address + i));
                 }
                 return data;
             }
             return new byte[4];
         }
         
-        public void WriteRegister(string registerName, uint value)
+    [CLSCompliant(false)]
+    public void WriteRegister(string registerName, uint value)
         {
             switch (registerName.ToUpper())
             {
@@ -428,14 +431,14 @@ namespace ProcessorEmulator
             }
         }
         
-        public void WriteRegister(uint address, byte[] data)
+    public void WriteRegister(long address, byte[] data)
         {
             // Memory-mapped register access for BCM7449 SoC
             if (memory != null && data != null)
             {
                 for (int i = 0; i < Math.Min(data.Length, 4); i++)
                 {
-                    memory.WriteByte(address + (uint)i, data[i]);
+                    memory.WriteByte((uint)(address + i), data[i]);
                 }
             }
         }
@@ -457,8 +460,7 @@ namespace ProcessorEmulator
             InitializeArmState();
             InitializeMmu();
             InitializeCache();
-            Console.WriteLine("🔄 ARM Cortex-A15 reset complete");
-            await Task.CompletedTask;
+        [CLSCompliant(false)] // Removed duplicate CLSCompliant attribute
         }
         
         #endregion

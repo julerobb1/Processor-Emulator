@@ -9,6 +9,61 @@ namespace ProcessorEmulator
     /// </summary>
     public class InstructionTranslator
     {
+        private Dictionary<string, Action> instructionHandlers = new Dictionary<string, Action>();
+        public InstructionTranslator() { InitializeHandlers(); }
+        private void InitializeHandlers()
+        {
+            instructionHandlers["ARM_DataProcessing"] = HandleArmDataProcessing;
+            instructionHandlers["ARM_Mov"] = HandleArmMov;
+            instructionHandlers["ARM_Ldr"] = HandleArmLdr;
+            instructionHandlers["ARM_Ldm"] = HandleArmLdm;
+            instructionHandlers["ARM_Bx"] = HandleArmBx;
+            instructionHandlers["ARM_Bl"] = HandleArmBl;
+            instructionHandlers["ARM_Svc"] = HandleArmSvc;
+            instructionHandlers["MIPS_Lui"] = HandleMipsLui;
+            instructionHandlers["MIPS_Lw"] = HandleMipsLw;
+            instructionHandlers["MIPS_Sw"] = HandleMipsSw;
+            instructionHandlers["MIPS_Jal"] = HandleMipsJal;
+            instructionHandlers["MIPS_Jr"] = HandleMipsJr;
+            instructionHandlers["MIPS_Syscall"] = HandleMipsSyscall;
+        }
+        private void HandleArmDataProcessing() { }
+        private void HandleArmMov() { }
+        private void HandleArmLdr() { }
+        private void HandleArmLdm() { }
+        private void HandleArmBx() { }
+        private void HandleArmBl() { }
+        private void HandleArmSvc() { }
+        private void HandleMipsLui() { }
+        private void HandleMipsLw() { }
+        private void HandleMipsSw() { }
+        private void HandleMipsJal() { }
+        private void HandleMipsJr() { }
+        private void HandleMipsSyscall() { }
+        private Action FindInstructionHandler(string name) => instructionHandlers.ContainsKey(name) ? instructionHandlers[name] : null;
+        private Action FindArmHandler(string name) => instructionHandlers.ContainsKey(name) ? instructionHandlers[name] : null;
+        private Action FindMipsHandler(string name) => instructionHandlers.ContainsKey(name) ? instructionHandlers[name] : null;
+        private Action FindMipsSpecialHandler(string name) => instructionHandlers.ContainsKey(name) ? instructionHandlers[name] : null;
+        private uint RotateRight(uint value, int count) => (value >> count) | (value << (32 - count));
+    }
+}
+        /// <summary>
+        /// Translate ARM/MIPS instruction to x64 and execute natively
+        /// </summary>
+        public ExecutionResult TranslateToX64AndExecute(uint instruction, CPUState cpuState, VirtualMemoryManager memory, WindowsCEApiEmulator apiEmulator)
+        {
+            // Example stub: log the translation step
+            Console.WriteLine($"[TRANSLATE] 0x{instruction:X8} ({cpuState.Architecture}) at PC=0x{cpuState.PC:X8}");
+
+            // TODO: Implement real translation logic here
+            // 1. Decode ARM/MIPS instruction
+            // 2. Map to x64 operation (delegate, IL, or interpreter)
+            // 3. Execute and update CPU/memory state
+
+            // For now, simulate execution and return
+            return new ExecutionResult { ShouldExit = false };
+        }
+    {
         private readonly Dictionary<uint, Func<uint, CPUState, VirtualMemoryManager, WindowsCEApiEmulator, Task<ExecutionResult>>> instructionHandlers;
 
         public InstructionTranslator()

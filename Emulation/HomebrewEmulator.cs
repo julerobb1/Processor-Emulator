@@ -25,11 +25,14 @@ namespace ProcessorEmulator.Emulation
         // private ArmToX86Translator translator; // ARM-to-x86 dynamic binary translator (TODO)
         
         // Public properties for EmulatorWindow to access execution state
-        public uint ProgramCounter => pc;
-        public int InstructionCount => instructionCount;
-        public uint CurrentInstruction => currentInstruction;
-        public uint[] RegisterState => regs;
-        public byte[] MemoryState => memory;
+    [CLSCompliant(false)]
+    public uint ProgramCounter => pc;
+    public int InstructionCount => instructionCount;
+    [CLSCompliant(false)]
+    public uint CurrentInstruction => currentInstruction;
+    [CLSCompliant(false)]
+    public uint[] RegisterState => regs;
+    public byte[] MemoryState => memory;
         
         // IChipsetEmulator implementation
         public string ChipsetName => "BCM7449SBUKFSBB1G";
@@ -47,7 +50,7 @@ namespace ProcessorEmulator.Emulation
             }
         }
         
-        public byte[] ReadRegister(uint address)
+    public byte[] ReadRegister(long address)
         {
             // Read from BCM7449 SoC registers
             var result = new byte[4];
@@ -58,7 +61,7 @@ namespace ProcessorEmulator.Emulation
             return result;
         }
         
-        public void WriteRegister(uint address, byte[] data)
+    public void WriteRegister(long address, byte[] data)
         {
             // Write to BCM7449 SoC registers
             if (address < memory.Length - data.Length + 1)

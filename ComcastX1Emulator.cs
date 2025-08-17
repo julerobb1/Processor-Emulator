@@ -280,13 +280,13 @@ namespace ProcessorEmulator
             return Initialize().Result;
         }
 
-        public byte[] ReadRegister(uint address)
+    public byte[] ReadRegister(long address)
         {
             // Universal register access - works with any architecture
             return new byte[8]; // Return 64-bit register value
         }
 
-        public void WriteRegister(uint address, byte[] data)
+    public void WriteRegister(long address, byte[] data)
         {
             // Universal register writing - works with any architecture
         }

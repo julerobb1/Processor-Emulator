@@ -154,12 +154,12 @@ namespace ProcessorEmulator
             return true;
         }
 
-        public byte[] ReadRegister(uint address)
+    public byte[] ReadRegister(long address)
         {
             return new byte[4];
         }
 
-        public void WriteRegister(uint address, byte[] data) { }
+    public void WriteRegister(long address, byte[] data) { }
         
         public void LoadBootImage(string filePath)
         {
@@ -221,7 +221,8 @@ namespace ProcessorEmulator
             
             if (detectedComponents.Count == 0)
             {
-                Console.WriteLine("⚠️ No specific Mediaroom components detected - will use synthetic firmware");
+                Console.WriteLine("❌ No specific Mediaroom components detected - boot will fail.");
+                throw new InvalidOperationException("No valid Mediaroom/U-verse components found in boot image.");
             }
             
             await Task.Delay(800); // Simulate analysis time
@@ -286,24 +287,24 @@ namespace ProcessorEmulator
                     var bootStatus = bootManager?.GetBootStatus();
                     var bootLogs = bootManager?.GetBootLog();
                     
-                    string failureText = $@"❌ AT&T U-verse + Microsoft Mediaroom Boot Failed!
+                                        string failureText = $@"❌ AT&T U-verse + Microsoft Mediaroom Boot Failed!
 
 🔍 Diagnostic Information:
-  • Last Boot Stage: {bootStatus?["Stage"] ?? "Unknown"}
-  • Kernel Status: {bootStatus?["KernelLoaded"] ?? false}
-  • Mediaroom Status: {bootStatus?["MediaroomReady"] ?? false}
-  • Components: {bootStatus?["ComponentsLoaded"] ?? 0}
+    • Last Boot Stage: {bootStatus?["Stage"] ?? "Unknown"}
+    • Kernel Status: {bootStatus?["KernelLoaded"] ?? false}
+    • Mediaroom Status: {bootStatus?["MediaroomReady"] ?? false}
+    • Components: {bootStatus?["ComponentsLoaded"] ?? 0}
 
 📋 Boot Log (Last 10 entries):
 {string.Join("\n", (List<string>)bootStatus?["RecentLogs"] ?? new List<string> { "No logs available" })}
 
 💡 Troubleshooting Tips:
-  • Ensure nk.bin (WinCE kernel) is available
-  • Check firmware components in UverseFirmware folder
-  • Verify Mediaroom platform components
-  • Review boot log for specific error details
+    • Ensure nk.bin (WinCE kernel) is available
+    • Check firmware components in UverseFirmware folder
+    • Verify Mediaroom platform components
+    • Review boot log for specific error details
 
-🔧 The system will attempt to create synthetic firmware components automatically.";
+🔧 No synthetic firmware will be created. Only real dumps are accepted. If boot fails, check the above details and logs for the root cause.";
                     
                     // Show message box instead of Tools.ShowTextWindow
                     MessageBox.Show(failureText, "U-verse + Mediaroom Boot Failure", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -378,9 +379,9 @@ namespace ProcessorEmulator
             set => Processor = value;
         }
         
-        public uint MemorySize
+        public long MemorySize
         {
-            get => (uint)(MemoryMB * 1024 * 1024);
+            get => (long)(MemoryMB * 1024 * 1024);
             set => MemoryMB = (int)(value / (1024 * 1024));
         }
         

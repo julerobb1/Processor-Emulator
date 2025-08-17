@@ -90,7 +90,7 @@ namespace ProcessorEmulator
             public string BuildNumber;      // Kernel build number
             public bool IsValid;            // NK.bin validation status
             public long NKBinSize;          // Size of NK.bin file
-            public uint EntryPoint;         // Kernel entry point address
+            public long EntryPoint;         // Kernel entry point address
             public List<string> EmbeddedDrivers;    // Drivers in NK.bin
             public List<string> Services;           // Autostart services
             public Dictionary<string, object> Registry; // System registry
@@ -801,13 +801,13 @@ namespace ProcessorEmulator
 
         #region IChipsetEmulator Implementation
 
-        public byte[] ReadRegister(uint address)
+    public byte[] ReadRegister(long address)
         {
             // Simulate hardware register access for U-verse DVR
             return new byte[4] { 0x00, 0x00, 0x00, 0x00 };
         }
 
-        public void WriteRegister(uint address, byte[] data)
+    public void WriteRegister(long address, byte[] data)
         {
             // Simulate hardware register write for U-verse DVR
         }

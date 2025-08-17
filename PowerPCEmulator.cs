@@ -17,14 +17,14 @@ namespace ProcessorEmulator
             return true;
         }
         
-        public byte[] ReadRegister(uint address)
+    public byte[] ReadRegister(long address)
         {
             // Simulate PowerPC register read
             Debug.WriteLine($"PowerPC Emulator: Reading register 0x{address:X8}");
             return new byte[] { 0x00, 0x00, 0x00, 0x00 };
         }
         
-        public void WriteRegister(uint address, byte[] data)
+    public void WriteRegister(long address, byte[] data)
         {
             Debug.WriteLine($"PowerPC Emulator: Writing to register 0x{address:X8}, data: {BitConverter.ToString(data)}");
         }

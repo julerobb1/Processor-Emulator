@@ -54,7 +54,7 @@ namespace ProcessorEmulator.Emulation
             }
         }
 
-        public byte[] ReadRegister(uint address)
+    public byte[] ReadRegister(long address)
         {
             if (memory.TryGetValue(address, out uint value))
             {
@@ -63,7 +63,7 @@ namespace ProcessorEmulator.Emulation
             return new byte[4]; // Return zeros for unmapped addresses
         }
 
-        public void WriteRegister(uint address, byte[] data)
+    public void WriteRegister(long address, byte[] data)
         {
             if (data.Length >= 4)
             {

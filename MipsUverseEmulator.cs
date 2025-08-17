@@ -447,7 +447,7 @@ namespace ProcessorEmulator.Emulation
             return true;
         }
         
-        public byte[] ReadRegister(uint address)
+    public byte[] ReadRegister(long address)
         {
             // Read MIPS register or memory
             if (address < 32) // MIPS registers R0-R31
@@ -459,12 +459,12 @@ namespace ProcessorEmulator.Emulation
             {
                 // Read from memory
                 byte[] buffer = new byte[4];
-                ReadMemory(address, buffer, 4);
+                ReadMemory((uint)address, buffer, 4);
                 return buffer;
             }
         }
         
-        public void WriteRegister(uint address, byte[] data)
+    public void WriteRegister(long address, byte[] data)
         {
             if (data.Length >= 4)
             {
@@ -476,7 +476,7 @@ namespace ProcessorEmulator.Emulation
                 else
                 {
                     // Write to memory
-                    WriteMemory(address, data, data.Length);
+                    WriteMemory((uint)address, data, data.Length);
                 }
             }
         }

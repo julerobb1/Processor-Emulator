@@ -12,7 +12,7 @@ namespace ProcessorEmulator.Emulation
     {
         public string PlatformName { get; set; }  // Comcast, Cox, Rogers, Shaw
         public string ProcessorType { get; set; } // ARM, MIPS, etc.
-        public uint MemorySize { get; set; }
+    public long MemorySize { get; set; }
         public bool IsDVR { get; set; }
         public string FilesystemType { get; set; } // Custom filesystem type
         public string DeviceModel { get; set; }   // XG1V4, X1, etc.
@@ -71,7 +71,7 @@ namespace ProcessorEmulator.Emulation
             return true;
         }
 
-        public byte[] ReadRegister(uint address)
+    public byte[] ReadRegister(long address)
         {
             // Read from ARM register or memory-mapped register
             if (address < 16) // ARM general-purpose registers R0-R15
@@ -87,7 +87,7 @@ namespace ProcessorEmulator.Emulation
             return new byte[0];
         }
 
-        public void WriteRegister(uint address, byte[] data)
+    public void WriteRegister(long address, byte[] data)
         {
             // Write to ARM register or memory-mapped register
             if (address < 16 && data.Length >= 4) // ARM general-purpose registers R0-R15
@@ -108,7 +108,7 @@ namespace ProcessorEmulator.Emulation
             Array.Clear(armRegisters, 0, armRegisters.Length);
             
             // Set up default ARM Cortex-A15 state
-            armRegisters[13] = config.MemorySize - 0x1000; // Stack pointer (SP)
+            armRegisters[13] = (uint)(config.MemorySize - 0x1000); // Stack pointer (SP)
             armRegisters[15] = 0x00008000; // Program counter (PC) - Linux kernel entry
             armCpsr = 0x10; // User mode, ARM state
         }
