@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <Compile Include="*.cs" Exclude="FolderAnalysisWindow.cs" />
+  <Compile Include="*.cs" Exclude="FolderAnalysisWindow.cs;InstructionTranslator_Archive.cs" />
     <Compile Include="Tools\*.cs" />
     <Compile Include="Emulation\SparcEmulator.cs" />
     <Compile Include="Emulation\StubEmulators.cs" />

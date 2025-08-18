@@ -377,7 +377,6 @@ namespace ProcessorEmulator
         #region Debug Access
         
     [CLSCompliant(false)]
-    [CLSCompliant(false)]
     public uint ReadRegister(string registerName)
         {
             return registerName.ToUpper() switch
@@ -460,7 +459,7 @@ namespace ProcessorEmulator
             InitializeArmState();
             InitializeMmu();
             InitializeCache();
-        [CLSCompliant(false)] // Removed duplicate CLSCompliant attribute
+    // Removed misplaced CLSCompliant attribute
         }
         
         #endregion

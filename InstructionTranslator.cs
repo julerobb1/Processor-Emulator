@@ -9,61 +9,58 @@ namespace ProcessorEmulator
     /// </summary>
     public class InstructionTranslator
     {
-        private Dictionary<string, Action> instructionHandlers = new Dictionary<string, Action>();
-        public InstructionTranslator() { InitializeHandlers(); }
-        private void InitializeHandlers()
+        // ARM Instruction Handlers (missing stubs)
+        private async Task<ExecutionResult> HandleArmBx(uint instruction, CPUState cpu, VirtualMemoryManager memory, WindowsCEApiEmulator api)
         {
-            instructionHandlers["ARM_DataProcessing"] = HandleArmDataProcessing;
-            instructionHandlers["ARM_Mov"] = HandleArmMov;
-            instructionHandlers["ARM_Ldr"] = HandleArmLdr;
-            instructionHandlers["ARM_Ldm"] = HandleArmLdm;
-            instructionHandlers["ARM_Bx"] = HandleArmBx;
-            instructionHandlers["ARM_Bl"] = HandleArmBl;
-            instructionHandlers["ARM_Svc"] = HandleArmSvc;
-            instructionHandlers["MIPS_Lui"] = HandleMipsLui;
-            instructionHandlers["MIPS_Lw"] = HandleMipsLw;
-            instructionHandlers["MIPS_Sw"] = HandleMipsSw;
-            instructionHandlers["MIPS_Jal"] = HandleMipsJal;
-            instructionHandlers["MIPS_Jr"] = HandleMipsJr;
-            instructionHandlers["MIPS_Syscall"] = HandleMipsSyscall;
+        // BX LR (return)
+        var lr = cpu.Registers[14];
+        await Task.CompletedTask;
+        return new ExecutionResult { ShouldExit = false, NewPC = lr };
         }
-        private void HandleArmDataProcessing() { }
-        private void HandleArmMov() { }
-        private void HandleArmLdr() { }
-        private void HandleArmLdm() { }
-        private void HandleArmBx() { }
-        private void HandleArmBl() { }
-        private void HandleArmSvc() { }
-        private void HandleMipsLui() { }
-        private void HandleMipsLw() { }
-        private void HandleMipsSw() { }
-        private void HandleMipsJal() { }
-        private void HandleMipsJr() { }
-        private void HandleMipsSyscall() { }
-        private Action FindInstructionHandler(string name) => instructionHandlers.ContainsKey(name) ? instructionHandlers[name] : null;
-        private Action FindArmHandler(string name) => instructionHandlers.ContainsKey(name) ? instructionHandlers[name] : null;
-        private Action FindMipsHandler(string name) => instructionHandlers.ContainsKey(name) ? instructionHandlers[name] : null;
-        private Action FindMipsSpecialHandler(string name) => instructionHandlers.ContainsKey(name) ? instructionHandlers[name] : null;
-        private uint RotateRight(uint value, int count) => (value >> count) | (value << (32 - count));
-    }
-}
-        /// <summary>
-        /// Translate ARM/MIPS instruction to x64 and execute natively
-        /// </summary>
-        public ExecutionResult TranslateToX64AndExecute(uint instruction, CPUState cpuState, VirtualMemoryManager memory, WindowsCEApiEmulator apiEmulator)
+
+        private async Task<ExecutionResult> HandleArmBl(uint instruction, CPUState cpu, VirtualMemoryManager memory, WindowsCEApiEmulator api)
         {
-            // Example stub: log the translation step
-            Console.WriteLine($"[TRANSLATE] 0x{instruction:X8} ({cpuState.Architecture}) at PC=0x{cpuState.PC:X8}");
+        // BL (branch with link)
+        var offset = instruction & 0x00FFFFFF;
+        var targetAddr = ((cpu.PC + 8) & 0xF0000000) | (offset << 2);
+        cpu.Registers[14] = cpu.PC + 4; // Link register
+        await Task.CompletedTask;
+        return new ExecutionResult { ShouldExit = false, NewPC = targetAddr };
+        }
 
-            // TODO: Implement real translation logic here
-            // 1. Decode ARM/MIPS instruction
-            // 2. Map to x64 operation (delegate, IL, or interpreter)
-            // 3. Execute and update CPU/memory state
+        private async Task<ExecutionResult> HandleArmSvc(uint instruction, CPUState cpu, VirtualMemoryManager memory, WindowsCEApiEmulator api)
+        {
+            var svcNumber = instruction & 0x00FFFFFF;
+            return await api.HandleSystemCallAsync(svcNumber, cpu, memory);
+        }
 
-            // For now, simulate execution and return
+        // MIPS Instruction Handlers (missing stubs)
+        private async Task<ExecutionResult> HandleMipsLui(uint instruction, CPUState cpu, VirtualMemoryManager memory, WindowsCEApiEmulator api)
+        {
+            var rt = (instruction >> 16) & 0x1F;
+            var immediate = instruction & 0xFFFF;
+            cpu.Registers[rt] = (uint)(immediate << 16);
+            await Task.CompletedTask;
             return new ExecutionResult { ShouldExit = false };
         }
-    {
+
+        private async Task<ExecutionResult> HandleMipsLw(uint instruction, CPUState cpu, VirtualMemoryManager memory, WindowsCEApiEmulator api)
+        {
+            var rt = (instruction >> 16) & 0x1F;
+            var rs = (instruction >> 21) & 0x1F;
+            var offset = (short)(instruction & 0xFFFF); // Sign extend
+            var address = cpu.Registers[rs] + (uint)offset;
+            try
+            {
+                cpu.Registers[rt] = memory.ReadUInt32(address);
+            }
+            catch (MemoryAccessException)
+            {
+                cpu.Registers[rt] = 0;
+            }
+            await Task.CompletedTask;
+            return new ExecutionResult { ShouldExit = false };
+        }
         private readonly Dictionary<uint, Func<uint, CPUState, VirtualMemoryManager, WindowsCEApiEmulator, Task<ExecutionResult>>> instructionHandlers;
 
         public InstructionTranslator()
@@ -92,6 +89,25 @@ namespace ProcessorEmulator
             instructionHandlers[0x0000000C] = HandleMipsSyscall;      // SYSCALL
         }
 
+        /// <summary>
+        /// Translate ARM/MIPS instruction to x64 and execute natively
+        /// </summary>
+    [CLSCompliant(false)]
+    public ExecutionResult TranslateToX64AndExecute(uint instruction, CPUState cpuState, VirtualMemoryManager memory, WindowsCEApiEmulator apiEmulator)
+        {
+            // Example stub: log the translation step
+            Console.WriteLine($"[TRANSLATE] 0x{instruction:X8} ({cpuState.Architecture}) at PC=0x{cpuState.PC:X8}");
+
+            // TODO: Implement real translation logic here
+            // 1. Decode ARM/MIPS instruction
+            // 2. Map to x64 operation (delegate, IL, or interpreter)
+            // 3. Execute and update CPU/memory state
+
+            // For now, simulate execution and return
+            return new ExecutionResult { ShouldExit = false };
+        }
+
+        [CLSCompliant(false)]
         public async Task<ExecutionResult> TranslateAndExecuteAsync(
             uint instruction, CPUState cpuState, VirtualMemoryManager memory, WindowsCEApiEmulator apiEmulator)
         {
@@ -245,81 +261,10 @@ namespace ProcessorEmulator
                     }
                     catch (MemoryAccessException)
                     {
-                        if (cpu.Registers != null && i >= 0 && i < cpu.Registers.Length) cpu.Registers[i] = 0;
+                        cpu.Registers[i] = 0xDEADBEEF; // Dummy value for failed load
                     }
                 }
             }
-            
-            await Task.CompletedTask;
-            return new ExecutionResult { ShouldExit = false };
-        }
-
-        private async Task<ExecutionResult> HandleArmBx(uint instruction, CPUState cpu, VirtualMemoryManager memory, WindowsCEApiEmulator api)
-        {
-            var rm = instruction & 0xF;
-            var targetAddr = cpu.Registers[rm];
-            
-            if (targetAddr == 0 || targetAddr == 0xDEADBEEF)
-            {
-                // Return from function - treat as exit
-                return new ExecutionResult { ShouldExit = true, ExitCode = 0 };
-            }
-            
-            await Task.CompletedTask;
-            return new ExecutionResult { ShouldExit = false, NewPC = targetAddr };
-        }
-
-        private async Task<ExecutionResult> HandleArmBl(uint instruction, CPUState cpu, VirtualMemoryManager memory, WindowsCEApiEmulator api)
-        {
-            var offset = (instruction & 0x00FFFFFF) << 2;
-            if ((offset & 0x02000000) != 0) // Sign extend
-                offset |= 0xFC000000;
-            
-            cpu.Registers[14] = cpu.PC + 4; // Set link register
-            var targetAddr = cpu.PC + 8 + offset;
-            
-            // Check if this is an API call
-            var result = await api.HandleFunctionCallAsync(targetAddr, cpu, memory);
-            if (result.ShouldExit || result.NewPC != 0)
-                return result;
-            
-            await Task.CompletedTask;
-            return new ExecutionResult { ShouldExit = false, NewPC = targetAddr };
-        }
-
-        private async Task<ExecutionResult> HandleArmSvc(uint instruction, CPUState cpu, VirtualMemoryManager memory, WindowsCEApiEmulator api)
-        {
-            var svcNumber = instruction & 0x00FFFFFF;
-            return await api.HandleSystemCallAsync(svcNumber, cpu, memory);
-        }
-
-        // MIPS Instruction Handlers
-        private async Task<ExecutionResult> HandleMipsLui(uint instruction, CPUState cpu, VirtualMemoryManager memory, WindowsCEApiEmulator api)
-        {
-            var rt = (instruction >> 16) & 0x1F;
-            var immediate = instruction & 0xFFFF;
-            cpu.Registers[rt] = (uint)(immediate << 16);
-            
-            await Task.CompletedTask;
-            return new ExecutionResult { ShouldExit = false };
-        }
-
-        private async Task<ExecutionResult> HandleMipsLw(uint instruction, CPUState cpu, VirtualMemoryManager memory, WindowsCEApiEmulator api)
-        {
-            var rt = (instruction >> 16) & 0x1F;
-            var rs = (instruction >> 21) & 0x1F;
-            var offset = (short)(instruction & 0xFFFF); // Sign extend
-            
-            var address = cpu.Registers[rs] + (uint)offset;
-            try
-            {
-                cpu.Registers[rt] = memory.ReadUInt32(address);
-            }
-            catch (MemoryAccessException)
-            {
-                cpu.Registers[rt] = 0;
-            }
-            
             await Task.CompletedTask;
             return new ExecutionResult { ShouldExit = false };
         }
