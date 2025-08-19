@@ -2,8 +2,6 @@
 /obj
 /bin
 .github/copilot-instructions.md
-.github/copilot-instructions.md
-.github/copilot-instructions.md
 fetch-and-process-issues.ps1
 automated-issue-handler.ps1
 issues-log.txt
@@ -12,3 +10,4 @@ ai-agent/agent.ps1
 ai-agent/ai-triage-log.md
 ai-agent/copilot-fix-log.md
 github-fetch.ps1
+

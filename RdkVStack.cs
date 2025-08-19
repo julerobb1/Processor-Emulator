@@ -46,7 +46,7 @@ namespace ProcessorEmulator
         
         private readonly Dictionary<RdkComponent, ComponentStatus> components;
         private bool stackInitialized;
-        private string rdkVersion;
+        private readonly string rdkVersion;
         private string platformTarget;
         
         #endregion
