@@ -12,4 +12,44 @@
     <Style TargetType="StatusBar">
         <Setter Property="Background" Value="#D4D0C8"/>
     </Style>
+
+    <!-- Windows 7 / Aero-like brushes -->
+    <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#F0F0F0" />
+    <LinearGradientBrush x:Key="AeroHeaderBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#F7FBFD" Offset="0" />
+        <GradientStop Color="#EAF3FB" Offset="1" />
+    </LinearGradientBrush>
+    <SolidColorBrush x:Key="AeroAccentBrush" Color="#2D6AA4" />
+    <SolidColorBrush x:Key="AeroBorderBrush" Color="#A0A0A0" />
+
+    <!-- Button style with square corners and subtle gradient similar to Win7 -->
+    <Style TargetType="Button">
+        <Setter Property="Background" Value="#E6EEF7" />
+        <Setter Property="BorderBrush" Value="{StaticResource AeroBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="6,3" />
+        <Setter Property="Margin" Value="2" />
+        <Setter Property="FontFamily" Value="Segoe UI" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="Background" Value="#DDEAF6" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter Property="Background" Value="#C7DFF3" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.6" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
 </ResourceDictionary>

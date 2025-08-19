@@ -1,12 +1,9 @@
 <Window x:Class="ProcessorEmulator.MainWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Processor Emulator" Height="450" Width="800"
-        Icon="pack://application:,,,/Resources/Win7Disk.ico"
-        AllowsTransparency="True" WindowStyle="None" Background="Transparent">
-    <Window.Effect>
-        <DropShadowEffect BlurRadius="10" ShadowDepth="0" Color="#AA000000"/>
-    </Window.Effect>
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Processor Emulator" Height="450" Width="800"
+    Icon="pack://application:,,,/Resources/Win7Disk.ico"
+    WindowStyle="SingleBorderWindow" ResizeMode="CanResize" Background="{DynamicResource WindowBackgroundBrush}">
     <DockPanel>
         <Menu DockPanel.Dock="Top">
             <MenuItem Header="_File">

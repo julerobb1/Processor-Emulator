@@ -28,7 +28,8 @@ namespace ProcessorEmulator.Emulation
                         break;
                     case "x86":
                     case "x64":
-                        x86Emu.DispatchInstruction(instruction, targetArch);
+                        // X86 emulator APIs use int for instructions; cast from uint safely here
+                        x86Emu.DispatchInstruction((int)instruction, targetArch);
                         break;
                     case "ARM":
                     case "ARM64":

@@ -1,7 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-  <Reference Include="System.Management" />
+    <!-- Use NuGet package for System.Management on .NET Core/.NET 6 -->
+    <PackageReference Include="System.Management" Version="6.0.0" />
   <Compile Include="*.cs" Exclude="FolderAnalysisWindow.cs;InstructionTranslator_Archive.cs" />
     <Compile Include="Tools\*.cs" />
     <Compile Include="Emulation\SparcEmulator.cs" />

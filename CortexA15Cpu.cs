@@ -132,7 +132,6 @@ namespace ProcessorEmulator
             mmu = new MmuState
             {
                 Enabled = false, // Disabled at reset
-                        await Task.CompletedTask;
                 TranslationTableBase = 0,
                 DomainAccessControl = 0,
                 InstructionCacheEnabled = false,
@@ -461,6 +460,7 @@ namespace ProcessorEmulator
             InitializeMmu();
             InitializeCache();
     // Removed misplaced CLSCompliant attribute
+            await Task.CompletedTask;
         }
         
         #endregion
