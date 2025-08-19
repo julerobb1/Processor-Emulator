@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+  <Reference Include="System.Management" />
   <Compile Include="*.cs" Exclude="FolderAnalysisWindow.cs;InstructionTranslator_Archive.cs" />
     <Compile Include="Tools\*.cs" />
     <Compile Include="Emulation\SparcEmulator.cs" />
