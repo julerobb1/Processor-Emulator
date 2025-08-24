@@ -64,6 +64,7 @@
     <Setter Property="Background" Value="{StaticResource GlassMenuBackgroundBrush}"/>
     <Setter Property="BorderBrush" Value="#FFAFB6BD"/>
     <Setter Property="BorderThickness" Value="0,0,0,1"/>
+    <Setter Property="Foreground" Value="#FF000000"/>
   </Style>
   <Style TargetType="MenuItem">
     <Setter Property="Padding" Value="6,3"/>

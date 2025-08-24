@@ -58,7 +58,7 @@
             </Border>
 
             <DockPanel Margin="8,42,8,8">
-                <Menu DockPanel.Dock="Top" Background="{DynamicResource GlassMenuBackgroundBrush}" BorderBrush="{DynamicResource AeroBorderBrush}" BorderThickness="0,0,0,1">
+                <Menu DockPanel.Dock="Top" Background="{DynamicResource GlassMenuBackgroundBrush}" BorderBrush="{DynamicResource AeroBorderBrush}" BorderThickness="0,0,0,1" Foreground="#FF000000">
             <MenuItem Header="_File">
                 <MenuItem Header="_Open" Click="OpenMenuItem_Click"/>
                 <!-- General firmware extract &amp; analysis -->
