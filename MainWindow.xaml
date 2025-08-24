@@ -86,7 +86,10 @@
                           Unchecked="UseUnicorn_Unchecked"/>
             </MenuItem>
             <MenuItem Header="_View">
-                <MenuItem x:Name="ToggleWin7Mode" Header="Windows 7 Mode" IsCheckable="True" IsChecked="True" Click="ToggleWin7Mode_Click"/>
+                <MenuItem Header="Theme">
+                    <MenuItem x:Name="ThemeWin7" Header="Windows 7 Aero" IsCheckable="True" Click="ThemeWin7_Click"/>
+                    <MenuItem x:Name="ThemeCarl" Header="Carl Mode (BALD)" IsCheckable="True" Click="ThemeCarl_Click"/>
+                </MenuItem>
                 <Separator/>
                 <MenuItem Header="Tint Intensity">
                     <StackPanel Orientation="Horizontal" Margin="10,4,10,4">

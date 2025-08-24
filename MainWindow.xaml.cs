@@ -393,32 +393,41 @@ namespace ProcessorEmulator
 
         private void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
-            // Ensure View -> Windows 7 Mode reflects current state
-            if (this.FindName("ToggleWin7Mode") is MenuItem mi)
+            // Initialize theme menu state
+            if (this.FindName("ThemeWin7") is MenuItem t7 && this.FindName("ThemeCarl") is MenuItem tc)
             {
-                mi.IsChecked = Windows7ThemeManager.IsApplied;
+                t7.IsCheckable = true;
+                tc.IsCheckable = true;
+                t7.IsChecked = AppThemeManager.Current == AppTheme.Windows7Aero;
+                tc.IsChecked = AppThemeManager.Current == AppTheme.CarlMode;
             }
         }
 
-        private void ToggleWin7Mode_Click(object sender, RoutedEventArgs e)
+        private void ThemeWin7_Click(object sender, RoutedEventArgs e)
         {
             try
             {
-                if (sender is MenuItem mi)
-                {
-                    if (mi.IsChecked)
-                    {
-                        Windows7ThemeManager.Apply(Application.Current);
-                    }
-                    else
-                    {
-                        Windows7ThemeManager.Restore(Application.Current);
-                    }
-                }
+                AppThemeManager.Apply(AppTheme.Windows7Aero, Application.Current);
+                if (FindName("ThemeWin7") is MenuItem t7 && FindName("ThemeCarl") is MenuItem tc)
+                { t7.IsChecked = true; tc.IsChecked = false; }
             }
             catch (Exception ex)
             {
-                StatusBarText($"Theme toggle error: {ex.Message}");
+                StatusBarText($"Theme apply error: {ex.Message}");
+            }
+        }
+
+        private void ThemeCarl_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                AppThemeManager.Apply(AppTheme.CarlMode, Application.Current);
+                if (FindName("ThemeWin7") is MenuItem t7 && FindName("ThemeCarl") is MenuItem tc)
+                { t7.IsChecked = false; tc.IsChecked = true; }
+            }
+            catch (Exception ex)
+            {
+                StatusBarText($"Theme apply error: {ex.Message}");
             }
         }
 

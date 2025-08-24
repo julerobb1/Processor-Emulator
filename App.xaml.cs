@@ -137,7 +137,7 @@ namespace ProcessorEmulator
                 var main = new MainWindow();
                 Log("MainWindow created.");
                 // Force Win7 style overrides for Win8+ hosts
-                try { Windows7ThemeManager.Apply(Application.Current); Log("Windows7ThemeManager.Apply ok."); } catch (Exception apx) { Log("Windows7ThemeManager.Apply failed: " + apx.Message); }
+                try { AppThemeManager.LoadAndApplySaved(Application.Current); Log($"Theme applied: {AppThemeManager.Current}"); } catch (Exception apx) { Log("Theme apply failed: " + apx.Message); }
                 // Try to set icon from Resources, but swallow any imaging errors
                 try
                 {
