@@ -38,8 +38,7 @@ namespace ProcessorEmulator
             // Semi-transparent tints for glass areas
             var menuBrush = new SolidColorBrush(Color.FromArgb(180, color.R, color.G, color.B));
             var statusBrush = new SolidColorBrush(Color.FromArgb(160, color.R, color.G, color.B));
-            // Content background must be opaque (Win7 app surfaces are not see-through)
-            var panelBrush = new SolidColorBrush(Color.FromRgb(241, 245, 250)); // light bluish-white
+            var panelBrush = new SolidColorBrush(Color.FromArgb(20, color.R, color.G, color.B));
             menuBrush.Freeze(); statusBrush.Freeze(); panelBrush.Freeze();
 
             // Header (tabs/menu) gradient similar to Win7 (light at top)
@@ -58,7 +57,7 @@ namespace ProcessorEmulator
             app.Resources["AeroHeaderBrush"] = headerGradient;
             app.Resources["AeroAccentBrush"] = accent;
             app.Resources["AeroBorderBrush"] = new SolidColorBrush(Color.FromArgb(160, 255, 255, 255));
-            app.Resources["WindowBackgroundBrush"] = panelBrush; // opaque content surface
+            app.Resources["WindowBackgroundBrush"] = panelBrush; // translucent panel behind content
             app.Resources["GlassMenuBackgroundBrush"] = menuBrush;
             app.Resources["GlassStatusBackgroundBrush"] = statusBrush;
             app.Resources["GlassPanelBrush"] = panelBrush;

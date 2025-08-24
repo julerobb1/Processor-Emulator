@@ -7,10 +7,10 @@ namespace ProcessorEmulator
 {
     public partial class App : Application
     {
-        private static string StartupLogPath => Path.Combine(Path.GetTempPath(), "ProcessorEmulator_startup.log");
+        private static string StartupLogPath => System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ProcessorEmulator_startup.log");
         private static void Log(string line)
         {
-            try { File.AppendAllText(StartupLogPath, DateTime.Now.ToString("o") + " " + line + Environment.NewLine); } catch { }
+            try { System.IO.File.AppendAllText(StartupLogPath, DateTime.Now.ToString("o") + " " + line + Environment.NewLine); } catch { }
         }
 
         protected override void OnStartup(StartupEventArgs e)
@@ -95,7 +95,7 @@ namespace ProcessorEmulator
 
                     if (dict != null)
                     {
-                        Current.Resources.MergedDictionaries.Add(dict);
+                        Application.Current.Resources.MergedDictionaries.Add(dict);
                         Log($"ClassicStyle loaded from candidate; merged into Application resources.");
                     }
                     else
@@ -104,9 +104,9 @@ namespace ProcessorEmulator
                         System.Diagnostics.Debug.WriteLine($"[App] Failed to load ClassicStyle.xaml (all candidates). Last error: {lastEx}");
                         Log($"Failed to load ClassicStyle.xaml (all candidates). Last error: {lastEx}");
                         var fallback = new ResourceDictionary();
-                        fallback["WindowBackgroundBrush"] = SystemColors.WindowBrush;
-                        fallback["ControlBackgroundBrush"] = SystemColors.ControlBrush;
-                        Current.Resources.MergedDictionaries.Add(fallback);
+                        fallback["WindowBackgroundBrush"] = System.Windows.SystemColors.WindowBrush;
+                        fallback["ControlBackgroundBrush"] = System.Windows.SystemColors.ControlBrush;
+                        Application.Current.Resources.MergedDictionaries.Add(fallback);
                     }
                 }
                 catch (Exception rex)
@@ -114,9 +114,9 @@ namespace ProcessorEmulator
                     System.Diagnostics.Debug.WriteLine($"[App] Unexpected failure loading ClassicStyle.xaml: {rex}");
                     Log($"Unexpected failure loading ClassicStyle.xaml: {rex.Message}");
                     var fallback = new ResourceDictionary();
-                    fallback["WindowBackgroundBrush"] = SystemColors.WindowBrush;
-                    fallback["ControlBackgroundBrush"] = SystemColors.ControlBrush;
-                    Current.Resources.MergedDictionaries.Add(fallback);
+                    fallback["WindowBackgroundBrush"] = System.Windows.SystemColors.WindowBrush;
+                    fallback["ControlBackgroundBrush"] = System.Windows.SystemColors.ControlBrush;
+                    Application.Current.Resources.MergedDictionaries.Add(fallback);
                 }
 
                 // Try to merge Win7Styles.xaml dictionary (ported 7.css look)
@@ -124,7 +124,7 @@ namespace ProcessorEmulator
                 {
                     Log("Merging Win7Styles.xaml...");
                     var w7 = new ResourceDictionary { Source = new Uri("/ProcessorEmulator;component/Win7Styles.xaml", UriKind.Relative) };
-                    Current.Resources.MergedDictionaries.Add(w7);
+                    Application.Current.Resources.MergedDictionaries.Add(w7);
                     Log("Win7Styles merged successfully.");
                 }
                 catch (Exception ex)
@@ -137,18 +137,7 @@ namespace ProcessorEmulator
                 var main = new MainWindow();
                 Log("MainWindow created.");
                 // Force Win7 style overrides for Win8+ hosts
-                try {
-                    if (OperatingSystem.IsWindows()) {
-                        AppThemeManager.LoadAndApplySaved(Current);
-                        Log($"Theme applied: {AppThemeManager.Current}");
-                    }
-                    else {
-                        Log("Skipping theme apply; non-Windows platform");
-                    }
-                }
-                catch (Exception apx) {
-                    Log("Theme apply failed: " + apx.Message);
-                }
+                try { AppThemeManager.LoadAndApplySaved(Application.Current); Log($"Theme applied: {AppThemeManager.Current}"); } catch (Exception apx) { Log("Theme apply failed: " + apx.Message); }
                 // Try to set icon from Resources, but swallow any imaging errors
                 try
                 {
@@ -165,7 +154,7 @@ namespace ProcessorEmulator
                 // After merging resources, write a short snapshot of resource keys so we can inspect them
                 try
                 {
-                    var keys = Current.Resources.Keys;
+                    var keys = Application.Current.Resources.Keys;
                     System.Text.StringBuilder sb = new System.Text.StringBuilder();
                     sb.AppendLine(DateTime.Now.ToString("o") + " Resource snapshot:");
                     int count = 0;
@@ -175,7 +164,7 @@ namespace ProcessorEmulator
                         count++;
                         if (count > 200) { sb.AppendLine("  ...truncated"); break; }
                     }
-                    File.AppendAllText(StartupLogPath, sb.ToString());
+                    System.IO.File.AppendAllText(StartupLogPath, sb.ToString());
                 }
                 catch { }
                 Log("Showing MainWindow...");

@@ -198,7 +198,6 @@
     <Setter Property="BorderThickness" Value="0,0,0,1"/>
   </Style>
   <Style TargetType="MenuItem">
-  <Setter Property="Foreground" Value="#FF000000"/>
     <Setter Property="Padding" Value="6,3"/>
     <Setter Property="Template">
       <Setter.Value>
