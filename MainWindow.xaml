@@ -6,30 +6,21 @@
     <Grid>
         <!-- Glass / tint / noise layers -->
         <Grid>
-            <Rectangle Fill="{DynamicResource WindowBackgroundBrush}" />
-            <Rectangle Opacity="0.65">
-                <Rectangle.Fill>
-                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                        <GradientStop Color="#66FFFFFF" Offset="0"/>
-                        <GradientStop Color="#22FFFFFF" Offset="0.45"/>
-                        <GradientStop Color="#33000000" Offset="1"/>
-                    </LinearGradientBrush>
-                </Rectangle.Fill>
-            </Rectangle>
+            <!-- Keep a subtle base behind glass bands; content will be fully opaque. -->
             <Rectangle Fill="{DynamicResource GlassPanelBrush}" />
-            <!-- Synthetic noise -->
-            <Rectangle>
+            <!-- Optional glass noise (won't show under opaque content) -->
+            <Rectangle Opacity="0.25">
                 <Rectangle.Fill>
                     <VisualBrush TileMode="Tile" Viewport="0,0,0.04,0.04" ViewportUnits="RelativeToBoundingBox" Stretch="None">
                         <VisualBrush.Visual>
                             <Grid Width="64" Height="64" Background="Transparent">
-                                <Rectangle Width="64" Height="64" Opacity="0.35">
+                                <Rectangle Width="64" Height="64">
                                     <Rectangle.Fill>
                                         <DrawingBrush TileMode="Tile" Viewport="0,0,8,8" ViewportUnits="Absolute" Stretch="None">
                                             <DrawingBrush.Drawing>
                                                 <DrawingGroup>
                                                     <GeometryDrawing Brush="#10FFFFFF" Geometry="M0,0 L8,0 8,8 0,8Z"/>
-                                                    <GeometryDrawing Brush="#08FFFFFF" Geometry="M0,0 L4,0 4,4 0,4Z"/>
+                                                    <GeometryDrawing Brush="#06FFFFFF" Geometry="M0,0 L4,0 4,4 0,4Z"/>
                                                 </DrawingGroup>
                                             </DrawingBrush.Drawing>
                                         </DrawingBrush>
@@ -110,7 +101,8 @@
                 <TextBlock Text="{Binding GlassStatus}" FontStyle="Italic"/>
             </StatusBarItem>
         </StatusBar>
-    <Grid Background="#55FFFFFF" Margin="4,4,4,4" Panel.ZIndex="5">
+    <!-- Opaque content surface like Windows 7: use the themed background brush (opaque). -->
+    <Grid Background="{DynamicResource WindowBackgroundBrush}" Margin="4,4,4,4" Panel.ZIndex="5">
             <TabControl>
                 <TabItem Header="Emulation">
                     <StackPanel Margin="10">

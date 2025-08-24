@@ -376,12 +376,14 @@ namespace ProcessorEmulator
                 }
                 if (glassApplied)
                 {
-                    // Make window background transparent so extended frame shows through
+                    // Only make the chrome region show glass; leave content opaque (background is handled in XAML)
                     this.Background = System.Windows.Media.Brushes.Transparent;
                     GlassStatus = "Glass: on";
                 }
                 else
                 {
+                    // Keep default window background so content is fully opaque
+                    this.ClearValue(Window.BackgroundProperty);
                     GlassStatus = AeroGlassHelper.IsDwmEnabled() ? "Glass: off" : "Glass: unsupported";
                 }
             }

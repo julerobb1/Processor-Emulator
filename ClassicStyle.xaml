@@ -33,10 +33,11 @@
     </Style>
 
     <!-- Aero Glass Brushes -->
+    <!-- Opaque content background reminiscent of Win7/Vista app surfaces -->
     <LinearGradientBrush x:Key="WindowBackgroundBrush" StartPoint="0,0" EndPoint="0,1">
-        <GradientStop Color="#F3F9FE" Offset="0" />
-        <GradientStop Color="#E3EDF7" Offset="0.5" />
-        <GradientStop Color="#D0E3F0" Offset="1" />
+        <GradientStop Color="#FFF6F9FC" Offset="0" />
+        <GradientStop Color="#FFE8F0F8" Offset="0.5" />
+        <GradientStop Color="#FFDDE9F5" Offset="1" />
     </LinearGradientBrush>
     <LinearGradientBrush x:Key="AeroHeaderBrush" StartPoint="0,0" EndPoint="0,1">
         <GradientStop Color="#F7FBFD" Offset="0" />
