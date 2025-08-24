@@ -181,7 +181,7 @@ namespace ProcessorEmulator
             var timeText = new FrameworkElementFactory(typeof(TextBlock));
             timeText.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding("Timestamp") { StringFormat = "HH:mm:ss.fff" });
             timeText.SetValue(Grid.ColumnProperty, 0);
-            timeText.SetValue(TextBlock.MarginProperty, new Thickness(2));
+            timeText.SetValue(MarginProperty, new Thickness(2));
             factory.AppendChild(timeText);
             
             // Category
@@ -189,7 +189,7 @@ namespace ProcessorEmulator
             categoryText.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding("Category"));
             categoryText.SetBinding(TextBlock.ForegroundProperty, new System.Windows.Data.Binding("CategoryBrush"));
             categoryText.SetValue(Grid.ColumnProperty, 1);
-            categoryText.SetValue(TextBlock.MarginProperty, new Thickness(2));
+            categoryText.SetValue(MarginProperty, new Thickness(2));
             categoryText.SetValue(TextBlock.FontWeightProperty, FontWeights.Bold);
             factory.AppendChild(categoryText);
             
@@ -197,14 +197,14 @@ namespace ProcessorEmulator
             var levelText = new FrameworkElementFactory(typeof(TextBlock));
             levelText.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding("Level"));
             levelText.SetValue(Grid.ColumnProperty, 2);
-            levelText.SetValue(TextBlock.MarginProperty, new Thickness(2));
+            levelText.SetValue(MarginProperty, new Thickness(2));
             factory.AppendChild(levelText);
             
             // Message
             var messageText = new FrameworkElementFactory(typeof(TextBlock));
             messageText.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding("Message"));
             messageText.SetValue(Grid.ColumnProperty, 3);
-            messageText.SetValue(TextBlock.MarginProperty, new Thickness(2));
+            messageText.SetValue(MarginProperty, new Thickness(2));
             messageText.SetValue(TextBlock.TextWrappingProperty, TextWrapping.NoWrap);
             factory.AppendChild(messageText);
             

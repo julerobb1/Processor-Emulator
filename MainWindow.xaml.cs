@@ -55,11 +55,11 @@ namespace ProcessorEmulator
             {
                 // Use LoadComponent to avoid editor-time false positives for InitializeComponent
                 // and still load the compiled BAML at runtime.
-                System.Windows.Application.LoadComponent(this, new Uri("/ProcessorEmulator;component/MainWindow.xaml", UriKind.Relative));
+                Application.LoadComponent(this, new Uri("/ProcessorEmulator;component/MainWindow.xaml", UriKind.Relative));
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[MainWindow] InitializeComponent failed: {ex.Message}");
+                Debug.WriteLine($"[MainWindow] InitializeComponent failed: {ex.Message}");
                 BuildFallbackUi();
             }
         }
@@ -86,7 +86,7 @@ namespace ProcessorEmulator
             dock.Children.Add(menu);
 
             // Simplified fallback status area (avoid StatusBar type if WPF references fail)
-            var statusPanel = new Border { BorderThickness = new Thickness(0,1,0,0), BorderBrush = System.Windows.Media.Brushes.Gray, Padding = new Thickness(4) };
+            var statusPanel = new Border { BorderThickness = new Thickness(0,1,0,0), BorderBrush = Brushes.Gray, Padding = new Thickness(4) };
             DockPanel.SetDock(statusPanel, Dock.Bottom);
             statusPanel.Child = new TextBlock { Text = "(Fallback UI)", FontStyle = FontStyles.Italic };
             dock.Children.Add(statusPanel);
@@ -132,8 +132,9 @@ namespace ProcessorEmulator
             try
             {
                 SafeInitializeComponent();
-                InitializeAero();
                 Win7Chrome.ApplyChrome(this);
+                // Ensure DWM glass is applied only after HWND exists
+                this.SourceInitialized += (s, e) => InitializeAero();
                 
                 // Initialize drag-and-drop for file support
                 this.AllowDrop = true;
@@ -158,8 +159,8 @@ namespace ProcessorEmulator
             try
             {
                 SafeInitializeComponent();
-                InitializeAero();
                 Win7Chrome.ApplyChrome(this);
+                this.SourceInitialized += (s, e) => InitializeAero();
                 this.currentEmulator = currentEmulator;
                 InitializeLogPanel();
                 
@@ -181,10 +182,10 @@ namespace ProcessorEmulator
         {
             try
             {
-                string status = Tools.QemuInstaller.GetQemuStatus();
+                string status = QemuInstaller.GetQemuStatus();
                 StatusBarText(status);
                 
-                if (!Tools.QemuInstaller.IsQemuInstalled())
+                if (!QemuInstaller.IsQemuInstalled())
                 {
                     // Show installation prompt after a delay
                     Task.Delay(2000).ContinueWith(_ => 
@@ -199,7 +200,7 @@ namespace ProcessorEmulator
                             
                             if (result == MessageBoxResult.Yes)
                             {
-                                Tools.QemuInstaller.ShowInstallationInstructions();
+                                QemuInstaller.ShowInstallationInstructions();
                             }
                         });
                     });
@@ -367,6 +368,14 @@ namespace ProcessorEmulator
             try
             {
                 DataContext = this; // for bindings
+                // Ensure window handle exists; if not, defer to SourceInitialized
+                var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+                if (hwnd == IntPtr.Zero)
+                {
+                    this.SourceInitialized -= (s, e) => InitializeAero(); // avoid duplicates if any
+                    this.SourceInitialized += (s, e) => InitializeAero();
+                    return;
+                }
                 // Attempt full true Aero glass (Win7 style) first
                 bool glassApplied = AeroGlassHelper.TryApplyTrueGlass(this);
                 if (!glassApplied)
@@ -376,14 +385,14 @@ namespace ProcessorEmulator
                 }
                 if (glassApplied)
                 {
-                    // Only make the chrome region show glass; leave content opaque (background is handled in XAML)
-                    this.Background = System.Windows.Media.Brushes.Transparent;
+                    // Let DWM render glass on extended frame regions; window stays non-layered
+                    this.Background = Brushes.Transparent;
                     GlassStatus = "Glass: on";
                 }
                 else
                 {
                     // Keep default window background so content is fully opaque
-                    this.ClearValue(Window.BackgroundProperty);
+                    this.ClearValue(BackgroundProperty);
                     GlassStatus = AeroGlassHelper.IsDwmEnabled() ? "Glass: off" : "Glass: unsupported";
                 }
             }
@@ -395,13 +404,15 @@ namespace ProcessorEmulator
 
         private void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
-            // Initialize theme menu state
             if (this.FindName("ThemeWin7") is MenuItem t7 && this.FindName("ThemeCarl") is MenuItem tc)
             {
                 t7.IsCheckable = true;
                 tc.IsCheckable = true;
-                t7.IsChecked = AppThemeManager.Current == AppTheme.Windows7Aero;
-                tc.IsChecked = AppThemeManager.Current == AppTheme.CarlMode;
+                // only call AppThemeManager.Current on Windows
+                t7.IsChecked = OperatingSystem.IsWindows()
+                    && AppThemeManager.Current == AppTheme.Windows7Aero;
+                tc.IsChecked = OperatingSystem.IsWindows()
+                    && AppThemeManager.Current == AppTheme.CarlMode;
             }
         }
 
@@ -916,7 +927,7 @@ namespace ProcessorEmulator
             byte[] data = File.ReadAllBytes(filePath);
             // Determine format and architecture
             string format = (data.Length > 4 && data[0] == 0x7F && data[1] == (byte)'E' && data[2] == (byte)'L' && data[3] == (byte)'F') ? "ELF" : "PE";
-            string arch = ArchitectureDetector.Detect(data);
+            string arch = Detect(data);
             string bitness = "Unknown";
             if (format == "PE" && data.Length > 0x40)
             {
@@ -1470,7 +1481,7 @@ namespace ProcessorEmulator
                 {
                     if (current.Count >= 4) // Minimum string length
                     {
-                        strings.Add(System.Text.Encoding.ASCII.GetString(current.ToArray()));
+                        strings.Add(Encoding.ASCII.GetString(current.ToArray()));
                     }
                     current.Clear();
                 }
@@ -1775,7 +1786,7 @@ namespace ProcessorEmulator
             string inputPath = dlg.FileName;
             StatusBarText($"Cross-compiling {Path.GetFileName(inputPath)}...");
             byte[] inputData = File.ReadAllBytes(inputPath);
-            string fromArch = ArchitectureDetector.Detect(inputData);
+            string fromArch = Detect(inputData);
             var targets = new[] { "x86", "x64", "ARM", "ARM64" };
             string toArch = PromptUserForChoice("Select target architecture:", targets);
             if (string.IsNullOrEmpty(toArch)) return;
@@ -1864,7 +1875,7 @@ namespace ProcessorEmulator
             string filePath = openFileDialog.FileName;
             StatusBarText($"Launching RDK-B emulator for {Path.GetFileName(filePath)}...");
             byte[] binary = File.ReadAllBytes(filePath);
-            string arch = ArchitectureDetector.Detect(binary);
+            string arch = Detect(binary);
             try
             {
                 EmulatorLauncher.Launch(filePath, arch, platform: "RDK-B");
@@ -1930,18 +1941,18 @@ namespace ProcessorEmulator
         private async Task HandleUverseDumpAnalysis()
         {
             var baseDir = AppDomain.CurrentDomain.BaseDirectory;
-            var dumpsPath = System.IO.Path.Combine(baseDir, "Data", "DVR", "Uverse_Stuff", "Dumps");
-            if (!System.IO.Directory.Exists(dumpsPath))
+            var dumpsPath = Path.Combine(baseDir, "Data", "DVR", "Uverse_Stuff", "Dumps");
+            if (!Directory.Exists(dumpsPath))
             {
                 MessageBox.Show("U-verse dumps folder not found:\n" + dumpsPath, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }
-            var files = System.IO.Directory.GetFiles(dumpsPath, "*", System.IO.SearchOption.AllDirectories);
+            var files = Directory.GetFiles(dumpsPath, "*", SearchOption.AllDirectories);
             var records = new List<FileRecord>();
             foreach (var file in files)
             {
                 var info = new System.IO.FileInfo(file);
-                byte[] data = System.IO.File.ReadAllBytes(file).Take(64).ToArray();
+                byte[] data = File.ReadAllBytes(file).Take(64).ToArray();
                 string hex = BitConverter.ToString(data).Replace("-", " ");
                 records.Add(new FileRecord { FilePath = file, Size = info.Length, HexPreview = hex });
             }
@@ -2127,7 +2138,7 @@ namespace ProcessorEmulator
             if (chipsetName == null || rootFilesystemType == null)
             {
                 byte[] fw = File.ReadAllBytes(tempImagePath);
-                string fwStr = System.Text.Encoding.ASCII.GetString(fw);
+                string fwStr = Encoding.ASCII.GetString(fw);
 
                 // Example heuristic: look for known chipset names
                 if (fwStr.Contains("Contoso6311"))
@@ -2471,8 +2482,8 @@ namespace ProcessorEmulator
             {
                 return;
             }
-            string folderPath = System.IO.Path.GetDirectoryName(openFile.FileName);
-            var files = System.IO.Directory.GetFiles(folderPath);
+            string folderPath = Path.GetDirectoryName(openFile.FileName);
+            var files = Directory.GetFiles(folderPath);
             var items = new List<FileRecord>();
             foreach (var file in files)
             {
@@ -2494,7 +2505,7 @@ namespace ProcessorEmulator
         /// </summary>
         private async Task HandleSwmLnbSimulation()
         {
-            ProcessorEmulator.Emulation.SwmLnbEmulator.SendChannelMap();
+            Emulation.SwmLnbEmulator.SendChannelMap();
             ShowTextWindow("SWM/LNB Simulation", new List<string> { "SWM/LNB simulation running." });
             StatusBarText("SWM/LNB simulation started.");
             await Task.CompletedTask;
@@ -3124,8 +3135,6 @@ await Task.CompletedTask;
 
                 ShowTextWindow($"Windows CE Multi-Execution Results ({binaryPaths.Length} binaries)", logEntries);
                 
-                int successCount = results.Count(r => r.Success);
-                StatusBarText($"Windows CE execution completed: {successCount}/{binaryPaths.Length} successful");
 
                 // Offer to show individual process details
                 if (results.Count > 1)

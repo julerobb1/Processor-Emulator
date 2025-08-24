@@ -136,7 +136,7 @@ namespace ProcessorEmulator.Emulation.SoC
                         // Simulate network connection after enabling
                         if (mocaEnabled)
                         {
-                            System.Threading.Tasks.Task.Delay(100).ContinueWith(_ =>
+                            Task.Delay(100).ContinueWith(_ =>
                             {
                                 networkConnected = true;
                                 Debug.WriteLine($"[MoCA] Network connected with {networkNodes} nodes");

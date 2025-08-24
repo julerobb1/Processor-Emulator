@@ -202,7 +202,7 @@ namespace ProcessorEmulator.Emulation.SoC
                     {
                         Debug.WriteLine("[CableCARD] Interface reset requested");
                         // Simulate reset and re-authentication
-                        System.Threading.Tasks.Task.Delay(1000).ContinueWith(_ =>
+                        Task.Delay(1000).ContinueWith(_ =>
                         {
                             cardAuthenticated = true;
                             hostPaired = true;
@@ -272,7 +272,7 @@ namespace ProcessorEmulator.Emulation.SoC
             
             // Simulate ECM processing and key extraction
             Debug.WriteLine($"[CableCARD] Processing ECM for channel {channelNumber}");
-            System.Threading.Thread.Sleep(10); // Realistic processing delay
+            Thread.Sleep(10); // Realistic processing delay
             
             bool success = ecmData != null && ecmData.Length > 0;
             
@@ -303,7 +303,7 @@ namespace ProcessorEmulator.Emulation.SoC
                 if (inserted)
                 {
                     // Simulate authentication process
-                    System.Threading.Tasks.Task.Delay(2000).ContinueWith(_ =>
+                    Task.Delay(2000).ContinueWith(_ =>
                     {
                         cardAuthenticated = true;
                         hostPaired = true;

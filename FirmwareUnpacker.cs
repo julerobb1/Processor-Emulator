@@ -121,12 +121,12 @@ namespace ProcessorEmulator
 
             using (var reader = new System.IO.BinaryReader(new System.IO.MemoryStream(unpackedData)))
             {
-                reader.BaseStream.Seek(gptHeaderOffset + 72, System.IO.SeekOrigin.Begin); // Offset to PartitionEntryLBA
+                reader.BaseStream.Seek(gptHeaderOffset + 72, SeekOrigin.Begin); // Offset to PartitionEntryLBA
                 ulong partitionEntryLBA = reader.ReadUInt64();
                 uint numberOfPartitions = reader.ReadUInt32();
                 uint sizeOfPartitionEntry = reader.ReadUInt32();
 
-                reader.BaseStream.Seek((long)(partitionEntryLBA * lbaSize), System.IO.SeekOrigin.Begin);
+                reader.BaseStream.Seek((long)(partitionEntryLBA * lbaSize), SeekOrigin.Begin);
 
                 for (int i = 0; i < numberOfPartitions; i++)
                 {
@@ -140,7 +140,7 @@ namespace ProcessorEmulator
                     var endingLBA = BitConverter.ToUInt64(entryBytes, 40);
                     var nameBytes = new byte[72];
                     Array.Copy(entryBytes, 56, nameBytes, 0, Math.Min(72, entryBytes.Length - 56));
-                    var name = System.Text.Encoding.Unicode.GetString(nameBytes).TrimEnd('\0');
+                    var name = Encoding.Unicode.GetString(nameBytes).TrimEnd('\0');
 
                     // Perform arithmetic using ulong to avoid ambiguity and overflow
                     ulong partitionSizeInLbas = endingLBA - startingLBA + 1;

@@ -112,13 +112,15 @@ namespace ProcessorEmulator
                 var hwnd = new WindowInteropHelper(window).Handle;
                 if (hwnd == IntPtr.Zero) return false;
 
+                bool didSomething = false;
+
                 if (IsDwmEnabled())
                 {
-                    // First extend frame fully (-1 trick makes whole window glass on Vista/7)
+                    // Extend frame fully (Win7 authentic blur) – on Win10+ this alone may not show
                     var margins = new MARGINS { cxLeftWidth = -1, cxRightWidth = -1, cyTopHeight = -1, cyBottomHeight = -1 };
-                    DwmExtendFrameIntoClientArea(hwnd, ref margins);
+                    int hr1 = DwmExtendFrameIntoClientArea(hwnd, ref margins);
 
-                    // Enable blur behind
+                    // Enable blur-behind region
                     var bb = new DWM_BLURBEHIND
                     {
                         dwFlags = DWM_BB_ENABLE,
@@ -126,19 +128,19 @@ namespace ProcessorEmulator
                         hRgnBlur = IntPtr.Zero,
                         fTransitionOnMaximized = false
                     };
-                    DwmEnableBlurBehindWindow(hwnd, ref bb);
-                    return true; // On Win7 this yields the authentic blur.
+                    int hr2 = DwmEnableBlurBehindWindow(hwnd, ref bb);
+                    didSomething |= (hr1 >= 0) || (hr2 >= 0);
                 }
 
-                // Fallback to AccentPolicy (Win8+ w/o classic blur or if DWM glass disabled)
+                // On Windows 10/11, also enable AccentPolicy blur for visible transparency
                 if (Environment.OSVersion.Version.Major >= 10)
                 {
                     var accent = new ACCENT_POLICY
                     {
                         AccentState = ACCENT_ENABLE_BLURBEHIND,
                         AccentFlags = 0,
-                        // GradientColor ARGB (low alpha to allow content) - semi translucent dark neutral
-                        GradientColor = unchecked((int)0x7FFFFFFF)
+                        // ARGB color; low alpha lets content be seen while keeping Chrome-like tint
+                        GradientColor = unchecked((int)0x66FFFFFF)
                     };
                     var size = Marshal.SizeOf(accent);
                     IntPtr pAccent = Marshal.AllocHGlobal(size);
@@ -149,10 +151,12 @@ namespace ProcessorEmulator
                         Data = pAccent,
                         SizeOfData = size
                     };
-                    SetWindowCompositionAttribute(hwnd, ref data);
+                    int hr = SetWindowCompositionAttribute(hwnd, ref data);
                     Marshal.FreeHGlobal(pAccent);
-                    return true;
+                    didSomething |= (hr >= 0);
                 }
+
+                if (didSomething) return true;
             }
             catch { }
             return false;

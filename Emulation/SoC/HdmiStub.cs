@@ -218,7 +218,7 @@ namespace ProcessorEmulator.Emulation.SoC
                         if (hdcpEnabled && displayConnected)
                         {
                             // Simulate HDCP authentication
-                            System.Threading.Tasks.Task.Delay(100).ContinueWith(_ =>
+                            Task.Delay(100).ContinueWith(_ =>
                             {
                                 hdcpAuthenticated = true;
                                 Debug.WriteLine("[HDMI] HDCP 2.2 authentication successful");
@@ -266,7 +266,7 @@ namespace ProcessorEmulator.Emulation.SoC
                 else if (hdcpEnabled)
                 {
                     // Re-authenticate HDCP
-                    System.Threading.Tasks.Task.Delay(200).ContinueWith(_ =>
+                    Task.Delay(200).ContinueWith(_ =>
                     {
                         hdcpAuthenticated = true;
                         Debug.WriteLine("[HDMI] HDCP re-authentication successful");

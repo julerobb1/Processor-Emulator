@@ -321,7 +321,7 @@ namespace ProcessorEmulator.Emulation
                 // This typically contains filesystem overlays, drivers, etc.
                 await Task.Run(() => {
                     // Simulate processing overlay data
-                    System.Threading.Thread.Sleep(100);
+                    Thread.Sleep(100);
                 });
                 
                 LogBoot("✓ Boot overlays processed");
