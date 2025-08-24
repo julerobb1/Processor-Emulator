@@ -244,17 +244,17 @@ namespace ProcessorEmulator.Emulation
             EmitBytes(BitConverter.GetBytes(immediate));
         }
 
-        private void EmitX86Load(byte dest, byte base, int offset)
+        private void EmitX86Load(byte dest, byte baseReg, int offset)
         {
             // MOV dest, DWORD PTR [base + offset]
-            EmitBytes(0x8B, ModRM(0x02, dest, base));
+            EmitBytes(0x8B, ModRM(0x02, dest, baseReg));
             EmitBytes(BitConverter.GetBytes(offset));
         }
 
-        private void EmitX86Store(byte src, byte base, int offset)
+        private void EmitX86Store(byte src, byte baseReg, int offset)
         {
             // MOV DWORD PTR [base + offset], src
-            EmitBytes(0x89, ModRM(0x02, src, base));
+            EmitBytes(0x89, ModRM(0x02, src, baseReg));
             EmitBytes(BitConverter.GetBytes(offset));
         }
 
@@ -268,7 +268,7 @@ namespace ProcessorEmulator.Emulation
         private void EmitConditionalCheck(uint condition)
         {
             // Simplified conditional check - emit conditional jump
-            EmitBytes(0x70 + (byte)condition); // Jcc rel8
+            EmitBytes((byte)(0x70 + (byte)condition)); // Jcc rel8
             EmitBytes(0x05); // Skip next 5 bytes if condition false
         }
 

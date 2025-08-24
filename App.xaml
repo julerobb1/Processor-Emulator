@@ -1,12 +1,9 @@
 <Application x:Class="ProcessorEmulator.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             StartupUri="MainWindow.xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <Application.Resources>
         <ResourceDictionary>
-            <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="ClassicStyle.xaml"/>
-            </ResourceDictionary.MergedDictionaries>
+            <!-- ClassicStyle.xaml will be loaded at runtime from App.xaml.cs to avoid XAML parse-time failures -->
         </ResourceDictionary>
     </Application.Resources>
 </Application>

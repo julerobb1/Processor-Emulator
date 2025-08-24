@@ -14,6 +14,7 @@ using Microsoft.Win32;
 using System.Threading.Tasks;
 using DiscUtils.Iso9660;
 using System.Text;
+using System.Windows.Media;
 // YAFFS handled by ExoticFilesystemManager
 using DiscUtils.Setup;
 using static ProcessorEmulator.Tools.ArchitectureDetector;
@@ -39,34 +40,74 @@ namespace ProcessorEmulator
         string GetQemuArguments(string filePath, string winceVersion);
     }
 
-    public partial class MainWindow : Window, IMainWindow
+    public partial class MainWindow : Window, IMainWindow, System.ComponentModel.INotifyPropertyChanged
     {
         private IEmulator currentEmulator;
-
-        // Safe InitializeComponent method that handles XAML compilation inconsistencies
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+        private void OnPropertyChanged(string name) => PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(name));
+        private string statusMessage = "Ready";
+        private string glassStatus = "Glass: pending";
+        public string StatusMessage { get => statusMessage; set { statusMessage = value; OnPropertyChanged(nameof(StatusMessage)); } }
+        public string GlassStatus { get => glassStatus; set { glassStatus = value; OnPropertyChanged(nameof(GlassStatus)); } }
         private void SafeInitializeComponent()
         {
             try
             {
-                // Try to call the XAML-generated InitializeComponent
-                var initMethod = this.GetType().GetMethod("InitializeComponent", 
-                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-                if (initMethod != null)
-                {
-                    initMethod.Invoke(this, null);
-                }
+                // Use LoadComponent to avoid editor-time false positives for InitializeComponent
+                // and still load the compiled BAML at runtime.
+                System.Windows.Application.LoadComponent(this, new Uri("/ProcessorEmulator;component/MainWindow.xaml", UriKind.Relative));
             }
             catch (Exception ex)
             {
-                // Log error but continue - the window can function without XAML controls
-                System.Diagnostics.Debug.WriteLine($"[MainWindow] XAML initialization failed: {ex.Message}");
-                
-                // Set basic window properties manually
-                this.Title = "Processor Emulator";
-                this.Width = 1200;
-                this.Height = 800;
-                this.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+                System.Diagnostics.Debug.WriteLine($"[MainWindow] InitializeComponent failed: {ex.Message}");
+                BuildFallbackUi();
             }
+        }
+
+        /// <summary>
+        /// Construct a minimal UI approximately matching the first tab so the window isn't blank
+        /// when XAML/BAML loading fails.
+        /// </summary>
+        private void BuildFallbackUi()
+        {
+            this.Title = "Processor Emulator";
+            this.Width = 1200;
+            this.Height = 800;
+            this.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+
+            var dock = new DockPanel();
+            this.Content = dock;
+
+            var menu = new Menu();
+            DockPanel.SetDock(menu, Dock.Top);
+            menu.Items.Add(new MenuItem { Header = "_File" });
+            menu.Items.Add(new MenuItem { Header = "_Edit" });
+            menu.Items.Add(new MenuItem { Header = "_Help" });
+            dock.Children.Add(menu);
+
+            // Simplified fallback status area (avoid StatusBar type if WPF references fail)
+            var statusPanel = new Border { BorderThickness = new Thickness(0,1,0,0), BorderBrush = System.Windows.Media.Brushes.Gray, Padding = new Thickness(4) };
+            DockPanel.SetDock(statusPanel, Dock.Bottom);
+            statusPanel.Child = new TextBlock { Text = "(Fallback UI)", FontStyle = FontStyles.Italic };
+            dock.Children.Add(statusPanel);
+
+            var tabs = new TabControl();
+            dock.Children.Add(tabs);
+
+            var tab = new TabItem { Header = "Emulation" };
+            tabs.Items.Add(tab);
+            var stack = new StackPanel { Margin = new Thickness(10) };
+            tab.Content = stack;
+            stack.Children.Add(new TextBlock { Text = "Firmware Emulation (Fallback)", FontWeight = FontWeights.Bold, FontSize = 16 });
+
+            var gb = new GroupBox { Header = "1. Select Firmware", Margin = new Thickness(0, 10, 0, 10) };
+            var dp = new DockPanel { Margin = new Thickness(5) };
+            var tb = new TextBox { Width = 400 };
+            dp.Children.Add(tb);
+            var btn = new Button { Content = "Browse...", Width = 80, Margin = new Thickness(5, 0, 0, 0) };
+            dp.Children.Add(btn);
+            gb.Content = dp;
+            stack.Children.Add(gb);
         }
 
         // Store selected firmware path and platform
@@ -91,6 +132,8 @@ namespace ProcessorEmulator
             try
             {
                 SafeInitializeComponent();
+                InitializeAero();
+                Win7Chrome.ApplyChrome(this);
                 
                 // Initialize drag-and-drop for file support
                 this.AllowDrop = true;
@@ -101,6 +144,7 @@ namespace ProcessorEmulator
                 
                 // Initialize dropdown handlers
                 this.Loaded += (s, e) => InitializeDropdownHandlers();
+                this.Loaded += MainWindow_Loaded; // initialize view controls state
             }
             catch (Exception ex)
             {
@@ -114,11 +158,14 @@ namespace ProcessorEmulator
             try
             {
                 SafeInitializeComponent();
+                InitializeAero();
+                Win7Chrome.ApplyChrome(this);
                 this.currentEmulator = currentEmulator;
                 InitializeLogPanel();
                 
                 // Initialize dropdown handlers
                 this.Loaded += (s, e) => InitializeDropdownHandlers();
+                this.Loaded += MainWindow_Loaded;
             }
             catch (Exception ex)
             {
@@ -251,11 +298,12 @@ namespace ProcessorEmulator
                 }
 
                 // Firmware path text box - sync with firmwarePath variable
-                if (FirmwarePathTextBox != null)
+                var firmwarePathTextBox = this.FindName("FirmwarePathTextBox") as TextBox;
+                if (firmwarePathTextBox != null)
                 {
-                    FirmwarePathTextBox.TextChanged += (s, e) =>
+                    firmwarePathTextBox.TextChanged += (s, e) =>
                     {
-                        firmwarePath = FirmwarePathTextBox.Text;
+                        firmwarePath = firmwarePathTextBox.Text;
                         if (!string.IsNullOrEmpty(firmwarePath))
                         {
                             StatusBarText($"Firmware path: {Path.GetFileName(firmwarePath)}");
@@ -278,7 +326,7 @@ namespace ProcessorEmulator
         // Real-time emulation logging
         private EmulationLogPanel logPanel;
 
-        public TextBlock StatusBar { get; set; } = new TextBlock();
+    public TextBlock StatusBar { get; set; } = new TextBlock(); // legacy interface compatibility
         public PartitionAnalyzer PartitionAnalyzer { get; set; } = null; // Static class, no instantiation needed
         public InstructionDispatcher Dispatcher1 { get => dispatcher; set => dispatcher = value; }
         PartitionAnalyzer IMainWindow.PartitionAnalyzer { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
@@ -290,13 +338,10 @@ namespace ProcessorEmulator
                 Dispatcher.Invoke(() => StatusBarText(text));
                 return;
             }
-            StatusBar.Text = text;
+            StatusMessage = text;
         }
 
-        private IEmulator GetCurrentEmulator()
-        {
-            return currentEmulator;
-        }
+    private IEmulator GetCurrentEmulator() => currentEmulator;
 
         /// <summary>
         /// Get configuration from dropdown selections for Universal Hypervisor
@@ -315,6 +360,89 @@ namespace ProcessorEmulator
             };
 
             return config;
+        }
+        
+        private void InitializeAero()
+        {
+            try
+            {
+                DataContext = this; // for bindings
+                // Attempt full true Aero glass (Win7 style) first
+                bool glassApplied = AeroGlassHelper.TryApplyTrueGlass(this);
+                if (!glassApplied)
+                {
+                    // fallback to partial frame extension (menu + status bar bands)
+                    glassApplied = AeroGlassHelper.TryApplyGlass(this);
+                }
+                if (glassApplied)
+                {
+                    // Make window background transparent so extended frame shows through
+                    this.Background = System.Windows.Media.Brushes.Transparent;
+                    GlassStatus = "Glass: on";
+                }
+                else
+                {
+                    GlassStatus = AeroGlassHelper.IsDwmEnabled() ? "Glass: off" : "Glass: unsupported";
+                }
+            }
+            catch (Exception ex)
+            {
+                GlassStatus = $"Glass: error ({ex.Message.Split('\n')[0]})";
+            }
+        }
+
+        private void MainWindow_Loaded(object sender, RoutedEventArgs e)
+        {
+            // Ensure View -> Windows 7 Mode reflects current state
+            if (this.FindName("ToggleWin7Mode") is MenuItem mi)
+            {
+                mi.IsChecked = Windows7ThemeManager.IsApplied;
+            }
+        }
+
+        private void ToggleWin7Mode_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (sender is MenuItem mi)
+                {
+                    if (mi.IsChecked)
+                    {
+                        Windows7ThemeManager.Apply(Application.Current);
+                    }
+                    else
+                    {
+                        Windows7ThemeManager.Restore(Application.Current);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                StatusBarText($"Theme toggle error: {ex.Message}");
+            }
+        }
+
+        private void TintSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            try
+            {
+                // Adjust alpha of glass brushes live
+                var app = Application.Current;
+                byte a = (byte)Math.Max(0, Math.Min(255, e.NewValue));
+                if (app.Resources["GlassMenuBackgroundBrush"] is SolidColorBrush mb)
+                {
+                    var c = mb.Color; app.Resources["GlassMenuBackgroundBrush"] = new SolidColorBrush(Color.FromArgb(a, c.R, c.G, c.B));
+                }
+                if (app.Resources["GlassStatusBackgroundBrush"] is SolidColorBrush sb)
+                {
+                    var c = sb.Color; app.Resources["GlassStatusBackgroundBrush"] = new SolidColorBrush(Color.FromArgb((byte)Math.Max(0, a - 20), c.R, c.G, c.B));
+                }
+                if (app.Resources["GlassPanelBrush"] is SolidColorBrush pb)
+                {
+                    var c = pb.Color; app.Resources["GlassPanelBrush"] = new SolidColorBrush(Color.FromArgb((byte)Math.Max(0, a / 5), c.R, c.G, c.B));
+                }
+            }
+            catch { }
         }
 
         /// <summary>
@@ -2326,26 +2454,27 @@ namespace ProcessorEmulator
         /// </summary>
         private async Task HandleFolderAnalysis()
         {
-            var folderDialog = new System.Windows.Forms.FolderBrowserDialog();
-            if (folderDialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+            // WPF does not have a native folder picker; use OpenFileDialog to pick a file inside the folder instead
+            var openFile = new OpenFileDialog { Title = "Select any file inside the folder to analyze", Filter = "All Files (*.*)|*.*" };
+            if (openFile.ShowDialog() != true)
             {
-                string folderPath = folderDialog.SelectedPath;
-                // Build List<FileRecord> from folder contents
-                var files = System.IO.Directory.GetFiles(folderPath);
-                var items = new List<FileRecord>();
-                foreach (var file in files)
-                {
-                    items.Add(new FileRecord
-                    {
-                        FilePath = file,
-                        Size = new System.IO.FileInfo(file).Length,
-                        HexPreview = ""
-                    });
-                }
-                var analysisWindow = new FolderAnalysisWindow(items);
-                analysisWindow.Show();
-                StatusBarText($"Analyzing folder: {folderPath}");
+                return;
             }
+            string folderPath = System.IO.Path.GetDirectoryName(openFile.FileName);
+            var files = System.IO.Directory.GetFiles(folderPath);
+            var items = new List<FileRecord>();
+            foreach (var file in files)
+            {
+                items.Add(new FileRecord
+                {
+                    FilePath = file,
+                    Size = new System.IO.FileInfo(file).Length,
+                    HexPreview = string.Empty
+                });
+            }
+            var analysisWindow = new FolderAnalysisWindow(items);
+            analysisWindow.Show();
+            StatusBarText($"Analyzing folder: {folderPath}");
             await Task.CompletedTask;
         }
 
@@ -2528,9 +2657,9 @@ await Task.CompletedTask;
                 firmwarePath = openFileDialog.FileName;
                 
                 // Update the UI text field
-                if (FirmwarePathTextBox != null)
+                if (this.FindName("FirmwarePathTextBox") is TextBox firmwarePathTextBox)
                 {
-                    FirmwarePathTextBox.Text = firmwarePath;
+                    firmwarePathTextBox.Text = firmwarePath;
                 }
                 
                 StatusBarText($"Selected firmware: {Path.GetFileName(firmwarePath)}");
@@ -2767,82 +2896,96 @@ await Task.CompletedTask;
 
         // Stub implementations for missing handlers
 
-        private async Task HandleDishVxWorks()
+        private Task HandleDishVxWorks()
         {
             StatusBarText("Dish VxWorks analysis started");
+            return Task.CompletedTask;
         }
 
 
-        private async Task HandlePowerPCDemo()
+        private Task HandlePowerPCDemo()
         {
             StatusBarText("PowerPC demo started");
+            return Task.CompletedTask;
         }
 
 
-        private async Task HandleFirmwareExtraction()
+        private Task HandleFirmwareExtraction()
         {
             StatusBarText("Firmware extraction started");
+            return Task.CompletedTask;
         }
 
 
-        private async Task HandleFileTypeDetection()
+        private Task HandleFileTypeDetection()
         {
             StatusBarText("File type detection started");
+            return Task.CompletedTask;
         }
 
 
-        private async Task HandleDvrDataSummary()
+        private Task HandleDvrDataSummary()
         {
             StatusBarText("DVR data summary started");
+            return Task.CompletedTask;
         }
 
 
-        private async Task HandleFatMount()
+        private Task HandleFatMount()
         {
             StatusBarText("FAT filesystem mounted");
+            return Task.CompletedTask;
         }
 
 
-        private async Task HandleSquashFsMount()
+        private Task HandleSquashFsMount()
         {
             StatusBarText("SquashFS mounted");
+            return Task.CompletedTask;
         }
 
 
-        private async Task HandleBoltInit()
+        private Task HandleBoltInit()
         {
             StatusBarText("BOLT initialization started");
+            return Task.CompletedTask;
         }
 
 
-        private async Task HandleBoltCli()
+        private Task HandleBoltCli()
         {
             StatusBarText("BOLT CLI started");
+            return Task.CompletedTask;
         }
 
-        private async Task HandleBoltLoadFirmware()
+        private Task HandleBoltLoadFirmware()
         {
             StatusBarText("BOLT firmware loading started");
+            return Task.CompletedTask;
         }
 
-        private async Task HandleBoltBrowseFirmware()
+        private Task HandleBoltBrowseFirmware()
         {
             StatusBarText("BOLT firmware browsing started");
+            return Task.CompletedTask;
         }
 
-        private async Task HandleBoltMemTest()
+        private Task HandleBoltMemTest()
         {
             StatusBarText("BOLT memory test started");
+            return Task.CompletedTask;
         }
 
-        private async Task HandleBoltShowDtb()
+        private Task HandleBoltShowDtb()
         {
             StatusBarText("BOLT DTB display started");
+            return Task.CompletedTask;
         }
 
-        private async Task HandleBoltDumpMemory()
+        private Task HandleBoltDumpMemory()
         {
             StatusBarText("BOLT memory dump started");
+            return Task.CompletedTask;
         }
 
 

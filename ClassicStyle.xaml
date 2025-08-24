@@ -1,47 +1,80 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <!-- Classic Windows XP/7 style colors and fonts -->
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
+    <!-- Enhanced Windows 7 Aero Glass Style -->
+    <!-- Window background: subtle glass gradient -->
     <Style TargetType="Window">
-        <Setter Property="Background" Value="#F0F0F0"/>
+        <Setter Property="Background">
+            <Setter.Value>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                    <GradientStop Color="#F3F9FE" Offset="0" />
+                    <GradientStop Color="#E3EDF7" Offset="0.5" />
+                    <GradientStop Color="#D0E3F0" Offset="1" />
+                </LinearGradientBrush>
+            </Setter.Value>
+        </Setter>
         <Setter Property="FontFamily" Value="Segoe UI"/>
-        <Setter Property="FontSize" Value="12"/>
-    </Style>
-    <Style TargetType="Menu">
-        <Setter Property="Background" Value="#E3E3E3"/>
-    </Style>
-    <Style TargetType="StatusBar">
-        <Setter Property="Background" Value="#D4D0C8"/>
+        <Setter Property="FontSize" Value="13"/>
     </Style>
 
-    <!-- Windows 7 / Aero-like brushes -->
-    <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#F0F0F0" />
+    <!-- Menu style: will switch to semi-transparent if GlassMenuBackgroundBrush present -->
+    <Style TargetType="Menu">
+        <Setter Property="Background" Value="{StaticResource AeroHeaderBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource AeroBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="0,0,0,1"/>
+    <!-- Triggers removed - dynamic resources handle replacement -->
+    </Style>
+
+    <!-- StatusBar: use override brush if available -->
+    <Style TargetType="StatusBar">
+        <Setter Property="Background" Value="{StaticResource AeroHeaderBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource AeroBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1,0,0,0"/>
+    </Style>
+
+    <!-- Aero Glass Brushes -->
+    <LinearGradientBrush x:Key="WindowBackgroundBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#F3F9FE" Offset="0" />
+        <GradientStop Color="#E3EDF7" Offset="0.5" />
+        <GradientStop Color="#D0E3F0" Offset="1" />
+    </LinearGradientBrush>
     <LinearGradientBrush x:Key="AeroHeaderBrush" StartPoint="0,0" EndPoint="0,1">
         <GradientStop Color="#F7FBFD" Offset="0" />
         <GradientStop Color="#EAF3FB" Offset="1" />
     </LinearGradientBrush>
     <SolidColorBrush x:Key="AeroAccentBrush" Color="#2D6AA4" />
     <SolidColorBrush x:Key="AeroBorderBrush" Color="#A0A0A0" />
+    <DropShadowEffect x:Key="AeroGlowEffect" Color="#80C8F8" BlurRadius="12" ShadowDepth="0" Opacity="0.6" />
 
-    <!-- Button style with square corners and subtle gradient similar to Win7 -->
+    <!-- Button style: Aero glass with glow and hover/press effects -->
     <Style TargetType="Button">
-        <Setter Property="Background" Value="#E6EEF7" />
+        <Setter Property="Background">
+            <Setter.Value>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                    <GradientStop Color="#E6EEF7" Offset="0" />
+                    <GradientStop Color="#DDEAF6" Offset="1" />
+                </LinearGradientBrush>
+            </Setter.Value>
+        </Setter>
         <Setter Property="BorderBrush" Value="{StaticResource AeroBorderBrush}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="Padding" Value="6,3" />
         <Setter Property="Margin" Value="2" />
         <Setter Property="FontFamily" Value="Segoe UI" />
+        <Setter Property="Effect" Value="{StaticResource AeroGlowEffect}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
+                    <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4">
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter Property="Background" Value="#DDEAF6" />
+                            <Setter Property="Background" Value="#C7DFF3" />
+                            <Setter Property="Effect" Value="{StaticResource AeroGlowEffect}" />
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-                            <Setter Property="Background" Value="#C7DFF3" />
+                            <Setter Property="Background" Value="#B0D0E8" />
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.6" />
@@ -50,6 +83,46 @@
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
+    </Style>
+
+    <!-- TabControl header style: Aero glass tab -->
+    <Style TargetType="TabItem">
+        <Setter Property="Background" Value="{StaticResource AeroHeaderBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource AeroBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="Padding" Value="8,4" />
+        <Setter Property="Margin" Value="2,0,2,0" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TabItem">
+                    <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4,4,0,0">
+                        <ContentPresenter ContentSource="Header" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- GroupBox style: Aero border and header -->
+    <Style TargetType="GroupBox">
+        <Setter Property="BorderBrush" Value="{StaticResource AeroBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Background" Value="{StaticResource WindowBackgroundBrush}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding Source={x:Static Application.Current}, Path=Resources[GlassPanelBrush]}" Value="{x:Null}">
+                <!-- keep default -->
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- Transparent menu & status usage when override brushes present (code will supply resources) -->
+    <Style x:Key="GlassMenu" TargetType="Menu" BasedOn="{StaticResource {x:Type Menu}}">
+        <Setter Property="Background" Value="{DynamicResource GlassMenuBackgroundBrush}" />
+    </Style>
+    <Style x:Key="GlassStatus" TargetType="StatusBar" BasedOn="{StaticResource {x:Type StatusBar}}">
+        <Setter Property="Background" Value="{DynamicResource GlassStatusBackgroundBrush}" />
     </Style>
 
 </ResourceDictionary>

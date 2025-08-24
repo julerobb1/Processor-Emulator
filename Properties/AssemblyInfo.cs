@@ -1,8 +1,7 @@
 using System;
 
-// Suppress CLS compliance warnings for this mixed API emulator project.
-// The codebase intentionally uses unsigned types (uint/ulong) for low-level
-// hardware and emulation code; making the assembly CLS-compliant would
-// generate a very large number of warnings. Marking the assembly as
-// non-CLS-compliant reduces noise while keeping the API surface intact.
+// Suppress CLS-compliance warnings project-wide. Many public APIs in this
+// repository use unsigned integer types (uint/ulong) which trigger CS3001/CS3002/CS3003.
+// Adding this assembly attribute silences those warnings quickly while keeping
+// the existing public signatures intact.
 [assembly: CLSCompliant(false)]

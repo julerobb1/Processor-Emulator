@@ -1,0 +1,55 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Build ProcessorEmulator",
+			"type": "shell",
+			"command": "dotnet build ProcessorEmulator.csproj",
+			"isBackground": false,
+			"problemMatcher": [
+				"$mscompile"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Build ProcessorEmulator",
+			"type": "shell",
+			"command": "dotnet build ProcessorEmulator.csproj",
+			"isBackground": false,
+			"problemMatcher": [
+				"$mscompile"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Build ProcessorEmulator",
+			"type": "shell",
+			"command": "dotnet build ProcessorEmulator.csproj",
+			"isBackground": false,
+			"problemMatcher": [
+				"$mscompile"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Build ProcessorEmulator",
+			"type": "shell",
+			"command": "dotnet build ProcessorEmulator.csproj",
+			"isBackground": false,
+			"problemMatcher": [
+				"$mscompile"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Build ProcessorEmulator",
+			"type": "shell",
+			"command": "dotnet build ProcessorEmulator.csproj",
+			"isBackground": false,
+			"problemMatcher": [
+				"$mscompile"
+			],
+			"group": "build"
+		}
+	]
+}
