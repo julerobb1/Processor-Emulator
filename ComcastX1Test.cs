@@ -67,7 +67,7 @@ class ComcastX1Test
             // Test 6: Virtual disk creation test
             Console.WriteLine("Test 6: Virtual Disk Creation Test...");
             string testFirmware = "demo_firmware.bin";
-            if (System.IO.File.Exists(testFirmware))
+            if (File.Exists(testFirmware))
             {
                 Console.WriteLine($"Creating virtual machine from {testFirmware}...");
                 bool firmwareLoaded = await x1Virtualizer.LoadFirmware(testFirmware);

@@ -24,14 +24,14 @@ namespace ProcessorEmulator.Tools
 		// Stub: Asynchronous firmware loading
 		public async System.Threading.Tasks.Task<bool> LoadFirmware(string filePath)
 		{
-			await System.Threading.Tasks.Task.Delay(100); // Simulate async work
+			await Task.Delay(100); // Simulate async work
 			return true;
 		}
 
 		// Stub: Asynchronous emulation start
 		public async System.Threading.Tasks.Task<bool> StartEmulation()
 		{
-			await System.Threading.Tasks.Task.Delay(100); // Simulate async work
+			await Task.Delay(100); // Simulate async work
 			return true;
 		}
 
