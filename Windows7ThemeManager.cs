@@ -3,6 +3,7 @@ using System;
 using System.Linq;
 using System.Windows;
 using System.Windows.Media;
+using System.Runtime.Versioning;
 
 namespace ProcessorEmulator
 {
@@ -10,6 +11,7 @@ namespace ProcessorEmulator
     /// Forces a Windows 7 style theme (glass + colorization) on Windows 8+ hosts by overriding resource brushes.
     /// Non-destructive: keeps a snapshot of original brushes so they can be restored.
     /// </summary>
+    [SupportedOSPlatform("windows")]
     internal static class Windows7ThemeManager
     {
         private static bool applied;
@@ -34,9 +36,9 @@ namespace ProcessorEmulator
 
             var color = GetColorizationColor() ?? Color.FromRgb(30, 90, 150); // Classic blue tint
             // Semi-transparent tints for glass areas
-            var menuBrush = new SolidColorBrush(Color.FromArgb(140, color.R, color.G, color.B));
-            var statusBrush = new SolidColorBrush(Color.FromArgb(120, color.R, color.G, color.B));
-            var panelBrush = new SolidColorBrush(Color.FromArgb(26, color.R, color.G, color.B));
+            var menuBrush = new SolidColorBrush(Color.FromArgb(180, color.R, color.G, color.B));
+            var statusBrush = new SolidColorBrush(Color.FromArgb(160, color.R, color.G, color.B));
+            var panelBrush = new SolidColorBrush(Color.FromArgb(20, color.R, color.G, color.B));
             menuBrush.Freeze(); statusBrush.Freeze(); panelBrush.Freeze();
 
             // Header (tabs/menu) gradient similar to Win7 (light at top)
