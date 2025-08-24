@@ -53,9 +53,8 @@ namespace ProcessorEmulator
         {
             try
             {
-                // Use LoadComponent to avoid editor-time false positives for InitializeComponent
-                // and still load the compiled BAML at runtime.
-                System.Windows.Application.LoadComponent(this, new Uri("/ProcessorEmulator;component/MainWindow.xaml", UriKind.Relative));
+                // Load the compiled XAML normally
+                this.InitializeComponent();
             }
             catch (Exception ex)
             {
