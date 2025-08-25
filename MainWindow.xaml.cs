@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Text.RegularExpressions;
 using System.Diagnostics;
 using Microsoft.Win32;
@@ -49,20 +50,6 @@ namespace ProcessorEmulator
         private string glassStatus = "Glass: pending";
         public string StatusMessage { get => statusMessage; set { statusMessage = value; OnPropertyChanged(nameof(StatusMessage)); } }
         public string GlassStatus { get => glassStatus; set { glassStatus = value; OnPropertyChanged(nameof(GlassStatus)); } }
-        private void SafeInitializeComponent()
-        {
-            try
-            {
-                // Load the compiled XAML normally
-                this.InitializeComponent();
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[MainWindow] InitializeComponent failed: {ex.Message}");
-                BuildFallbackUi();
-            }
-        }
-
         /// <summary>
         /// Construct a minimal UI approximately matching the first tab so the window isn't blank
         /// when XAML/BAML loading fails.
@@ -132,7 +119,7 @@ namespace ProcessorEmulator
             {
                 SafeInitializeComponent();
                 InitializeAero();
-                Win7Chrome.ApplyChrome(this);
+                SetupCustomTitleBar();
                 
                 // Initialize drag-and-drop for file support
                 this.AllowDrop = true;
@@ -158,7 +145,7 @@ namespace ProcessorEmulator
             {
                 SafeInitializeComponent();
                 InitializeAero();
-                Win7Chrome.ApplyChrome(this);
+                SetupCustomTitleBar();
                 this.currentEmulator = currentEmulator;
                 InitializeLogPanel();
                 
@@ -170,6 +157,19 @@ namespace ProcessorEmulator
             {
                 Debug.WriteLine($"[MainWindow] Constructor error: {ex.Message}");
                 MessageBox.Show($"Failed to initialize MainWindow: {ex.Message}", "Initialization Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        // add a SafeInitializeComponent wrapper to fall back to BuildFallbackUi
+        private void SafeInitializeComponent()
+        {
+            try
+            {
+                InitializeComponent(); // call the XAML-generated method
+            }
+            catch
+            {
+                BuildFallbackUi();
             }
         }
 
@@ -330,7 +330,7 @@ namespace ProcessorEmulator
         public InstructionDispatcher Dispatcher1 { get => dispatcher; set => dispatcher = value; }
         PartitionAnalyzer IMainWindow.PartitionAnalyzer { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
 
-        private void StatusBarText(string text)
+    private void StatusBarText(string text)
         {
             if (!Dispatcher.CheckAccess())
             {
@@ -453,6 +453,43 @@ namespace ProcessorEmulator
                 }
             }
             catch { }
+        }
+        
+        // Setup custom title bar interactions: drag, buttons, and system menu
+        private void SetupCustomTitleBar()
+        {
+            // Attach drag and context menu events to title bar elements
+            var titleBarBorder = FindName("TitleBar") as UIElement;
+            var titleBarGrid = FindName("PART_CustomTitleBar") as UIElement;
+            void AttachDragAndMenu(UIElement element)
+            {
+                element.MouseLeftButtonDown += (s, e) =>
+                {
+                    if (e.ClickCount == 2) ToggleMaximize(); else this.DragMove();
+                };
+                element.MouseRightButtonUp += (s, e) =>
+                {
+                    var point = element.PointToScreen(e.GetPosition(element));
+                    System.Windows.SystemCommands.ShowSystemMenu(this, point);
+                };
+            }
+            if (titleBarBorder != null) AttachDragAndMenu(titleBarBorder);
+            if (titleBarGrid != null) AttachDragAndMenu(titleBarGrid);
+            // Minimize button
+            if (FindName("PART_MinButton") is Button minBtn)
+                minBtn.Click += (s, e) => this.WindowState = WindowState.Minimized;
+            // Maximize/restore button
+            if (FindName("PART_MaxButton") is Button maxBtn)
+                maxBtn.Click += (s, e) => ToggleMaximize();
+            // Close button
+            if (FindName("PART_CloseButton") is Button closeBtn)
+                closeBtn.Click += (s, e) => this.Close();
+        }
+
+        // Toggle between maximized and normal window state
+        private void ToggleMaximize()
+        {
+            this.WindowState = this.WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
         }
 
         /// <summary>
@@ -2063,7 +2100,7 @@ namespace ProcessorEmulator
                     foreach (var rec in detectionResult.Recommendations.Take(3))
                         resultMessage += $" {rec}\n";
                     resultMessage += "\n";
-                }
+                               }
 
                 // Add boot sequence recommendations
                 if (regionResult.Success && regionResult.BootSequence.Any())
