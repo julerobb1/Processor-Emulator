@@ -11,3 +11,5 @@ ai-agent/ai-triage-log.md
 ai-agent/copilot-fix-log.md
 github-fetch.ps1
 
+*.cache
+MipsBranchTest/obj/Debug/net6.0/MipsBranchTest.csproj.FileListAbsolute.txt
