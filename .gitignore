@@ -13,3 +13,6 @@ github-fetch.ps1
 
 *.cache
 MipsBranchTest/obj/Debug/net6.0/MipsBranchTest.csproj.FileListAbsolute.txt
+*.log
+/MipsBranchTest/obj/Debug/net6.0-windows
+/MipsBranchTest/obj/Debug/net6.0-windows
