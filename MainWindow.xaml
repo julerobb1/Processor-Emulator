@@ -1,4 +1,4 @@
-<Window x:Class="ProcessorEmulator.MainWindow"
+﻿<Window x:Class="ProcessorEmulator.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
@@ -61,8 +61,8 @@
                     </TextBlock>
                     <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="0,0,4,0">
                         <Button x:Name="PART_MinButton" shell:WindowChrome.IsHitTestVisibleInChrome="False" Content="_" Width="46" Height="34" Padding="0" Margin="0" FontWeight="Bold" Style="{DynamicResource CaptionButtonStyle}" />
-                        <Button x:Name="PART_MaxButton" shell:WindowChrome.IsHitTestVisibleInChrome="False" Content="□" Width="46" Height="34" Padding="0" Margin="0" FontWeight="Bold" Style="{DynamicResource CaptionButtonStyle}" />
-                        <Button x:Name="PART_CloseButton" shell:WindowChrome.IsHitTestVisibleInChrome="False" Content="✕" Width="54" Height="34" Padding="0" Margin="0" FontWeight="Bold" Style="{DynamicResource CloseCaptionButtonStyle}" />
+                        <Button x:Name="PART_MaxButton" shell:WindowChrome.IsHitTestVisibleInChrome="False" Content="â–¡" Width="46" Height="34" Padding="0" Margin="0" FontWeight="Bold" Style="{DynamicResource CaptionButtonStyle}" />
+                        <Button x:Name="PART_CloseButton" shell:WindowChrome.IsHitTestVisibleInChrome="False" Content="âœ•" Width="54" Height="34" Padding="0" Margin="0" FontWeight="Bold" Style="{DynamicResource CloseCaptionButtonStyle}" />
                     </StackPanel>
                 </Grid>
             </Border>
@@ -103,12 +103,126 @@
             <MenuItem Header="_Help" />
         </Menu>
     <!-- Aero glass status bar -->
-    <StatusBar DockPanel.Dock="Bottom" Background="{DynamicResource GlassStatusBackgroundBrush}" BorderBrush="{DynamicResource AeroBorderBrush}" BorderThickness="1,0,0,0">
+        <StatusBar DockPanel.Dock="Bottom" x:Name="MainStatusBar">
             <StatusBarItem>
-                <TextBlock Text="{Binding StatusMessage}"/>
+                <TextBlock x:Name="StatusTextBlock" Text="Ready" />
             </StatusBarItem>
-            <StatusBarItem HorizontalAlignment="Right" Margin="40,0,0,0">
-                <TextBlock Text="{Binding GlassStatus}" FontStyle="Italic"/>
+            <StatusBarItem>
+                <TextBlock Text="Glass:" Margin="8,0,4,0"/>
+                <TextBlock x:Name="GlassStatusText" Text="Off" Foreground="Gray" />
+            </StatusBarItem>
+            <StatusBarItem HorizontalAlignment="Right">
+                <ComboBox x:Name="ThemeCombo" Width="220" SelectedIndex="0" SelectionChanged="ThemeCombo_SelectionChanged">
+                    <ComboBoxItem Content="Win95" />
+                    <ComboBoxItem Content="iGuide (Legacy)" />
+                    <ComboBoxItem Content="Mediaroom (U-verse)" />
+                    <ComboBoxItem Content="X1 (Modern)" />
+                </ComboBox>
+            </StatusBarItem>
+        </StatusBar>
+        <Grid>
+            <!-- Keep a subtle base behind glass bands; content will be fully opaque. -->
+            <Rectangle Fill="{DynamicResource GlassPanelBrush}" />
+            <!-- Optional glass noise (won't show under opaque content) -->
+            <Rectangle Opacity="0.25">
+                <Rectangle.Fill>
+                    <VisualBrush TileMode="Tile" Viewport="0,0,0.04,0.04" ViewportUnits="RelativeToBoundingBox" Stretch="None">
+                        <VisualBrush.Visual>
+                            <Grid Width="64" Height="64" Background="Transparent">
+                                <Rectangle Width="64" Height="64">
+                                    <Rectangle.Fill>
+                                        <DrawingBrush TileMode="Tile" Viewport="0,0,8,8" ViewportUnits="Absolute" Stretch="None">
+                                            <DrawingBrush.Drawing>
+                                                <DrawingGroup>
+                                                    <GeometryDrawing Brush="#10FFFFFF" Geometry="M0,0 L8,0 8,8 0,8Z"/>
+                                                    <GeometryDrawing Brush="#06FFFFFF" Geometry="M0,0 L4,0 4,4 0,4Z"/>
+                                                </DrawingGroup>
+                                            </DrawingBrush.Drawing>
+                                        </DrawingBrush>
+                                    </Rectangle.Fill>
+                                </Rectangle>
+                            </Grid>
+                        </VisualBrush.Visual>
+                    </VisualBrush>
+                </Rectangle.Fill>
+            </Rectangle>
+        </Grid>
+
+        <!-- Content Layer -->
+        <Grid>
+            <!-- Custom Title Bar -->
+            <Border x:Name="TitleBar" shell:WindowChrome.IsHitTestVisibleInChrome="True" Height="34" VerticalAlignment="Top" Background="{DynamicResource GlassMenuBackgroundBrush}" BorderBrush="#55FFFFFF" BorderThickness="0,0,0,1" Padding="0">
+                <Grid x:Name="PART_CustomTitleBar" shell:WindowChrome.IsHitTestVisibleInChrome="True" Margin="0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Image Width="20" Height="20" Margin="8,7,6,7" Source="pack://application:,,,/Resources/wow64_microsoft-windows-htmlhelp_31bf3856ad364e35_6_ICONDISK350.ico"/>
+                    <TextBlock Grid.Column="1" Text="Processor Emulator" VerticalAlignment="Center" FontSize="15" FontWeight="SemiBold" Foreground="#F0FFFFFF" Margin="0,0,4,0">
+                        <TextBlock.Effect>
+                            <DropShadowEffect ShadowDepth="0" BlurRadius="9" Opacity="0.95" Color="#FFFFFFFF"/>
+                        </TextBlock.Effect>
+                    </TextBlock>
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="0,0,4,0">
+                        <Button x:Name="PART_MinButton" shell:WindowChrome.IsHitTestVisibleInChrome="False" Content="_" Width="46" Height="34" Padding="0" Margin="0" FontWeight="Bold" Style="{DynamicResource CaptionButtonStyle}" />
+                        <Button x:Name="PART_MaxButton" shell:WindowChrome.IsHitTestVisibleInChrome="False" Content="â–¡" Width="46" Height="34" Padding="0" Margin="0" FontWeight="Bold" Style="{DynamicResource CaptionButtonStyle}" />
+                        <Button x:Name="PART_CloseButton" shell:WindowChrome.IsHitTestVisibleInChrome="False" Content="âœ•" Width="54" Height="34" Padding="0" Margin="0" FontWeight="Bold" Style="{DynamicResource CloseCaptionButtonStyle}" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <DockPanel Margin="8,42,8,8">
+                <Menu DockPanel.Dock="Top" Background="{DynamicResource GlassMenuBackgroundBrush}" BorderBrush="{DynamicResource AeroBorderBrush}" BorderThickness="0,0,0,1">
+            <MenuItem Header="_File">
+                <MenuItem Header="_Open" Click="OpenMenuItem_Click"/>
+                <!-- General firmware extract &amp; analysis -->
+                <MenuItem Header="Analyze _Firmware..." Click="AnalyzeFirmware_Click"/>
+                <MenuItem Header="Scan _DVR Data..." Click="ScanDvrData_Click" ToolTip="Scan attached DVR datasets for firmware and logs"/>
+                <MenuItem Header="List DVR _Firmware" Click="ListDvrFirmware_Click" ToolTip="List all firmware files in DVR datasets"/>
+                <MenuItem Header="Analyze _All DVR Data" Click="AnalyzeAllDvrData_Click" ToolTip="Perform full DVR dataset analysis (firmware, XFS, configs)"/>
+                <Separator/>
+                <MenuItem Header="_Exit" />
+            </MenuItem>
+            <MenuItem Header="_Edit">
+                <MenuItem Header="Use Unicorn Engine"
+                          ToolTip="Toggle in-process Unicorn stub engine for same-architecture execution-based translation"
+                          IsCheckable="True"
+                          Checked="UseUnicorn_Checked"
+                          Unchecked="UseUnicorn_Unchecked"/>
+            </MenuItem>
+            <MenuItem Header="_View">
+                <MenuItem Header="Theme">
+                    <MenuItem x:Name="ThemeWin7" Header="Windows 7 Aero" IsCheckable="True" Click="ThemeWin7_Click"/>
+                    <MenuItem x:Name="ThemeCarl" Header="Carl Mode (BALD)" IsCheckable="True" Click="ThemeCarl_Click"/>
+                </MenuItem>
+                <Separator/>
+                <MenuItem Header="Tint Intensity">
+                    <StackPanel Orientation="Horizontal" Margin="10,4,10,4">
+                        <TextBlock Text="Low" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <Slider x:Name="TintSlider" Width="160" Minimum="0" Maximum="255" Value="140" ValueChanged="TintSlider_ValueChanged"/>
+                        <TextBlock Text="High" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                    </StackPanel>
+                </MenuItem>
+            </MenuItem>
+            <MenuItem Header="_Help" />
+        </Menu>
+    <!-- Aero glass status bar -->
+            <StatusBar DockPanel.Dock="Bottom" x:Name="MainStatusBar">
+            <StatusBarItem>
+                <TextBlock x:Name="StatusTextBlock" Text="Ready" />
+            </StatusBarItem>
+            <StatusBarItem>
+                <TextBlock Text="Glass:" Margin="8,0,4,0"/>
+                <TextBlock x:Name="GlassStatusText" Text="Off" Foreground="Gray" />
+            </StatusBarItem>
+            <StatusBarItem HorizontalAlignment="Right">
+                <ComboBox x:Name="ThemeCombo" Width="220" SelectedIndex="0" SelectionChanged="ThemeCombo_SelectionChanged">
+                    <ComboBoxItem Content="Win95" />
+                    <ComboBoxItem Content="iGuide (Legacy)" />
+                    <ComboBoxItem Content="Mediaroom (U-verse)" />
+                    <ComboBoxItem Content="X1 (Modern)" />
+                </ComboBox>
             </StatusBarItem>
         </StatusBar>
     <!-- Opaque content surface like Windows 7: use the themed background brush (opaque). -->
