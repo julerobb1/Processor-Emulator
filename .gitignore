@@ -20,3 +20,6 @@ MipsBranchTest/obj/Debug/net6.0-windows/MipsBranchTest.csproj.FileListAbsolute.t
 MipsBranchTest/obj/Debug/net6.0-windows/MipsBranchTest.csproj.FileListAbsolute.txt
 MipsBranchTest/obj/Debug/net6.0-windows/MipsBranchTest.csproj.FileListAbsolute.txt
 *.txt
+/UverseFirmware
+/UverseFirmware
+*.ps1
