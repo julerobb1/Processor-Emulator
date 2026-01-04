@@ -1,0 +1,6 @@
+﻿UverseFirmware/
+X1 - RDKV/
+bin/
+obj/
+*.dll
+*.bin
