@@ -23,3 +23,5 @@ MipsBranchTest/obj/Debug/net6.0-windows/MipsBranchTest.csproj.FileListAbsolute.t
 /UverseFirmware
 /UverseFirmware
 *.ps1
+/.vscode
+.geminiignore
