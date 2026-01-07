@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace ProcessorEmulator.Core.Emulation
 {
     /// <summary>
@@ -20,7 +22,9 @@ namespace ProcessorEmulator.Core.Emulation
         Sub,
         And,
         Or,
-        Store
+        Load,
+        Store,
+        BranchIfEqual
     }
 
     /// <summary>
@@ -44,6 +48,17 @@ namespace ProcessorEmulator.Core.Emulation
         public IrOperand Destination;
         public IrOperand SourceA;
         public IrOperand SourceB;
+        public IrOperand SourceC; // For Store operations
+    }
+
+    /// <summary>
+    /// Manages memory access, including endianness and memory-mapped regions.
+    /// </summary>
+    public interface IMemoryManager
+    {
+        bool IsLittleEndian { get; }
+        uint ReadMemory32(ulong address);
+        void WriteMemory32(ulong address, uint value);
     }
 
     /// <summary>
@@ -53,7 +68,8 @@ namespace ProcessorEmulator.Core.Emulation
     {
         int PrivilegeLevel { get; }
         ulong PC { get; set; }
-        void WriteMemory8(ulong address, byte value);
+        IReadOnlyList<MemoryRegion> MemoryMap { get; }
+
         ulong GetRegister(string name, BitWidth width);
         void SetRegister(string name, ulong value, BitWidth width);
     }
@@ -63,7 +79,7 @@ namespace ProcessorEmulator.Core.Emulation
     /// </summary>
     public interface IExecutionEngine
     {
-        void ExecuteStatement(IrStatement statement, ICpuState state);
+        void ExecuteStatement(IrStatement statement, ICpuState state, IMemoryManager memory);
     }
 
     /// <summary>
@@ -71,6 +87,6 @@ namespace ProcessorEmulator.Core.Emulation
     /// </summary>
     public interface IInstructionDecoder
     {
-        System.Collections.Generic.IEnumerable<IrStatement> Decode(ulong address, System.ReadOnlySpan<byte> code);
+        IEnumerable<IrStatement> Decode(ulong address, IMemoryManager memory);
     }
 }
