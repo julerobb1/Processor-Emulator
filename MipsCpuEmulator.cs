@@ -8,11 +8,12 @@ namespace ProcessorEmulator.Emulation
         Generic,
         STi7101,
         STi7111,
-        BCM7401,\r\n        BCM7405,\r\n        BCM7403,
+        BCM7401,
+        BCM7405,
+        BCM7403,
         BCM7425,
         BCM7445
     }
-
     public class MipsCpuEmulator
     {
         private const int RegisterCount = 32;
