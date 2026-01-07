@@ -52,7 +52,9 @@ namespace ProcessorEmulator.Core.Emulation
     public interface ICpuState
     {
         int PrivilegeLevel { get; }
+        ulong PC { get; set; }
         void WriteMemory8(ulong address, byte value);
+        ulong GetRegister(string name, BitWidth width);
         void SetRegister(string name, ulong value, BitWidth width);
     }
 
