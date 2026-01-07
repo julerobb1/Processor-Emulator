@@ -3,15 +3,26 @@ using System;
 namespace ProcessorEmulator.Core
 {
     /// <summary>
-    /// Thrown when an attempt is made to execute a privileged instruction
-    /// without the required CPU privilege level.
+    /// Thrown when a memory access violates hardware alignment rules (e.g., a 32-bit read from an unaligned address).
     /// </summary>
-    public class PrivilegeViolationException : Exception
+    public class CpuAlignmentException : Exception
     {
-        public PrivilegeViolationException() { }
+        public CpuAlignmentException(string message) : base(message) { }
+    }
 
-        public PrivilegeViolationException(string message) : base(message) { }
+    /// <summary>
+    /// Thrown when a memory access is to an invalid or unmapped address.
+    /// </summary>
+    public class BusErrorException : Exception
+    {
+        public BusErrorException(string message) : base(message) { }
+    }
 
-        public PrivilegeViolationException(string message, Exception inner) : base(message, inner) { }
+    /// <summary>
+    /// Thrown when the decoder encounters an unknown or unsupported instruction opcode.
+    /// </summary>
+    public class IllegalInstructionException : Exception
+    {
+        public IllegalInstructionException(string message) : base(message) { }
     }
 }
