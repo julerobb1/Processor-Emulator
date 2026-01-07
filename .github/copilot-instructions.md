@@ -289,3 +289,15 @@ Secondary note : These instructions are not just for human developers; they also
 All AI assistants must read and follow this file at all times.  
 Violations may result in broken emulation, wasted time, or sarcastic comments from the user (Julian).  
 **This file WILL NOT be committed to GitHub. It is for local use only. The user, in this case, is Julian.**
+ENVIRONMENT RULE:
+This project is Windows-first.
+
+When creating directories, files, or inspecting the filesystem:
+- Use PowerShell cmdlets explicitly (New-Item, Get-Item, Get-ChildItem, etc.)
+- Do NOT use bash, sh, mkdir, or Unix-style commands
+- Assume PowerShell 5.1+ or PowerShell 7 is available
+- If file creation is conceptual, state the intended path instead of issuing shell commands
+- When referencing paths, use Windows-style paths (C:\Path\To\File) rather than Unix-style (/path/to/file)  
+- When scripting, prefer PowerShell syntax and conventions
+- Avoid Linux commands, bash scripts, or Unix-style pathing 
+---
