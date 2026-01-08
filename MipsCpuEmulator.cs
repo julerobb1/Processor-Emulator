@@ -22,6 +22,7 @@ namespace ProcessorEmulator.Emulation
         private byte[] memory;
         private uint programCounter;
         private float[] floatingPointRegisters;
+        private CP0 cp0;
 
         // Hardware module stubs
         private VideoDecoderStub videoDecoder;
@@ -37,7 +38,12 @@ namespace ProcessorEmulator.Emulation
             registers = new uint[RegisterCount];
             floatingPointRegisters = new float[RegisterCount];
             memory = new byte[MemorySize];
-            programCounter = 0x0;
+            cp0 = new CP0(); // Instantiate CP0
+            programCounter = 0xBFC00000; // MIPS Reset Vector
+
+            // Clear Status Register on startup
+            cp0.WriteRegister(12, 0);
+
             // Initialize hardware stubs
             videoDecoder = new VideoDecoderStub();
             audioDecoder = new AudioDecoderStub();
@@ -75,6 +81,9 @@ namespace ProcessorEmulator.Emulation
                 case 0x00: // R-type instructions
                     ExecuteRType(instruction);
                     break;
+                case 0x10: // COP0 instructions
+                    ExecuteCOP0(instruction);
+                    break;
                 case 0x08: // addi
                     ExecuteAddImmediate(instruction);
                     break;
@@ -105,6 +114,44 @@ namespace ProcessorEmulator.Emulation
             }
 
         }
+
+        // MTC0: Move Control to Coprocessor 0 (Write to CP0)
+        // Format: mtc0 $rt, $rd
+        public void Execute_MTC0(uint rt, uint rd)
+        {
+            uint value = registers[rt]; // Get value from general purpose register
+            cp0.WriteRegister((int)rd, value);
+            Console.WriteLine($"CP0 Write: Reg {rd} = 0x{value:X8}");
+        }
+
+        // MFC0: Move From Coprocessor 0 (Read from CP0)
+        // Format: mfc0 $rt, $rd
+        public void Execute_MFC0(uint rt, uint rd)
+        {
+            uint value = cp0.ReadRegister((int)rd);
+            registers[rt] = value; // Put CP0 value into general purpose register
+            Console.WriteLine($"CP0 Read: Reg {rd} returns 0x{value:X8}");
+        }
+
+        private void ExecuteCOP0(uint instruction)
+        {
+            uint rs = (instruction >> 21) & 0x1F;
+            uint rt = (instruction >> 16) & 0x1F;
+            uint rd = (instruction >> 11) & 0x1F;
+
+            switch (rs)
+            {
+                case 0x00: // MFC0
+                    Execute_MFC0(rt, rd);
+                    break;
+                case 0x04: // MTC0
+                    Execute_MTC0(rt, rd);
+                    break;
+                default:
+                    throw new NotSupportedException($"COP0 instruction with rs={rs} not supported.");
+            }
+        }
+
 
         private void ExecuteRType(uint instruction)
         {
