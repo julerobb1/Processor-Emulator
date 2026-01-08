@@ -9,22 +9,26 @@ namespace ProcessorEmulator.Core
     public class CpuState : ICpuState, IMemoryManager
     {
         private readonly Dictionary<string, ulong> _registers = new Dictionary<string, ulong>(StringComparer.OrdinalIgnoreCase);
-        private readonly byte[] _ram;
+        private readonly List<MemoryRegion> _memoryMap;
+        private readonly Dictionary<MemoryRegion, byte[]> _ramRegions = new Dictionary<MemoryRegion, byte[]>();
 
         public int PrivilegeLevel { get; set; }
         public ulong PC { get; set; }
-        public IReadOnlyList<MemoryRegion> MemoryMap { get; }
+        public IReadOnlyList<MemoryRegion> MemoryMap => _memoryMap;
         public bool IsLittleEndian { get; }
+        public ulong? LinkedAddress { get; set; }
 
         public CpuState(List<MemoryRegion> memoryMap, bool isLittleEndian, ulong startPC = 0)
         {
-            MemoryMap = memoryMap ?? throw new ArgumentNullException(nameof(memoryMap));
+            _memoryMap = memoryMap ?? new List<MemoryRegion>();
             IsLittleEndian = isLittleEndian;
             PC = startPC;
 
-            var ramRegion = MemoryMap.FirstOrDefault(r => r.Type == MemoryRegionType.RAM);
-            if (ramRegion == null) throw new ArgumentException("Memory map must contain at least one RAM region.");
-            _ram = new byte[ramRegion.Size];
+            // Pre-allocate memory for all initial RAM regions
+            foreach (var ramRegion in _memoryMap.Where(r => r.Type == MemoryRegionType.RAM))
+            {
+                _ramRegions[ramRegion] = new byte[ramRegion.Size];
+            }
         }
 
         public ulong GetRegister(string name, BitWidth width)
@@ -38,29 +42,53 @@ namespace ProcessorEmulator.Core
             _registers[name] = value;
         }
 
-        private MemoryRegion GetRegionForAddress(ulong address)
+        private MemoryRegion HandleLazyAllocation(ulong address)
         {
-            foreach (var region in MemoryMap)
+            const ulong pageSize = 4096;
+            ulong startAddress = address / pageSize * pageSize; // Align to 4KB boundary
+            
+            Console.WriteLine($"[ADAPTIVE BUS]: New memory region discovered at 0x{address:X}. Mapping temporary 4KB RAM at 0x{startAddress:X}.");
+
+            var newRegion = new MemoryRegion($"RAM_Lazy_{startAddress:X}", startAddress, pageSize, MemoryRegionType.RAM);
+            _memoryMap.Add(newRegion);
+            _ramRegions[newRegion] = new byte[pageSize];
+            
+            return newRegion;
+        }
+
+        private (MemoryRegion region, byte[] buffer) GetRegionAndBufferForAddress(ulong address)
+        {
+            foreach (var region in _memoryMap)
             {
-                if (region.Contains(address)) return region;
+                if (region.Contains(address))
+                {
+                    if (region.Type == MemoryRegionType.RAM)
+                    {
+                        return (region, _ramRegions[region]);
+                    }
+                    return (region, null); // For ROM/MMIO
+                }
             }
-            throw new BusErrorException($"Access to unmapped address 0x{address:X}");
+            // If we get here, no region was found. Lazily allocate it.
+            var newRegion = HandleLazyAllocation(address);
+            return (newRegion, _ramRegions[newRegion]);
         }
 
         public uint ReadMemory32(ulong address)
         {
-            var region = GetRegionForAddress(address);
+            var (region, buffer) = GetRegionAndBufferForAddress(address);
             switch (region.Type)
             {
                 case MemoryRegionType.RAM:
                     ulong offset = address - region.StartAddress;
-                    if (IsLittleEndian) return BinaryPrimitives.ReadUInt32LittleEndian(_ram.AsSpan((int)offset));
-                    return BinaryPrimitives.ReadUInt32BigEndian(_ram.AsSpan((int)offset));
+                    if (IsLittleEndian) return BinaryPrimitives.ReadUInt32LittleEndian(buffer.AsSpan((int)offset));
+                    return BinaryPrimitives.ReadUInt32BigEndian(buffer.AsSpan((int)offset));
                 
                 case MemoryRegionType.MMIO:
-                    throw new NotImplementedException($"MMIO Read at 0x{address:X} not implemented.");
+                    Console.WriteLine($"[Warning] Unhandled MMIO Read at 0x{address:X}. Returning 0.");
+                    return 0;
                 
-                case MemoryRegionType.ROM: // Assuming ROM is also backed by the RAM array for now
+                case MemoryRegionType.ROM:
                 default:
                     throw new BusErrorException($"Read from unhandled region type {region.Type} at 0x{address:X}");
             }
@@ -68,23 +96,47 @@ namespace ProcessorEmulator.Core
 
         public void WriteMemory32(ulong address, uint value)
         {
-            var region = GetRegionForAddress(address);
+            var (region, buffer) = GetRegionAndBufferForAddress(address);
             switch (region.Type)
             {
                 case MemoryRegionType.RAM:
                     ulong offset = address - region.StartAddress;
-                    if (IsLittleEndian) BinaryPrimitives.WriteUInt32LittleEndian(_ram.AsSpan((int)offset), value);
-                    else BinaryPrimitives.WriteUInt32BigEndian(_ram.AsSpan((int)offset), value);
+                    if (IsLittleEndian) BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan((int)offset), value);
+                    else BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan((int)offset), value);
                     break;
                 
                 case MemoryRegionType.MMIO:
-                    throw new NotImplementedException($"MMIO Write at 0x{address:X} not implemented.");
+                     Console.WriteLine($"[Warning] Unhandled MMIO Write at 0x{address:X} with value 0x{value:X8}.");
+                     break;
                 
                 case MemoryRegionType.ROM:
                     throw new BusErrorException($"Attempted to write to ROM region at 0x{address:X}");
 
                 default:
                     throw new BusErrorException($"Write to unhandled region type {region.Type} at 0x{address:X}");
+            }
+        }
+
+        public void WriteMemory(ulong address, byte[] data)
+        {
+            var (region, buffer) = GetRegionAndBufferForAddress(address);
+            switch (region.Type)
+            {
+                case MemoryRegionType.RAM:
+                    ulong offset = address - region.StartAddress;
+                    if (offset + (ulong)data.Length > (ulong)buffer.Length)
+                    {
+                        throw new BusErrorException($"Write at 0x{address:X} with length {data.Length} would cross memory region boundary.");
+                    }
+                    data.CopyTo(buffer, (long)offset);
+                    break;
+                
+                case MemoryRegionType.ROM:
+                     throw new BusErrorException($"Attempted to write to ROM region at 0x{address:X}");
+
+                default:
+                    // Defer MMIO or other types for now
+                    throw new NotImplementedException($"Block write to region type {region.Type} not implemented.");
             }
         }
     }
