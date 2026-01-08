@@ -24,7 +24,10 @@ namespace ProcessorEmulator.Core.Emulation
         Or,
         Load,
         Store,
-        BranchIfEqual
+        BranchIfEqual,
+        LoadLinked,
+        StoreConditional,
+        Copy
     }
 
     /// <summary>
@@ -59,6 +62,7 @@ namespace ProcessorEmulator.Core.Emulation
         bool IsLittleEndian { get; }
         uint ReadMemory32(ulong address);
         void WriteMemory32(ulong address, uint value);
+        void WriteMemory(ulong address, byte[] data);
     }
 
     /// <summary>
@@ -69,6 +73,7 @@ namespace ProcessorEmulator.Core.Emulation
         int PrivilegeLevel { get; }
         ulong PC { get; set; }
         IReadOnlyList<MemoryRegion> MemoryMap { get; }
+        ulong? LinkedAddress { get; set; }
 
         ulong GetRegister(string name, BitWidth width);
         void SetRegister(string name, ulong value, BitWidth width);
