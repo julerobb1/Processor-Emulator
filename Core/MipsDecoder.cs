@@ -34,11 +34,105 @@ namespace ProcessorEmulator.Core.Decoders
                     }
                     yield return DecodeBranchEqual(address, instruction);
                     break;
+                
+                case 0x10: // COP0
+                    // This opcode is for all CP0 instructions, differentiated by the 'rs' field
+                    foreach (var stmt in DecodeCop0(instruction))
+                    {
+                        yield return stmt;
+                    }
+                    break;
+
+                case 0x30: // LL
+                    yield return DecodeLoadLinked(instruction);
+                    break;
+
+                case 0x38: // SC
+                    yield return DecodeStoreConditional(instruction);
+                    break;
 
                 default:
                     // Rule: No silent failures. No fake execution. (Instruction 7)
                     throw new IllegalInstructionException($"Illegal Instruction: Opcode 0x{opcode:X2} at 0x{address:X16} (Raw: 0x{instruction:X8})");
             }
+        }
+
+        private IEnumerable<IrStatement> DecodeCop0(uint instr)
+        {
+            uint rs = (instr >> 21) & 0x1F;
+            uint rt = (instr >> 16) & 0x1F;
+            uint rd = (instr >> 11) & 0x1F;
+
+            switch (rs)
+            {
+                case 0b00100: // MTC0 (Move To Coprocessor 0)
+                    yield return new IrStatement
+                    {
+                        Op = IrOpCode.Copy,
+                        // Destination is the CP0 register
+                        Destination = new IrOperand { Width = BitWidth.Bits32, RegisterName = GetCp0RegisterName(rd) },
+                        // Source is the GPR
+                        SourceA = new IrOperand { Width = BitWidth.Bits32, RegisterName = $"r{rt}" }
+                    };
+                    break;
+                
+                case 0b00000: // MFC0 (Move From Coprocessor 0)
+                     yield return new IrStatement
+                    {
+                        Op = IrOpCode.Copy,
+                        // Destination is the GPR
+                        Destination = new IrOperand { Width = BitWidth.Bits32, RegisterName = $"r{rt}" },
+                        // Source is the CP0 register
+                        SourceA = new IrOperand { Width = BitWidth.Bits32, RegisterName = GetCp0RegisterName(rd) }
+                    };
+                    break;
+
+                default:
+                    throw new IllegalInstructionException($"Unsupported COP0 instruction with rs=0b{Convert.ToString(rs, 2).PadLeft(5, '0')}");
+            }
+        }
+
+        private string GetCp0RegisterName(uint index) => index switch
+        {
+            9 => "cp0_count",
+            11 => "cp0_compare",
+            12 => "cp0_status",
+            13 => "cp0_cause",
+            14 => "cp0_epc",
+            _ => throw new NotSupportedException($"CP0 Register {index} is not implemented.")
+        };
+
+
+        private IrStatement DecodeLoadLinked(uint instr)
+        {
+            uint rs = (instr >> 21) & 0x1F; // base
+            uint rt = (instr >> 16) & 0x1F; // destination
+            short imm = (short)(instr & 0xFFFF); // offset
+
+            return new IrStatement
+            {
+                Op = IrOpCode.LoadLinked,
+                Destination = new IrOperand { Width = BitWidth.Bits32, RegisterName = $"r{rt}" },
+                SourceA = new IrOperand { Width = BitWidth.Bits32, RegisterName = $"r{rs}" },
+                SourceB = new IrOperand { Width = BitWidth.Bits32, Value = (ulong)(long)imm, IsImmediate = true }
+            };
+        }
+
+        private IrStatement DecodeStoreConditional(uint instr)
+        {
+            uint rs = (instr >> 21) & 0x1F; // base
+            uint rt = (instr >> 16) & 0x1F; // value to store is in this register
+            short imm = (short)(instr & 0xFFFF); // offset
+            
+            // In the IR, the destination register (rt) is also where we write the success/fail result.
+            return new IrStatement
+            {
+                Op = IrOpCode.StoreConditional,
+                Destination = new IrOperand { Width = BitWidth.Bits32, RegisterName = $"r{rt}" },
+                SourceA = new IrOperand { Width = BitWidth.Bits32, RegisterName = $"r{rs}" },
+                SourceB = new IrOperand { Width = BitWidth.Bits32, Value = (ulong)(long)imm, IsImmediate = true },
+                SourceC = new IrOperand { Width = BitWidth.Bits32, RegisterName = $"r{rt}" } // value to store
+            };
         }
 
         private IrStatement DecodeAddImmediate(uint instr)
