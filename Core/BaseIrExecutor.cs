@@ -1,5 +1,6 @@
 using System;
 using ProcessorEmulator.Core.Emulation;
+using ProcessorEmulator.Core.Memory;
 
 namespace ProcessorEmulator.Core.Backends
 {
@@ -43,39 +44,73 @@ namespace ProcessorEmulator.Core.Backends
                     SetDestinationValue(statement.Destination, result, state);
                     break;
 
+                case IrOpCode.Copy:
+                    result = valA & mask; // Get value from SourceA and apply mask
+                    SetDestinationValue(statement.Destination, result, state);
+                    break;
+
                 case IrOpCode.Load:
                     {
-                        ulong effectiveAddr = valA + valB;
-                        if ((effectiveAddr % 4) != 0 && statement.Destination.Width == BitWidth.Bits32)
+                        ulong virtualAddr = valA + valB;
+                        ulong physicalAddr = VirtualMmu.TranslateAddress(virtualAddr);
+                        if ((physicalAddr % 4) != 0 && statement.Destination.Width == BitWidth.Bits32)
                         {
-                            throw new CpuAlignmentException($"Unaligned 32-bit read at address 0x{effectiveAddr:X}");
+                            throw new CpuAlignmentException($"Unaligned 32-bit read at vAddr 0x{virtualAddr:X} (pAddr 0x{physicalAddr:X})");
                         }
-                        result = memory.ReadMemory32(effectiveAddr);
+                        result = memory.ReadMemory32(physicalAddr);
                         SetDestinationValue(statement.Destination, result, state);
                     }
                     break;
 
                 case IrOpCode.Store:
                     {
-                        ulong effectiveAddr = valA + valB;
-                        if ((effectiveAddr % 4) != 0 && statement.SourceC.Width == BitWidth.Bits32)
+                        ulong virtualAddr = valA + valB;
+                        ulong physicalAddr = VirtualMmu.TranslateAddress(virtualAddr);
+                        if ((physicalAddr % 4) != 0 && statement.SourceC.Width == BitWidth.Bits32)
                         {
-                            throw new CpuAlignmentException($"Unaligned 32-bit write at address 0x{effectiveAddr:X}");
+                            throw new CpuAlignmentException($"Unaligned 32-bit write at vAddr 0x{virtualAddr:X} (pAddr 0x{physicalAddr:X})");
                         }
-                        // Value to store comes from SourceC
-                        memory.WriteMemory32(effectiveAddr, (uint)valC);
+                        memory.WriteMemory32(physicalAddr, (uint)valC);
+                    }
+                    break;
+                
+                case IrOpCode.LoadLinked:
+                    {
+                        ulong virtualAddr = valA + valB;
+                        ulong physicalAddr = VirtualMmu.TranslateAddress(virtualAddr);
+                        if ((physicalAddr % 4) != 0) throw new CpuAlignmentException($"Unaligned LL at vAddr 0x{virtualAddr:X} (pAddr 0x{physicalAddr:X})");
+                        
+                        result = memory.ReadMemory32(physicalAddr);
+                        SetDestinationValue(statement.Destination, result, state);
+                        state.LinkedAddress = physicalAddr;
+                    }
+                    break;
+
+                case IrOpCode.StoreConditional:
+                    {
+                        ulong virtualAddr = valA + valB;
+                        ulong physicalAddr = VirtualMmu.TranslateAddress(virtualAddr);
+                        if ((physicalAddr % 4) != 0) throw new CpuAlignmentException($"Unaligned SC at vAddr 0x{virtualAddr:X} (pAddr 0x{physicalAddr:X})");
+
+                        if (state.LinkedAddress == physicalAddr)
+                        {
+                            memory.WriteMemory32(physicalAddr, (uint)valC);
+                            SetDestinationValue(statement.Destination, 1, state);
+                            state.LinkedAddress = null;
+                        }
+                        else
+                        {
+                            SetDestinationValue(statement.Destination, 0, state);
+                        }
                     }
                     break;
 
                 case IrOpCode.BranchIfEqual:
                     if (valA == valB)
                     {
-                        // The target address is stored in the Destination operand for branches
                         state.PC = statement.Destination.Value;
                     }
-                    // This is a comment to satisfy Instruction 6:
-                    // Note: MIPS Branch Delay Slot logic is handled by the Decoder, which emits
-                    // the delay slot instruction's IR statements before this branch statement.
+                    // Note: MIPS Branch Delay Slot logic is handled by the Decoder.
                     break;
 
                 default:
