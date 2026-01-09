@@ -60,6 +60,34 @@ namespace ProcessorEmulator.Emulation
 
             _backBuffer = new Bitmap(640, 480, PixelFormat.Format32bppRgb);
             _screen.Image = _backBuffer;
+
+            InitializeHardwareMonitor();
+        }
+
+        private void InitializeHardwareMonitor()
+        {
+            // Creating a Windows 7 style 'Property Grid' or 'ListView'
+            ListView hardwareList = new ListView
+            {
+                //View = View.Details,
+                FullRowSelect = true,
+                GridLines = true,
+                Location = new Point(660, 12),
+                Size = new Size(250, 482),
+                //BackColor = SystemColors.Window,
+                //Font = new Font("Segoe UI", 9) // The Windows 7 standard font
+            };
+
+            hardwareList.Columns.Add("Component", 100);
+            hardwareList.Columns.Add("Address", 120);
+
+            hardwareList.Items.Add(new ListViewItem(new[] { "CPU Core", "MIPS32 R2" }));
+            hardwareList.Items.Add(new ListViewItem(new[] { "UART (Serial)", "0x10400000" }));
+            hardwareList.Items.Add(new ListViewItem(new[] { "Video RAM", "0x10000000" }));
+    
+            this.Controls.Add(hardwareList);
+            // Expand the window to fit the monitor
+            this.Width += 270; 
         }
 
         public void RenderFrame()
