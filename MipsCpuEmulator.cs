@@ -1,4 +1,5 @@
-﻿using System;
+using System;
+using System.IO;
 using System.Windows;
 
 namespace ProcessorEmulator.Emulation
@@ -16,13 +17,12 @@ namespace ProcessorEmulator.Emulation
     public class MipsCpuEmulator
     {
         private const int RegisterCount = 32;
-        private const int MemorySize = 1024 * 1024; // 1 MB of memory
 
         private uint[] registers;
-        private byte[] memory;
         private uint programCounter;
         private float[] floatingPointRegisters;
         private CP0 cp0;
+        private MipsBus _bus;
 
         // Hardware module stubs
         private VideoDecoderStub videoDecoder;
@@ -37,7 +37,7 @@ namespace ProcessorEmulator.Emulation
             ChipsetProfile = profile;
             registers = new uint[RegisterCount];
             floatingPointRegisters = new float[RegisterCount];
-            memory = new byte[MemorySize];
+            _bus = new MipsBus(128); // 128MB RAM
             cp0 = new CP0(); // Instantiate CP0
             programCounter = 0xBFC00000; // MIPS Reset Vector
 
@@ -51,9 +51,18 @@ namespace ProcessorEmulator.Emulation
             peripheralModule = new PeripheralStub();
         }
 
+        public void LoadNkBin(string filePath)
+        {
+            // Example: Loading the boot image into the physical ROM area
+            byte[] bootImage = File.ReadAllBytes(filePath);
+            uint romPhysicalBase = 0x1FC00000;
+            _bus.LoadRawBinary(romPhysicalBase, bootImage);
+        }
+
         public void LoadProgram(byte[] program, uint startAddress)
         {
-            Array.Copy(program, 0, memory, startAddress, program.Length);
+            uint physicalAddress = _bus.Translate(startAddress);
+            _bus.LoadRawBinary(physicalAddress, program);
             programCounter = startAddress;
         }
 
@@ -68,9 +77,15 @@ namespace ProcessorEmulator.Emulation
 
         private uint FetchInstruction()
         {
-            uint instruction = BitConverter.ToUInt32(memory, (int)programCounter);
+            uint instruction = _bus.Read32(programCounter);
+            Console.WriteLine($"PC: 0x{programCounter:X8} -> PADDR: 0x{_bus.Translate(programCounter):X8}, INSTR: 0x{instruction:X8}");
             programCounter += 4;
             return instruction;
+        }
+        
+        private uint FetchInstructionAt(uint vaddr)
+        {
+            return _bus.Read32(vaddr);
         }
 
         private void DecodeAndExecute(uint instruction)
@@ -112,7 +127,6 @@ namespace ProcessorEmulator.Emulation
                 default:
                     throw new NotSupportedException($"Opcode {opcode:X2} not supported.");
             }
-
         }
 
         // MTC0: Move Control to Coprocessor 0 (Write to CP0)
@@ -188,7 +202,7 @@ namespace ProcessorEmulator.Emulation
             int offset = (short)(instruction & 0xFFFF);
 
             uint address = registers[baseReg] + (uint)offset;
-            registers[rt] = BitConverter.ToUInt32(memory, (int)address);
+            registers[rt] = _bus.Read32(address);
         }
 
         private void ExecuteStoreWord(uint instruction)
@@ -198,8 +212,7 @@ namespace ProcessorEmulator.Emulation
             int offset = (short)(instruction & 0xFFFF);
 
             uint address = registers[baseReg] + (uint)offset;
-            byte[] data = BitConverter.GetBytes(registers[rt]);
-            Array.Copy(data, 0, memory, (int)address, 4);
+            _bus.Write32(address, registers[rt]);
         }
 
         private void ExecuteBranchEqual(uint instruction)
@@ -215,7 +228,7 @@ namespace ProcessorEmulator.Emulation
             if (registers[rs] == registers[rt])
             {
                 // Fetch and execute the delay-slot instruction explicitly
-                uint delayInstr = BitConverter.ToUInt32(memory, (int)pcAfterFetch);
+                uint delayInstr = FetchInstructionAt(pcAfterFetch);
                 // Advance PC past the delay-slot instruction as if it was fetched normally
                 programCounter = pcAfterFetch + 4;
                 DecodeAndExecute(delayInstr);
@@ -236,7 +249,7 @@ namespace ProcessorEmulator.Emulation
 
             if (registers[rs] != registers[rt])
             {
-                uint delayInstr = BitConverter.ToUInt32(memory, (int)pcAfterFetch);
+                uint delayInstr = FetchInstructionAt(pcAfterFetch);
                 programCounter = pcAfterFetch + 4;
                 DecodeAndExecute(delayInstr);
                 programCounter = pcAfterFetch + (uint)(offset << 2);
@@ -300,7 +313,7 @@ namespace ProcessorEmulator.Emulation
                     // jr also honors the branch delay slot: execute next instruction
                     // before jumping to the register target.
                     uint pcAfterFetch = programCounter;
-                    uint delayInstr = BitConverter.ToUInt32(memory, (int)pcAfterFetch);
+                    uint delayInstr = FetchInstructionAt(pcAfterFetch);
                     // Advance PC past delay slot
                     programCounter = pcAfterFetch + 4;
                     DecodeAndExecute(delayInstr);
@@ -315,17 +328,17 @@ namespace ProcessorEmulator.Emulation
 
         private void HandleSyscall()
         {
-            uint syscallCode = registers[2]; //  register
+            uint syscallCode = registers[2]; // v0 register
             switch (syscallCode)
             {
                 case 1: // Print integer
-                    Console.WriteLine(registers[4]); //  register
+                    Console.WriteLine(registers[4]); // a0 register
                     break;
                 case 4: // Print string
                     uint address = registers[4];
-                    while (memory[address] != 0)
+                    while (_bus.Read8(address) != 0)
                     {
-                        Console.Write((char)memory[address]);
+                        Console.Write((char)_bus.Read8(address));
                         address++;
                     }
                     Console.WriteLine();
@@ -538,4 +551,3 @@ namespace ProcessorEmulator.Emulation
         */
     }
 }
-
