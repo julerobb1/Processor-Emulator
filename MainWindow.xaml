@@ -2,32 +2,32 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:wf="clr-namespace:System.Windows.Forms;assembly=System.Windows.Forms"
-        Title="MIPS Universal Emulator - Aero Classic" Height="700" Width="1000">
-    <Grid>
-        <DockPanel>
-            <Menu DockPanel.Dock="Top" Background="#F0F0F0">
-                <MenuItem Header="_File">
-                    <MenuItem Header="_Load Binary..." x:Name="LoadBinaryMenuItem" Click="LoadBinary_Click"/>
-                </MenuItem>
-                <MenuItem Header="_Debug">
-                    <MenuItem Header="_Memory View" x:Name="OpenMemoryMenuItem" Click="OpenMemory_View_Click"/>
-                    <MenuItem Header="Show _Console" x:Name="ShowConsoleMenuItem" Click="ShowConsole_Click"/>
-                </MenuItem>
-                <MenuItem Header="_Emulation">
-                    <MenuItem Header="_Start" x:Name="StartEmulationMenuItem" Click="StartEmulation_Click"/>
-                    <MenuItem Header="_Stop" x:Name="StopEmulationMenuItem" Click="StopEmulation_Click"/>
-                </MenuItem>
-            </Menu>
+        Title="MIPS Universal Emulator" Height="750" Width="1100"
+        Background="#F0F0F0" WindowStartupLocation="CenterScreen">
+    
+    <DockPanel>
+        <Menu DockPanel.Dock="Top" Background="White" BorderBrush="LightGray" BorderThickness="0,0,0,1">
+            <MenuItem Header="_File">
+                <MenuItem Header="_Load Binary..." Click="LoadBinary_Click"/>
+                <Separator />
+                <MenuItem Header="_Exit" Click="Exit_Click"/>
+            </MenuItem>
+            <MenuItem Header="_Hardware">
+                <MenuItem Header="_Memory Map" Click="ShowMemoryMap_Click"/>
+                <MenuItem Header="_Interrupts" Click="ShowInterrupts_Click"/>
+            </MenuItem>
+        </Menu>
 
-            <StatusBar DockPanel.Dock="Bottom" x:Name="MainStatusBar">
-                <StatusBarItem>
-                    <TextBlock x:Name="StatusTextBlock" Text="Ready" />
-                </StatusBarItem>
-            </StatusBar>
-            
-            <WindowsFormsHost Margin="5" Name="FormsHost">
-                <!-- WinForms controls will be hosted here -->
+        <StatusBar DockPanel.Dock="Bottom" Height="25">
+            <StatusBarItem>
+                <TextBlock x:Name="StatusText" Text="Ready" FontSize="11"/>
+            </StatusBarItem>
+        </StatusBar>
+
+        <Grid Background="#E5E5E5">
+            <WindowsFormsHost x:Name="Host">
+                <wf:TabControl x:Name="MainTabs" Dock="Fill"/>
             </WindowsFormsHost>
-        </DockPanel>
-    </Grid>
+        </Grid>
+    </DockPanel>
 </Window>
