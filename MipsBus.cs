@@ -6,10 +6,10 @@ namespace ProcessorEmulator.Emulation
 {
     public class MipsBus
     {
-        private readonly List<IBusDevice> _devices = new List<IBusDevice>();
+        public List<IBusDevice> Devices { get; } = new List<IBusDevice>();
         public bool IsBigEndian { get; set; } = false;
 
-        public void AddDevice(IBusDevice device) => _devices.Add(device);
+        public void AddDevice(IBusDevice device) => Devices.Add(device);
 
         public uint Translate(uint vaddr)
         {
