@@ -4,16 +4,6 @@ using System.Windows;
 
 namespace ProcessorEmulator.Emulation
 {
-    public enum MipsChipsetProfile
-    {
-        Generic,
-        STi7101,
-        STi7111,
-        BCM7401,   BCM7405,      BCM7403,
-        BCM7425,
-        BCM7445
-    }
-
     public class MipsCpuEmulator
     {
         private const int RegisterCount = 32;
@@ -21,49 +11,16 @@ namespace ProcessorEmulator.Emulation
         private uint[] registers;
         private uint programCounter;
         private float[] floatingPointRegisters;
-        private CP0 cp0;
-        private MipsBus _bus;
+        private readonly CP0 _cp0;
+        private readonly MipsBus _bus;
 
-        // Hardware module stubs
-        private VideoDecoderStub videoDecoder;
-        private AudioDecoderStub audioDecoder;
-        private SecurityModuleStub securityModule;
-        private PeripheralStub peripheralModule;
-
-        public MipsChipsetProfile ChipsetProfile { get; private set; }
-
-        public MipsCpuEmulator(MipsChipsetProfile profile = MipsChipsetProfile.Generic)
+        public MipsCpuEmulator(MipsBus bus, CP0 cp0)
         {
-            ChipsetProfile = profile;
+            _bus = bus;
+            _cp0 = cp0;
             registers = new uint[RegisterCount];
             floatingPointRegisters = new float[RegisterCount];
-            _bus = new MipsBus(128); // 128MB RAM
-            cp0 = new CP0(); // Instantiate CP0
             programCounter = 0xBFC00000; // MIPS Reset Vector
-
-            // Clear Status Register on startup
-            cp0.WriteRegister(12, 0);
-
-            // Initialize hardware stubs
-            videoDecoder = new VideoDecoderStub();
-            audioDecoder = new AudioDecoderStub();
-            securityModule = new SecurityModuleStub();
-            peripheralModule = new PeripheralStub();
-        }
-
-        public void LoadNkBin(string filePath)
-        {
-            // Example: Loading the boot image into the physical ROM area
-            byte[] bootImage = File.ReadAllBytes(filePath);
-            uint romPhysicalBase = 0x1FC00000;
-            _bus.LoadRawBinary(romPhysicalBase, bootImage);
-        }
-
-        public void LoadProgram(byte[] program, uint startAddress)
-        {
-            uint physicalAddress = _bus.Translate(startAddress);
-            _bus.LoadRawBinary(physicalAddress, program);
-            programCounter = startAddress;
         }
 
         public void Run()
@@ -134,7 +91,7 @@ namespace ProcessorEmulator.Emulation
         public void Execute_MTC0(uint rt, uint rd)
         {
             uint value = registers[rt]; // Get value from general purpose register
-            cp0.WriteRegister((int)rd, value);
+            _cp0.WriteRegister((int)rd, value);
             Console.WriteLine($"CP0 Write: Reg {rd} = 0x{value:X8}");
         }
 
@@ -142,7 +99,7 @@ namespace ProcessorEmulator.Emulation
         // Format: mfc0 $rt, $rd
         public void Execute_MFC0(uint rt, uint rd)
         {
-            uint value = cp0.ReadRegister((int)rd);
+            uint value = _cp0.ReadRegister((int)rd);
             registers[rt] = value; // Put CP0 value into general purpose register
             Console.WriteLine($"CP0 Read: Reg {rd} returns 0x{value:X8}");
         }
@@ -420,11 +377,7 @@ namespace ProcessorEmulator.Emulation
         }
 
         public uint ProgramCounter => programCounter;
-
-        // Expose minimal hardware stubs publicly so UI code can access them
-        public VideoDecoderStub VideoDecoder => videoDecoder;
-        public AudioDecoderStub AudioDecoder => audioDecoder;
-
+        
         // Execute a single fetch/decode/execute cycle (or multiple cycles)
         public void Step(int count = 1)
         {
@@ -434,120 +387,5 @@ namespace ProcessorEmulator.Emulation
                 DecodeAndExecute(instruction);
             }
         }
-
-        // Connect UI input (example for WPF)
-        public void ConnectUIInput(Window window)
-        {
-            window.KeyDown += (s, e) => peripheralModule.HandleKeyboardInput((ConsoleKey)Enum.Parse(typeof(ConsoleKey), e.Key.ToString(), true));
-            // Mouse click mapping can be added as needed
-        }
-    }
-
-    // Hardware module stubs
-    public class VideoDecoderStub
-    {
-        // Minimal state to avoid null reference usage by UI
-        public int Width { get; private set; } = 720;
-        public int Height { get; private set; } = 480;
-
-        public void Initialize(int width = 720, int height = 480)
-        {
-            Width = width;
-            Height = height;
-        }
-
-        public void RenderFrame(byte[] frameData)
-        {
-            // No-op for headless testing; keep method to satisfy callers
-        }
-
-        public void Reset()
-        {
-            // Reset internal state if later extended
-        }
-    }
-
-    public class AudioDecoderStub
-    {
-        // Minimal audio buffer simulation
-        private readonly System.Collections.Generic.Queue<byte[]> buffer = new System.Collections.Generic.Queue<byte[]>();
-
-        public void Initialize(int sampleRate = 48000, int channels = 2)
-        {
-            // store or ignore for now
-        }
-
-        public void EnqueueAudio(byte[] pcmData)
-        {
-            if (pcmData != null && pcmData.Length > 0) buffer.Enqueue(pcmData);
-        }
-
-        public byte[] DequeueAudio()
-        {
-            return buffer.Count > 0 ? buffer.Dequeue() : Array.Empty<byte>();
-        }
-
-        public void Reset()
-        {
-            buffer.Clear();
-        }
-    }
-    public class SecurityModuleStub { /* Emulate smartcard, encryption, etc. */ }
-    public class PeripheralStub
-    {
-        public event Action<string> RemoteButtonPressed;
-
-        public void PressButton(string button)
-        {
-            RemoteButtonPressed?.Invoke(button);
-        }
-
-        // Map keyboard keys to remote buttons (full mapping)
-        public void HandleKeyboardInput(ConsoleKey key)
-        {
-            switch (key)
-            {
-                case ConsoleKey.UpArrow: PressButton("UP"); break;
-                case ConsoleKey.DownArrow: PressButton("DOWN"); break;
-                case ConsoleKey.LeftArrow: PressButton("LEFT"); break;
-                case ConsoleKey.RightArrow: PressButton("RIGHT"); break;
-                case ConsoleKey.Enter: PressButton("OK"); break;
-                case ConsoleKey.Escape: PressButton("EXIT"); break;
-                case ConsoleKey.M: PressButton("MENU"); break;
-                case ConsoleKey.G: PressButton("GUIDE"); break;
-                case ConsoleKey.I: PressButton("INFO"); break;
-                case ConsoleKey.D1: PressButton("1"); break;
-                case ConsoleKey.D2: PressButton("2"); break;
-                case ConsoleKey.D3: PressButton("3"); break;
-                case ConsoleKey.D4: PressButton("4"); break;
-                case ConsoleKey.D5: PressButton("5"); break;
-                case ConsoleKey.D6: PressButton("6"); break;
-                case ConsoleKey.D7: PressButton("7"); break;
-                case ConsoleKey.D8: PressButton("8"); break;
-                case ConsoleKey.D9: PressButton("9"); break;
-                case ConsoleKey.D0: PressButton("0"); break;
-                case ConsoleKey.P: PressButton("PAUSE"); break;
-                case ConsoleKey.Spacebar: PressButton("PLAY"); break;
-                case ConsoleKey.F: PressButton("FF"); break;
-                case ConsoleKey.R: PressButton("REW"); break;
-                case ConsoleKey.S: PressButton("STOP"); break;
-                // ...add more as needed...
-            }
-        }
-
-        public void HandleMouseClick()
-        {
-            PressButton("OK");
-        }
-
-        // Connect UI input (example for WPF)
-        // Uncomment the following method and add 'using System.Windows;' if using WPF.
-        /*
-        public void ConnectUIInput(System.Windows.Window window)
-        {
-            window.KeyDown += (s, e) => HandleKeyboardInput((ConsoleKey)Enum.Parse(typeof(ConsoleKey), e.Key.ToString(), true));
-            // Mouse click mapping can be added as needed
-        }
-        */
     }
 }
