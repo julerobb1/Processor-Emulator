@@ -23,14 +23,16 @@ namespace ProcessorEmulator.Emulation
         private const int EPCReg = 14;
         private const int PRIdReg = 15;
         private const int ConfigReg = 16;
-        
+
+        public uint PRId { get; set; }
+
         // Status Register bits
         private const uint BEV_BIT = 1 << 22; // Boot Exception Vector
 
         public CP0()
         {
-            // Initialize PRId register (Processor Revision Identifier)
-            registers[PRIdReg] = 0x00018000; // Example value for a MIPS32 processor
+            // Initialize PRId register (Processor Revision Identifier) to a generic default
+            PRId = 0x00018000; // Generic MIPS 4Kc
 
             // Initialize Status register
             // Set BEV bit for boot sequence.
@@ -53,6 +55,12 @@ namespace ProcessorEmulator.Emulation
 
         public uint ReadRegister(int reg)
         {
+            if (reg == PRIdReg)
+            {
+                Console.WriteLine($"CP0 Read: Reg {reg} (PRId) returns 0x{PRId:X8}");
+                return PRId;
+            }
+
             if (reg >= 0 && reg < 32)
             {
                 uint value = registers[reg];
