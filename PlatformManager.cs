@@ -12,6 +12,7 @@ namespace ProcessorEmulator.Emulation
                     bus.AddDevice(new RamDevice(0x00000000, 128 * 1024 * 1024)); // 128MB RAM
                     bus.AddDevice(new BcmUart(0x10400000)); // Standard BCM UART
                     bus.AddDevice(new BcmInterruptController(0x10000000));
+                    bus.AddDevice(new DiscoveryDevice());
                     break;
 
                 case "iguide":
