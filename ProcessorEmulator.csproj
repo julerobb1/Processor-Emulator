@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net6.0-windows</TargetFramework>
+    <TargetFramework>net8.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <!-- Remove WindowsForms unless explicitly required; WPF suffices -->
     <UseWindowsForms>true</UseWindowsForms>
@@ -17,7 +17,7 @@
 
   <!-- Pre-build: ensure no stale running instance locking files (best-effort) -->
   <Target Name="EnsureNoRunningInstance" BeforeTargets="BeforeBuild">
-    <Exec Command="taskkill /F /IM ProcessorEmulator.exe >nul 2&gt;&amp;1" ContinueOnError="true" />
+    <Exec Command="taskkill /F /IM $(TargetName).exe /FI &quot;STATUS eq RUNNING&quot; &gt;nul 2&gt;&amp;1 || exit 0" ContinueOnError="true" />
   </Target>
 
   <ItemGroup>
