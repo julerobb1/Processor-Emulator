@@ -1,30 +1,30 @@
-// // using System;
-// // using System.Collections.Generic;
-// // using System.Diagnostics;
-// // using System.Threading;
-// // using System.Threading.Tasks;
+// using System;
+// using System.Collections.Generic;
+// using System.Diagnostics;
+// using System.Threading;
+// using System.Threading.Tasks;
 
-// // namespace ProcessorEmulator.CarlContainmentProtocol
+// namespace ProcessorEmulator.CarlContainmentProtocol
 // {
 //     /// <summary>
 //     /// Carl Containment Protocol - Emergency Response System
 //     /// For when Carl presses buttons he absolutely should not press
 //     /// Last updated: After the Great Llama Incident of 2025
 //     /// </summary>
-//     // public static class CarlMonitor
-//     // {
-//     //     private static readonly uint CARL_BOOT_ADDRESS = 0xCA71B007;
-//     //     private static readonly uint FORBIDDEN_BUTTON = 0xDEADBEEF;
-//     //     private static readonly uint LLAMA_PORTAL = 0xBA11ABAD;
+//     public static class CarlMonitor
+//     {
+//         private static readonly uint CARL_BOOT_ADDRESS = 0xCA71B007;
+//         private static readonly uint FORBIDDEN_BUTTON = 0xDEADBEEF;
+//         private static readonly uint LLAMA_PORTAL = 0xBA11ABAD;
         
-//     //     private static bool isCarlContained = true;
-//     //     private static int llamaSwarmCount = 0;
-//     //     private static DateTime lastButtonPress = DateTime.MinValue;
-//     //     private static List<string> carlIncidents = new List<string>();
+//         private static bool isCarlContained = true;
+//         private static int llamaSwarmCount = 0;
+//         private static DateTime lastButtonPress = DateTime.MinValue;
+//         private static List<string> carlIncidents = new List<string>();
         
-//     //     public enum CarlThreatLevel
-//     //     {
-//     //         Green = 0,      // Carl is contained (probably napping)
+//         public enum CarlThreatLevel
+//         {
+//             Green = 0,      // Carl is contained (probably napping)
 //             Yellow = 1,     // Carl is looking at buttons suspiciously
 //             Orange = 2,     // Carl has located the forbidden button
 //             Red = 3,        // Carl has pressed A button (not necessarily THE button)

@@ -230,7 +230,7 @@ namespace ProcessorEmulator.Emulation.SoC
                         
                         // Simulate operation completion
                         int delay = GetOperationDelay((CryptoOperation)currentOperation);
-                        System.Threading.Tasks.Task.Delay(delay).ContinueWith(_ =>
+                        Task.Delay(delay).ContinueWith(_ =>
                         {
                             operationInProgress = false;
                             Debug.WriteLine($"[Crypto] {opName} operation completed");
@@ -316,9 +316,9 @@ namespace ProcessorEmulator.Emulation.SoC
                 return false;
                 
             Debug.WriteLine($"[Crypto] Deriving HDCP keys for display 0x{displayId:X8}");
-            
+
             // Simulate key derivation process
-            System.Threading.Thread.Sleep(20);
+            Thread.Sleep(20);
             
             Debug.WriteLine("[Crypto] HDCP key derivation successful");
             return true;
@@ -333,9 +333,9 @@ namespace ProcessorEmulator.Emulation.SoC
                 return false;
                 
             Debug.WriteLine("[Crypto] Processing CableCARD descrambling keys");
-            
+
             // Simulate ECM decryption and key extraction
-            System.Threading.Thread.Sleep(15);
+            Thread.Sleep(15);
             
             bool success = ecmData.Length > 16; // Minimum ECM size
             

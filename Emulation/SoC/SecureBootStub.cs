@@ -187,9 +187,9 @@ namespace ProcessorEmulator.Emulation.SoC
         public bool ValidateBootChain(byte[] bootloader, byte[] kernel, byte[] rdkStack)
         {
             Debug.WriteLine("[SecureBoot] Starting boot chain validation...");
-            
+
             // Simulate signature verification
-            System.Threading.Thread.Sleep(50); // Realistic delay
+            Thread.Sleep(50); // Realistic delay
             
             // Check each component
             bool bootloaderValid = ValidateSignature(bootloader, "Bootloader");
@@ -222,7 +222,7 @@ namespace ProcessorEmulator.Emulation.SoC
             
             // Simulate RSA signature verification
             Debug.WriteLine($"[SecureBoot] {component}: Verifying RSA-2048 signature...");
-            System.Threading.Thread.Sleep(10);
+            Thread.Sleep(10);
             
             // Check for valid signature header (simplified)
             bool hasSignature = data.Length > 256; // RSA-2048 = 256 bytes

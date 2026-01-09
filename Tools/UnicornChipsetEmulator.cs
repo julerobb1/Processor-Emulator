@@ -57,21 +57,21 @@ namespace ProcessorEmulator.Tools
         /// <summary>
         /// Reads 4 bytes from the specified memory address.
         /// </summary>
-        public byte[] ReadRegister(uint address)
+    public byte[] ReadRegister(long address)
         {
             if (engine == null)
                 throw new InvalidOperationException("Engine not initialized");
-            return engine.Memory.Read(address, 4);
+            return engine.Memory.Read((ulong)address, 4);
         }
 
         /// <summary>
         /// Writes data to the specified memory address.
         /// </summary>
-        public void WriteRegister(uint address, byte[] data)
+    public void WriteRegister(long address, byte[] data)
         {
             if (engine == null)
                 throw new InvalidOperationException("Engine not initialized");
-            engine.Memory.Write(address, data);
+            engine.Memory.Write((ulong)address, data);
         }
     }
 }

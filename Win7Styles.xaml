@@ -1,0 +1,222 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- Windows 7-inspired control styles (ported from 7.css design language to WPF) -->
+
+  <!-- Palette approximations -->
+  <Color x:Key="W7Border">#7F6F6F6F</Color>
+  <Color x:Key="W7BorderLight">#CCFFFFFF</Color>
+  <Color x:Key="W7BorderDark">#40000000</Color>
+  <!-- Brush wrappers for palette colors -->
+  <SolidColorBrush x:Key="W7BorderBrush" Color="{StaticResource W7Border}"/>
+  <SolidColorBrush x:Key="W7BorderLightBrush" Color="{StaticResource W7BorderLight}"/>
+  <SolidColorBrush x:Key="W7BorderDarkBrush" Color="{StaticResource W7BorderDark}"/>
+  <Color x:Key="W7ButtonTop">#FFF5F8FB</Color>
+  <Color x:Key="W7ButtonBottom">#FFE3EDF7</Color>
+  <Color x:Key="W7ButtonHoverTop">#FFEFF7FF</Color>
+  <Color x:Key="W7ButtonHoverBottom">#FFD8ECFE</Color>
+  <Color x:Key="W7ButtonPressedTop">#FFBED9F6</Color>
+  <Color x:Key="W7ButtonPressedBottom">#FFA6C9F0</Color>
+  <Color x:Key="W7DefaultBorder">#FF59A8E3</Color>
+  <SolidColorBrush x:Key="W7DefaultBorderBrush" Color="{StaticResource W7DefaultBorder}"/>
+  <Color x:Key="W7FocusDotted">#FF000000</Color>
+  <SolidColorBrush x:Key="W7FocusDottedBrush" Color="{StaticResource W7FocusDotted}"/>
+
+  <!-- Menu and header gradients -->
+  <LinearGradientBrush x:Key="W7MenuBarBrush" StartPoint="0,0" EndPoint="0,1">
+    <GradientStop Color="#FFFDFDFD" Offset="0"/>
+    <GradientStop Color="#FFEAEFF6" Offset="1"/>
+  </LinearGradientBrush>
+  <SolidColorBrush x:Key="W7MenuItemHover" Color="#80CDE8FF"/>
+  <!-- Tab resources -->
+  <LinearGradientBrush x:Key="W7TabBorderBrush" StartPoint="0,0" EndPoint="0,1">
+    <GradientStop Color="#80000000" Offset="0"/>
+    <GradientStop Color="#40000000" Offset="1"/>
+  </LinearGradientBrush>
+  <LinearGradientBrush x:Key="W7TabBackgroundBrush" StartPoint="0,0" EndPoint="0,1">
+    <GradientStop Color="#FFFFFFFF" Offset="0"/>
+    <GradientStop Color="#FFEFF5FB" Offset="1"/>
+  </LinearGradientBrush>
+  <LinearGradientBrush x:Key="W7TabBackgroundBrushInactive" StartPoint="0,0" EndPoint="0,1">
+    <GradientStop Color="#F0F6FC" Offset="0"/>
+    <GradientStop Color="#E5EFF9" Offset="1"/>
+  </LinearGradientBrush>
+
+  <!-- Default Button Style (glossy, hover/press, dotted focus, defaulted) -->
+  <Style TargetType="Button">
+    <Setter Property="Foreground" Value="#FF000000"/>
+    <Setter Property="Padding" Value="10,4"/>
+    <Setter Property="MinHeight" Value="23"/>
+    <Setter Property="SnapsToDevicePixels" Value="True"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Grid>
+            <!-- Outer border highlights like Win7: bright outside, dark inner -->
+            <Border x:Name="Outer" CornerRadius="3" BorderThickness="1" BorderBrush="{StaticResource W7BorderLightBrush}"/>
+            <Border x:Name="Inner" CornerRadius="2" BorderThickness="1" BorderBrush="{StaticResource W7BorderBrush}" Margin="1"/>
+            <!-- Background gloss -->
+            <Border x:Name="Bg" CornerRadius="2" Margin="1">
+              <Border.Background>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                  <GradientStop Color="{StaticResource W7ButtonTop}" Offset="0"/>
+                  <GradientStop Color="{StaticResource W7ButtonBottom}" Offset="1"/>
+                </LinearGradientBrush>
+              </Border.Background>
+            </Border>
+            <!-- Focus dotted rectangle as stroked shape -->
+      <Rectangle x:Name="FocusRect" Margin="3" RadiusX="1" RadiusY="1" Opacity="0" StrokeThickness="1">
+              <Rectangle.Stroke>
+                <DrawingBrush ViewportUnits="RelativeToBoundingBox" Viewport="0,0,4,4" TileMode="Tile">
+                  <DrawingBrush.Drawing>
+        <GeometryDrawing Brush="{StaticResource W7FocusDottedBrush}">
+                      <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                          <RectangleGeometry Rect="0,0,1,1"/>
+                          <RectangleGeometry Rect="2,2,1,1"/>
+                        </GeometryGroup>
+                      </GeometryDrawing.Geometry>
+                    </GeometryDrawing>
+                  </DrawingBrush.Drawing>
+                </DrawingBrush>
+              </Rectangle.Stroke>
+            </Rectangle>
+            <ContentPresenter Margin="10,3" HorizontalAlignment="Center" VerticalAlignment="Center" RecognizesAccessKey="True"/>
+          </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Bg" Property="Background">
+                <Setter.Value>
+                  <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                    <GradientStop Color="{StaticResource W7ButtonHoverTop}" Offset="0"/>
+                    <GradientStop Color="{StaticResource W7ButtonHoverBottom}" Offset="1"/>
+                  </LinearGradientBrush>
+                </Setter.Value>
+              </Setter>
+            </Trigger>
+            <Trigger Property="IsPressed" Value="True">
+              <Setter TargetName="Bg" Property="Background">
+                <Setter.Value>
+                  <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                    <GradientStop Color="{StaticResource W7ButtonPressedTop}" Offset="0"/>
+                    <GradientStop Color="{StaticResource W7ButtonPressedBottom}" Offset="1"/>
+                  </LinearGradientBrush>
+                </Setter.Value>
+              </Setter>
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter Property="Opacity" Value="0.6"/>
+            </Trigger>
+            <Trigger Property="IsDefaulted" Value="True">
+              <Setter TargetName="Inner" Property="BorderBrush" Value="{StaticResource W7DefaultBorderBrush}"/>
+            </Trigger>
+            <Trigger Property="IsKeyboardFocused" Value="True">
+              <Setter TargetName="FocusRect" Property="Opacity" Value="1"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- Caption buttons: minimize / maximize / close on custom TitleBar -->
+  <Style x:Key="CaptionButtonStyle" TargetType="Button">
+    <Setter Property="Background" Value="Transparent"/>
+    <Setter Property="BorderBrush" Value="Transparent"/>
+    <Setter Property="BorderThickness" Value="0"/>
+    <Setter Property="Foreground" Value="#FF000000"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="Root" Background="{TemplateBinding Background}">
+            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Root" Property="Background" Value="#40FFFFFF"/>
+            </Trigger>
+            <Trigger Property="IsPressed" Value="True">
+              <Setter TargetName="Root" Property="Background" Value="#60FFFFFF"/>
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter Property="Opacity" Value="0.5"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <!-- Close button variant with red hover like Win7 -->
+  <Style x:Key="CloseCaptionButtonStyle" TargetType="Button" BasedOn="{StaticResource CaptionButtonStyle}">
+    <Style.Triggers>
+      <Trigger Property="IsMouseOver" Value="True">
+        <Setter Property="Background" Value="#E55C5C"/>
+        <Setter Property="Foreground" Value="White"/>
+      </Trigger>
+      <Trigger Property="IsPressed" Value="True">
+        <Setter Property="Background" Value="#C94848"/>
+      </Trigger>
+    </Style.Triggers>
+  </Style>
+
+  <!-- TabItem look with top white highlight and base line like Win7 -->
+  <Style TargetType="TabControl">
+    <Setter Property="BorderBrush" Value="#66000000"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="Background" Value="#20FFFFFF"/>
+  </Style>
+  <Style TargetType="TabItem">
+    <Setter Property="Padding" Value="10,6"/>
+    <Setter Property="Margin" Value="2,0,2,0"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="TabItem">
+          <Grid SnapsToDevicePixels="True">
+      <Border x:Name="Bd" CornerRadius="4,4,0,0" BorderThickness="1" Margin="0,0,0,0"
+        BorderBrush="{StaticResource W7TabBorderBrush}"
+        Background="{StaticResource W7TabBackgroundBrush}"/>
+            <Border Height="1" VerticalAlignment="Top" Margin="1,1,1,0" Background="#80FFFFFF"/>
+            <ContentPresenter x:Name="Content" ContentSource="Header" Margin="12,4,12,4" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsSelected" Value="False">
+              <Setter TargetName="Bd" Property="Background" Value="{StaticResource W7TabBackgroundBrushInactive}"/>
+              <Setter TargetName="Bd" Property="Opacity" Value="0.85"/>
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter Property="Opacity" Value="0.6"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- Menubar & MenuItem hover -->
+  <Style TargetType="Menu">
+    <Setter Property="Background" Value="{StaticResource W7MenuBarBrush}"/>
+    <Setter Property="BorderBrush" Value="#66000000"/>
+    <Setter Property="BorderThickness" Value="0,0,0,1"/>
+  </Style>
+  <Style TargetType="MenuItem">
+    <Setter Property="Padding" Value="6,3"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="MenuItem">
+          <Grid>
+            <Border x:Name="Hover" Background="Transparent"/>
+            <ContentPresenter Margin="6,2"/>
+          </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsHighlighted" Value="True">
+              <Setter TargetName="Hover" Property="Background" Value="{StaticResource W7MenuItemHover}"/>
+            </Trigger>
+            <Trigger Property="Role" Value="TopLevelHeader">
+              <Setter Property="Padding" Value="10,4"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+</ResourceDictionary>

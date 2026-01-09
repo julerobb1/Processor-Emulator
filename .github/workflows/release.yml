@@ -7,7 +7,29 @@ on:
       - 'v*'
 
 jobs:
+  # Development build job: produces a dev artifact with its own identifier
+  dev-build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup .NET 6 SDK
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '6.0.x'
+      - name: Build Dev (Debug)
+        run: |
+          dotnet restore
+          dotnet build ProcessorEmulator.csproj --configuration Debug
+          dotnet publish ProcessorEmulator.csproj --configuration Debug --output dev-artifacts
+      - name: Upload Dev Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: dev-build-${{ github.run_number }}
+          path: dev-artifacts
+
   build-and-release:
+    needs: dev-build
     runs-on: windows-latest
 
     steps:

@@ -384,13 +384,24 @@ namespace ProcessorEmulator.Tools
 
         public byte[] ReadRegister(uint address)
         {
-            // TODO: Implement register read logic
-            return new byte[4]; // Placeholder
+            return ReadRegister((long)address);
         }
 
         public void WriteRegister(uint address, byte[] data)
         {
-            // TODO: Implement register write logic
+            WriteRegister((long)address, data);
+        }
+
+        // Implementations matching IChipsetEmulator signatures that use long addressing
+        public byte[] ReadRegister(long address)
+        {
+            // TODO: Implement real register read logic; return 4-byte little-endian value as default
+            return new byte[4];
+        }
+
+        public void WriteRegister(long address, byte[] data)
+        {
+            // TODO: Implement real register write logic; for now, accept and ignore
         }
     }
 

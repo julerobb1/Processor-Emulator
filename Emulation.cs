@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace ProcessorEmulator.Emulation
@@ -5,7 +6,6 @@ namespace ProcessorEmulator.Emulation
     // Placeholder for ISA decoders (MIPS, ARM, etc.)
     public class IsaDecoder
     {
-        // ...existing code...
     }
 
     // Placeholder for Intermediate Representation (IR)
@@ -27,7 +27,7 @@ namespace ProcessorEmulator.Emulation
         {
             public static byte[] Generate(IntermediateRepresentation.IrInstruction[] ir)
             {
-                // TODO: Translate IR to x86-64 machine code
+                Console.WriteLine("X64CodeGenerator: Generate called.");
                 return new byte[0];
             }
         }
@@ -36,7 +36,6 @@ namespace ProcessorEmulator.Emulation
     // Placeholder for device emulation (graphics, memory, etc.)
     public class DeviceEmulator
     {
-        // ...existing code...
     }
 
     // Basic MIPS instruction decoder and interpreter skeleton
@@ -44,137 +43,137 @@ namespace ProcessorEmulator.Emulation
     {
         public static void LoadBinary(byte[] binary)
         {
-            // TODO: Parse and load MIPS binary
+            Console.WriteLine("MipsEmulator: LoadBinary called.");
         }
 
         public static void Step()
         {
-            // TODO: Execute one MIPS instruction
+            Console.WriteLine("MipsEmulator: Step called.");
         }
 
         public static void Run()
         {
-            // TODO: Execute full MIPS program
+            Console.WriteLine("MipsEmulator: Run called.");
         }
     }
 
     // MIPS32 emulator stub
     public class Mips32Emulator : IEmulator
     {
-        public void LoadBinary(byte[] binary) { /* TODO */ }
-        public void Step() { /* TODO */ }
-        public void Run() { /* TODO */ }
-        public void Decompile() { /* TODO */ }
-        public void Recompile(string targetArch) { /* TODO */ }
+        public void LoadBinary(byte[] binary, uint loadAddress) { Console.WriteLine("Mips32Emulator: LoadBinary called."); }
+        public void Step() { Console.WriteLine("Mips32Emulator: Step called."); }
+        public void Run() { Console.WriteLine("Mips32Emulator: Run called."); }
         
-        // IEmulator properties
-        public uint ProgramCounter { get; private set; } = 0;
+        public uint ProgramCounter { get; set; } = 0;
+        public uint StackPointer { get; set; } = 0;
         public int InstructionCount { get; private set; } = 0;
         public uint CurrentInstruction { get; private set; } = 0;
         public uint[] RegisterState { get; private set; } = new uint[32];
         public byte[] MemoryState { get; private set; } = new byte[1024];
+        public void MapMemory(uint address, byte[] data) { Console.WriteLine($"Memory mapped at {address} with data of length {data.Length}"); }
+        public void RegisterDevice(IDeviceEmulator device) { Console.WriteLine($"Device {device.GetType().Name} registered."); }
     }
 
     // ARM emulator stub
     public class ArmEmulator : IEmulator
     {
-        public void LoadBinary(byte[] binary) { /* TODO */ }
-        public void Step() { /* TODO */ }
-        public void Run() { /* TODO */ }
-        public void Decompile() { /* TODO */ }
-        public void Recompile(string targetArch) { /* TODO */ }
+        public void LoadBinary(byte[] binary, uint loadAddress) { Console.WriteLine("ArmEmulator: LoadBinary called."); }
+        public void Step() { Console.WriteLine("ArmEmulator: Step called."); }
+        public void Run() { Console.WriteLine("ArmEmulator: Run called."); }
         
-        // IEmulator properties
-        public uint ProgramCounter { get; private set; } = 0;
+        public uint ProgramCounter { get; set; } = 0;
+        public uint StackPointer { get; set; } = 0;
         public int InstructionCount { get; private set; } = 0;
         public uint CurrentInstruction { get; private set; } = 0;
         public uint[] RegisterState { get; private set; } = new uint[16];
         public byte[] MemoryState { get; private set; } = new byte[1024];
+        public void MapMemory(uint address, byte[] data) { Console.WriteLine($"Memory mapped at {address} with data of length {data.Length}"); }
+        public void RegisterDevice(IDeviceEmulator device) { Console.WriteLine($"Device {device.GetType().Name} registered."); }
     }
 
     // ARM64 emulator stub
     public class Arm64Emulator : IEmulator
     {
-        public void LoadBinary(byte[] binary) { /* TODO */ }
-        public void Step() { /* TODO */ }
-        public void Run() { /* TODO */ }
-        public void Decompile() { /* TODO */ }
-        public void Recompile(string targetArch) { /* TODO */ }
+        public void LoadBinary(byte[] binary, uint loadAddress) { Console.WriteLine("Arm64Emulator: LoadBinary called."); }
+        public void Step() { Console.WriteLine("Arm64Emulator: Step called."); }
+        public void Run() { Console.WriteLine("Arm64Emulator: Run called."); }
         
-        // IEmulator properties
-        public uint ProgramCounter { get; private set; } = 0;
+        public uint ProgramCounter { get; set; } = 0;
+        public uint StackPointer { get; set; } = 0;
         public int InstructionCount { get; private set; } = 0;
         public uint CurrentInstruction { get; private set; } = 0;
         public uint[] RegisterState { get; private set; } = new uint[32];
         public byte[] MemoryState { get; private set; } = new byte[1024];
+        public void MapMemory(uint address, byte[] data) { Console.WriteLine($"Memory mapped at {address} with data of length {data.Length}"); }
+        public void RegisterDevice(IDeviceEmulator device) { Console.WriteLine($"Device {device.GetType().Name} registered."); }
     }
 
     // MIPS64 emulator stub
     public class Mips64Emulator : IEmulator
     {
-        public void LoadBinary(byte[] binary) { /* TODO */ }
-        public void Step() { /* TODO */ }
-        public void Run() { /* TODO */ }
-        public void Decompile() { /* TODO */ }
-        public void Recompile(string targetArch) { /* TODO */ }
+        public void LoadBinary(byte[] binary, uint loadAddress) { Console.WriteLine("Mips64Emulator: LoadBinary called."); }
+        public void Step() { Console.WriteLine("Mips64Emulator: Step called."); }
+        public void Run() { Console.WriteLine("Mips64Emulator: Run called."); }
         
-        // IEmulator properties
-        public uint ProgramCounter { get; private set; } = 0;
+        public uint ProgramCounter { get; set; } = 0;
+        public uint StackPointer { get; set; } = 0;
         public int InstructionCount { get; private set; } = 0;
         public uint CurrentInstruction { get; private set; } = 0;
         public uint[] RegisterState { get; private set; } = new uint[32];
         public byte[] MemoryState { get; private set; } = new byte[1024];
+        public void MapMemory(uint address, byte[] data) { Console.WriteLine($"Memory mapped at {address} with data of length {data.Length}"); }
+        public void RegisterDevice(IDeviceEmulator device) { Console.WriteLine($"Device {device.GetType().Name} registered."); }
     }
 
     // PowerPC emulator stub
     public class PowerPcEmulator : IEmulator
     {
-        public void LoadBinary(byte[] binary) { /* TODO */ }
-        public void Step() { /* TODO */ }
-        public void Run() { /* TODO */ }
-        public void Decompile() { /* TODO */ }
-        public void Recompile(string targetArch) { /* TODO */ }
+        public void LoadBinary(byte[] binary, uint loadAddress) { Console.WriteLine("PowerPcEmulator: LoadBinary called."); }
+        public void Step() { Console.WriteLine("PowerPcEmulator: Step called."); }
+        public void Run() { Console.WriteLine("PowerPcEmulator: Run called."); }
         
-        // IEmulator properties
-        public uint ProgramCounter { get; private set; } = 0;
+        public uint ProgramCounter { get; set; } = 0;
+        public uint StackPointer { get; set; } = 0;
         public int InstructionCount { get; private set; } = 0;
         public uint CurrentInstruction { get; private set; } = 0;
         public uint[] RegisterState { get; private set; } = new uint[32];
         public byte[] MemoryState { get; private set; } = new byte[1024];
+        public void MapMemory(uint address, byte[] data) { Console.WriteLine($"Memory mapped at {address} with data of length {data.Length}"); }
+        public void RegisterDevice(IDeviceEmulator device) { Console.WriteLine($"Device {device.GetType().Name} registered."); }
     }
 
     // x86 emulator stub
     public class X86Emulator : IEmulator
     {
-        public void LoadBinary(byte[] binary) { /* TODO */ }
-        public void Step() { /* TODO */ }
-        public void Run() { /* TODO */ }
-        public void Decompile() { /* TODO */ }
-        public void Recompile(string targetArch) { /* TODO */ }
+        public void LoadBinary(byte[] binary, uint loadAddress) { Console.WriteLine("X86Emulator: LoadBinary called."); }
+        public void Step() { Console.WriteLine("X86Emulator: Step called."); }
+        public void Run() { Console.WriteLine("X86Emulator: Run called."); }
         
-        // IEmulator properties
-        public uint ProgramCounter { get; private set; } = 0;
+        public uint ProgramCounter { get; set; } = 0;
+        public uint StackPointer { get; set; } = 0;
         public int InstructionCount { get; private set; } = 0;
         public uint CurrentInstruction { get; private set; } = 0;
         public uint[] RegisterState { get; private set; } = new uint[8];
         public byte[] MemoryState { get; private set; } = new byte[1024];
+        public void MapMemory(uint address, byte[] data) { Console.WriteLine($"Memory mapped at {address} with data of length {data.Length}"); }
+        public void RegisterDevice(IDeviceEmulator device) { Console.WriteLine($"Device {device.GetType().Name} registered."); }
     }
 
     // x86-64 emulator stub
     public class X64Emulator : IEmulator
     {
-        public void LoadBinary(byte[] binary) { /* TODO */ }
-        public void Step() { /* TODO */ }
-        public void Run() { /* TODO */ }
-        public void Decompile() { /* TODO */ }
-        public void Recompile(string targetArch) { /* TODO */ }
+        public void LoadBinary(byte[] binary, uint loadAddress) { Console.WriteLine("X64Emulator: LoadBinary called."); }
+        public void Step() { Console.WriteLine("X64Emulator: Step called."); }
+        public void Run() { Console.WriteLine("X64Emulator: Run called."); }
         
-        // IEmulator properties
-        public uint ProgramCounter { get; private set; } = 0;
+        public uint ProgramCounter { get; set; } = 0;
+        public uint StackPointer { get; set; } = 0;
         public int InstructionCount { get; private set; } = 0;
         public uint CurrentInstruction { get; private set; } = 0;
         public uint[] RegisterState { get; private set; } = new uint[16];
         public byte[] MemoryState { get; private set; } = new byte[1024];
+        public void MapMemory(uint address, byte[] data) { Console.WriteLine($"Memory mapped at {address} with data of length {data.Length}"); }
+        public void RegisterDevice(IDeviceEmulator device) { Console.WriteLine($"Device {device.GetType().Name} registered."); }
     }
 
     // Device models for real-time emulation
@@ -187,37 +186,37 @@ namespace ProcessorEmulator.Emulation
 
     public class GraphicsDevice : IDevice
     {
-        public void Initialize() { /* TODO: Initialize graphics hardware */ }
-        public void Reset() { /* TODO: Reset graphics state */ }
-        public void Tick() { /* TODO: Process one graphics cycle */ }
+        public void Initialize() { Console.WriteLine("GraphicsDevice: Initialize called."); }
+        public void Reset() { Console.WriteLine("GraphicsDevice: Reset called."); }
+        public void Tick() { /* Process one graphics cycle */ }
     }
 
     public class StorageDevice : IDevice
     {
-        public void Initialize() { /* TODO: Initialize storage */ }
-        public void Reset() { /* TODO: Reset storage */ }
-        public void Tick() { /* TODO: Process one storage operation */ }
+        public void Initialize() { Console.WriteLine("StorageDevice: Initialize called."); }
+        public void Reset() { Console.WriteLine("StorageDevice: Reset called."); }
+        public void Tick() { /* Process one storage operation */ }
     }
 
     public class NetworkDevice : IDevice
     {
-        public void Initialize() { /* TODO: Initialize network interface */ }
-        public void Reset() { /* TODO: Reset network */ }
-        public void Tick() { /* TODO: Process network packets */ }
+        public void Initialize() { Console.WriteLine("NetworkDevice: Initialize called."); }
+        public void Reset() { Console.WriteLine("NetworkDevice: Reset called."); }
+        public void Tick() { /* Process network packets */ }
     }
 
     public class AudioDevice : IDevice
     {
-        public void Initialize() { /* TODO: Initialize audio hardware */ }
-        public void Reset() { /* TODO: Reset audio */ }
-        public void Tick() { /* TODO: Process audio samples */ }
+        public void Initialize() { Console.WriteLine("AudioDevice: Initialize called."); }
+        public void Reset() { Console.WriteLine("AudioDevice: Reset called."); }
+        public void Tick() { /* Process audio samples */ }
     }
 
     public class InputDevice : IDevice
     {
-        public void Initialize() { /* TODO: Initialize input devices */ }
-        public void Reset() { /* TODO: Reset input */ }
-        public void Tick() { /* TODO: Poll for input */ }
+        public void Initialize() { Console.WriteLine("InputDevice: Initialize called."); }
+        public void Reset() { Console.WriteLine("InputDevice: Reset called."); }
+        public void Tick() { /* Poll for input */ }
     }
 
     // CPU model interface and stubs
@@ -231,22 +230,22 @@ namespace ProcessorEmulator.Emulation
     public class MipsR4000Cpu : ICpuModel
     {
         public string Name => "MIPS R4000";
-        public void Reset() { /* TODO: Reset CPU state */ }
-        public void Step() { /* TODO: Execute one instruction */ }
+        public void Reset() { Console.WriteLine("MipsR4000Cpu: Reset called."); }
+        public void Step() { Console.WriteLine("MipsR4000Cpu: Step called."); }
     }
 
     public class ArmCortexACpu : ICpuModel
     {
         public string Name => "ARM Cortex-A";
-        public void Reset() { /* TODO */ }
-        public void Step() { /* TODO */ }
+        public void Reset() { Console.WriteLine("ArmCortexACpu: Reset called."); }
+        public void Step() { Console.WriteLine("ArmCortexACpu: Step called."); }
     }
 
     public class PowerPcCpu : ICpuModel
     {
         public string Name => "PowerPC";
-        public void Reset() { /* TODO */ }
-        public void Step() { /* TODO */ }
+        public void Reset() { Console.WriteLine("PowerPcCpu: Reset called."); }
+        public void Step() { Console.WriteLine("PowerPcCpu: Step called."); }
     }
 
     // Emulator with CPU and device selection
@@ -259,17 +258,17 @@ namespace ProcessorEmulator.Emulation
             cpu = cpuModel;
             devices.AddRange(deviceModels);
         }
-        public void LoadBinary(byte[] binary) { /* TODO: Load into memory */ }
+        public void LoadBinary(byte[] binary, uint loadAddress) { Console.WriteLine("HardwareEmulator: LoadBinary called."); }
         public void Step() { cpu.Step(); foreach (var d in devices) d.Tick(); }
         public void Run() { while (true) Step(); }
-        public void Decompile() { /* TODO */ }
-        public void Recompile(string targetArch) { /* TODO */ }
         
-        // IEmulator properties
-        public uint ProgramCounter { get; private set; } = 0;
+        public uint ProgramCounter { get; set; } = 0;
+        public uint StackPointer { get; set; } = 0;
         public int InstructionCount { get; private set; } = 0;
         public uint CurrentInstruction { get; private set; } = 0;
         public uint[] RegisterState { get; private set; } = new uint[32];
         public byte[] MemoryState { get; private set; } = new byte[1024];
+        public void MapMemory(uint address, byte[] data) { Console.WriteLine($"Memory mapped at {address} with data of length {data.Length}"); }
+        public void RegisterDevice(IDeviceEmulator device) { Console.WriteLine($"Device {device.GetType().Name} registered."); }
     }
 }

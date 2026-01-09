@@ -13,7 +13,7 @@ namespace BoltDemo
     /// </summary>
     public class BoltBootloader
     {
-        private Dictionary<uint, uint> memory;
+    private readonly Dictionary<long, long> memory;
         private Dictionary<string, object> deviceTree;
         private bool socInitialized;
         private uint entryPoint;
@@ -26,7 +26,7 @@ namespace BoltDemo
 
         public BoltBootloader()
         {
-            memory = new Dictionary<uint, uint>();
+            memory = new Dictionary<long, long>();
             deviceTree = new Dictionary<string, object>();
             socInitialized = false;
             entryPoint = KERNEL_ENTRY;
@@ -118,20 +118,20 @@ namespace BoltDemo
             return LoadRawBinary(elfData, entryPoint);
         }
 
-        private bool LoadRawBinary(byte[] data, uint loadAddress)
+    private bool LoadRawBinary(byte[] data, long loadAddress)
         {
             Console.WriteLine($"BOLT: Loading {data.Length} bytes at 0x{loadAddress:X8}");
 
             for (int i = 0; i < data.Length; i += 4)
             {
-                uint addr = loadAddress + (uint)i;
-                uint value = 0;
+                long addr = loadAddress + i;
+                long value = 0;
 
                 for (int j = 0; j < 4 && i + j < data.Length; j++)
                 {
-                    value |= (uint)(data[i + j] << (j * 8));
+                    value |= ((long)data[i + j] << (j * 8));
                 }
-
+                // Always write to memory
                 memory[addr] = value;
             }
 
@@ -236,78 +236,80 @@ namespace BoltDemo
         }
 
         public bool IsInitialized => socInitialized;
-        public uint EntryPoint => entryPoint;
-        public uint DeviceTreeAddress => DTB_ADDRESS;
-        public Dictionary<uint, uint> GetMemoryMap() => new Dictionary<uint, uint>(memory);
+    public long EntryPoint => entryPoint;
+    public long DeviceTreeAddress => DTB_ADDRESS;
+    public Dictionary<long, long> GetMemoryMap()
+        {
+            return new Dictionary<long, long>(memory);
+        }
     }
 
     class Program
     {
-        // Disabled: Multiple entry points not allowed  
-        // static async Task Main(string[] args)
-        // {
-        //     Console.WriteLine("=== BOLT Bootloader Demo ===");
-        //     Console.WriteLine("Simulating Broadcom BCM7449 BOLT bootloader");
-        //     Console.WriteLine();
+        static async Task Main(string[] args)
+        {
+            Console.WriteLine("=== BOLT Bootloader Demo ===");
+            Console.WriteLine("Simulating Broadcom BCM7449 BOLT bootloader");
+            Console.WriteLine();
 
-        //     var bolt = new BoltBootloader();
+            var bolt = new BoltBootloader();
 
-        //     try
-        //     {
-        //         // Step 1: Initialize BOLT
-        //         Console.WriteLine("Step 1: Initializing BOLT...");
-        //         await Task.Run(() => bolt.InitializeSoC());
-        //         Console.WriteLine("BOLT initialized successfully!");
-        //         Console.WriteLine();
+            try
+            {
+                // Step 1: Initialize BOLT
+                Console.WriteLine("Step 1: Initializing BOLT...");
+                await Task.Run(() => bolt.InitializeSoC());
+                Console.WriteLine("BOLT initialized successfully!");
+                Console.WriteLine();
 
-        //         // Step 2: Run some BOLT commands
-        //         Console.WriteLine("Step 2: Running BOLT commands:");
+                // Step 2: Run some BOLT commands
+                Console.WriteLine("Step 2: Running BOLT commands:");
                 
-        //         Console.WriteLine("BOLT> memtest");
-        //         Console.WriteLine(bolt.ExecuteCommand("memtest"));
-        //         Console.WriteLine();
+                Console.WriteLine("BOLT> memtest");
+                Console.WriteLine(bolt.ExecuteCommand("memtest"));
+                Console.WriteLine();
 
-        //         Console.WriteLine("BOLT> dt show");
-        //         Console.WriteLine(bolt.ExecuteCommand("dt show"));
-        //         Console.WriteLine();
+                Console.WriteLine("BOLT> dt show");
+                Console.WriteLine(bolt.ExecuteCommand("dt show"));
+                Console.WriteLine();
 
-        //         Console.WriteLine("BOLT> dump 0x8000 0x40");
-        //         Console.WriteLine(bolt.ExecuteCommand("dump 0x8000 0x40"));
-        //         Console.WriteLine();
+                Console.WriteLine("BOLT> dump 0x8000 0x40");
+                Console.WriteLine(bolt.ExecuteCommand("dump 0x8000 0x40"));
+                Console.WriteLine();
 
-        //         // Step 3: Create and boot demo firmware
-        //         Console.WriteLine("Step 3: Firmware Boot Demo");
-        //         CreateDemoFirmware();
+                // Step 3: Create and boot demo firmware
+                Console.WriteLine("Step 3: Firmware Boot Demo");
+                CreateDemoFirmware();
                 
-        //         Console.WriteLine("BOLT> boot -elf demo_firmware.bin");
-        //         string bootResult = bolt.ExecuteCommand("boot -elf demo_firmware.bin");
-        //         Console.WriteLine(bootResult);
+                Console.WriteLine("BOLT> boot -elf demo_firmware.bin");
+                string bootResult = bolt.ExecuteCommand("boot -elf demo_firmware.bin");
+                Console.WriteLine(bootResult);
                 
-        //         if (bootResult.StartsWith("BOOT_SUCCESS"))
-        //         {
-        //             string[] bootData = bootResult.Split(':');
-        //             uint entryPoint = Convert.ToUInt32(bootData[1], 16);
-        //             uint dtbAddress = Convert.ToUInt32(bootData[2], 16);
+                if (bootResult.StartsWith("BOOT_SUCCESS"))
+                {
+                    string[] bootData = bootResult.Split(':');
+                    uint entryPoint = Convert.ToUInt32(bootData[1], 16);
+                    uint dtbAddress = Convert.ToUInt32(bootData[2], 16);
                     
-        //             Console.WriteLine();
-        //             Console.WriteLine("=== Emulator Handoff ===");
-        //             Console.WriteLine($"Entry Point: 0x{entryPoint:X8}");
-        //             Console.WriteLine($"DTB Address: 0x{dtbAddress:X8}");
-        //             Console.WriteLine($"Memory Entries: {bolt.GetMemoryMap().Count}");
+                    Console.WriteLine();
+                    Console.WriteLine("=== Emulator Handoff ===");
+                    Console.WriteLine($"Entry Point: 0x{entryPoint:X8}");
+                    Console.WriteLine($"DTB Address: 0x{dtbAddress:X8}");
+                    Console.WriteLine($"Memory Entries: {bolt.GetMemoryMap().Count}");
                     
-        //             // Simulate emulator execution
-        //             await SimulateEmulation(entryPoint);
-        //         }
+                    // Simulate emulator execution
+                    await SimulateEmulation(entryPoint);
+                }
 
-        //         Console.WriteLine("\nPress any key to exit...");
-        //         Console.ReadKey();
-        //     }
-        //     catch (Exception ex)
-        //     {
-        //         Console.WriteLine($"Demo failed: {ex.Message}");
-        //         Console.WriteLine($"Stack trace: {ex.StackTrace}");
-        //     }
-        // }
+                Console.WriteLine("\nPress any key to exit...");
+                Console.ReadKey();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Demo failed: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
+            }
+        }
 
         private static void CreateDemoFirmware()
         {

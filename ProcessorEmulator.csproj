@@ -1,74 +1,50 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <ItemGroup>
-    <Compile Include="*.cs" Exclude="FolderAnalysisWindow.cs" />
-    <Compile Include="Tools\*.cs" />
-    <Compile Include="Emulation\SparcEmulator.cs" />
-    <Compile Include="Emulation\StubEmulators.cs" />
-    <Compile Include="Emulation\HomebrewEmulator.cs" />
-    <Compile Include="Emulation\BoltBootloader.cs" />
-    <Compile Include="Emulation\SimpleBoltBridge.cs" />
-    <Compile Include="Emulation\EmulatorWindow.xaml.cs" />
-    <Compile Include="Emulation\PXRenderer.cs" />
-    <Compile Include="Emulation\DisplayWindow.cs" />
-    <Compile Include="Emulation\SoC\*.cs" />
-    <Compile Include="Emulation\SyncEngine\*.cs" />
-    <Page Include="App.xaml">
-      <Generator>MSBuild:Compile</Generator>
-      <SubType>Designer</SubType>
-    </Page>
-    <Page Include="MainWindow.xaml">
-      <Generator>MSBuild:Compile</Generator>
-      <SubType>Designer</SubType>
-    </Page>
-    <Page Include="ClassicStyle.xaml">
-      <Generator>MSBuild:Compile</Generator>
-      <SubType>Designer</SubType>
-    </Page>
-    <Page Include="Emulation\EmulatorWindow.xaml">
-      <Generator>MSBuild:Compile</Generator>
-      <SubType>Designer</SubType>
-    </Page>
-    <Page Include="FolderAnalysisWindow.xaml">
-      <Generator>MSBuild:Compile</Generator>
-      <SubType>Designer</SubType>
-    </Page>
-  </ItemGroup>
-
   <PropertyGroup>
-    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
-    <EnableDefaultPageItems>false</EnableDefaultPageItems>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net6.0-windows</TargetFramework>
-    <UseWindowsForms>true</UseWindowsForms>
     <UseWPF>true</UseWPF>
-    <!-- Enable native apphost so an .exe is generated -->
+    <!-- Remove WindowsForms unless explicitly required; WPF suffices -->
+    <UseWindowsForms>true</UseWindowsForms>
     <UseAppHost>true</UseAppHost>
     <RootNamespace>ProcessorEmulator</RootNamespace>
     <AssemblyName>ProcessorEmulator</AssemblyName>
+  <!-- Prevent automatic assembly info to avoid duplicate attributes with existing AssemblyInfo.cs -->
+  <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+  <!-- Avoid duplicate TargetFrameworkAttribute generation -->
+  <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
   </PropertyGroup>
-  <!-- Pre-build: kill any running instance to avoid file lock issues -->
+
+  <!-- Pre-build: ensure no stale running instance locking files (best-effort) -->
   <Target Name="EnsureNoRunningInstance" BeforeTargets="BeforeBuild">
-    <!-- Attempt to terminate any running ProcessorEmulator process -->
-  <!-- Attempt to terminate any running ProcessorEmulator process; suppress warnings -->
-  <!-- Terminate any running instance to avoid file locks -->
     <Exec Command="taskkill /F /IM ProcessorEmulator.exe >nul 2&gt;&amp;1" ContinueOnError="true" />
-  
-  
   </Target>
-  <!-- Using stub Unicorn definitions in Tools/BinaryTranslator.cs; no external package required -->
+
   <ItemGroup>
+    <PackageReference Include="System.Management" Version="6.0.0" />
     <PackageReference Include="SharpCompress" Version="0.30.0" />
-    <!-- DiscUtils for partition & filesystem support; latest available version -->
-    <!-- FAT filesystem support -->
     <PackageReference Include="DiscUtils.Fat" Version="0.16.13" />
-    <!-- SquashFS filesystem support -->
     <PackageReference Include="DiscUtils.SquashFs" Version="0.16.13" />
-    <!-- ISO9660 filesystem support -->
     <PackageReference Include="DiscUtils.Iso9660" Version="0.16.13" />
-    <!-- EXT filesystem support (ext2/3/4) -->
     <PackageReference Include="DiscUtils.Ext" Version="0.16.13" />
-    <!-- Real Unicorn binding for firmware emulation -->
     <PackageReference Include="UnicornEngine.Unicorn" Version="2.1.0" />
   </ItemGroup>
+
+  <!-- Exclude duplicate / legacy variants from compilation without deleting the files -->
+  <ItemGroup>
+    <Compile Remove="ArmHypervisor.cs" /> <!-- Prefer Emulation/ArmHypervisor.cs -->
+    <Compile Remove="Emulation\HomebrewEmulatorClean.cs" />
+    <Compile Remove="Emulation\HomebrewEmulator_New.cs" />
+    <Compile Remove="StandaloneBoltDemo.cs" />
+    <!-- Remove archived translator variant if causing symbol clashes -->
+    <Compile Remove="InstructionTranslator_Archive.cs" />
+  <!-- Remove duplicate manual (non-XAML) FolderAnalysisWindow to keep XAML-backed version -->
+  <Compile Remove="FolderAnalysisWindow.cs" />
+  </ItemGroup>
+
+  <!-- Ensure resources (icons, etc.) are available to pack URIs -->
+  <ItemGroup>
+    <Resource Include="Resources\**\*.*" />
+  </ItemGroup>
+
 </Project>

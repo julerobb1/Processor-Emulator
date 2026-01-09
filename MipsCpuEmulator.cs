@@ -1,110 +1,189 @@
 using System;
+using System.IO;
 using System.Windows;
 
 namespace ProcessorEmulator.Emulation
 {
-    public enum MipsChipsetProfile
-    {
-        Generic,
-        STi7101,
-        STi7111,
-        BCM7401,
-        BCM7403,
-        BCM7425,
-        BCM7445
-    }
-
     public class MipsCpuEmulator
     {
         private const int RegisterCount = 32;
-        private const int MemorySize = 1024 * 1024; // 1 MB of memory
 
         private uint[] registers;
-        private byte[] memory;
         private uint programCounter;
         private float[] floatingPointRegisters;
+        private readonly CP0 _cp0;
+        private readonly MipsBus _bus;
 
-        // Hardware module stubs
-        private VideoDecoderStub videoDecoder;
-        private AudioDecoderStub audioDecoder;
-        private SecurityModuleStub securityModule;
-        private PeripheralStub peripheralModule;
-
-        public MipsChipsetProfile ChipsetProfile { get; private set; }
-
-        public MipsCpuEmulator(MipsChipsetProfile profile = MipsChipsetProfile.Generic)
+        public MipsCpuEmulator(MipsBus bus, CP0 cp0)
         {
-            ChipsetProfile = profile;
+            _bus = bus;
+            _cp0 = cp0;
             registers = new uint[RegisterCount];
             floatingPointRegisters = new float[RegisterCount];
-            memory = new byte[MemorySize];
-            programCounter = 0x0;
-            // Initialize hardware stubs
-            videoDecoder = new VideoDecoderStub();
-            audioDecoder = new AudioDecoderStub();
-            securityModule = new SecurityModuleStub();
-            peripheralModule = new PeripheralStub();
+            programCounter = 0xBFC00000; // MIPS Reset Vector
         }
 
-        public void LoadProgram(byte[] program, uint startAddress)
+        // Execute a single fetch/decode/execute cycle (or multiple cycles)
+        public void Step(int count = 1)
         {
-            Array.Copy(program, 0, memory, startAddress, program.Length);
-            programCounter = startAddress;
-        }
-
-        public void Run()
-        {
-            while (true)
+            for (int i = 0; i < count; i++)
             {
+                // Check for and handle pending hardware interrupts before executing an instruction.
+                if (_cp0.ShouldTriggerInterrupt())
+                {
+                    TriggerException(0); // 0 is the code for Interrupt
+                    // The exception has changed the PC, so we continue to the next loop iteration
+                    // to fetch from the new interrupt handler address.
+                }
+
                 uint instruction = FetchInstruction();
                 DecodeAndExecute(instruction);
+
+                // Advance the internal timer by one cycle per instruction.
+                _cp0.UpdateTimer(1);
             }
         }
 
+        private void TriggerException(uint exceptionCode)
+        {
+            Console.WriteLine($"--- EXCEPTION: Code {exceptionCode} ---");
+        
+            // 1. Save current PC to CP0 EPC (Reg 14)
+            // If in a branch delay slot, EPC should point to the branch instruction, not the delay slot.
+            // (For simplicity, we are not handling branch delay slot exceptions perfectly here)
+            _cp0.EPC = programCounter;
+
+            // 2. Set Cause register with the exception code
+            // Clear existing code, then set new one.
+            _cp0.Cause = (_cp0.Cause & 0xFFFFFF83) | (exceptionCode << 2);
+
+            // 3. Set Status.EXL (Exception Level) bit to 1 to prevent nested interrupts
+            _cp0.Status |= (1 << 1);
+            
+            // 4. Jump to the General Exception Vector
+            // If BEV is set, use 0xBFC00380, otherwise use 0x80000180.
+            if ((_cp0.Status & (1 << 22)) != 0) // Check BEV bit
+            {
+                programCounter = 0xBFC00380;
+            }
+            else
+            {
+                programCounter = 0x80000180;
+            }
+        }
+
+
         private uint FetchInstruction()
         {
-            uint instruction = BitConverter.ToUInt32(memory, (int)programCounter);
+            uint instruction = _bus.Read32(programCounter);
+            Console.WriteLine($"PC: 0x{programCounter:X8} -> PADDR: 0x{_bus.Translate(programCounter):X8}, INSTR: 0x{instruction:X8}");
             programCounter += 4;
             return instruction;
+        }
+        
+        private uint FetchInstructionAt(uint vaddr)
+        {
+            return _bus.Read32(vaddr);
         }
 
         private void DecodeAndExecute(uint instruction)
         {
             uint opcode = (instruction >> 26) & 0x3F;
-            switch (opcode)
+            try
             {
-                case 0x00: // R-type instructions
-                    ExecuteRType(instruction);
-                    break;
-                case 0x08: // addi
-                    ExecuteAddImmediate(instruction);
-                    break;
-                case 0x0C: // andi
-                    ExecuteAndImmediate(instruction);
-                    break;
-                case 0x0D: // ori
-                    ExecuteOrImmediate(instruction);
-                    break;
-                case 0x0E: // xori
-                    ExecuteXorImmediate(instruction);
-                    break;
-                case 0x23: // lw
-                    ExecuteLoadWord(instruction);
-                    break;
-                case 0x2B: // sw
-                    ExecuteStoreWord(instruction);
-                    break;
-                case 0x04: // beq
-                    ExecuteBranchEqual(instruction);
-                    break;
-                case 0x05: // bne
-                    ExecuteBranchNotEqual(instruction);
-                    break;
-                // ...add more opcodes as needed...
-                default:
-                    throw new NotSupportedException($"Opcode {opcode:X2} not supported.");
+                switch (opcode)
+                {
+                    case 0x00: // R-type instructions
+                        ExecuteRType(instruction);
+                        break;
+                    case 0x10: // COP0 instructions
+                        ExecuteCOP0(instruction);
+                        break;
+                    case 0x08: // addi
+                        ExecuteAddImmediate(instruction);
+                        break;
+                    case 0x0C: // andi
+                        ExecuteAndImmediate(instruction);
+                        break;
+                    case 0x0D: // ori
+                        ExecuteOrImmediate(instruction);
+                        break;
+                    case 0x0E: // xori
+                        ExecuteXorImmediate(instruction);
+                        break;
+                    case 0x23: // lw
+                        ExecuteLoadWord(instruction);
+                        break;
+                    case 0x2B: // sw
+                        ExecuteStoreWord(instruction);
+                        break;
+                    case 0x04: // beq
+                        ExecuteBranchEqual(instruction);
+                        break;
+                    case 0x05: // bne
+                        ExecuteBranchNotEqual(instruction);
+                        break;
+                    // ...add more opcodes as needed...
+                    default:
+                        TriggerException(10); // 10 is Reserved Instruction exception
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                // Catching emulator-level errors, not guest exceptions.
+                HandleEmulatorError(ex.Message);
             }
         }
+
+        // MTC0: Move Control to Coprocessor 0 (Write to CP0)
+        // Format: mtc0 $rt, $rd
+        public void Execute_MTC0(uint rt, uint rd)
+        {
+            uint value = registers[rt]; // Get value from general purpose register
+            _cp0.WriteRegister((int)rd, value);
+        }
+
+        // MFC0: Move From Coprocessor 0 (Read from CP0)
+        // Format: mfc0 $rt, $rd
+        public void Execute_MFC0(uint rt, uint rd)
+        {
+            uint value = _cp0.ReadRegister((int)rd);
+            registers[rt] = value; // Put CP0 value into general purpose register
+        }
+
+        private void ExecuteCOP0(uint instruction)
+        {
+            uint rs = (instruction >> 21) & 0x1F;
+            
+            // Check for ERET instruction
+            if (rs == 0x10 && (instruction & 0x3F) == 0x18)
+            {
+                // ERET: Exception Return
+                // 1. Clear Status.EXL bit
+                _cp0.Status &= ~(1u << 1); 
+                // 2. Jump back to where the exception occurred
+                programCounter = _cp0.EPC;
+                return;
+            }
+            
+            uint rt = (instruction >> 16) & 0x1F;
+            uint rd = (instruction >> 11) & 0x1F;
+
+            switch (rs)
+            {
+                case 0x00: // MFC0
+                    Execute_MFC0(rt, rd);
+                    break;
+                case 0x04: // MTC0
+                    Execute_MTC0(rt, rd);
+                    break;
+                default:
+                    TriggerException(10); // Reserved Instruction
+                    break;
+            }
+        }
+
 
         private void ExecuteRType(uint instruction)
         {
@@ -114,23 +193,41 @@ namespace ProcessorEmulator.Emulation
             uint rd = (instruction >> 11) & 0x1F;
             uint shamt = (instruction >> 6) & 0x1F;
 
-            registers[rd] = funct switch
+            // Register 0 is hardwired to zero
+            if (rd == 0) return;
+
+            switch (funct)
             {
-                // add
-                0x20 => registers[rs] + registers[rt],
-                // sub
-                0x22 => registers[rs] - registers[rt],
-                // and
-                0x24 => registers[rs] & registers[rt],
-                // or
-                0x25 => registers[rs] | registers[rt],
-                // nor
-                0x27 => ~(registers[rs] | registers[rt]),
-                // sll
-                0x00 => registers[rt] << (int)shamt,
-                // srl
-                0x02 => registers[rt] >> (int)shamt,
-                _ => throw new NotSupportedException($"Function {funct:X2} not supported."),
+                case 0x20: // add
+                    registers[rd] = registers[rs] + registers[rt];
+                    break;
+                case 0x22: // sub
+                    registers[rd] = registers[rs] - registers[rt];
+                    break;
+                case 0x24: // and
+                    registers[rd] = registers[rs] & registers[rt];
+                    break;
+                case 0x25: // or
+                    registers[rd] = registers[rs] | registers[rt];
+                    break;
+                case 0x27: // nor
+                    registers[rd] = ~(registers[rs] | registers[rt]);
+                    break;
+                case 0x00: // sll
+                    registers[rd] = registers[rt] << (int)shamt;
+                    break;
+                case 0x02: // srl
+                    registers[rd] = registers[rt] >> (int)shamt;
+                    break;
+                case 0x08: // jr
+                    ExecuteJumpRegister(instruction);
+                    break;
+                case 0x0C: // syscall
+                     TriggerException(8); // Syscall exception
+                     break;
+                default:
+                    TriggerException(10); // Reserved Instruction
+                    break;
             };
         }
 
@@ -141,7 +238,10 @@ namespace ProcessorEmulator.Emulation
             int offset = (short)(instruction & 0xFFFF);
 
             uint address = registers[baseReg] + (uint)offset;
-            registers[rt] = BitConverter.ToUInt32(memory, (int)address);
+            if (rt != 0) // writes to R0 are discarded
+            {
+                registers[rt] = _bus.Read32(address);
+            }
         }
 
         private void ExecuteStoreWord(uint instruction)
@@ -151,121 +251,49 @@ namespace ProcessorEmulator.Emulation
             int offset = (short)(instruction & 0xFFFF);
 
             uint address = registers[baseReg] + (uint)offset;
-            byte[] data = BitConverter.GetBytes(registers[rt]);
-            Array.Copy(data, 0, memory, (int)address, 4);
+            _bus.Write32(address, registers[rt]);
         }
 
         private void ExecuteBranchEqual(uint instruction)
         {
+            // Note: This is a simplified implementation that does NOT handle the branch delay slot correctly
+            // for exceptions. A full implementation would require more complex pipeline management.
             uint rs = (instruction >> 21) & 0x1F;
             uint rt = (instruction >> 16) & 0x1F;
             int offset = (short)(instruction & 0xFFFF);
-
+            
+            uint branchPC = programCounter; // PC is already advanced to next instruction
             if (registers[rs] == registers[rt])
             {
-                programCounter += (uint)(offset << 2);
+                programCounter = (branchPC) + (uint)(offset << 2);
             }
         }
 
         private void ExecuteBranchNotEqual(uint instruction)
         {
+            // Note: Simplified implementation without correct delay slot exception handling.
             uint rs = (instruction >> 21) & 0x1F;
             uint rt = (instruction >> 16) & 0x1F;
             int offset = (short)(instruction & 0xFFFF);
 
+            uint branchPC = programCounter;
             if (registers[rs] != registers[rt])
             {
-                programCounter += (uint)(offset << 2);
+                programCounter = (branchPC) + (uint)(offset << 2);
             }
         }
-
-        private void ExecuteFloatingPoint(uint instruction)
+        
+        private void ExecuteJumpRegister(uint instruction)
         {
-            uint fmt = (instruction >> 21) & 0x1F;
-            uint ft = (instruction >> 16) & 0x1F;
-            uint fs = (instruction >> 11) & 0x1F;
-            uint fd = (instruction >> 6) & 0x1F;
-            uint funct = instruction & 0x3F;
-
-            floatingPointRegisters[fd] = funct switch
-            {
-                // add.s
-                0x00 => floatingPointRegisters[fs] + floatingPointRegisters[ft],
-                // sub.s
-                0x01 => floatingPointRegisters[fs] - floatingPointRegisters[ft],
-                // mul.s
-                0x02 => floatingPointRegisters[fs] * floatingPointRegisters[ft],
-                // div.s
-                0x03 => floatingPointRegisters[fs] / floatingPointRegisters[ft],
-                _ => throw new NotSupportedException($"Floating-point function {funct:X2} not supported."),
-            };
-        }
-
-        private void ExecuteDSPInstruction(uint instruction)
-        {
-            uint funct = instruction & 0x3F;
+            // Note: Simplified implementation without correct delay slot exception handling.
             uint rs = (instruction >> 21) & 0x1F;
-            uint rt = (instruction >> 16) & 0x1F;
-            uint rd = (instruction >> 11) & 0x1F;
-
-            switch (funct)
-            {
-                case 0x20: // madd (Multiply-Add)
-                    registers[rd] += (uint)((int)registers[rs] * (int)registers[rt]);
-                    break;
-                case 0x21: // msub (Multiply-Subtract)
-                    registers[rd] -= (uint)((int)registers[rs] * (int)registers[rt]);
-                    break;
-                default:
-                    HandleException($"Unsupported DSP function: {funct:X2}");
-                    break;
-            }
+            programCounter = registers[rs];
         }
 
-        private void ExecuteSystemInstruction(uint instruction)
+        private static void HandleEmulatorError(string message)
         {
-            uint funct = instruction & 0x3F;
-
-            switch (funct)
-            {
-                case 0x0C: // syscall
-                    HandleSyscall();
-                    break;
-                case 0x08: // jr (jump register)
-                    uint rs = (instruction >> 21) & 0x1F;
-                    programCounter = registers[rs];
-                    break;
-                default:
-                    throw new NotSupportedException($"System function {funct:X2} not supported.");
-            }
-        }
-
-        private void HandleSyscall()
-        {
-            uint syscallCode = registers[2]; // $v0 register
-            switch (syscallCode)
-            {
-                case 1: // Print integer
-                    Console.WriteLine(registers[4]); // $a0 register
-                    break;
-                case 4: // Print string
-                    uint address = registers[4];
-                    while (memory[address] != 0)
-                    {
-                        Console.Write((char)memory[address]);
-                        address++;
-                    }
-                    Console.WriteLine();
-                    break;
-                default:
-                    throw new NotSupportedException($"Syscall {syscallCode} not supported.");
-            }
-        }
-
-        private static void HandleException(string message)
-        {
-            Console.WriteLine($"Exception: {message}");
-            // Implement exception handling logic here
+            Console.WriteLine($"Emulator Error: {message}");
+            // In a real app, this might show a dialog or stop the emulation.
         }
 
         private void ExecuteAddImmediate(uint instruction)
@@ -273,7 +301,10 @@ namespace ProcessorEmulator.Emulation
             uint rs = (instruction >> 21) & 0x1F;
             uint rt = (instruction >> 16) & 0x1F;
             int imm = (short)(instruction & 0xFFFF);
-            registers[rt] = registers[rs] + (uint)imm;
+            if (rt != 0)
+            {
+                registers[rt] = registers[rs] + (uint)imm;
+            }
         }
 
         private void ExecuteAndImmediate(uint instruction)
@@ -281,7 +312,10 @@ namespace ProcessorEmulator.Emulation
             uint rs = (instruction >> 21) & 0x1F;
             uint rt = (instruction >> 16) & 0x1F;
             uint imm = instruction & 0xFFFF;
-            registers[rt] = registers[rs] & imm;
+            if (rt != 0)
+            {
+                registers[rt] = registers[rs] & imm;
+            }
         }
 
         private void ExecuteOrImmediate(uint instruction)
@@ -289,7 +323,10 @@ namespace ProcessorEmulator.Emulation
             uint rs = (instruction >> 21) & 0x1F;
             uint rt = (instruction >> 16) & 0x1F;
             uint imm = instruction & 0xFFFF;
-            registers[rt] = registers[rs] | imm;
+            if (rt != 0)
+            {
+                registers[rt] = registers[rs] | imm;
+            }
         }
 
         private void ExecuteXorImmediate(uint instruction)
@@ -297,90 +334,24 @@ namespace ProcessorEmulator.Emulation
             uint rs = (instruction >> 21) & 0x1F;
             uint rt = (instruction >> 16) & 0x1F;
             uint imm = instruction & 0xFFFF;
-            registers[rt] = registers[rs] ^ imm;
-        }
-
-        // Dispatcher interface for unified translation
-        public void DispatchInstruction(uint instruction, string targetArch)
-        {
-            if (targetArch == "MIPS")
+            if (rt != 0)
             {
-                DecodeAndExecute(instruction);
-            }
-            else
-            {
-                // Translate to target architecture (e.g., x64) and execute
-                // Placeholder: Implement translation logic here
+                registers[rt] = registers[rs] ^ imm;
             }
         }
 
-        // Connect UI input (example for WPF)
-        public void ConnectUIInput(Window window)
+        public uint GetRegister(int index)
         {
-            window.KeyDown += (s, e) => peripheralModule.HandleKeyboardInput((ConsoleKey)Enum.Parse(typeof(ConsoleKey), e.Key.ToString(), true));
-            // Mouse click mapping can be added as needed
-        }
-    }
-
-    // Hardware module stubs
-    public class VideoDecoderStub { /* Emulate video hardware registers and behavior */ }
-    public class AudioDecoderStub { /* Emulate audio hardware registers and behavior */ }
-    public class SecurityModuleStub { /* Emulate smartcard, encryption, etc. */ }
-    public class PeripheralStub
-    {
-        public event Action<string> RemoteButtonPressed;
-
-        public void PressButton(string button)
-        {
-            RemoteButtonPressed?.Invoke(button);
+            if (index < 0 || index >= registers.Length) throw new ArgumentOutOfRangeException(nameof(index));
+            return registers[index];
         }
 
-        // Map keyboard keys to remote buttons (full mapping)
-        public void HandleKeyboardInput(ConsoleKey key)
+        public void SetRegister(int index, uint value)
         {
-            switch (key)
-            {
-                case ConsoleKey.UpArrow: PressButton("UP"); break;
-                case ConsoleKey.DownArrow: PressButton("DOWN"); break;
-                case ConsoleKey.LeftArrow: PressButton("LEFT"); break;
-                case ConsoleKey.RightArrow: PressButton("RIGHT"); break;
-                case ConsoleKey.Enter: PressButton("OK"); break;
-                case ConsoleKey.Escape: PressButton("EXIT"); break;
-                case ConsoleKey.M: PressButton("MENU"); break;
-                case ConsoleKey.G: PressButton("GUIDE"); break;
-                case ConsoleKey.I: PressButton("INFO"); break;
-                case ConsoleKey.D1: PressButton("1"); break;
-                case ConsoleKey.D2: PressButton("2"); break;
-                case ConsoleKey.D3: PressButton("3"); break;
-                case ConsoleKey.D4: PressButton("4"); break;
-                case ConsoleKey.D5: PressButton("5"); break;
-                case ConsoleKey.D6: PressButton("6"); break;
-                case ConsoleKey.D7: PressButton("7"); break;
-                case ConsoleKey.D8: PressButton("8"); break;
-                case ConsoleKey.D9: PressButton("9"); break;
-                case ConsoleKey.D0: PressButton("0"); break;
-                case ConsoleKey.P: PressButton("PAUSE"); break;
-                case ConsoleKey.Spacebar: PressButton("PLAY"); break;
-                case ConsoleKey.F: PressButton("FF"); break;
-                case ConsoleKey.R: PressButton("REW"); break;
-                case ConsoleKey.S: PressButton("STOP"); break;
-                // ...add more as needed...
-            }
+            if (index < 0 || index >= registers.Length) throw new ArgumentOutOfRangeException(nameof(index));
+            registers[index] = value;
         }
 
-        public void HandleMouseClick()
-        {
-            PressButton("OK");
-        }
-
-        // Connect UI input (example for WPF)
-        // Uncomment the following method and add 'using System.Windows;' if using WPF.
-        /*
-        public void ConnectUIInput(System.Windows.Window window)
-        {
-            window.KeyDown += (s, e) => HandleKeyboardInput((ConsoleKey)Enum.Parse(typeof(ConsoleKey), e.Key.ToString(), true));
-            // Mouse click mapping can be added as needed
-        }
-        */
+        public uint ProgramCounter => programCounter;
     }
 }

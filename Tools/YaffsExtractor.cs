@@ -56,8 +56,8 @@ namespace ProcessorEmulator.Tools
                 int objId = BitConverter.ToInt32(spare, 0);
                 int chunkId = BitConverter.ToInt32(spare, 4);
                 int bytesUsed = BitConverter.ToInt32(spare, 8);
-                int parentId = BitConverter.ToInt32(spare, 12);
                 int fileLength = BitConverter.ToInt32(spare, 16);
+                    // Removed unused variable 'parentId' per Codacy warning
 
                 if (chunkId == -1)
                 {

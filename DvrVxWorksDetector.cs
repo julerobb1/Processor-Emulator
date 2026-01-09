@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Linq;
+using System.IO;
 
 namespace ProcessorEmulator.Tools.FileSystems
 {
@@ -9,29 +11,34 @@ namespace ProcessorEmulator.Tools.FileSystems
         private struct VxWorksVersion
         {
             public string Version;
-            public uint Signature;
-            public uint BootSignature;
+            public long Signature;
+            public long BootSignature;
             public string DeviceType; // e.g., "Hopper", "Joey", "HR54", etc.
+            public VxWorksVersion(string version, long signature, long bootSignature, string deviceType)
+            {
+                Version = version;
+                Signature = signature;
+                BootSignature = bootSignature;
+                DeviceType = deviceType;
+            }
         }
 
-        private readonly Dictionary<uint, VxWorksVersion> knownVersions = new()
+        private readonly Dictionary<long, VxWorksVersion> knownVersions = new()
         {
-            // Dish Network Hopper signatures
-            { 0x27051956, new VxWorksVersion { Version = "6.9", Signature = 0x27051956, BootSignature = 0x0FF0AD12, DeviceType = "Hopper3" } },
-            { 0x27051957, new VxWorksVersion { Version = "6.9.4", Signature = 0x27051957, BootSignature = 0x0FF0AD13, DeviceType = "Hopper" } },
-            
-            // DIRECTV signatures
-            { 0x27051958, new VxWorksVersion { Version = "6.8", Signature = 0x27051958, BootSignature = 0x0FF0AD14, DeviceType = "HR54" } },
-            { 0x27051959, new VxWorksVersion { Version = "6.9.3", Signature = 0x27051959, BootSignature = 0x0FF0AD15, DeviceType = "HR44" } },
-            
-            // Generic DVR signatures
-            { 0x27051960, new VxWorksVersion { Version = "6.7", Signature = 0x27051960, BootSignature = 0x0FF0AD16, DeviceType = "Generic" } }
+            { 0x27051956L, new VxWorksVersion("6.9", 0x27051956L, 0x0FF0AD12L, "Hopper3") },
+            { 0x27051957L, new VxWorksVersion("6.9.4", 0x27051957L, 0x0FF0AD13L, "Hopper") },
+            { 0x27051960L, new VxWorksVersion("6.7", 0x27051960L, 0x0FF0AD16L, "Generic") }
         };
 
         public struct EncryptionInfo
         {
             public string Algorithm;
-            public int KeySize;
+            private int keySize;
+            public int KeySize
+            {
+                get { return keySize; }
+                set { keySize = value; }
+            }
             public byte[] KeyMaterial;
             public byte[] IV;
         }
@@ -39,13 +46,11 @@ namespace ProcessorEmulator.Tools.FileSystems
         public (string version, string deviceType, EncryptionInfo encInfo) DetectVersion(byte[] firmware)
         {
             // Check for VxWorks signatures at known offsets
-            uint[] commonOffsets = { 0x0, 0x200, 0x400, 0x800, 0x1000 };
-            
-            foreach (uint offset in commonOffsets)
+            long[] commonOffsets = { 0x0, 0x200, 0x400, 0x800, 0x1000 };
+            foreach (long offset in commonOffsets)
             {
-                if (offset + 4 > firmware.Length) continue;
-                
-                uint signature = BitConverter.ToUInt32(firmware, (int)offset);
+                if (offset + 8 > firmware.Length) continue;
+                long signature = BitConverter.ToInt64(firmware, (int)offset);
                 if (knownVersions.TryGetValue(signature, out VxWorksVersion version))
                 {
                     var encInfo = DetectEncryption(firmware, version);
@@ -116,8 +121,10 @@ namespace ProcessorEmulator.Tools.FileSystems
             string version = Encoding.ASCII.GetString(versionBytes);
             // Clean up the version string
             int nullChar = version.IndexOf('\0');
-            if (nullChar >= 0)
-                version = version.Substring(0, nullChar);
+                if (nullChar >= 0)
+                {
+                    version = version.Substring(0, nullChar);
+                }
             
             return version.Trim();
         }

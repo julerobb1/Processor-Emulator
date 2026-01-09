@@ -18,7 +18,9 @@ namespace ProcessorEmulator.Emulation
         private Dictionary<string, object> deviceTree;
         private bool socInitialized;
         private uint entryPoint;
-        private string bootCommand;
+#pragma warning disable CS0414 // Field is assigned but never used
+        private string bootCommand; // Reserved for future boot command processing
+#pragma warning restore CS0414
 
         // BCM7449 memory layout constants
         private const uint RAM_BASE = 0x00000000;

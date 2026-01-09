@@ -2,33 +2,35 @@ name: Nightly Build
 
 on:
   schedule:
-    # every day at 3am UTC
-    - cron: '0 3 * * *'
+    # every day at midnight UTC
+    - cron: '0 0 * * *'
 
 jobs:
-  build:
-    name: Daily Windows Build
+  nightly:
+    name: Nightly Dev Build
     runs-on: windows-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v3
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '6.0.x'
 
       - name: Restore dependencies
-        run: dotnet restore
+        run: dotnet restore ProcessorEmulator.csproj
 
-      - name: Build solution
-        run: dotnet build ProcessorEmulator.csproj --configuration Release --no-restore
+      - name: Build and Test (Debug)
+        run: |
+          dotnet build ProcessorEmulator.csproj --configuration Debug --no-restore
+          dotnet test ProcessorEmulator.csproj --configuration Debug --no-build --verbosity normal
 
-      - name: Publish artifacts
-        run: dotnet publish ProcessorEmulator.csproj --configuration Release --output artifacts
+      - name: Publish Nightly Artifacts
+        run: dotnet publish ProcessorEmulator.csproj --configuration Debug --output ./nightly-build
 
-      - name: Upload nightly artifact
+      - name: Upload Nightly Artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: nightly-build
-          path: artifacts
+          name: nightly-build-${{ github.run_number }}
+          path: ./nightly-build
