@@ -41,6 +41,12 @@ namespace ProcessorEmulator
             _terminal.ScrollToCaret();
         }
 
+        // Append a single character (used as a callback from UART/OnCharReceived)
+        public void AppendChar(char c)
+        {
+            AppendText(c.ToString());
+        }
+
         // Intercepts key presses to send to the emulated UART.
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
         {
