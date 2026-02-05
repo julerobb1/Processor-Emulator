@@ -40,6 +40,18 @@ namespace ProcessorEmulator.Emulation
 
         public uint PRId { get; set; }
 
+        // TLB Entry structure
+        public struct TLBEntry
+        {
+            public uint EntryHi;    // Virtual Page Number, ASID, VPN2
+            public uint EntryLo0;   // PFN, C, D, V, G for even page
+            public uint EntryLo1;   // PFN, C, D, V, G for odd page
+            public uint PageMask;   // Page size
+        }
+
+        private const int TLB_ENTRIES = 16; // MIPS typically has 16 or 32 TLB entries
+        private TLBEntry[] _tlb = new TLBEntry[TLB_ENTRIES];
+
         // Status Register bits
         private const uint STATUS_IE_BIT = 1 << 0;  // Interrupt Enable
         private const uint STATUS_EXL_BIT = 1 << 1; // Exception Level
@@ -166,6 +178,107 @@ namespace ProcessorEmulator.Emulation
             uint interruptPending = (Cause >> 8) & 0xFF;
 
             return interruptsEnabled && !inException && (interruptPending & interruptMask) != 0;
+        }
+
+        // MIPS TLB operations
+
+        /// <summary>
+        /// Reads the TLB entry specified by IndexReg into EntryHi, EntryLo0, EntryLo1, and PageMask.
+        /// </summary>
+        public void ReadTLBEntry()
+        {
+            int index = (int)(registers[IndexReg] & 0x1F); // Index is 5 bits
+            if (index < TLB_ENTRIES)
+            {
+                EntryHi = _tlb[index].EntryHi;
+                EntryLo0 = _tlb[index].EntryLo0;
+                EntryLo1 = _tlb[index].EntryLo1;
+                registers[PageMaskReg] = _tlb[index].PageMask;
+                Console.WriteLine($"CP0 TLBR: Read TLB entry {index}");
+            }
+            else
+            {
+                Console.WriteLine($"CP0 TLBR: Invalid TLB index {index}");
+                // In a real CPU, this might cause an exception or return garbage.
+            }
+        }
+
+        /// <summary>
+        /// Writes EntryHi, EntryLo0, EntryLo1, and PageMask to the TLB entry specified by IndexReg.
+        /// </summary>
+        public void WriteTLBEntryIndexed()
+        {
+            int index = (int)(registers[IndexReg] & 0x1F); // Index is 5 bits
+            if (index < TLB_ENTRIES)
+            {
+                _tlb[index].EntryHi = EntryHi;
+                _tlb[index].EntryLo0 = EntryLo0;
+                _tlb[index].EntryLo1 = EntryLo1;
+                _tlb[index].PageMask = registers[PageMaskReg];
+                Console.WriteLine($"CP0 TLBWI: Wrote TLB entry {index}");
+            }
+            else
+            {
+                Console.WriteLine($"CP0 TLBWI: Invalid TLB index {index}");
+            }
+        }
+
+        /// <summary>
+        /// Writes EntryHi, EntryLo0, EntryLo1, and PageMask to a random TLB entry.
+        /// (Simplified: for now, it's not truly random, just uses a fixed index after wired entries)
+        /// </summary>
+        public void WriteTLBEntryRandom()
+        {
+            // MIPS architecture has 'wired' entries that cannot be overwritten randomly.
+            // For simplicity, we'll assume a fixed set of wired entries (e.g., 0-7)
+            // and use a very simple 'random' for now (e.g., just write to index 8).
+            // A real Random register would decrement and wrap around.
+            int index = 8; // Example: Fixed non-wired entry
+            if (index < TLB_ENTRIES)
+            {
+                _tlb[index].EntryHi = EntryHi;
+                _tlb[index].EntryLo0 = EntryLo0;
+                _tlb[index].EntryLo1 = EntryLo1;
+                _tlb[index].PageMask = registers[PageMaskReg];
+                Console.WriteLine($"CP0 TLBWR: Wrote TLB entry randomly at {index}");
+            }
+            else
+            {
+                Console.WriteLine($"CP0 TLBWR: No random entry available (or TLB_ENTRIES is too small)");
+            }
+        }
+
+        /// <summary>
+        /// Searches the TLB for an entry matching EntryHi. If found, its index is written to IndexReg.
+        /// </summary>
+        public void ProbeTLB()
+        {
+            // MIPS TLBP instruction uses EntryHi to find a matching entry in the TLB.
+            // If found, Index register is updated with the entry's index.
+            // If not found, the P bit (bit 31) of Index register is set.
+
+            uint vpn2 = (EntryHi >> 13) & 0x7FFFF; // VPN2 from EntryHi (bits 13-31)
+            uint asid = EntryHi & 0xFF; // ASID from EntryHi (bits 0-7)
+
+            for (int i = 0; i < TLB_ENTRIES; i++)
+            {
+                // Extract VPN2 and ASID from stored TLB entry
+                uint tlbVpn2 = (_tlb[i].EntryHi >> 13) & 0x7FFFF;
+                uint tlbAsid = _tlb[i].EntryHi & 0xFF;
+
+                // For simplicity, ignore ASID for now (assume all entries are global or ASID matches)
+                // A real implementation would check the G bit and ASID match
+                if (tlbVpn2 == vpn2) // && (tlbAsid == asid || (_tlb[i].EntryLo0 & 1) != 0 || (_tlb[i].EntryLo1 & 1) != 0)) // Check G bit
+                {
+                    registers[IndexReg] = (uint)i;
+                    Console.WriteLine($"CP0 TLBP: Found match at index {i}");
+                    return;
+                }
+            }
+
+            // No match found, set P bit (bit 31) in IndexReg
+            registers[IndexReg] = 0x80000000;
+            Console.WriteLine("CP0 TLBP: No match found");
         }
     }
 }
