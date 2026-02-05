@@ -96,11 +96,20 @@ namespace ProcessorEmulator.Emulation
                     case 0x00: // R-type instructions
                         ExecuteRType(instruction);
                         break;
+                    case 0x02: // j
+                        ExecuteJ(instruction);
+                        break;
+                    case 0x03: // jal
+                        ExecuteJal(instruction);
+                        break;
                     case 0x10: // COP0 instructions
                         ExecuteCOP0(instruction);
                         break;
                     case 0x08: // addi
                         ExecuteAddImmediate(instruction);
+                        break;
+                    case 0x0A: // slti
+                        ExecuteSlti(instruction);
                         break;
                     case 0x0C: // andi
                         ExecuteAndImmediate(instruction);
@@ -110,6 +119,9 @@ namespace ProcessorEmulator.Emulation
                         break;
                     case 0x0E: // xori
                         ExecuteXorImmediate(instruction);
+                        break;
+                    case 0x0F: // lui
+                        ExecuteLui(instruction);
                         break;
                     case 0x23: // lw
                         ExecuteLoadWord(instruction);
@@ -134,6 +146,18 @@ namespace ProcessorEmulator.Emulation
                 // Catching emulator-level errors, not guest exceptions.
                 HandleEmulatorError(ex.Message);
             }
+        }
+
+        private void ExecuteJ(uint instruction)
+        {
+            uint target = instruction & 0x3FFFFFF;
+            programCounter = (programCounter & 0xF0000000) | (target << 2);
+        }
+
+        private void ExecuteJal(uint instruction)
+        {
+            registers[31] = programCounter + 4; // Return address is the instruction after the delay slot
+            ExecuteJ(instruction);
         }
 
         // MTC0: Move Control to Coprocessor 0 (Write to CP0)
@@ -229,6 +253,27 @@ namespace ProcessorEmulator.Emulation
                     TriggerException(10); // Reserved Instruction
                     break;
             };
+        }
+
+        private void ExecuteLui(uint instruction)
+        {
+            uint rt = (instruction >> 16) & 0x1F;
+            uint imm = instruction & 0xFFFF;
+            if (rt != 0)
+            {
+                registers[rt] = imm << 16;
+            }
+        }
+
+        private void ExecuteSlti(uint instruction)
+        {
+            uint rs = (instruction >> 21) & 0x1F;
+            uint rt = (instruction >> 16) & 0x1F;
+            int imm = (short)(instruction & 0xFFFF);
+            if (rt != 0)
+            {
+                registers[rt] = (int)registers[rs] < imm ? 1u : 0u;
+            }
         }
 
         private void ExecuteLoadWord(uint instruction)

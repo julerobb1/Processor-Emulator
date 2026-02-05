@@ -162,6 +162,11 @@ namespace ProcessorEmulator.Emulation
             {
                 executed = ExecuteLoadStore(instruction);
             }
+            // Load/Store Multiple Instructions (bits 27-25 = 100)
+            else if ((instruction & 0x0E000000) == 0x08000000)
+            {
+                executed = ExecuteLoadStoreMultiple(instruction);
+            }
             // Branch Instructions (bits 27-25 = 101)
             else if ((instruction & 0x0E000000) == 0x0A000000)
             {
@@ -210,14 +215,40 @@ namespace ProcessorEmulator.Emulation
                     result = (uint)addResult;
                     carryOut = addResult > 0xFFFFFFFF;
                     break;
+                case 0x8: // TST
+                    result = rnValue & operand2;
+                    setFlags = true;
+                    rd = 16; // Don't write to any register
+                    break;
+                case 0x9: // TEQ
+                    result = rnValue ^ operand2;
+                    setFlags = true;
+                    rd = 16; // Don't write to any register
+                    break;
                 case 0xA: // CMP (SUB but don't store result)
                     result = rnValue - operand2;
                     carryOut = rnValue >= operand2;
                     setFlags = true; // CMP always sets flags
                     rd = 16; // Don't write to any register
                     break;
+                case 0xB: // CMN
+                    long cmnResult = (long)rnValue + operand2;
+                    result = (uint)cmnResult;
+                    carryOut = cmnResult > 0xFFFFFFFF;
+                    setFlags = true;
+                    rd = 16; // Don't write to any register
+                    break;
+                case 0xC: // ORR
+                    result = rnValue | operand2;
+                    break;
                 case 0xD: // MOV
                     result = operand2;
+                    break;
+                case 0xE: // BIC
+                    result = rnValue & ~operand2;
+                    break;
+                case 0xF: // MVN
+                    result = ~operand2;
                     break;
                 default:
                     Debug.WriteLine($"[HV] Unhandled data processing opcode: 0x{opcode:X}");
@@ -297,6 +328,79 @@ namespace ProcessorEmulator.Emulation
             return true;
         }
         
+        private bool ExecuteLoadStoreMultiple(uint instruction)
+        {
+            bool isLoad = (instruction & 0x00100000) != 0; // L bit
+            bool writeBack = (instruction & 0x00200000) != 0; // W bit
+            bool increment = (instruction & 0x00800000) != 0; // U bit
+            bool preIndex = (instruction & 0x01000000) != 0; // P bit
+            uint rn = (instruction >> 16) & 0xF; // Base register
+            uint regList = instruction & 0xFFFF;
+
+            uint address = registers[rn];
+            int regCount = 0;
+            for (int i = 0; i < 16; i++)
+            {
+                if ((regList & (1 << i)) != 0)
+                {
+                    regCount++;
+                }
+            }
+
+            if (!increment) // Decrement
+            {
+                address -= (uint)(regCount * 4);
+            }
+            if (preIndex)
+            {
+                if (increment)
+                {
+                    address += 4;
+                }
+                else
+                {
+                    // address is already correct
+                }
+            }
+
+            for (int i = 0; i < 16; i++)
+            {
+                if ((regList & (1 << i)) != 0)
+                {
+                    if (isLoad)
+                    {
+                        registers[i] = ReadMemory32(address);
+                        Debug.WriteLine($"[HV] LDM: R{i} = 0x{registers[i]:X8} from [0x{address:X8}]");
+                    }
+                    else
+                    {
+                        WriteMemory32(address, registers[i]);
+                        Debug.WriteLine($"[HV] STM: [0x{address:X8}] = 0x{registers[i]:X8}");
+                    }
+                    address += 4;
+                }
+            }
+
+            if (writeBack)
+            {
+                if (increment)
+                {
+                    registers[rn] += (uint)(regCount * 4);
+                }
+                else
+                {
+                    registers[rn] -= (uint)(regCount * 4);
+                }
+            }
+
+            if (!isLoad || (regList & (1 << 15)) == 0)
+            {
+                registers[15] += 4;
+            }
+            
+            return true;
+        }
+
         private bool ExecuteBranch(uint instruction)
         {
             bool isLink = (instruction & 0x01000000) != 0; // L bit
@@ -451,6 +555,12 @@ namespace ProcessorEmulator.Emulation
                 uint rn = (instruction >> 16) & 0xF;
                 
                 return isLoad ? $"LDR R{rd}, [R{rn}]" : $"STR R{rd}, [R{rn}]";
+            }
+            else if ((instruction & 0x0E000000) == 0x08000000) // Load/Store Multiple
+            {
+                bool isLoad = (instruction & 0x00100000) != 0;
+                uint rn = (instruction >> 16) & 0xF;
+                return isLoad ? $"LDM R{rn}" : $"STM R{rn}";
             }
             else if ((instruction & 0x0E000000) == 0x0A000000) // Branch
             {
