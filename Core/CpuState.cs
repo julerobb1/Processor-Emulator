@@ -31,6 +31,31 @@ namespace ProcessorEmulator.Core
             }
         }
 
+        // Compatibility overload: accept legacy ProcessorEmulator.MemoryRegion array
+        public CpuState(ProcessorEmulator.MemoryRegion[] legacyMemoryMap, bool isLittleEndian, ulong startPC = 0)
+        {
+            var converted = new List<ProcessorEmulator.Core.Emulation.MemoryRegion>();
+            if (legacyMemoryMap != null)
+            {
+                foreach (var lm in legacyMemoryMap)
+                {
+                    ulong start = lm.BaseAddress;
+                    ulong size = lm.Size;
+                    var name = $"LEGACY_{start:X}";
+                    converted.Add(new ProcessorEmulator.Core.Emulation.MemoryRegion(name, start, size, ProcessorEmulator.Core.Emulation.MemoryRegionType.RAM));
+                }
+            }
+
+            _memoryMap = converted;
+            IsLittleEndian = isLittleEndian;
+            PC = startPC;
+
+            foreach (var ramRegion in _memoryMap.Where(r => r.Type == MemoryRegionType.RAM))
+            {
+                _ramRegions[ramRegion] = new byte[ramRegion.Size];
+            }
+        }
+
         public ulong GetRegister(string name, BitWidth width)
         {
             _registers.TryGetValue(name, out ulong value);
