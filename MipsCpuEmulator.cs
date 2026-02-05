@@ -7,6 +7,19 @@ namespace ProcessorEmulator.Emulation
 {
     public class MipsCpuEmulator
     {
+        public enum Register
+        {
+            PC,
+            SP,
+            RA = 31,
+            V0 = 2,
+            V1 = 3,
+            A0 = 4,
+            A1 = 5,
+            A2 = 6,
+            A3 = 7
+        }
+
         private const int RegisterCount = 32;
 
         private uint[] registers;
@@ -33,6 +46,26 @@ namespace ProcessorEmulator.Emulation
             _logFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "emulator_log.txt"); // Log file in exe directory
 
             // Clear log file on startup for fresh session
+            if (File.Exists(_logFilePath))
+            {
+                File.Delete(_logFilePath);
+            }
+        }
+
+        // Parameterless constructor for legacy callers (InstructionDispatcher, tests, etc.)
+        public MipsCpuEmulator()
+        {
+            var cp0 = new CP0();
+            var bus = new MipsBus(cp0);
+
+            _bus = bus;
+            _cp0 = cp0;
+            registers = new uint[RegisterCount];
+            floatingPointRegisters = new float[RegisterCount];
+            programCounter = 0xBFC00000; // MIPS Reset Vector
+            _virtualRegistry = new VirtualRegistry();
+            _logFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "emulator_log.txt");
+
             if (File.Exists(_logFilePath))
             {
                 File.Delete(_logFilePath);
@@ -530,6 +563,62 @@ namespace ProcessorEmulator.Emulation
             registers[index] = value;
         }
 
+        // Convenience helpers for callers that reference named registers (used by boot manager code)
+        public uint GetRegister(Register reg)
+        {
+            switch (reg)
+            {
+                case Register.PC: return programCounter;
+                case Register.SP: return registers[29];
+                case Register.RA: return registers[31];
+                case Register.V0: return registers[2];
+                case Register.V1: return registers[3];
+                default:
+                    // For argument registers and others, map where possible
+                    return reg switch
+                    {
+                        Register.A0 => registers[4],
+                        Register.A1 => registers[5],
+                        Register.A2 => registers[6],
+                        Register.A3 => registers[7],
+                        _ => 0u
+                    };
+            }
+        }
+
+        public void SetRegister(Register reg, uint value)
+        {
+            switch (reg)
+            {
+                case Register.PC:
+                    programCounter = value;
+                    break;
+                case Register.SP:
+                    registers[29] = value;
+                    break;
+                case Register.RA:
+                    registers[31] = value;
+                    break;
+                case Register.V0:
+                    registers[2] = value;
+                    break;
+                case Register.V1:
+                    registers[3] = value;
+                    break;
+                case Register.A0:
+                    registers[4] = value; break;
+                case Register.A1:
+                    registers[5] = value; break;
+                case Register.A2:
+                    registers[6] = value; break;
+                case Register.A3:
+                    registers[7] = value; break;
+                default:
+                    // no-op for unknown/unused named registers
+                    break;
+            }
+        }
+
         public uint ProgramCounter => programCounter;
 
         private void LogSyscall(uint syscallCode, uint instruction)
@@ -558,6 +647,13 @@ namespace ProcessorEmulator.Emulation
             {
                 Debug.WriteLine($"Error writing to branch log: {ex.Message}");
             }
+        }
+
+        // Public wrapper used by other components to dispatch a single instruction
+        // This allows InstructionDispatcher to forward instructions to this emulator.
+        public void DispatchInstruction(uint instruction, string sourceArch)
+        {
+            DecodeAndExecute(instruction);
         }
     }
 }
