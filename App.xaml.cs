@@ -8,7 +8,7 @@ using System.Windows.Forms;
 
 namespace ProcessorEmulator
 {
-    public partial class App : Application
+    public partial class App : System.Windows.Application
     {
         private static string StartupLogPath => System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ProcessorEmulator_startup.log");
         private static void Log(string line)

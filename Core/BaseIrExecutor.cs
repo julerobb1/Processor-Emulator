@@ -6,7 +6,8 @@ namespace ProcessorEmulator.Core.Backends
 {
     public class BaseIrExecutor : IExecutionEngine
     {
-        public void ExecuteStatement(IrStatement statement, ICpuState state, IMemoryManager memory)
+        // Primary implementation invoked by callers and overridable by backends
+        public virtual void ExecuteStatement(IrStatement statement, ICpuState state, IMemoryManager memory)
         {
             // Strict Privilege Check
             if ((statement.Metadata & 1) == 1 && state.PrivilegeLevel == 0)
@@ -116,6 +117,12 @@ namespace ProcessorEmulator.Core.Backends
                 default:
                     throw new NotImplementedException($"Canonical IR Op {statement.Op} is not yet implemented.");
             }
+        }
+
+        // Explicit interface implementation to ensure the class satisfies the IExecutionEngine contract
+        void IExecutionEngine.ExecuteStatement(IrStatement statement, ICpuState state, IMemoryManager memory)
+        {
+            ExecuteStatement(statement, state, memory);
         }
 
         private ulong GetOperandValue(IrOperand operand, ICpuState state)

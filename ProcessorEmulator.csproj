@@ -2,7 +2,8 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net5.0-windows</TargetFramework>
+    <TargetFramework>net6.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
     <UseWPF>true</UseWPF>
     <!-- Remove WindowsForms unless explicitly required; WPF suffices -->
     <UseWindowsForms>true</UseWindowsForms>
@@ -40,6 +41,9 @@
     <Compile Remove="InstructionTranslator_Archive.cs" />
   <!-- Remove duplicate manual (non-XAML) FolderAnalysisWindow to keep XAML-backed version -->
   <Compile Remove="FolderAnalysisWindow.cs" />
+  <Compile Remove="MainWindow.cs" />
+  <!-- Exclude legacy IR representation which conflicts with Core Abstractions -->
+  <Compile Remove="Core\IntermediateRepresentation.cs" />
   </ItemGroup>
 
   <!-- Ensure resources (icons, etc.) are available to pack URIs -->

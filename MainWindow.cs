@@ -1,7 +1,7 @@
 using System;
 using System.Drawing;
 using System.Windows;
-using WinForms = System.Windows.Forms;
+using System.Windows.Forms;
 using System.Windows.Threading; // Added for Dispatcher.Invoke
 using ProcessorEmulator.Emulation; // Added for MipsCpuEmulator
 
@@ -12,8 +12,8 @@ namespace ProcessorEmulator
     public partial class MainWindow : Window
     {
         // Our WinForms hardware components
-        private WinForms.RichTextBox _serialConsole;
-        private WinForms.PictureBox _videoDisplay;
+        private RichTextBox _serialConsole;
+        private PictureBox _videoDisplay;
         private MipsCpuEmulator _emulator; // Declared MipsCpuEmulator
 
         public MainWindow()
@@ -31,19 +31,19 @@ namespace ProcessorEmulator
         private void SetupClassicUI()
         {
             // 1. Create the Video Tab (The XP/7 Pro look)
-            WinForms.TabPage videoPage = new WinForms.TabPage("Video Output");
-            _videoDisplay = new WinForms.PictureBox {
-                Dock = WinForms.DockStyle.Fill,
+            TabPage videoPage = new TabPage("Video Output");
+            _videoDisplay = new PictureBox { 
+                Dock = DockStyle.Fill, 
                 BackColor = System.Drawing.Color.Black,
-                SizeMode = WinForms.PictureBoxSizeMode.CenterImage
+                SizeMode = PictureBoxSizeMode.CenterImage 
             };
             videoPage.Controls.Add(_videoDisplay);
 
             // 2. Create the Serial Console Tab (The Terminal look)
-            WinForms.TabPage consolePage = new WinForms.TabPage("System Console");
-            _serialConsole = new WinForms.RichTextBox {
-                Dock = WinForms.DockStyle.Fill,
-                BackColor = System.Drawing.Color.Black,
+            TabPage consolePage = new TabPage("System Console");
+            _serialConsole = new RichTextBox { 
+                Dock = DockStyle.Fill, 
+                BackColor = System.Drawing.Color.Black, 
                 ForeColor = System.Drawing.Color.Lime,
                 Font = new System.Drawing.Font("Lucida Console", 9f),
                 ReadOnly = true

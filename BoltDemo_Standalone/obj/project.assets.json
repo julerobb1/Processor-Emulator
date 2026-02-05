@@ -13,11 +13,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "c:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\BoltDemo_Standalone\\BoltDemo.csproj",
+      "projectUniqueName": "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\BoltDemo_Standalone\\BoltDemo.csproj",
       "projectName": "BoltDemo",
-      "projectPath": "c:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\BoltDemo_Standalone\\BoltDemo.csproj",
+      "projectPath": "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\BoltDemo_Standalone\\BoltDemo.csproj",
       "packagesPath": "C:\\Users\\juler\\.nuget\\packages\\",
-      "outputPath": "c:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\BoltDemo_Standalone\\obj\\",
+      "outputPath": "C:\\Users\\juler\\Documents\\GitHub\\Processor-Emulator\\BoltDemo_Standalone\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "C:\\Users\\juler\\AppData\\Roaming\\NuGet\\NuGet.Config"
@@ -44,7 +44,7 @@
         "auditLevel": "low",
         "auditMode": "direct"
       },
-      "SdkAnalysisLevel": "9.0.300"
+      "SdkAnalysisLevel": "10.0.100"
     },
     "frameworks": {
       "net6.0": {
@@ -60,30 +60,12 @@
         ],
         "assetTargetFallback": true,
         "warn": true,
-        "downloadDependencies": [
-          {
-            "name": "Microsoft.AspNetCore.App.Ref",
-            "version": "[6.0.36, 6.0.36]"
-          },
-          {
-            "name": "Microsoft.NETCore.App.Host.win-x64",
-            "version": "[6.0.36, 6.0.36]"
-          },
-          {
-            "name": "Microsoft.NETCore.App.Ref",
-            "version": "[6.0.36, 6.0.36]"
-          },
-          {
-            "name": "Microsoft.WindowsDesktop.App.Ref",
-            "version": "[6.0.36, 6.0.36]"
-          }
-        ],
         "frameworkReferences": {
           "Microsoft.NETCore.App": {
             "privateAssets": "all"
           }
         },
-        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.300\\RuntimeIdentifierGraph.json"
+        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.102\\RuntimeIdentifierGraph.json"
       }
     }
   }

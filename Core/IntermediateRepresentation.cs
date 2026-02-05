@@ -5,6 +5,19 @@ using System.Numerics;
 namespace ProcessorEmulator.Core
 {
     /// <summary>
+    /// Minimal IR value representation used for immediates inside the IR.
+    /// This is a lightweight wrapper to allow the rest of the IR code to compile.
+    /// </summary>
+    public readonly struct IrValue
+    {
+        public readonly long SignedValue;
+        public readonly ulong UnsignedValue;
+        public IrValue(long v) { SignedValue = v; UnsignedValue = (ulong)v; }
+        public IrValue(ulong v) { UnsignedValue = v; SignedValue = (long)v; }
+        public override string ToString() => SignedValue.ToString();
+    }
+
+    /// <summary>
     /// Defines the type of an IR operand.
     /// </summary>
     public enum IrOperandType

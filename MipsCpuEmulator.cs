@@ -19,6 +19,9 @@ namespace ProcessorEmulator.Emulation
 
         public event Action<string> OnLogMessage; // Event for logging to UI
 
+        // Event for console-like output (guest prints)
+        public event Action<string>? OnConsoleOutput;
+
         public MipsCpuEmulator(MipsBus bus, CP0 cp0)
         {
             _bus = bus;
@@ -355,7 +358,10 @@ namespace ProcessorEmulator.Emulation
                     SimulateAuthSuccess();
                     break;
                 case 0x2002: // Hypothetical: Graphics Draw (Placeholder)
-                    RenderToWindowsForm(); 
+                    RenderToWindowsForm();
+                    // Emit a console-visible message for now so UI can show progress
+                    OnLogMessage?.Invoke($"[SYSCALL] Graphics/Print invoked at PC=0x{programCounter:X8} (code 0x{syscallCode:X})\n");
+                    OnConsoleOutput?.Invoke($"[GUEST_PRINT] PC=0x{programCounter:X8} syscall=0x{syscallCode:X}\n");
                     break;
                 default:
                     Debug.WriteLine($"[MIPS] Unhandled Syscall: 0x{syscallCode:X}. Instruction: 0x{instruction:X8}");

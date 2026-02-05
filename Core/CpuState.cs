@@ -9,12 +9,12 @@ namespace ProcessorEmulator.Core
     public class CpuState : ICpuState, IMemoryManager
     {
         private readonly Dictionary<string, ulong> _registers = new Dictionary<string, ulong>(StringComparer.OrdinalIgnoreCase);
-        private readonly List<MemoryRegion> _memoryMap;
-        private readonly Dictionary<MemoryRegion, byte[]> _ramRegions = new Dictionary<MemoryRegion, byte[]>();
+        private readonly List<ProcessorEmulator.Core.Emulation.MemoryRegion> _memoryMap;
+        private readonly Dictionary<ProcessorEmulator.Core.Emulation.MemoryRegion, byte[]> _ramRegions = new Dictionary<ProcessorEmulator.Core.Emulation.MemoryRegion, byte[]>();
 
         public int PrivilegeLevel { get; set; }
         public ulong PC { get; set; }
-        public IReadOnlyList<MemoryRegion> MemoryMap => _memoryMap;
+        public IReadOnlyList<ProcessorEmulator.Core.Emulation.MemoryRegion> MemoryMap => _memoryMap;
         public bool IsLittleEndian { get; }
         public ulong? LinkedAddress { get; set; }
 
