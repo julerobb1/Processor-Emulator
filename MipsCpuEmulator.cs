@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Windows;
+using System.Diagnostics; // Added for Debug.WriteLine
 
 namespace ProcessorEmulator.Emulation
 {
@@ -13,6 +14,10 @@ namespace ProcessorEmulator.Emulation
         private float[] floatingPointRegisters;
         private readonly CP0 _cp0;
         private readonly MipsBus _bus;
+        private VirtualRegistry _virtualRegistry; // Declared VirtualRegistry
+        private readonly string _logFilePath;
+
+        public event Action<string> OnLogMessage; // Event for logging to UI
 
         public MipsCpuEmulator(MipsBus bus, CP0 cp0)
         {
@@ -21,6 +26,14 @@ namespace ProcessorEmulator.Emulation
             registers = new uint[RegisterCount];
             floatingPointRegisters = new float[RegisterCount];
             programCounter = 0xBFC00000; // MIPS Reset Vector
+            _virtualRegistry = new VirtualRegistry(); // Initialized VirtualRegistry
+            _logFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "emulator_log.txt"); // Log file in exe directory
+
+            // Clear log file on startup for fresh session
+            if (File.Exists(_logFilePath))
+            {
+                File.Delete(_logFilePath);
+            }
         }
 
         // Execute a single fetch/decode/execute cycle (or multiple cycles)
@@ -75,7 +88,7 @@ namespace ProcessorEmulator.Emulation
 
         private uint FetchInstruction()
         {
-            uint instruction = _bus.Read32(programCounter);
+            uint instruction = ReadMemory32(programCounter); // Use new ReadMemory32
             Console.WriteLine($"PC: 0x{programCounter:X8} -> PADDR: 0x{_bus.Translate(programCounter):X8}, INSTR: 0x{instruction:X8}");
             programCounter += 4;
             return instruction;
@@ -83,7 +96,52 @@ namespace ProcessorEmulator.Emulation
         
         private uint FetchInstructionAt(uint vaddr)
         {
-            return _bus.Read32(vaddr);
+            return ReadMemory32(vaddr); // Use new ReadMemory32
+        }
+
+        // MMIO Interceptor
+        private uint ReadMemory32(uint address)
+        {
+            // Handle Hardware-Specific Registers (Broadcom/Mediaroom)
+            if (address >= 0x1F000000 && address <= 0x1F000FFF)
+            {
+                return HandlePeripheralRead(address);
+            }
+
+            // Standard RAM access
+            return _bus.Read32(address);
+        }
+
+        private void WriteMemory32(uint address, uint value)
+        {
+            // Handle Hardware-Specific Registers (Broadcom/Mediaroom)
+            if (address >= 0x1F000000 && address <= 0x1F000FFF)
+            {
+                HandlePeripheralWrite(address, value);
+                return;
+            }
+
+            // Standard RAM access
+            _bus.Write32(address, value);
+        }
+
+        private uint HandlePeripheralRead(uint address)
+        {
+            switch(address)
+            {
+                case 0x1F000020: // Example: Chip ID Register
+                    Debug.WriteLine($"[MMIO] Reading Chip ID Register at 0x{address:X8}. Returning 0x7405.");
+                    return 0x7405; // Return a Broadcom BCM7405 ID
+                default:
+                    Debug.WriteLine($"[MMIO] Unhandled peripheral read at 0x{address:X8}. Returning 0.");
+                    return 0;
+            }
+        }
+
+        private void HandlePeripheralWrite(uint address, uint value)
+        {
+            // For now, just log writes to unhandled peripheral registers.
+            Debug.WriteLine($"[MMIO] Unhandled peripheral write to 0x{address:X8} with value 0x{value:X8}.");
         }
 
         private void DecodeAndExecute(uint instruction)
@@ -153,60 +211,43 @@ namespace ProcessorEmulator.Emulation
 
         private void ExecuteJ(uint instruction)
         {
+            uint oldPc = programCounter;
             uint target = instruction & 0x3FFFFFF;
             programCounter = (programCounter & 0xF0000000) | (target << 2);
+            LogBranch(oldPc, programCounter, "J");
         }
 
         private void ExecuteJal(uint instruction)
         {
+            uint oldPc = programCounter;
             registers[31] = programCounter + 4; // Return address is the instruction after the delay slot
             ExecuteJ(instruction);
+            LogBranch(oldPc, programCounter, "JAL");
         }
 
-        // MTC0: Move Control to Coprocessor 0 (Write to CP0)
-        // Format: mtc0 $rt, $rd
-        public void Execute_MTC0(uint rt, uint rd)
-        {
-            uint value = registers[rt]; // Get value from general purpose register
-            _cp0.WriteRegister((int)rd, value);
-        }
 
-        // MFC0: Move From Coprocessor 0 (Read from CP0)
-        // Format: mfc0 $rt, $rd
-        public void Execute_MFC0(uint rt, uint rd)
-        {
-            uint value = _cp0.ReadRegister((int)rd);
-            registers[rt] = value; // Put CP0 value into general purpose register
-        }
 
         private void ExecuteCOP0(uint instruction)
         {
-            uint rs = (instruction >> 21) & 0x1F;
-            
-            // Check for ERET instruction
-            if (rs == 0x10 && (instruction & 0x3F) == 0x18)
-            {
-                // ERET: Exception Return
-                // 1. Clear Status.EXL bit
-                _cp0.Status &= ~(1u << 1); 
-                // 2. Jump back to where the exception occurred
-                programCounter = _cp0.EPC;
-                return;
-            }
-            
-            uint rt = (instruction >> 16) & 0x1F;
-            uint rd = (instruction >> 11) & 0x1F;
+            // MIPS COP0 instructions: bits 25-21 determine the sub-operation (rs field)
+            uint rs = (instruction >> 21) & 0x1F; 
+            uint rt = (instruction >> 16) & 0x1F; // General purpose register for data transfer
+            uint rd = (instruction >> 11) & 0x1F; // COP0 register index
 
-            switch (rs)
+            // The 'funct' field is only used for R-type COP0 instructions (opcode 0x10, rs == 0x10)
+            uint funct = instruction & 0x3F;
+
+            switch (rs) // The 'rs' field (bits 25-21) defines the major COP0 operation
             {
-                case 0x00: // MFC0
-                    Execute_MFC0(rt, rd);
+                case 0x00: // MFC0 (Move From Coprocessor 0)
+                    if (rt != 0) registers[rt] = _cp0.ReadRegister((int)rd);
                     break;
-                case 0x04: // MTC0
-                    Execute_MTC0(rt, rd);
+                    
+                case 0x04: // MTC0 (Move To Coprocessor 0)
+                    _cp0.WriteRegister((int)rd, registers[rt]);
                     break;
-                case 0x10: // TLB operations (and ERET)
-                    uint funct = instruction & 0x3F;
+
+                case 0x10: // COP0 functions with 'funct' field (e.g., TLB operations, ERET)
                     switch (funct)
                     {
                         case 0x01: // TLBR
@@ -222,16 +263,21 @@ namespace ProcessorEmulator.Emulation
                             _cp0.ProbeTLB();
                             break;
                         case 0x18: // ERET
-                            // Already handled above, but good to have here for completeness/future refactor
+                            // ERET: Exception Return
+                            // 1. Clear Status.EXL bit
                             _cp0.Status &= ~(1u << 1); 
+                            // 2. Jump back to where the exception occurred
                             programCounter = _cp0.EPC;
                             break;
                         default:
+                            System.Diagnostics.Debug.WriteLine($"[MIPS] Unhandled COP0 funct: 0x{funct:X}");
                             TriggerException(10); // Reserved Instruction
                             break;
                     }
                     break;
+
                 default:
+                    System.Diagnostics.Debug.WriteLine($"[MIPS] Unhandled COP0 sub-op (rs field): 0x{rs:X}");
                     TriggerException(10); // Reserved Instruction
                     break;
             }
@@ -282,7 +328,7 @@ namespace ProcessorEmulator.Emulation
                     ExecuteJumpRegister(instruction);
                     break;
                 case 0x0C: // syscall
-                     TriggerException(8); // Syscall exception
+                     ExecuteSyscall(instruction); // Call the new ExecuteSyscall method
                      break;
                 default:
                     TriggerException(10); // Reserved Instruction
@@ -290,6 +336,49 @@ namespace ProcessorEmulator.Emulation
             };
         }
 
+        private void ExecuteSyscall(uint instruction)
+        {
+            // MIPS convention: $v0 (register 2) holds the syscall ID.
+            uint syscallCode = registers[2]; 
+            LogSyscall(syscallCode, instruction); // Log the syscall
+
+            switch (syscallCode)
+            {
+                case 0x1D: // Hypothetical WinCE RegQueryValueExW
+                    // Assuming $a0 (register 4) holds the address of the path string.
+                    // This is a simplification; a real implementation would parse the string from memory.
+                    // For now, we'll hardcode to the "IsAuthorized" key for demonstration.
+                    registers[2] = _virtualRegistry.ReadValue("Software\\Microsoft\\Mediaroom\\Client\\IsAuthorized");
+                    Debug.WriteLine($"[AUTH] App checked 'IsAuthorized' registry key via syscall 0x{syscallCode:X}. Returning: {registers[2]}");
+                    break;
+                case 0x1001: // Hypothetical: Mediaroom Auth Check
+                    SimulateAuthSuccess();
+                    break;
+                case 0x2002: // Hypothetical: Graphics Draw (Placeholder)
+                    RenderToWindowsForm(); 
+                    break;
+                default:
+                    Debug.WriteLine($"[MIPS] Unhandled Syscall: 0x{syscallCode:X}. Instruction: 0x{instruction:X8}");
+                    // Optionally, trigger an exception or just return.
+                    // For now, we'll just log and continue to avoid halting emulation.
+                    break;
+            }
+        }
+
+        private void SimulateAuthSuccess()
+        {
+            // Tell the MIPS app: "Yes, this device is authorized"
+            registers[2] = 1; // Return true/success in $v0
+            registers[3] = 0; // Clear error codes in $v1
+            Debug.WriteLine("[AUTH] Spoofed Authorization Handshake: SUCCESS");
+        }
+
+        private void RenderToWindowsForm()
+        {
+            // Placeholder for future graphics rendering logic.
+            Debug.WriteLine("[GRAPHICS] RenderToWindowsForm: (Not yet implemented)");
+        }
+        
         private void ExecuteLui(uint instruction)
         {
             uint rt = (instruction >> 16) & 0x1F;
@@ -320,7 +409,7 @@ namespace ProcessorEmulator.Emulation
             uint address = registers[baseReg] + (uint)offset;
             if (rt != 0) // writes to R0 are discarded
             {
-                registers[rt] = _bus.Read32(address);
+                registers[rt] = ReadMemory32(address); // Use new ReadMemory32
             }
         }
 
@@ -331,43 +420,46 @@ namespace ProcessorEmulator.Emulation
             int offset = (short)(instruction & 0xFFFF);
 
             uint address = registers[baseReg] + (uint)offset;
-            _bus.Write32(address, registers[rt]);
+            WriteMemory32(address, registers[rt]); // Use new WriteMemory32
         }
 
         private void ExecuteBranchEqual(uint instruction)
         {
-            // Note: This is a simplified implementation that does NOT handle the branch delay slot correctly
-            // for exceptions. A full implementation would require more complex pipeline management.
             uint rs = (instruction >> 21) & 0x1F;
             uint rt = (instruction >> 16) & 0x1F;
-            int offset = (short)(instruction & 0xFFFF);
-            
-            uint branchPC = programCounter; // PC is already advanced to next instruction
+            short offset = (short)(instruction & 0xFFFF); // Sign-extended offset
+
             if (registers[rs] == registers[rt])
             {
-                programCounter = (branchPC) + (uint)(offset << 2);
+                uint oldPc = programCounter;
+                // MIPS branches are PC-relative: PC + 4 + (offset << 2)
+                // We use +4 because the PC has already advanced or is at the delay slot
+                programCounter += (uint)(offset << 2);
+                LogBranch(oldPc, programCounter, "BEQ");
             }
         }
 
         private void ExecuteBranchNotEqual(uint instruction)
         {
-            // Note: Simplified implementation without correct delay slot exception handling.
             uint rs = (instruction >> 21) & 0x1F;
             uint rt = (instruction >> 16) & 0x1F;
-            int offset = (short)(instruction & 0xFFFF);
+            short offset = (short)(instruction & 0xFFFF);
 
-            uint branchPC = programCounter;
             if (registers[rs] != registers[rt])
             {
-                programCounter = (branchPC) + (uint)(offset << 2);
+                uint oldPc = programCounter;
+                programCounter += (uint)(offset << 2);
+                LogBranch(oldPc, programCounter, "BNE");
             }
         }
         
         private void ExecuteJumpRegister(uint instruction)
         {
+            uint oldPc = programCounter;
             // Note: Simplified implementation without correct delay slot exception handling.
             uint rs = (instruction >> 21) & 0x1F;
             programCounter = registers[rs];
+            LogBranch(oldPc, programCounter, "JR");
         }
 
         private static void HandleEmulatorError(string message)
@@ -433,5 +525,33 @@ namespace ProcessorEmulator.Emulation
         }
 
         public uint ProgramCounter => programCounter;
+
+        private void LogSyscall(uint syscallCode, uint instruction)
+        {
+            try
+            {
+                string logEntry = $"[SYSCALL] PC: 0x{programCounter:X8}, Syscall ID: 0x{syscallCode:X}, Instruction: 0x{instruction:X8}, R2($v0): 0x{registers[2]:X8}, R3($v1): 0x{registers[3]:X8}\n";
+                File.AppendAllText(_logFilePath, logEntry);
+                OnLogMessage?.Invoke(logEntry); // Invoke the event for UI
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error writing to syscall log: {ex.Message}");
+            }
+        }
+
+        private void LogBranch(uint oldPc, uint newPc, string branchType)
+        {
+            try
+            {
+                string logEntry = $"[BRANCH] PC (Before): 0x{oldPc:X8}, PC (After): 0x{newPc:X8}, Type: {branchType}\n";
+                File.AppendAllText(_logFilePath, logEntry);
+                OnLogMessage?.Invoke(logEntry); // Invoke the event for UI
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error writing to branch log: {ex.Message}");
+            }
+        }
     }
 }
