@@ -22,6 +22,9 @@ namespace ProcessorEmulator
         private const uint MEDIAROOM_BASE = 0x90000000;
         private const uint RAM_SIZE = 128 * 1024 * 1024; // 128MB typical for U-verse STB
         
+        private const uint UART_BASE_ADDRESS = 0xB0000000;
+        private const uint UART_SIZE = 0x1000;
+        
         // Mediaroom-specific file paths
         private readonly Dictionary<string, string> RequiredFiles = new Dictionary<string, string>
         {
@@ -83,6 +86,9 @@ namespace ProcessorEmulator
             _mipsBus = new MipsBus(RAM_SIZE); // Assuming RAM_SIZE for the bus
             _cp0 = new CP0();
             _mipsCpu = new MipsCpuEmulator(_mipsBus, _cp0);
+            
+            // Add UART peripheral
+            _mipsBus.AddDevice(new MipsUart(UART_BASE_ADDRESS, UART_SIZE));
             
         }
         
