@@ -63,7 +63,7 @@ This project can extract YAFFS filesystem images using the external `unyaffs` to
 ## Installation & Quick Start
 
 ### Prerequisites
-- **Windows**: .NET 8 or later
+- **Windows**: .NET 5 or later
 - **Visual Studio**: 2022 or later, or VS Code with C# extension
 - **Optional**: UnicornEngine for enhanced ARM emulation
 - **Optional**: RetDec decompiler for cross-architecture binary analysis
@@ -113,7 +113,7 @@ We welcome contributions to enhance the Processor-Emulator project!
 1. **Target `dev` branch** for all pull requests
 2. **Follow IChipsetEmulator pattern** for new platform emulators
 3. **Implement real execution** - avoid synthetic/fake boot sequences
-- **Test thoroughly** - verify firmware loading and execution on Windows/.NET 8
+- **Test thoroughly** - verify firmware loading and execution on Windows/.NET 5
 5. **Document changes** - update README and include screenshots for UI changes
 
 ### Code Standards
@@ -202,7 +202,7 @@ This project emphasizes **authentic firmware execution** over simulation:
 - Memory-mapped I/O simulation is **PARTIALLY WORKING** 
 - Large firmware file handling (>100MB) uses **chunked streaming** to avoid .NET limits
 - Some advanced features are **WORK IN PROGRESS** - see status indicators above
-- Windows/.NET 8 focused - Linux support not currently implemented
+- Windows/.NET 5 focused - Linux support not currently implemented
 
 ## License
 

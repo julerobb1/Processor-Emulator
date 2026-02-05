@@ -5,6 +5,9 @@ namespace ProcessorEmulator.Emulation
     public class CP0
     {
         private uint[] registers = new uint[32];
+        private uint _entryHi;
+        private uint _entryLo0;
+        private uint _entryLo1;
 
         // MIPS CP0 Register Constants
         private const int IndexReg = 0;
@@ -30,6 +33,10 @@ namespace ProcessorEmulator.Emulation
         public uint EPC { get => registers[EPCReg]; set => registers[EPCReg] = value; }
         public uint Count { get => registers[CountReg]; set => registers[CountReg] = value; }
         public uint Compare { get => registers[CompareReg]; set => registers[CompareReg] = value; }
+        public uint EntryHi { get => _entryHi; set => _entryHi = value; }
+        public uint EntryLo0 { get => _entryLo0; set => _entryLo0 = value; }
+        public uint EntryLo1 { get => _entryLo1; set => _entryLo1 = value; }
+
 
         public uint PRId { get; set; }
 
@@ -72,9 +79,26 @@ namespace ProcessorEmulator.Emulation
                    registers[CauseReg] = (registers[CauseReg] & ~clearMask) | (value & clearMask);
                    return;
                 }
-
-                Console.WriteLine($"CP0 Write: Reg {reg} = 0x{value:X8}");
-                registers[reg] = value;
+                
+                switch(reg)
+                {
+                    case EntryHiReg:
+                        _entryHi = value;
+                        Console.WriteLine($"CP0 Write: EntryHi = 0x{value:X8}");
+                        break;
+                    case EntryLo0Reg:
+                        _entryLo0 = value;
+                        Console.WriteLine($"CP0 Write: EntryLo0 = 0x{value:X8}");
+                        break;
+                    case EntryLo1Reg:
+                        _entryLo1 = value;
+                        Console.WriteLine($"CP0 Write: EntryLo1 = 0x{value:X8}");
+                        break;
+                    default:
+                        Console.WriteLine($"CP0 Write: Reg {reg} = 0x{value:X8}");
+                        registers[reg] = value;
+                        break;
+                }
             }
         }
 
@@ -88,7 +112,22 @@ namespace ProcessorEmulator.Emulation
 
             if (reg >= 0 && reg < 32)
             {
-                uint value = registers[reg];
+                uint value;
+                switch(reg)
+                {
+                    case EntryHiReg:
+                        value = _entryHi;
+                        break;
+                    case EntryLo0Reg:
+                        value = _entryLo0;
+                        break;
+                    case EntryLo1Reg:
+                        value = _entryLo1;
+                        break;
+                    default:
+                        value = registers[reg];
+                        break;
+                }
                 // Console.WriteLine($"CP0 Read: Reg {reg} returns 0x{value:X8}"); // Too noisy for timer
                 return value;
             }

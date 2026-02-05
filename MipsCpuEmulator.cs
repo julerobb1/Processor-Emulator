@@ -108,6 +108,9 @@ namespace ProcessorEmulator.Emulation
                     case 0x08: // addi
                         ExecuteAddImmediate(instruction);
                         break;
+                    case 0x09: // addiu
+                        ExecuteAddImmediate(instruction); // ADDIU is handled by ADDI logic, no overflow trapping
+                        break;
                     case 0x0A: // slti
                         ExecuteSlti(instruction);
                         break;
@@ -242,6 +245,12 @@ namespace ProcessorEmulator.Emulation
                     break;
                 case 0x02: // srl
                     registers[rd] = registers[rt] >> (int)shamt;
+                    break;
+                case 0x04: // sllv
+                    registers[rd] = registers[rt] << (int)registers[rs];
+                    break;
+                case 0x06: // srlv
+                    registers[rd] = registers[rt] >> (int)registers[rs];
                     break;
                 case 0x08: // jr
                     ExecuteJumpRegister(instruction);

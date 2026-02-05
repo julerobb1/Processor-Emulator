@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Text;
 using System.Linq;
+using ProcessorEmulator.Emulation; // Added for MipsCpuEmulator, MipsBus, CP0
 
 namespace ProcessorEmulator
 {
@@ -46,6 +47,10 @@ namespace ProcessorEmulator
         private bool isMediaroomReady = false;
         private string baseFirmwarePath;
         
+        private MipsBus _mipsBus;
+        private CP0 _cp0;
+        private MipsCpuEmulator _mipsCpu;
+
         // Boot sequence stages
         private enum BootStage
         {
@@ -73,6 +78,12 @@ namespace ProcessorEmulator
             LogBoot($"Target Platform: AT&T U-verse IPTV");
             LogBoot($"Architecture: MIPS + WinCE + Mediaroom");
             LogBoot($"Firmware Path: {baseFirmwarePath}");
+
+            // Initialize MIPS emulation components
+            _mipsBus = new MipsBus(RAM_SIZE); // Assuming RAM_SIZE for the bus
+            _cp0 = new CP0();
+            _mipsCpu = new MipsCpuEmulator(_mipsBus, _cp0);
+            
         }
         
         /// <summary>
@@ -227,8 +238,16 @@ namespace ProcessorEmulator
             LogBoot($"Image base: 0x{kernelInfo.ImageBase:X8}");
             LogBoot($"Image size: 0x{kernelInfo.ImageSize:X8}");
             
-            // Simulate kernel loading
-            await Task.Delay(1000);
+            // Load kernel data into MIPS bus memory
+            _mipsBus.WriteBytes(kernelInfo.ImageBase, kernelData);
+            _mipsCpu.SetRegister(MipsCpuEmulator.Register.PC, kernelInfo.EntryPoint); // Set PC
+            _mipsCpu.SetRegister(MipsCpuEmulator.Register.SP, WINCE_KERNEL_BASE + RAM_SIZE - 0x1000); // Set a basic stack pointer
+            
+            LogBoot("🔄 Executing WinCE kernel...");
+            // Execute a fixed number of instructions to simulate initial kernel boot
+            // In a real scenario, this would run until a specific syscall or exception
+            _mipsCpu.Step(100000); // Execute 100,000 MIPS instructions
+            
             LogBoot("🔄 Loading kernel modules...");
             
             var modules = new[]
@@ -244,16 +263,16 @@ namespace ProcessorEmulator
             
             foreach (var module in modules)
             {
-                await Task.Delay(200);
+                // In a real scenario, these would be loaded by the emulated kernel
+                // and potentially involve more CPU execution.
                 LogBoot($"  ↳ {module}");
             }
             
             // Mount registry hive
             if (firmwareComponents.ContainsKey("default.hv"))
             {
-                await Task.Delay(500);
                 LogBoot("📋 Mounting registry hive...");
-                await ParseRegistryHive();
+                await ParseRegistryHive(); // Still async, but doesn't block CPU
             }
             
             LogBoot("✅ WinCE kernel boot complete");

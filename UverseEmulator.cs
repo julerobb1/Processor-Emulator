@@ -3,9 +3,8 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.IO;
 using System.Windows;
-using ProcessorEmulator.Tools;
 
-namespace ProcessorEmulator
+namespace ProcessorEmulator.Emulation
 {
     /// <summary>
     /// AT&T U-verse Content and Mediaroom emulator
