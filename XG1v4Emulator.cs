@@ -10,7 +10,6 @@ using System.Text;
 using System.Security.Cryptography.X509Certificates;
 using System.Linq;
 using ProcessorEmulator.Emulation;
-using ProcessorEmulator.Tools;
 
 namespace ProcessorEmulator
 {
