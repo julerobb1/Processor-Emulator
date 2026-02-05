@@ -205,6 +205,32 @@ namespace ProcessorEmulator.Emulation
                 case 0x04: // MTC0
                     Execute_MTC0(rt, rd);
                     break;
+                case 0x10: // TLB operations (and ERET)
+                    uint funct = instruction & 0x3F;
+                    switch (funct)
+                    {
+                        case 0x01: // TLBR
+                            _cp0.ReadTLBEntry();
+                            break;
+                        case 0x02: // TLBWI
+                            _cp0.WriteTLBEntryIndexed();
+                            break;
+                        case 0x06: // TLBWR
+                            _cp0.WriteTLBEntryRandom();
+                            break;
+                        case 0x08: // TLBP
+                            _cp0.ProbeTLB();
+                            break;
+                        case 0x18: // ERET
+                            // Already handled above, but good to have here for completeness/future refactor
+                            _cp0.Status &= ~(1u << 1); 
+                            programCounter = _cp0.EPC;
+                            break;
+                        default:
+                            TriggerException(10); // Reserved Instruction
+                            break;
+                    }
+                    break;
                 default:
                     TriggerException(10); // Reserved Instruction
                     break;
