@@ -6,21 +6,67 @@ namespace ProcessorEmulator.Emulation
 {
     public class MipsBus
     {
-        public List<IBusDevice> Devices { get; } = new List<IBusDevice>();
+        private readonly List<IBusDevice> _devices = new List<IBusDevice>();
+        private readonly CP0 _cp0;
         public bool IsBigEndian { get; set; } = false;
 
-        public void AddDevice(IBusDevice device) => Devices.Add(device);
+        public MipsBus(CP0 cp0)
+        {
+            _cp0 = cp0;
+        }
+
+        public void AddDevice(IBusDevice device) => _devices.Add(device);
 
         public uint Translate(uint vaddr)
         {
-            // kseg0 & kseg1 both map to the first 512MB of physical memory
-            if (vaddr >= 0x80000000 && vaddr <= 0xBFFFFFFF)
+            // kseg0 (0x80000000 - 0x9FFFFFFF) and kseg1 (0xA0000000 - 0xBFFFFFFF)
+            // are unmapped (direct mapped) physical memory regions.
+            // No TLB lookup for these segments.
+            if ((vaddr >= 0x80000000 && vaddr <= 0x9FFFFFFF) || // kseg0
+                (vaddr >= 0xA0000000 && vaddr <= 0xBFFFFFFF))  // kseg1
             {
-                return vaddr & 0x1FFFFFFF;
+                return vaddr & 0x1FFFFFFF; // Direct map to lower 512MB physical
             }
 
-            // kuseg (0x00000000 - 0x7FFFFFFF)
-            // For now, we treat this as a direct map until we finish the TLB
+            // kuseg (0x00000000 - 0x7FFFFFFF) - requires TLB lookup
+            // kseg2 (0xC0000000 - 0xDFFFFFFF) - requires TLB lookup
+            // kseg3 (0xE0000000 - 0xFFFFFFFF) - requires TLB lookup
+
+            // For now, let's focus on kuseg and a very simplified TLB lookup
+            // This is a placeholder for a proper multi-entry TLB
+            // We assume EntryHi holds the VPN and EntryLo0/1 hold the PPNs
+
+            // Simplified: Assume 4KB page size for now
+            const uint PageSize = 4 * 1024; // 4KB
+            const uint PageMask = ~(PageSize - 1); // Mask for page address
+
+            uint vpn = (vaddr & PageMask); // Virtual Page Number
+            uint pageOffset = (vaddr & (PageSize - 1)); // Offset within page
+
+            // Check if the current vaddr matches the EntryHi VPN
+            // In a real TLB, we'd search through multiple entries.
+            // For simplicity, we are assuming EntryHi/Lo registers define the *current* active translation.
+            if ((_cp0.EntryHi & PageMask) == vpn)
+            {
+                // Check if it's an even or odd page
+                // This is simplified and assumes a 2-page entry as defined by EntryLo0/EntryLo1
+                // based on MIPS architecture which typically uses odd/even pages for a single TLB entry
+                if ((vaddr & PageSize) == 0) // Even page
+                {
+                    // Check valid and dirty bits if necessary
+                    // For now, assume valid. PPN is bits 6-31 of EntryLo0
+                    uint ppn = (_cp0.EntryLo0 & PageMask);
+                    return ppn | pageOffset;
+                }
+                else // Odd page
+                {
+                    uint ppn = (_cp0.EntryLo1 & PageMask);
+                    return ppn | pageOffset;
+                }
+            }
+            
+            // If no TLB match, or for other segments, for now, treat as direct map.
+            // In a full implementation, this would trigger a TLB Miss exception.
             return vaddr;
         }
 
