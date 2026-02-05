@@ -10,6 +10,13 @@ namespace ProcessorEmulator.Emulation
         private readonly CP0 _cp0;
         public bool IsBigEndian { get; set; } = false;
 
+        // Parameterless ctor for legacy callers that expect `new MipsBus()`
+        public MipsBus()
+        {
+            var cp0 = new CP0();
+            _cp0 = cp0;
+        }
+
         public MipsBus(CP0 cp0)
         {
             _cp0 = cp0;
@@ -25,6 +32,9 @@ namespace ProcessorEmulator.Emulation
         }
 
         public void AddDevice(IBusDevice device) => _devices.Add(device);
+
+        // Expose devices collection for legacy callers
+        public IEnumerable<IBusDevice> Devices => _devices;
 
         public uint Translate(uint vaddr)
         {
