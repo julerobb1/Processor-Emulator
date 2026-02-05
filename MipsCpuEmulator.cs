@@ -655,5 +655,15 @@ namespace ProcessorEmulator.Emulation
         {
             DecodeAndExecute(instruction);
         }
+
+        // Simple run loop used by legacy callers that expect a continuous emulation.
+        // Runs until the hosting thread is aborted or an exception occurs.
+        public void Run()
+        {
+            while (true)
+            {
+                Step(1);
+            }
+        }
     }
 }
