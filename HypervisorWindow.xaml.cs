@@ -13,9 +13,21 @@ namespace ProcessorEmulator
         private Button startButton;
         private Button stopButton;
 
+        // Parameterless constructor for XAML designer and tooling
+        public HypervisorWindow()
+        {
+            InitializeComponent();
+            this.hypervisor = new RealMipsHypervisor();
+            this.Title = "Real MIPS Hypervisor";
+
+            CreateUI();
+            this.hypervisor.OnRealExecution += AppendLog;
+        }
+
         public HypervisorWindow(RealMipsHypervisor hypervisor, string platformName)
         {
-            this.hypervisor = hypervisor;
+            InitializeComponent();
+            this.hypervisor = hypervisor ?? new RealMipsHypervisor();
             this.Title = $"Real MIPS Hypervisor - {platformName}";
             
             CreateUI();
