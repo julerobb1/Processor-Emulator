@@ -9,7 +9,7 @@ namespace ProcessorEmulator
     {
         private readonly RealMipsHypervisor hypervisor;
         private TextBox logBox;
-        private TextBlock statusText;
+        private TextBox statusText;
         private Button startButton;
         private Button stopButton;
 
@@ -45,35 +45,44 @@ namespace ProcessorEmulator
             Content = mainStack;
 
             // Title
-            var titleText = new TextBlock
+            var titleText = new TextBox
             {
                 Text = "REAL MIPS EMULATOR",
                 FontSize = 36,
                 FontWeight = FontWeights.Bold,
                 Foreground = System.Windows.Media.Brushes.White,
                 HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 20, 0, 0)
+                Margin = new Thickness(0, 20, 0, 0),
+                Background = System.Windows.Media.Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                IsReadOnly = true
             };
             mainStack.Children.Add(titleText);
 
             // Subtitle
-            var subtitleText = new TextBlock
+            var subtitleText = new TextBox
             {
                 Text = "AT&T U-verse / Microsoft Mediaroom",
                 FontSize = 16,
                 Foreground = System.Windows.Media.Brushes.Gray,
-                HorizontalAlignment = HorizontalAlignment.Center
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Background = System.Windows.Media.Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                IsReadOnly = true
             };
             mainStack.Children.Add(subtitleText);
 
             // Status
-            statusText = new TextBlock
+            statusText = new TextBox
             {
                 Text = "Initializing...",
                 FontSize = 14,
                 Foreground = System.Windows.Media.Brushes.Yellow,
                 HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 10, 0, 0)
+                Margin = new Thickness(0, 10, 0, 0),
+                Background = System.Windows.Media.Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                IsReadOnly = true
             };
             mainStack.Children.Add(statusText);
 
