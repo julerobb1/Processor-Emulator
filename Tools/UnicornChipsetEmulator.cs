@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using ProcessorEmulator.Emulation;
 
 namespace ProcessorEmulator.Tools
 {
