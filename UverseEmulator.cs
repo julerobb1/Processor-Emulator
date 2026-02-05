@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.IO;
 using System.Windows;
+using ProcessorEmulator; // Added for IChipsetEmulator
 
 namespace ProcessorEmulator.Emulation
 {
