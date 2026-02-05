@@ -1,54 +1,11 @@
-<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net6.0-windows</TargetFramework>
-    <Nullable>enable</Nullable>
+    <TargetFramework>net8.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
-    <!-- Remove WindowsForms unless explicitly required; WPF suffices -->
-    <UseWindowsForms>true</UseWindowsForms>
-    <UseAppHost>true</UseAppHost>
-    <RootNamespace>ProcessorEmulator</RootNamespace>
-    <AssemblyName>ProcessorEmulator</AssemblyName>
-  <!-- Prevent automatic assembly info to avoid duplicate attributes with existing AssemblyInfo.cs -->
-  <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
-  <!-- Avoid duplicate TargetFrameworkAttribute generation -->
-  <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
-
-  <!-- Pre-build: ensure no stale running instance locking files (best-effort) -->
-  <Target Name="EnsureNoRunningInstance" BeforeTargets="BeforeBuild">
-    <Exec Command="taskkill /F /IM $(TargetName).exe /FI &quot;STATUS eq RUNNING&quot; &gt;nul 2&gt;&amp;1 || exit 0" ContinueOnError="true" />
-  </Target>
-
-  <ItemGroup>
-    <PackageReference Include="System.Management" Version="6.0.0" />
-    <PackageReference Include="SharpCompress" Version="0.30.0" />
-    <PackageReference Include="DiscUtils.Fat" Version="0.16.13" />
-    <PackageReference Include="DiscUtils.SquashFs" Version="0.16.13" />
-    <PackageReference Include="DiscUtils.Iso9660" Version="0.16.13" />
-    <PackageReference Include="DiscUtils.Ext" Version="0.16.13" />
-    <PackageReference Include="UnicornEngine.Unicorn" Version="2.1.0" />
-  </ItemGroup>
-
-  <!-- Exclude duplicate / legacy variants from compilation without deleting the files -->
-  <ItemGroup>
-    <Compile Remove="ArmHypervisor.cs" /> <!-- Prefer Emulation/ArmHypervisor.cs -->
-    <Compile Remove="Emulation\HomebrewEmulatorClean.cs" />
-    <Compile Remove="Emulation\HomebrewEmulator_New.cs" />
-    <Compile Remove="StandaloneBoltDemo.cs" />
-    <!-- Remove archived translator variant if causing symbol clashes -->
-    <Compile Remove="InstructionTranslator_Archive.cs" />
-  <!-- Remove duplicate manual (non-XAML) FolderAnalysisWindow to keep XAML-backed version -->
-  <Compile Remove="FolderAnalysisWindow.cs" />
-  <Compile Remove="MainWindow.cs" />
-  <!-- Exclude legacy IR representation which conflicts with Core Abstractions -->
-  <Compile Remove="Core\IntermediateRepresentation.cs" />
-  </ItemGroup>
-
-  <!-- Ensure resources (icons, etc.) are available to pack URIs -->
-  <ItemGroup>
-    <Resource Include="Resources\**\*.*" />
-  </ItemGroup>
 
 </Project>
