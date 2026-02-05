@@ -15,6 +15,15 @@ namespace ProcessorEmulator.Emulation
             _cp0 = cp0;
         }
 
+        // Convenience constructor used by older code paths that pass a RAM size.
+        public MipsBus(uint ramSize)
+        {
+            var cp0 = new CP0();
+            _cp0 = cp0;
+            // Create a RAM region starting at physical 0 of the provided size
+            AddDevice(new RamDevice(0, ramSize));
+        }
+
         public void AddDevice(IBusDevice device) => _devices.Add(device);
 
         public uint Translate(uint vaddr)
@@ -142,6 +151,17 @@ namespace ProcessorEmulator.Emulation
             {
                 // Or handle other device types that can be loaded
                 throw new Exception($"Cannot load data into device at address 0x{paddr:X8}");
+            }
+        }
+
+        // Compatibility helper: write a sequence of bytes to a virtual address.
+        // Some callers (boot managers) expect a WriteBytes method to bulk-load images.
+        public void WriteBytes(uint vaddr, byte[] data)
+        {
+            if (data == null) throw new ArgumentNullException(nameof(data));
+            for (int i = 0; i < data.Length; i++)
+            {
+                Write8(vaddr + (uint)i, data[i]);
             }
         }
     }
