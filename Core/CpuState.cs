@@ -18,9 +18,9 @@ namespace ProcessorEmulator.Core
         public bool IsLittleEndian { get; }
         public ulong? LinkedAddress { get; set; }
 
-        public CpuState(List<MemoryRegion> memoryMap, bool isLittleEndian, ulong startPC = 0)
+        public CpuState(List<ProcessorEmulator.Core.Emulation.MemoryRegion> memoryMap, bool isLittleEndian, ulong startPC = 0)
         {
-            _memoryMap = memoryMap ?? new List<MemoryRegion>();
+            _memoryMap = memoryMap ?? new List<ProcessorEmulator.Core.Emulation.MemoryRegion>();
             IsLittleEndian = isLittleEndian;
             PC = startPC;
 
@@ -67,27 +67,27 @@ namespace ProcessorEmulator.Core
             _registers[name] = value;
         }
 
-        private MemoryRegion HandleLazyAllocation(ulong address)
+        private ProcessorEmulator.Core.Emulation.MemoryRegion HandleLazyAllocation(ulong address)
         {
             const ulong pageSize = 4096;
             ulong startAddress = address / pageSize * pageSize; // Align to 4KB boundary
             
             Console.WriteLine($"[ADAPTIVE BUS]: New memory region discovered at 0x{address:X}. Mapping temporary 4KB RAM at 0x{startAddress:X}.");
 
-            var newRegion = new MemoryRegion($"RAM_Lazy_{startAddress:X}", startAddress, pageSize, MemoryRegionType.RAM);
+            var newRegion = new ProcessorEmulator.Core.Emulation.MemoryRegion($"RAM_Lazy_{startAddress:X}", startAddress, pageSize, ProcessorEmulator.Core.Emulation.MemoryRegionType.RAM);
             _memoryMap.Add(newRegion);
             _ramRegions[newRegion] = new byte[pageSize];
             
             return newRegion;
         }
 
-        private (MemoryRegion region, byte[] buffer) GetRegionAndBufferForAddress(ulong address)
+        private (ProcessorEmulator.Core.Emulation.MemoryRegion region, byte[] buffer) GetRegionAndBufferForAddress(ulong address)
         {
             foreach (var region in _memoryMap)
             {
                 if (region.Contains(address))
                 {
-                    if (region.Type == MemoryRegionType.RAM)
+                    if (region.Type == ProcessorEmulator.Core.Emulation.MemoryRegionType.RAM)
                     {
                         return (region, _ramRegions[region]);
                     }
