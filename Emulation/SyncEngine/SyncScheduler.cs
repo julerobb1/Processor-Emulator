@@ -16,7 +16,7 @@ namespace ProcessorEmulator.Emulation.SyncEngine
         private readonly EntitlementManager entitlementManager;
         private readonly CMTSResponder cmtsResponder;
         
-        private readonly Timer syncTimer;
+        private readonly System.Threading.Timer syncTimer;
         private readonly List<SyncEvent> syncHistory;
         private bool isRunning;
         private CancellationTokenSource cancellationTokenSource;
@@ -34,7 +34,7 @@ namespace ProcessorEmulator.Emulation.SyncEngine
             cancellationTokenSource = new CancellationTokenSource();
             
             // Start sync timer (runs every 30 minutes)
-            syncTimer = new Timer(OnSyncTimer, null, TimeSpan.Zero, TimeSpan.FromMinutes(30));
+            syncTimer = new System.Threading.Timer(OnSyncTimer, null, TimeSpan.Zero, TimeSpan.FromMinutes(30));
             
             Debug.WriteLine("[SyncScheduler] Sync scheduler initialized");
         }
