@@ -52,7 +52,7 @@ namespace ProcessorEmulator
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Auto
             };
             
-            var logTextBlock = new TextBox()
+            var logTextBlock = new System.Windows.Controls.TextBox()
             {
                 IsReadOnly = true,
                 FontFamily = new System.Windows.Media.FontFamily("Consolas"),
@@ -142,7 +142,7 @@ namespace ProcessorEmulator
             window.Show();
         }
         
-        private void ExecuteHypervisor(TextBox logTextBlock, CancellationToken cancellationToken)
+        private void ExecuteHypervisor(System.Windows.Controls.TextBox logTextBlock, CancellationToken cancellationToken)
         {
             try
             {
@@ -237,7 +237,7 @@ namespace ProcessorEmulator
             return "ARM_INST";
         }
         
-        private void ShowBootProgress(TextBox logTextBlock, int cycle)
+        private void ShowBootProgress(System.Windows.Controls.TextBox logTextBlock, int cycle)
         {
             switch (cycle)
             {
@@ -268,7 +268,7 @@ namespace ProcessorEmulator
             }
         }
         
-        private void LogMessage(TextBox textBox, string message)
+        private void LogMessage(System.Windows.Controls.TextBox textBox, string message)
         {
             Application.Current.Dispatcher.Invoke(() => {
                 textBox.AppendText($"[{DateTime.Now:HH:mm:ss.fff}] {message}\n");
