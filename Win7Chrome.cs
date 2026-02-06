@@ -63,7 +63,7 @@ namespace ProcessorEmulator
             w.WindowState = w.WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
         }
 
-        public static Brush GenerateNoiseBrush(int size = 64, byte alpha = 18)
+        public static System.Windows.Media.Brush GenerateNoiseBrush(int size = 64, byte alpha = 18)
         {
             var wb = new WriteableBitmap(size, size, 96, 96, PixelFormats.Bgra32, null);
             int stride = size * 4;
