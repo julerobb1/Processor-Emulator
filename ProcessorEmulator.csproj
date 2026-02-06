@@ -10,4 +10,18 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="SharpCompress" Version="0.29.0" />
+    <PackageReference Include="System.Management" Version="8.0.0" />
+  </ItemGroup>
+
+  <!-- Exclude duplicate/demo files to reduce duplicate-type compile errors quickly. These are non-destructive exclusions and can be reverted. -->
+  <ItemGroup>
+    <Compile Remove="ArmHypervisor.cs" />
+    <Compile Remove="StandaloneBoltDemo.cs" />
+    <Compile Remove="BoltDemo_Standalone\**\*.cs" />
+    <Compile Remove="Emulation\HomebrewEmulatorClean.cs" />
+    <Compile Remove="Emulation\*Clean.cs" />
+  </ItemGroup>
+
 </Project>
