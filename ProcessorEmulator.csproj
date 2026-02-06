@@ -22,6 +22,7 @@
     <Compile Remove="BoltDemo_Standalone\**\*.cs" />
     <Compile Remove="Emulation\HomebrewEmulatorClean.cs" />
     <Compile Remove="Emulation\*Clean.cs" />
+    <Compile Remove="FolderAnalysisWindow.cs" />
   </ItemGroup>
 
 </Project>
