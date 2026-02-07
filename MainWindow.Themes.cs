@@ -2,6 +2,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using MessageBox = System.Windows.MessageBox;
 
 namespace ProcessorEmulator
 {
