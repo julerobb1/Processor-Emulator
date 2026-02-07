@@ -3,6 +3,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
 using System.Windows.Media;
+using TextBox = System.Windows.Controls.TextBox;
+using Button = System.Windows.Controls.Button;
 
 namespace ProcessorEmulator
 {

@@ -3,6 +3,7 @@ using System;
 using System.Linq;
 using System.Windows;
 using System.Runtime.Versioning;
+using Application = System.Windows.Application;
 
 namespace ProcessorEmulator
 {

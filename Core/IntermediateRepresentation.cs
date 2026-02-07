@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 
-namespace ProcessorEmulator.Core
+namespace ProcessorEmulator.Core.IR
 {
     /// <summary>
     /// Minimal IR value representation used for immediates inside the IR.

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Windows;
+using MessageBox = System.Windows.MessageBox;
 
 namespace ProcessorEmulator
 {
