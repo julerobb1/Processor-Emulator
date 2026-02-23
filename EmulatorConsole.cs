@@ -1,13 +1,13 @@
 using System;
 using System.Drawing;
-using System.Windows.Forms;
+using WinForms = System.Windows.Forms;
 using System.Linq;
 
 namespace ProcessorEmulator
 {
-    public partial class EmulatorConsole : Form
+    public partial class EmulatorConsole : WinForms.Form
     {
-        private RichTextBox _terminal;
+        private WinForms.RichTextBox _terminal;
 
         public EmulatorConsole()
         {
@@ -15,7 +15,7 @@ namespace ProcessorEmulator
             this.BackColor = SystemColors.Control;
             this.Size = new Size(800, 600);
 
-            _terminal = new RichTextBox
+            _terminal = new WinForms.RichTextBox
             {
                 Dock = DockStyle.Fill,
                 BackColor = Color.Black,
@@ -48,7 +48,7 @@ namespace ProcessorEmulator
         }
 
         // Intercepts key presses to send to the emulated UART.
-        protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+        protected override bool ProcessCmdKey(ref WinForms.Message msg, WinForms.Keys keyData)
         {
             char c = (char)0;
 
