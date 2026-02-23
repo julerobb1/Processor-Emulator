@@ -34,29 +34,29 @@ namespace ProcessorEmulator
                 if (app.Resources.Contains(k)) backup[k] = app.Resources[k];
             }
 
-            var color = GetColorizationColor() ?? Color.FromRgb(30, 90, 150); // Classic blue tint
+            var color = GetColorizationColor() ?? System.Windows.Media.Color.FromRgb(30, 90, 150); // Classic blue tint
             // Semi-transparent tints for glass areas
-            var menuBrush = new SolidColorBrush(Color.FromArgb(180, color.R, color.G, color.B));
-            var statusBrush = new SolidColorBrush(Color.FromArgb(160, color.R, color.G, color.B));
-            var panelBrush = new SolidColorBrush(Color.FromArgb(20, color.R, color.G, color.B));
+            var menuBrush = new SolidColorBrush(System.Windows.Media.Color.FromArgb(180, color.R, color.G, color.B));
+            var statusBrush = new SolidColorBrush(System.Windows.Media.Color.FromArgb(160, color.R, color.G, color.B));
+            var panelBrush = new SolidColorBrush(System.Windows.Media.Color.FromArgb(20, color.R, color.G, color.B));
             menuBrush.Freeze(); statusBrush.Freeze(); panelBrush.Freeze();
 
             // Header (tabs/menu) gradient similar to Win7 (light at top)
             var headerGradient = new LinearGradientBrush(
                 new GradientStopCollection
                 {
-                    new GradientStop(Color.FromArgb(235, (byte)Math.Min(color.R+40,255), (byte)Math.Min(color.G+40,255), (byte)Math.Min(color.B+40,255)),0),
-                    new GradientStop(Color.FromArgb(200, color.R, color.G, color.B),1)
+                    new GradientStop(System.Windows.Media.Color.FromArgb(235, (byte)Math.Min(color.R+40,255), (byte)Math.Min(color.G+40,255), (byte)Math.Min(color.B+40,255)),0),
+                    new GradientStop(System.Windows.Media.Color.FromArgb(200, color.R, color.G, color.B),1)
                 }, new Point(0,0), new Point(0,1));
             headerGradient.Freeze();
 
             // Accent brush for titles
-            var accent = new SolidColorBrush(Color.FromArgb(255, (byte)Math.Min(color.R+10,255), (byte)Math.Min(color.G+10,255), (byte)Math.Min(color.B+10,255)));
+            var accent = new SolidColorBrush(System.Windows.Media.Color.FromArgb(255, (byte)Math.Min(color.R+10,255), (byte)Math.Min(color.G+10,255), (byte)Math.Min(color.B+10,255)));
             accent.Freeze();
 
             app.Resources["AeroHeaderBrush"] = headerGradient;
             app.Resources["AeroAccentBrush"] = accent;
-            app.Resources["AeroBorderBrush"] = new SolidColorBrush(Color.FromArgb(160, 255, 255, 255));
+            app.Resources["AeroBorderBrush"] = new SolidColorBrush(System.Windows.Media.Color.FromArgb(160, 255, 255, 255));
             app.Resources["WindowBackgroundBrush"] = panelBrush; // translucent panel behind content
             app.Resources["GlassMenuBackgroundBrush"] = menuBrush;
             app.Resources["GlassStatusBackgroundBrush"] = statusBrush;
