@@ -24,6 +24,7 @@
     <Compile Remove="Emulation\*Clean.cs" />
     <Compile Remove="FolderAnalysisWindow.cs" />
     <Compile Remove="MainWindow.cs" />
+
   </ItemGroup>
 
 </Project>
