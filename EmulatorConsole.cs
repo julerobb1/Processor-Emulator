@@ -17,13 +17,13 @@ namespace ProcessorEmulator
 
             _terminal = new WinForms.RichTextBox
             {
-                Dock = DockStyle.Fill,
+                Dock = WinForms.DockStyle.Fill,
                 BackColor = Color.Black,
                 ForeColor = Color.Lime,
                 Font = new Font("Lucida Console", 10, FontStyle.Regular),
                 ReadOnly = true,
                 Multiline = true,
-                ScrollBars = RichTextBoxScrollBars.Vertical
+                ScrollBars = WinForms.RichTextBoxScrollBars.Vertical
             };
 
             this.Controls.Add(_terminal);
@@ -52,19 +52,19 @@ namespace ProcessorEmulator
         {
             char c = (char)0;
 
-            if (keyData == Keys.Enter) c = '\r';
-            else if (keyData == Keys.Back) c = '\b';
-            else if (keyData >= Keys.A && keyData <= Keys.Z)
+            if (keyData == WinForms.Keys.Enter) c = '\r';
+            else if (keyData == WinForms.Keys.Back) c = '\b';
+            else if (keyData >= WinForms.Keys.A && keyData <= WinForms.Keys.Z)
             {
-                bool shift = (ModifierKeys & Keys.Shift) != 0;
+                bool shift = (WinForms.Control.ModifierKeys & WinForms.Keys.Shift) != 0;
                 c = (char)(keyData.ToString()[0]);
                 if (!shift) c = char.ToLower(c);
             }
-            else if (keyData >= Keys.D0 && keyData <= Keys.D9)
+            else if (keyData >= WinForms.Keys.D0 && keyData <= WinForms.Keys.D9)
             {
                 c = keyData.ToString().Last();
             }
-            else if (keyData == Keys.Space) c = ' ';
+            else if (keyData == WinForms.Keys.Space) c = ' ';
 
             // Send the character to the UART if it's a valid one.
             if (c != 0 && Program.CurrentUart != null)
