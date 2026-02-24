@@ -56,7 +56,7 @@ namespace ProcessorEmulator
             else if (keyData == WinForms.Keys.Back) c = '\b';
             else if (keyData >= WinForms.Keys.A && keyData <= WinForms.Keys.Z)
             {
-                bool shift = (WinForms.Control.ModifierKeys & WinForms.Keys.Shift) != 0;
+                bool shift = (ModifierKeys & WinForms.Keys.Shift) != 0;
                 c = (char)(keyData.ToString()[0]);
                 if (!shift) c = char.ToLower(c);
             }
