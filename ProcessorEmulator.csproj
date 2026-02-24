@@ -7,7 +7,6 @@
     <UseWindowsForms>true</UseWindowsForms>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <Nullable>enable</Nullable>
-    <!-- Implicit usings disabled to avoid global conflicts between WPF and WinForms. -->
     <ImplicitUsings>disable</ImplicitUsings>
   </PropertyGroup>
 
