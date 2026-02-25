@@ -57,21 +57,67 @@ namespace ProcessorEmulator
                 uartDevice.OnCharReceived += console.AppendChar;
             }
 
-            // --- Load a dummy binary for testing ---
-            string nkBinPath = "nk.bin";
+            // --- Determine firmware path ---
+            // 1. look at config file created by the user
+            // 2. fallback to environment variable FIRMWARE_PATH
+            // 3. as a last resort try scanning common folders
+            string nkBinPath = ConfigManager.Config.FirmwarePath;
+            if (string.IsNullOrEmpty(nkBinPath))
+            {
+                nkBinPath = Environment.GetEnvironmentVariable("FIRMWARE_PATH") ?? string.Empty;
+            }
+
+            if (string.IsNullOrEmpty(nkBinPath) ||
+                !(File.Exists(nkBinPath) || Directory.Exists(nkBinPath)))
+            {
+                // perform a one‑time gentle search in Downloads and Documents
+                var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                nkBinPath = FirmwareScanner.FindKernelGently(Path.Combine(home, "Downloads"))
+                            ?? FirmwareScanner.FindKernelGently(Path.Combine(home, "Documents"));
+
+                if (!string.IsNullOrEmpty(nkBinPath))
+                {
+                    Log($"Auto‑discovered firmware at {nkBinPath}, saving config");
+                    ConfigManager.Config.FirmwarePath = nkBinPath;
+                    ConfigManager.Save();
+                }
+            }
+
+            // directory‑vs‑file detection (previous logic)
+            if (Directory.Exists(nkBinPath))
+            {
+                Log($"Startup: '{nkBinPath}' is a directory, searching for kernel exe");
+                var candidate = Directory.EnumerateFiles(nkBinPath, "nk.exe",
+                    SearchOption.AllDirectories).FirstOrDefault();
+                if (candidate != null)
+                {
+                    Log($"Found kernel image at {candidate}");
+                    nkBinPath = candidate;
+                }
+                else
+                {
+                    Log("Warning: directory provided but no nk.exe found – will fall back to dummy");
+                }
+            }
+
             if (!File.Exists(nkBinPath))
             {
-                // Create a simple MIPS program:
-                // 0x3c01bfc0  lui at, 0xbfc0
-                // 0x24220000  addiu v0, at, 0
-                // loop:
-                // 0x10400001  beq v0, zero, loop
-                byte[] dummyBin = {
-                    0x3c, 0x01, 0xbf, 0xc0,
-                    0x24, 0x22, 0x00, 0x00,
-                    0x10, 0x40, 0x00, 0x01 
-                };
-                File.WriteAllBytes(nkBinPath, dummyBin);
+                // fallback to local copy (dummy program)
+                nkBinPath = "nk.bin";
+                if (!File.Exists(nkBinPath))
+                {
+                    // Create a simple MIPS program:
+                    // 0x3c01bfc0  lui at, 0xbfc0
+                    // 0x24220000  addiu v0, at, 0
+                    // loop:
+                    // 0x10400001  beq v0, zero, loop
+                    byte[] dummyBin = {
+                        0x3c, 0x01, 0xbf, 0xc0,
+                        0x24, 0x22, 0x00, 0x00,
+                        0x10, 0x40, 0x00, 0x01 
+                    };
+                    File.WriteAllBytes(nkBinPath, dummyBin);
+                }
             }
             
             byte[] osImage = File.ReadAllBytes(nkBinPath);
