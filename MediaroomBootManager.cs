@@ -104,47 +104,47 @@ namespace ProcessorEmulator
                 // Stage 1: Load and validate firmware components
                 if (!await LoadFirmwareComponents())
                 {
-                    LogBoot("❌ BOOT FAILED: Missing critical firmware components");
+                    LogBoot("BOOT FAILED: Missing critical firmware components");
                     return false;
                 }
                 
                 // Stage 2: Boot WinCE kernel
                 if (!await BootWinCEKernel())
                 {
-                    LogBoot("❌ BOOT FAILED: WinCE kernel boot failed");
+                    LogBoot("BOOT FAILED: WinCE kernel boot failed");
                     return false;
                 }
                 
                 // Stage 3: Initialize system services
                 if (!await InitializeSystemServices())
                 {
-                    LogBoot("❌ BOOT FAILED: System services initialization failed");
+                    LogBoot("BOOT FAILED: System services initialization failed");
                     return false;
                 }
                 
                 // Stage 4: Load Mediaroom platform
                 if (!await LoadMediaroomPlatform())
                 {
-                    LogBoot("❌ BOOT FAILED: Mediaroom platform load failed");
+                    LogBoot("BOOT FAILED: Mediaroom platform load failed");
                     return false;
                 }
                 
                 // Stage 5: Initialize IPTV services
                 if (!await InitializeIPTVServices())
                 {
-                    LogBoot("❌ BOOT FAILED: IPTV services initialization failed");
+                    LogBoot("BOOT FAILED: IPTV services initialization failed");
                     return false;
                 }
                 
                 // Stage 6: Launch Mediaroom UI
                 if (!await LaunchMediaroomUI())
                 {
-                    LogBoot("❌ BOOT FAILED: Mediaroom UI launch failed");
+                    LogBoot("BOOT FAILED: Mediaroom UI launch failed");
                     return false;
                 }
                 
-                LogBoot("✅ MEDIAROOM BOOT COMPLETE - System Ready");
-                LogBoot("📺 AT&T U-verse IPTV Platform is now running");
+                LogBoot("MEDIAROOM BOOT COMPLETE - System Ready");
+                LogBoot("AT&T U-verse IPTV Platform is now running");
                 currentStage = BootStage.Complete;
                 return true;
             }
@@ -206,7 +206,7 @@ namespace ProcessorEmulator
                     }
                     catch (Exception ex)
                     {
-                        LogBoot($"❌ Failed to load {component.Key}: {ex.Message}");
+                        LogBoot($"Failed to load {component.Key}: {ex.Message}");
                     }
                 }
                 else
@@ -223,7 +223,7 @@ namespace ProcessorEmulator
             
             if (!hasKernel)
             {
-                LogBoot("❌ Critical: WinCE kernel (nk.bin) not found");
+                LogBoot("Critical: WinCE kernel (nk.bin) not found");
                 return false;
             }
             
@@ -277,11 +277,11 @@ namespace ProcessorEmulator
             // Mount registry hive
             if (firmwareComponents.ContainsKey("default.hv"))
             {
-                LogBoot("📋 Mounting registry hive...");
+                LogBoot("Mounting registry hive...");
                 await ParseRegistryHive(); // Still async, but doesn't block CPU
             }
             
-            LogBoot("✅ WinCE kernel boot complete");
+            LogBoot("WinCE kernel boot complete");
             isKernelLoaded = true;
             return true;
         }
@@ -307,13 +307,13 @@ namespace ProcessorEmulator
                 LogBoot($"🔧 Starting {service}: {description}");
             }
             
-            LogBoot("✅ System services initialized");
+            LogBoot("System services initialized");
             return true;
         }
         
         private async Task<bool> LoadMediaroomPlatform()
         {
-            LogBoot("📺 Stage 4: Loading Microsoft Mediaroom platform...");
+            LogBoot("Stage 4: Loading Microsoft Mediaroom platform...");
             currentStage = BootStage.MediaroomLoad;
             
             // Load Mediaroom core components
@@ -342,7 +342,7 @@ namespace ProcessorEmulator
                 }
             }
             
-            LogBoot("✅ Mediaroom platform loaded");
+            LogBoot("Mediaroom platform loaded");
             return true;
         }
         
@@ -373,10 +373,10 @@ namespace ProcessorEmulator
             foreach (var service in iptvServices)
             {
                 await Task.Delay(300);
-                LogBoot($"📺 Initializing {service}...");
+                LogBoot($"Initializing {service}...");
             }
             
-            LogBoot("✅ IPTV services ready");
+            LogBoot("IPTV services ready");
             return true;
         }
         
@@ -386,7 +386,7 @@ namespace ProcessorEmulator
             currentStage = BootStage.UILaunch;
             
             await Task.Delay(1000);
-            LogBoot("🎨 Loading UI framework...");
+            LogBoot("Loading UI framework...");
             
             await Task.Delay(800);
             LogBoot("📋 Building electronic program guide...");
@@ -395,9 +395,9 @@ namespace ProcessorEmulator
             LogBoot("🏠 Loading home screen...");
             
             await Task.Delay(500);
-            LogBoot("📺 Initializing live TV...");
+            LogBoot("Initializing live TV...");
             
-            LogBoot("✅ Mediaroom UI launched successfully");
+            LogBoot("Mediaroom UI launched successfully");
             LogBoot("🎉 AT&T U-verse IPTV is ready for use!");
             
             isMediaroomReady = true;
@@ -482,7 +482,7 @@ namespace ProcessorEmulator
                 }
                 
                 await File.WriteAllBytesAsync(filePath, syntheticData);
-                LogBoot($"✅ Created {component.Key} ({syntheticData.Length} bytes)");
+                LogBoot($"Created {component.Key} ({syntheticData.Length} bytes)");
             }
         }
         
