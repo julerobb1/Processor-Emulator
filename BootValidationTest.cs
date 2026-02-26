@@ -27,7 +27,7 @@ namespace ProcessorEmulator
             await TestCompleteEmulator();
             
             Console.WriteLine("=" + new string('=', 60));
-            Console.WriteLine("✅ Boot Validation Test Suite Complete!");
+            Console.WriteLine("Boot Validation Test Suite Complete!");
         }
         
         private static async Task TestCpuCore()
@@ -75,16 +75,16 @@ namespace ProcessorEmulator
                 // Validate results
                 if (bootEventFired && instructionEventFired)
                 {
-                    Console.WriteLine("  ✅ CPU Core test PASSED");
+                    Console.WriteLine("  CPU Core test PASSED");
                 }
                 else
                 {
-                    Console.WriteLine("  ❌ CPU Core test FAILED - Events not fired properly");
+                    Console.WriteLine("  CPU Core test FAILED - Events not fired properly");
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"  ❌ CPU Core test FAILED: {ex.Message}");
+                Console.WriteLine($"  CPU Core test FAILED: {ex.Message}");
             }
         }
         
@@ -119,16 +119,16 @@ namespace ProcessorEmulator
                 
                 if (ramByte == 0xAB)
                 {
-                    Console.WriteLine("  ✅ Memory Map test PASSED");
+                    Console.WriteLine("  Memory Map test PASSED");
                 }
                 else
                 {
-                    Console.WriteLine("  ❌ Memory Map test FAILED - RAM read/write failed");
+                    Console.WriteLine("  Memory Map test FAILED - RAM read/write failed");
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"  ❌ Memory Map test FAILED: {ex.Message}");
+                Console.WriteLine($"  Memory Map test FAILED: {ex.Message}");
             }
             
             await Task.CompletedTask;
@@ -157,7 +157,7 @@ namespace ProcessorEmulator
                     Console.WriteLine($"  🏗️ Format: {firmwareInfo.Format}");
                     Console.WriteLine($"  🏛️ Architecture: {firmwareInfo.Architecture}");
                     Console.WriteLine($"  🎯 Entry Point: 0x{firmwareInfo.EstimatedEntryPoint:X8}");
-                    Console.WriteLine($"  ✅ Valid: {firmwareInfo.IsValid}");
+                    Console.WriteLine($"  Valid: {firmwareInfo.IsValid}");
                     
                     if (firmwareInfo.DetectedStrings?.Length > 0)
                     {
@@ -170,11 +170,11 @@ namespace ProcessorEmulator
                     
                     if (firmwareInfo.IsValid && firmwareInfo.Size == testData.Length)
                     {
-                        Console.WriteLine("  ✅ Firmware Loader test PASSED");
+                        Console.WriteLine("  Firmware Loader test PASSED");
                     }
                     else
                     {
-                        Console.WriteLine("  ❌ Firmware Loader test FAILED - Invalid analysis");
+                        Console.WriteLine("  Firmware Loader test FAILED - Invalid analysis");
                     }
                 }
                 finally
@@ -184,7 +184,7 @@ namespace ProcessorEmulator
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"  ❌ Firmware Loader test FAILED: {ex.Message}");
+                Console.WriteLine($"  Firmware Loader test FAILED: {ex.Message}");
             }
         }
         
@@ -224,11 +224,11 @@ namespace ProcessorEmulator
                             
                             // Note: We won't test Start() here as it launches QEMU
                             Console.WriteLine("  ⚠️ Skipping Start() test (would launch QEMU)");
-                            Console.WriteLine("  ✅ Complete Emulator test PASSED");
+                            Console.WriteLine("  Complete Emulator test PASSED");
                         }
                         else
                         {
-                            Console.WriteLine("  ❌ Complete Emulator test FAILED - Load failed");
+                            Console.WriteLine("  Complete Emulator test FAILED - Load failed");
                         }
                     }
                     finally
@@ -238,12 +238,12 @@ namespace ProcessorEmulator
                 }
                 else
                 {
-                    Console.WriteLine("  ❌ Complete Emulator test FAILED - Init failed");
+                    Console.WriteLine("  Complete Emulator test FAILED - Init failed");
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"  ❌ Complete Emulator test FAILED: {ex.Message}");
+                Console.WriteLine($"  Complete Emulator test FAILED: {ex.Message}");
             }
         }
         
