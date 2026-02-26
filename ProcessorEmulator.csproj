@@ -8,6 +8,11 @@
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
+    <!-- silence hundreds of warning codes that are either
+         platform-specific (CA1416) or nullable analysis noise
+         originating from large legacy code sections.  They
+         can be addressed over time but do not block building. -->
+    <NoWarn>CS8618;CS8600;CS8602;CS8603;CS8622;CS8625;CA1416</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
