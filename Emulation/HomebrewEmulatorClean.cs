@@ -393,7 +393,7 @@ namespace ProcessorEmulator.Emulation
                 if (pixelIndex % 1000 == 0)
                 {
                     pxRenderer.Flip();
-                    Debug.WriteLine($"🎨 Framebuffer pixel updated: ({x},{y}) = 0x{value:X8}");
+                    Debug.WriteLine($"Framebuffer pixel updated: ({x},{y}) = 0x{value:X8}");
                 }
             }
         }
