@@ -224,12 +224,12 @@ namespace ProcessorEmulator.Emulation
                     Debug.WriteLine("[DisplayInit] 🖥️ Boot screen window created and visible!");
                 });
                 
-                Debug.WriteLine($"[DisplayInit] ✅ Framebuffer ready: {pxRenderer.GetFramebufferStats()}");
+                Debug.WriteLine($"[DisplayInit] Framebuffer ready: {pxRenderer.GetFramebufferStats()}");
                 Debug.WriteLine("[DisplayInit] 🎯 Ready to capture firmware display writes");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[DisplayInit] ❌ Display pipeline init failed: {ex.Message}");
+                Debug.WriteLine($"[DisplayInit] Display pipeline init failed: {ex.Message}");
                 pxRenderer = null; // Fallback to headless mode
             }
         }
@@ -515,7 +515,7 @@ namespace ProcessorEmulator.Emulation
                 if (pixelIndex % 1000 == 0)
                 {
                     pxRenderer.Flip();
-                    Debug.WriteLine($"🎨 Framebuffer pixel updated: ({x},{y}) = 0x{value:X8}");
+                    Debug.WriteLine($"Framebuffer pixel updated: ({x},{y}) = 0x{value:X8}");
                 }
             }
         }
@@ -1577,7 +1577,7 @@ namespace ProcessorEmulator.Emulation
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"❌ EXECUTION ERROR at PC=0x{pc:X8}: {ex.Message}");
+                    Debug.WriteLine($"EXECUTION ERROR at PC=0x{pc:X8}: {ex.Message}");
                     Debug.WriteLine($"    Instruction count: {instructionCount}");
                     Debug.WriteLine($"    Call stack: {ex.StackTrace}");
                     break;
