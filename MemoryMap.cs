@@ -150,7 +150,7 @@ namespace ProcessorEmulator
         
         public void DumpMemory(uint address, int length)
         {
-            Console.WriteLine($"📋 Memory dump at 0x{address:X8} ({GetRegionName(address)}):");
+            Console.WriteLine($"Memory dump at 0x{address:X8} ({GetRegionName(address)}):");
             
             for (int i = 0; i < length; i += 16)
             {
