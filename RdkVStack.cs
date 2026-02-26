@@ -214,7 +214,7 @@ namespace ProcessorEmulator
         
         public async Task<bool> Initialize()
         {
-            Console.WriteLine($"📺 Initializing RDK-V Stack ({rdkVersion})");
+            Console.WriteLine($"Initializing RDK-V Stack ({rdkVersion})");
             Console.WriteLine($"Platform: {platformTarget}");
             Console.WriteLine($"Components: {components.Count}");
             
@@ -227,13 +227,13 @@ namespace ProcessorEmulator
                 {
                     if (!await InitializeComponent(component))
                     {
-                        Console.WriteLine($"❌ Failed to initialize {component}");
+                        Console.WriteLine($"Failed to initialize {component}");
                         return false;
                     }
                 }
                 
                 stackInitialized = true;
-                Console.WriteLine("✅ RDK-V stack initialization complete");
+                Console.WriteLine("RDK-V stack initialization complete");
                 
                 // Show component status
                 await ShowComponentStatus();
@@ -242,7 +242,7 @@ namespace ProcessorEmulator
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ RDK-V initialization failed: {ex.Message}");
+                Console.WriteLine($"RDK-V initialization failed: {ex.Message}");
                 return false;
             }
         }
@@ -284,7 +284,7 @@ namespace ProcessorEmulator
                 {
                     if (!components[dep].IsInitialized)
                     {
-                        Console.WriteLine($"❌ Dependency {depName} not initialized");
+                        Console.WriteLine($"Dependency {depName} not initialized");
                         return false;
                     }
                 }
@@ -313,7 +313,7 @@ namespace ProcessorEmulator
             status.IsRunning = true;
             status.StartTime = DateTime.Now;
             
-            Console.WriteLine($"✅ {component} initialized and running");
+            Console.WriteLine($"{component} initialized and running");
             return true;
         }
         
@@ -438,7 +438,7 @@ namespace ProcessorEmulator
                 "x1platform.comcast.com" 
             };
             
-            Console.WriteLine("✅ RDK-V configured for Comcast X1");
+            Console.WriteLine("RDK-V configured for Comcast X1");
             
             await Task.CompletedTask;
         }
@@ -511,7 +511,7 @@ namespace ProcessorEmulator
             
             if (!IsStackReady())
             {
-                Console.WriteLine("❌ RDK-V stack not ready");
+                Console.WriteLine("RDK-V stack not ready");
                 return false;
             }
             
@@ -532,7 +532,7 @@ namespace ProcessorEmulator
                 await Task.Delay(200);
             }
             
-            Console.WriteLine("✅ X1 Guide Application launched successfully");
+            Console.WriteLine("X1 Guide Application launched successfully");
             return true;
         }
         
@@ -554,7 +554,7 @@ namespace ProcessorEmulator
                 await Task.Delay(150);
             }
             
-            Console.WriteLine("✅ Settings Application launched successfully");
+            Console.WriteLine("Settings Application launched successfully");
             return true;
         }
         
@@ -581,7 +581,7 @@ namespace ProcessorEmulator
             }
             
             stackInitialized = false;
-            Console.WriteLine("✅ RDK-V stack shutdown complete");
+            Console.WriteLine("RDK-V stack shutdown complete");
             return true;
         }
         
