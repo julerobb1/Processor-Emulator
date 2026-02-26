@@ -70,7 +70,7 @@ namespace ProcessorEmulator
             // Analyze firmware format and architecture
             AnalyzeFirmware(info);
             
-            Console.WriteLine($"✅ Firmware loaded successfully:");
+            Console.WriteLine("Firmware loaded successfully:");
             Console.WriteLine($"   File: {info.Filename}");
             Console.WriteLine($"   Size: {info.Size:N0} bytes");
             Console.WriteLine($"   Format: {info.Format}");
@@ -305,14 +305,14 @@ namespace ProcessorEmulator
             if (info.Size == 0)
             {
                 info.IsValid = false;
-                Console.WriteLine("❌ Invalid firmware: Empty file");
+                Console.WriteLine("Invalid firmware: Empty file");
                 return;
             }
             
             if (info.Size > 1024 * 1024 * 1024) // 1GB limit
             {
                 info.IsValid = false;
-                Console.WriteLine("❌ Invalid firmware: File too large (>1GB)");
+                Console.WriteLine("Invalid firmware: File too large (>1GB)");
                 return;
             }
             
@@ -321,7 +321,7 @@ namespace ProcessorEmulator
                 Console.WriteLine("⚠️ Warning: Could not determine firmware format or architecture");
             }
             
-            Console.WriteLine($"✅ Firmware validation passed");
+            Console.WriteLine($"Firmware validation passed");
         }
     }
 }
