@@ -24,21 +24,21 @@ namespace ProcessorEmulator
                 firmwarePath = path;
                 var fileInfo = new FileInfo(path);
                 
-                Console.WriteLine($"✅ Firmware loaded: {Path.GetFileName(path)}");
+                Console.WriteLine($"Firmware loaded: {Path.GetFileName(path)}");
                 Console.WriteLine($"📁 Size: {fileInfo.Length:N0} bytes");
                 Console.WriteLine($"📅 Modified: {fileInfo.LastWriteTime}");
                 
                 // Analyze firmware header
                 var header = File.ReadAllBytes(path).Take(256).ToArray();
                 var headerHex = BitConverter.ToString(header).Replace("-", " ");
-                Console.WriteLine($"🔍 Header: {headerHex.Substring(0, Math.Min(48, headerHex.Length))}...");
+                Console.WriteLine($"Header: {headerHex.Substring(0, Math.Min(48, headerHex.Length))}...");
                 
                 await Task.Delay(500); // Simulate loading time
                 return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Failed to load firmware: {ex.Message}");
+                Console.WriteLine($"Failed to load firmware: {ex.Message}");
                 return false;
             }
         }
@@ -51,7 +51,7 @@ namespace ProcessorEmulator
                     throw new InvalidOperationException("No firmware loaded");
 
                 Console.WriteLine("🚀 Starting firmware emulation...");
-                Console.WriteLine("🔧 Initializing virtual CPU...");
+                Console.WriteLine("Initializing virtual CPU...");
                 await Task.Delay(1000);
                 
                 Console.WriteLine("💾 Setting up memory map...");
@@ -60,10 +60,10 @@ namespace ProcessorEmulator
                 Console.WriteLine("🖥️ Booting firmware...");
                 await Task.Delay(1000);
                 
-                Console.WriteLine("✅ Firmware boot simulation complete!");
+                Console.WriteLine("Firmware boot simulation complete!");
                 Console.WriteLine("📊 CPU: ARM Cortex-A15");
                 Console.WriteLine("💾 Memory: 2GB DDR3");
-                Console.WriteLine("🎯 Entry Point: 0x80010000");
+                Console.WriteLine("Entry Point: 0x80010000");
                 Console.WriteLine("⚡ Status: Running");
                 
                 isRunning = true;
@@ -72,7 +72,7 @@ namespace ProcessorEmulator
                 Application.Current.Dispatcher.Invoke(() =>
                 {
                     MessageBox.Show(
-                        $"✅ Firmware emulation started successfully!\n\n" +
+                        $"Firmware emulation started successfully!\n\n" +
                         $"File: {Path.GetFileName(firmwarePath)}\n" +
                         $"Size: {new FileInfo(firmwarePath).Length:N0} bytes\n" +
                         $"Architecture: ARM\n" +
@@ -87,7 +87,7 @@ namespace ProcessorEmulator
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Failed to start emulation: {ex.Message}");
+                Console.WriteLine($"Failed to start emulation: {ex.Message}");
                 return false;
             }
         }
