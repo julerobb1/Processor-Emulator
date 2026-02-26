@@ -6,30 +6,6 @@ using ProcessorEmulator; // Added for IChipsetEmulator
 
 namespace ProcessorEmulator.Emulation
 {
-    public class RDKVPlatformConfig
-    {
-        public string PlatformName { get; set; }  // Comcast, Cox, Rogers, Shaw
-        public string ProcessorType { get; set; } // ARM, MIPS, etc.
-        public long MemorySize { get; set; }
-        public bool IsDVR { get; set; }
-        public string FilesystemType { get; set; } // Custom filesystem type
-        public string DeviceModel { get; set; }   // XG1V4, X1, etc.
-        
-        // ARRIS XG1V4 specific configuration (ARM Cortex-A15 based)
-        public static RDKVPlatformConfig CreateArrisXG1V4Config()
-        {
-            return new RDKVPlatformConfig
-            {
-                PlatformName = "Comcast",
-                DeviceModel = "ARRIS XG1V4",
-                ProcessorType = "ARM", // Broadcom BCM7445 - ARM Cortex-A15 quad-core
-                MemorySize = 128 * 1024 * 1024, // 128MB RAM
-                IsDVR = true,
-                FilesystemType = "SquashFS/UBIFS"
-            };
-        }
-    }
-
     public class RDKVEmulator : IChipsetEmulator
     {
         private readonly RDKVPlatformConfig config;
@@ -87,7 +63,7 @@ namespace ProcessorEmulator.Emulation
             }
 
             firmwareData = data;
-            Debug.WriteLine($"✅ RDK-V firmware loaded: {data.Length} bytes");
+            Debug.WriteLine($"RDK-V firmware loaded: {data.Length} bytes");
             Debug.WriteLine($"Platform: {config.DeviceModel} ({config.PlatformName})");
             Debug.WriteLine($"Target CPU: {config.ProcessorType} ({SupportedArch})");
             
@@ -145,16 +121,16 @@ namespace ProcessorEmulator.Emulation
                 Task.Run(() => {
                     hypervisor.Start();
                     isRunning = false;
-                    Debug.WriteLine("✅ ARM Hypervisor execution finished.");
+                    Debug.WriteLine("ARM Hypervisor execution finished.");
                 });
                 
-                Debug.WriteLine("✅ Real ARM Hypervisor launched successfully");
+                Debug.WriteLine("Real ARM Hypervisor launched successfully");
                 Debug.WriteLine("🎯 Real ARM emulation with custom hypervisor");
-                Debug.WriteLine("📺 Actual firmware execution - not simulated");
+                Debug.WriteLine("Actual firmware execution - not simulated");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"❌ X1 Platform hypervisor launch error: {ex.Message}");
+                Debug.WriteLine($"X1 Platform hypervisor launch error: {ex.Message}");
                 isRunning = false;
                 throw;
             }
