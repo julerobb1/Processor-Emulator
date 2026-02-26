@@ -180,7 +180,7 @@ namespace ProcessorEmulator
             bool success = await hypervisor.StartEmulation();
             if (!success)
             {
-                AppendLog("❌ Failed to start U-verse emulation");
+                AppendLog("Failed to start U-verse emulation");
                 startButton.IsEnabled = true;
                 stopButton.IsEnabled = false;
             }
