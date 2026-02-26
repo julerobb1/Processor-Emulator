@@ -109,18 +109,18 @@ namespace ProcessorEmulator
         {
             if (apiHandlers.TryGetValue(address, out var handler))
             {
-                Console.WriteLine($"🔧 Calling Windows CE API: {addressToApiName[address]} at 0x{address:X8}");
+                Console.WriteLine($"Calling Windows CE API: {addressToApiName[address]} at 0x{address:X8}");
                 return await handler(cpu, memory);
             }
 
             // Unknown function call - treat as return
-            Console.WriteLine($"⚠️ Unknown function call to 0x{address:X8}");
+            Console.WriteLine($"Unknown function call to 0x{address:X8}");
             return new ExecutionResult { ShouldExit = false };
         }
 
         public async Task<ExecutionResult> HandleSystemCallAsync(uint syscallNumber, CPUState cpu, VirtualMemoryManager memory)
         {
-            Console.WriteLine($"🔧 System call: {syscallNumber}");
+            Console.WriteLine($"System call: {syscallNumber}");
 
             // Windows CE system calls are typically handled through APIs
             // For now, treat as NOP
@@ -269,7 +269,7 @@ namespace ProcessorEmulator
             var filenamePtr = cpu.Registers[0];
             var filename = ReadWideString(memory, filenamePtr);
             
-            Console.WriteLine($"🗑️ DeleteFileW: {filename}");
+            Console.WriteLine($"DeleteFileW: {filename}");
             cpu.Registers[0] = 1; // TRUE
             await Task.CompletedTask;
             return new ExecutionResult { ShouldExit = false };
@@ -291,7 +291,7 @@ namespace ProcessorEmulator
             var patternPtr = cpu.Registers[0];
             var pattern = ReadWideString(memory, patternPtr);
             
-            Console.WriteLine($"🔍 FindFirstFileW: {pattern}");
+            Console.WriteLine($"FindFirstFileW: {pattern}");
             if (cpu.Registers != null && cpu.Registers.Length > 0) cpu.Registers[0] = 0xFFFFFFFF; // INVALID_HANDLE_VALUE (no files found)
             await Task.CompletedTask;
             return new ExecutionResult { ShouldExit = false };
@@ -299,7 +299,7 @@ namespace ProcessorEmulator
 
         private async Task<ExecutionResult> HandleFindNextFileW(CPUState cpu, VirtualMemoryManager memory)
         {
-            Console.WriteLine("🔍 FindNextFileW");
+            Console.WriteLine("FindNextFileW");
             cpu.Registers[0] = 0; // FALSE (no more files)
             await Task.CompletedTask;
             return new ExecutionResult { ShouldExit = false };
@@ -307,7 +307,7 @@ namespace ProcessorEmulator
 
         private async Task<ExecutionResult> HandleFindClose(CPUState cpu, VirtualMemoryManager memory)
         {
-            Console.WriteLine("🔍 FindClose");
+            Console.WriteLine("FindClose");
             cpu.Registers[0] = 1; // TRUE
             await Task.CompletedTask;
             return new ExecutionResult { ShouldExit = false };
@@ -373,7 +373,7 @@ namespace ProcessorEmulator
             var src = cpu.Registers[1];
             var count = cpu.Registers[2];
             
-            Console.WriteLine($"📋 memcpy: 0x{dest:X8} <- 0x{src:X8} ({count} bytes)");
+            Console.WriteLine($"memcpy: 0x{dest:X8} <- 0x{src:X8} ({count} bytes)");
             
             try
             {
@@ -396,7 +396,7 @@ namespace ProcessorEmulator
             var value = (byte)(cpu.Registers[1] & 0xFF);
             var count = cpu.Registers[2];
             
-            Console.WriteLine($"📋 memset: 0x{dest:X8} = 0x{value:X2} ({count} bytes)");
+            Console.WriteLine($"memset: 0x{dest:X8} = 0x{value:X2} ({count} bytes)");
             
             try
             {
@@ -422,7 +422,7 @@ namespace ProcessorEmulator
             var src = cpu.Registers[1];
             
             var str = ReadCString(memory, src);
-            Console.WriteLine($"📋 strcpy: \"{str}\"");
+            Console.WriteLine($"strcpy: \"{str}\"");
             
             try
             {
@@ -549,7 +549,7 @@ namespace ProcessorEmulator
         // GDI placeholder handlers
         private async Task<ExecutionResult> HandleCreateCompatibleDC(CPUState cpu, VirtualMemoryManager memory)
         {
-            Console.WriteLine("🎨 CreateCompatibleDC");
+            Console.WriteLine("CreateCompatibleDC");
             cpu.Registers[0] = 0x22222222; // Fake DC handle
             await Task.CompletedTask;
             return new ExecutionResult { ShouldExit = false };
@@ -557,7 +557,7 @@ namespace ProcessorEmulator
 
         private async Task<ExecutionResult> HandleSelectObject(CPUState cpu, VirtualMemoryManager memory)
         {
-            Console.WriteLine("🎨 SelectObject");
+            Console.WriteLine("SelectObject");
             cpu.Registers[0] = 0x33333333; // Fake previous object
             await Task.CompletedTask;
             return new ExecutionResult { ShouldExit = false };
@@ -565,7 +565,7 @@ namespace ProcessorEmulator
 
         private async Task<ExecutionResult> HandleBitBlt(CPUState cpu, VirtualMemoryManager memory)
         {
-            Console.WriteLine("🎨 BitBlt");
+            Console.WriteLine("BitBlt");
             cpu.Registers[0] = 1; // TRUE
             await Task.CompletedTask;
             return new ExecutionResult { ShouldExit = false };
@@ -573,7 +573,7 @@ namespace ProcessorEmulator
 
         private async Task<ExecutionResult> HandleSetPixel(CPUState cpu, VirtualMemoryManager memory)
         {
-            Console.WriteLine("🎨 SetPixel");
+            Console.WriteLine("SetPixel");
             cpu.Registers[0] = 0; // Success
             await Task.CompletedTask;
             return new ExecutionResult { ShouldExit = false };
@@ -581,7 +581,7 @@ namespace ProcessorEmulator
 
         private async Task<ExecutionResult> HandleGetPixel(CPUState cpu, VirtualMemoryManager memory)
         {
-            Console.WriteLine("🎨 GetPixel");
+            Console.WriteLine("GetPixel");
             cpu.Registers[0] = 0x00FF00FF; // Fake pixel color
             await Task.CompletedTask;
             return new ExecutionResult { ShouldExit = false };
@@ -589,7 +589,7 @@ namespace ProcessorEmulator
 
         private async Task<ExecutionResult> HandleCreateBitmap(CPUState cpu, VirtualMemoryManager memory)
         {
-            Console.WriteLine("🎨 CreateBitmap");
+            Console.WriteLine("CreateBitmap");
             cpu.Registers[0] = 0x44444444; // Fake bitmap handle
             await Task.CompletedTask;
             return new ExecutionResult { ShouldExit = false };
@@ -597,7 +597,7 @@ namespace ProcessorEmulator
 
         private async Task<ExecutionResult> HandleDeleteObject(CPUState cpu, VirtualMemoryManager memory)
         {
-            Console.WriteLine("🎨 DeleteObject");
+            Console.WriteLine("DeleteObject");
             cpu.Registers[0] = 1; // TRUE
             await Task.CompletedTask;
             return new ExecutionResult { ShouldExit = false };
