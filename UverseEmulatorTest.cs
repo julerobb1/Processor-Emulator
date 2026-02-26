@@ -24,15 +24,15 @@ namespace ProcessorEmulator
                 Console.WriteLine("Initializing emulator...");
                 if (!mipsEmulator.Initialize(""))
                 {
-                    Console.WriteLine("❌ Failed to initialize MIPS emulator");
+                    Console.WriteLine("Failed to initialize MIPS emulator");
                     return;
                 }
-                Console.WriteLine("✅ Emulator initialized successfully");
+                Console.WriteLine("Emulator initialized successfully");
 
                 // Start emulation
                 Console.WriteLine("Starting emulation...");
                 await mipsEmulator.StartEmulation();
-                Console.WriteLine("✅ Emulation started");
+                Console.WriteLine("Emulation started");
 
                 // Get status
                 Console.WriteLine("\n=== Emulator Status ===");
@@ -47,7 +47,7 @@ namespace ProcessorEmulator
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Error during test: {ex.Message}");
+                Console.WriteLine($"Error during test: {ex.Message}");
                 Console.WriteLine($"Stack trace: {ex.StackTrace}");
             }
         }
