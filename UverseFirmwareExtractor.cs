@@ -98,22 +98,22 @@ namespace ProcessorEmulator
         {
             try
             {
-                Console.WriteLine("🔧 Initializing U-verse Firmware Extractor...");
+                Console.WriteLine("Initializing U-verse Firmware Extractor...");
 
                 // Check for Binwalk installation
                 binwalkInstalled = await CheckBinwalkInstallation();
                 if (!binwalkInstalled)
                 {
-                    Console.WriteLine("⚠️ Binwalk not found, using built-in extraction methods");
+                    Console.WriteLine("Binwalk not found, using built-in extraction methods");
                 }
 
                 Console.WriteLine("📂 Working directory: " + workingDirectory);
-                Console.WriteLine("✅ Firmware extractor ready");
+                Console.WriteLine("Firmware extractor ready");
                 return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Initialization error: {ex.Message}");
+                Console.WriteLine($"Initialization error: {ex.Message}");
                 return false;
             }
         }
@@ -139,7 +139,7 @@ namespace ProcessorEmulator
                 if (process.ExitCode == 0)
                 {
                     binwalkPath = "python -m binwalk";
-                    Console.WriteLine("✅ Binwalk found via Python");
+                    Console.WriteLine("Binwalk found via Python");
                     return true;
                 }
 
@@ -153,7 +153,7 @@ namespace ProcessorEmulator
                 if (process2.ExitCode == 0)
                 {
                     binwalkPath = "binwalk";
-                    Console.WriteLine("✅ Binwalk executable found");
+                    Console.WriteLine("Binwalk executable found");
                     return true;
                 }
 
@@ -184,7 +184,7 @@ namespace ProcessorEmulator
 
             try
             {
-                Console.WriteLine($"🔍 Extracting firmware: {Path.GetFileName(firmwarePath)}");
+                Console.WriteLine($"Extracting firmware: {Path.GetFileName(firmwarePath)}");
                 
                 if (!File.Exists(firmwarePath))
                 {
@@ -215,7 +215,7 @@ namespace ProcessorEmulator
                 result.Success = result.Components.Count > 0;
                 result.ProcessingTime = DateTime.Now - startTime;
 
-                Console.WriteLine($"✅ Extraction completed: {result.Components.Count} components extracted");
+                Console.WriteLine($"Extraction completed: {result.Components.Count} components extracted");
                 Console.WriteLine($"📊 Processing time: {result.ProcessingTime.TotalSeconds:F1} seconds");
                 Console.WriteLine($"💾 Total extracted: {result.TotalBytesExtracted:N0} bytes");
 
@@ -225,7 +225,7 @@ namespace ProcessorEmulator
             {
                 result.Errors.Add($"Extraction error: {ex.Message}");
                 result.ProcessingTime = DateTime.Now - startTime;
-                Console.WriteLine($"❌ Extraction failed: {ex.Message}");
+                Console.WriteLine($"Extraction failed: {ex.Message}");
                 return result;
             }
         }
@@ -239,7 +239,7 @@ namespace ProcessorEmulator
             try
             {
                 var fileInfo = new FileInfo(firmwarePath);
-                Console.WriteLine($"📦 Firmware size: {fileInfo.Length:N0} bytes ({fileInfo.Length / (1024 * 1024):F1} MB)");
+                Console.WriteLine($"Firmware size: {fileInfo.Length:N0} bytes ({fileInfo.Length / (1024 * 1024):F1} MB)");
 
                 // Read file header for analysis
                 using var stream = File.OpenRead(firmwarePath);
@@ -248,7 +248,7 @@ namespace ProcessorEmulator
 
                 // Detect file signatures
                 var signatures = DetectFileSignatures(header);
-                Console.WriteLine($"🔍 Detected signatures: {string.Join(", ", signatures)}");
+                Console.WriteLine($"Detected signatures: {string.Join(", ", signatures)}");
 
                 // Add basic file info as component
                 result.Components.Add(new ExtractedComponent
@@ -305,7 +305,7 @@ namespace ProcessorEmulator
         {
             try
             {
-                Console.WriteLine("🔧 Running Binwalk extraction...");
+                Console.WriteLine("Running Binwalk extraction...");
 
                 var binwalkOutput = Path.Combine(result.OutputDirectory, "binwalk");
                 Directory.CreateDirectory(binwalkOutput);
@@ -337,7 +337,7 @@ namespace ProcessorEmulator
 
                 if (process.ExitCode == 0)
                 {
-                    Console.WriteLine("✅ Binwalk extraction completed");
+                    Console.WriteLine("Binwalk extraction completed");
                     await ProcessBinwalkResults(binwalkOutput, result);
                 }
                 else
@@ -562,7 +562,7 @@ namespace ProcessorEmulator
         {
             try
             {
-                Console.WriteLine($"🔧 Extracting CFE bootloader at offset 0x{offset:X}");
+                Console.WriteLine($"Extracting CFE bootloader at offset 0x{offset:X}");
 
                 // CFE is typically small (64KB-256KB)
                 var cfeSize = 256 * 1024; // Conservative size
@@ -604,7 +604,7 @@ namespace ProcessorEmulator
         {
             try
             {
-                Console.WriteLine($"🔧 Extracting U-Boot bootloader at offset 0x{offset:X}");
+                Console.WriteLine($"Extracting U-Boot bootloader at offset 0x{offset:X}");
 
                 // U-Boot is typically larger (512KB-1MB)
                 var ubootSize = 512 * 1024;
@@ -748,7 +748,7 @@ namespace ProcessorEmulator
                         "device.exe", "gwes.exe", "filesys.exe", "mediaroom.exe"
                     });
 
-                    Console.WriteLine($"✅ Valid NK.bin found at offset 0x{offset:X} ({actualSize:N0} bytes)");
+                    Console.WriteLine($"Valid NK.bin found at offset 0x{offset:X} ({actualSize:N0} bytes)");
                 }
             }
             catch (Exception ex)
@@ -845,7 +845,7 @@ namespace ProcessorEmulator
 
         private async Task AnalyzeExtractedComponents(ExtractionResult result)
         {
-            Console.WriteLine("🔍 Analyzing extracted components...");
+            Console.WriteLine("Analyzing extracted components...");
 
             foreach (var component in result.Components)
             {
@@ -1028,11 +1028,11 @@ namespace ProcessorEmulator
                 }
 
                 File.WriteAllText(reportPath, report.ToString());
-                Console.WriteLine("✅ Extraction report generated");
+                Console.WriteLine("Extraction report generated");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Report generation error: {ex.Message}");
+                Console.WriteLine($"Report generation error: {ex.Message}");
             }
         }
 
@@ -1063,7 +1063,7 @@ namespace ProcessorEmulator
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Demo failed: {ex.Message}");
+                Console.WriteLine($"Demo failed: {ex.Message}");
             }
         }
 
