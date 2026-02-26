@@ -30,7 +30,7 @@ namespace ProcessorEmulator
             };
 
             regions[baseAddress] = region;
-            Console.WriteLine($"  🗺️ Mapped 0x{baseAddress:X8}-0x{baseAddress + size:X8} ({size:N0} bytes, {protection})");
+            Console.WriteLine($"  Mapped 0x{baseAddress:X8}-0x{baseAddress + size:X8} ({size:N0} bytes, {protection})");
         }
 
         public void UnmapRegion(uint baseAddress)
@@ -156,7 +156,7 @@ namespace ProcessorEmulator
 
         public void DumpMemory(uint address, uint count)
         {
-            Console.WriteLine($"\n🔍 Memory dump at 0x{address:X8}:");
+            Console.WriteLine($"\nMemory dump at 0x{address:X8}:");
             for (uint i = 0; i < count; i += 16)
             {
                 var lineAddr = address + i;
