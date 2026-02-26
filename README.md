@@ -5,19 +5,19 @@ Features real ARM/MIPS/x86 instruction execution, in house hypervisor, ~~complet
 
 ## Key Features
 
-### ✅ Real Firmware Execution
+### Real Firmware Execution
 - **Custom ARM Hypervisor**: VMware/VirtualBox-style virtualization with real ARM Cortex-A15 instruction execution
 - **ARM Instruction Emulation**: Authentic ARM opcode processing (MOV, ADD, BRANCH, LDR/STR, SWI)
 - **Multi-Architecture Support**: ARM, MIPS, x86, PowerPC, SPARC with both custom and QEMU backends
 - **Hardware Simulation**: Broadcom BCM7445/7449 SoC emulation with memory-mapped I/O
 
-### ✅ Set-Top Box Platforms
+### Set-Top Box Platforms
 - **AT&T U-verse**: Complete MIPS/WinCE emulation with Microsoft Mediaroom boot manager
 - **RDK-V/RDK-B**: Cable industry reference platform emulation for research
 - **DirecTV**: MIPS-based satellite receiver analysis and SWM LNB simulation  WIP 
 - **Generic STB**: Universal firmware analysis for unknown set-top box platforms
 
-### ✅ Filesystem & Analysis
+### Filesystem & Analysis
 - **Filesystem Probing**: Automatic detection and analysis of ext2/3/4, JFFS2, UBIFS, YAFFS, SquashFS
 - **Firmware Unpacking**: ARRIS PACK1 containers, U-Boot images, WinCE nk.bin kernels
 - **Security Analysis**: DOCSIS BPI+ V2 framework, CableLabs signature bypass research
