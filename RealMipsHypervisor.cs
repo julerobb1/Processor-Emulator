@@ -82,23 +82,23 @@ namespace ProcessorEmulator
                 if (result == 0)
                 {
                     isEmulatorInitialized = true;
-                    LogExecution($"✅ MIPS emulator initialized with {memorySizeMB}MB RAM");
+                    LogExecution($"MIPS emulator initialized with {memorySizeMB}MB RAM");
                     return true;
                 }
                 else
                 {
-                    LogExecution($"❌ Failed to initialize MIPS emulator (error {result})");
+                    LogExecution($"Failed to initialize MIPS emulator (error {result})");
                     return false;
                 }
             }
             catch (DllNotFoundException)
             {
-                LogExecution("❌ MipsEmulator.dll not found - native emulation unavailable");
+                LogExecution("MipsEmulator.dll not found - native emulation unavailable");
                 return false;
             }
             catch (Exception ex)
             {
-                LogExecution($"❌ Emulator init failed: {ex.Message}");
+                LogExecution($"Emulator init failed: {ex.Message}");
                 return false;
             }
         }
@@ -130,11 +130,11 @@ namespace ProcessorEmulator
                     {
                         byte[] fileData = await File.ReadAllBytesAsync(filePath);
                         firmwareFiles[fileName] = fileData;
-                        LogExecution($"✅ Loaded {fileName}: {fileData.Length:N0} bytes");
+                        LogExecution($"Loaded {fileName}: {fileData.Length:N0} bytes");
                     }
                     catch (Exception ex)
                     {
-                        LogExecution($"❌ Failed to load {fileName}: {ex.Message}");
+                        LogExecution($"Failed to load {fileName}: {ex.Message}");
                         if (fileName == "nk.bin") // Kernel is required
                             return false;
                     }
@@ -163,14 +163,14 @@ namespace ProcessorEmulator
                 // Initialize the real MIPS emulator
                 if (!InitializeEmulator(64))
                 {
-                    LogExecution("❌ Failed to initialize MIPS hypervisor");
+                    LogExecution("Failed to initialize MIPS hypervisor");
                     return false;
                 }
                 
                 // Load all U-verse firmware files
                 if (!await LoadUverseFirmware())
                 {
-                    LogExecution("❌ Failed to load U-verse firmware files");
+                    LogExecution("Failed to load U-verse firmware files");
                     return false;
                 }
                 
@@ -179,19 +179,19 @@ namespace ProcessorEmulator
                 
                 if (bootSuccess)
                 {
-                    LogExecution("✅ U-verse kernel boot initiated");
-                    LogExecution("🎯 Real MIPS instruction execution in progress...");
+                    LogExecution("U-verse kernel boot initiated");
+                    LogExecution("Real MIPS instruction execution in progress...");
                     return true;
                 }
                 else
                 {
-                    LogExecution("❌ U-verse kernel boot failed");
+                    LogExecution("U-verse kernel boot failed");
                     return false;
                 }
             }
             catch (Exception ex)
             {
-                LogExecution($"❌ Emulation start failed: {ex.Message}");
+                LogExecution($"Emulation start failed: {ex.Message}");
                 return false;
             }
         }
@@ -203,13 +203,13 @@ namespace ProcessorEmulator
         {
             if (!isEmulatorInitialized)
             {
-                LogExecution("❌ Emulator not initialized");
+                LogExecution("Emulator not initialized");
                 return false;
             }
             
             if (!firmwareFiles.ContainsKey("nk.bin"))
             {
-                LogExecution("❌ nk.bin kernel not loaded");
+                LogExecution("nk.bin kernel not loaded");
                 return false;
             }
             
@@ -224,11 +224,11 @@ namespace ProcessorEmulator
                 
                 if (result != 0)
                 {
-                    LogExecution($"❌ Failed to load kernel (error {result})");
+                    LogExecution($"Failed to load kernel (error {result})");
                     return false;
                 }
                 
-                LogExecution($"✅ nk.bin loaded at 0x{MIPS_KERNEL_BASE:X8} ({kernel.Length:N0} bytes)");
+                LogExecution($"nk.bin loaded at 0x{MIPS_KERNEL_BASE:X8} ({kernel.Length:N0} bytes)");
                 
                 // Parse WinCE kernel header to find entry point
                 uint entryPoint = ParseWinCEHeader(kernel);
@@ -241,7 +241,7 @@ namespace ProcessorEmulator
                 // Set PC to entry point and start execution
                 SetMipsRegister(32, entryPoint); // PC (if supported by emulator)
                 
-                LogExecution("🎯 Starting MIPS instruction execution...");
+                LogExecution("Starting MIPS instruction execution...");
                 
                 // Start real execution
                 isExecuting = true;
@@ -251,7 +251,7 @@ namespace ProcessorEmulator
             }
             catch (Exception ex)
             {
-                LogExecution($"❌ Boot failed: {ex.Message}");
+                LogExecution($"Boot failed: {ex.Message}");
                 return false;
             }
         }
@@ -303,12 +303,12 @@ namespace ProcessorEmulator
                 }
                 catch (Exception ex)
                 {
-                    LogExecution($"❌ Execution error: {ex.Message}");
+                    LogExecution($"Execution error: {ex.Message}");
                     break;
                 }
             }
             
-            LogExecution($"✅ Executed {instructionCount:N0} MIPS instructions");
+            LogExecution($"Executed {instructionCount:N0} MIPS instructions");
             isExecuting = false;
         }
         
@@ -405,7 +405,7 @@ namespace ProcessorEmulator
             }
             catch (Exception ex)
             {
-                LogExecution($"❌ Failed to read registers: {ex.Message}");
+                LogExecution($"Failed to read registers: {ex.Message}");
             }
             
             return registers;
