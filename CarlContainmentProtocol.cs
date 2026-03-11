@@ -184,7 +184,7 @@
 //             LogCarlIncident("🔄 Resetting Carl containment protocols...");
 //             CurrentThreatLevel = CarlThreatLevel.Green;
 //             isCarlContained = true;
-//             LogCarlIncident("✅ Carl containment reset. All clear... until next time.");
+//             LogCarlIncident("Carl containment reset. All clear... until next time.");
 //         }
 //     }
     
