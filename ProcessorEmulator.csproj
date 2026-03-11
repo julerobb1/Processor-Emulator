@@ -21,6 +21,9 @@
   </ItemGroup>
 
   <!-- Exclude duplicate/demo files to reduce duplicate-type compile errors quickly. These are non-destructive exclusions and can be reverted. -->
+  <!-- Exclusions were previously added to silence duplicate-type errors during refactoring.
+       MainWindow.cs must be included for the WPF UI to appear.  Retain other removals only
+       if duplicates still exist, but leave MainWindow enabled. -->
   <ItemGroup>
     <Compile Remove="ArmHypervisor.cs" />
     <Compile Remove="StandaloneBoltDemo.cs" />
@@ -28,8 +31,7 @@
     <Compile Remove="Emulation\HomebrewEmulatorClean.cs" />
     <Compile Remove="Emulation\*Clean.cs" />
     <Compile Remove="FolderAnalysisWindow.cs" />
-    <Compile Remove="MainWindow.cs" />
-
+    <!-- MainWindow.cs restored so the GUI can be constructed -->
   </ItemGroup>
 
 </Project>
