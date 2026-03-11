@@ -424,7 +424,7 @@ namespace ProcessorEmulator.Tools
                             
                             if (statusCode == 200)
                             {
-                                Console.WriteLine($"✅ LIVE: {url} - HTTP {statusCode}");
+                                Console.WriteLine($"LIVE: {url} - HTTP {statusCode}");
                                 lock (liveEndpoints) { liveEndpoints.Add(url); }
                             }
                             else if (statusCode == 401 || statusCode == 403)
@@ -443,7 +443,7 @@ namespace ProcessorEmulator.Tools
                         }
                         catch (Exception ex)
                         {
-                            Console.WriteLine($"❌ ERROR: {url} - {ex.Message}");
+                            Console.WriteLine($"ERROR: {url} - {ex.Message}");
                         }
                     });
                 
