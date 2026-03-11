@@ -88,7 +88,7 @@ namespace ProcessorEmulator
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ PE Load Error: {ex.Message}");
+                Console.WriteLine($"PE Load Error: {ex.Message}");
                 return null;
             }
         }
