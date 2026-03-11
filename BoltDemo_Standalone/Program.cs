@@ -432,8 +432,8 @@ namespace BoltDemo
             
             Console.WriteLine("==================================================");
             Console.WriteLine("🎉 ARM emulation simulation completed successfully!");
-            Console.WriteLine($"✅ Instructions executed: {Math.Min(10, instructions.Length)}");
-            Console.WriteLine($"✅ Final PC: 0x{entryPoint + (uint)(Math.Min(10, instructions.Length) * 4):X8}");
+            Console.WriteLine($"Instructions executed: {Math.Min(10, instructions.Length)}");
+            Console.WriteLine($"Final PC: 0x{entryPoint + (uint)(Math.Min(10, instructions.Length) * 4):X8}");
         }
         
         private static string DecodeInstruction(uint instruction)
