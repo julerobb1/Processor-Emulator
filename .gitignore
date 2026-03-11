@@ -26,3 +26,7 @@ MipsBranchTest/obj/Debug/net6.0-windows/MipsBranchTest.csproj.FileListAbsolute.t
 /.vscode
 .geminiignore
 duplicate_definitions_report.md
+CarlContainmentProtocol.cs
+BUILD_STATUS.md
+LIVE_MODE.md
+COMCAST_X1_INTEGRATION.md
