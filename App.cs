@@ -1,5 +1,3 @@
-using System;
-using System.Windows;
 
 namespace ProcessorEmulator
 {
@@ -32,6 +30,16 @@ namespace ProcessorEmulator
             catch (Exception ex)
             {
                 Debug.WriteLine($"Could not load ClassicStyle.xaml: {ex.Message}");
+            }
+
+            // handle command-line test mode before showing GUI
+            if (e.Args != null && e.Args.Length > 0 && e.Args[0] == "--test-uverse")
+            {
+                // run the async test synchronously for simplicity
+                ProcessorEmulator.UverseEmulatorTest.RunTest().GetAwaiter().GetResult();
+                // after test exit application immediately
+                Current.Shutdown();
+                return;
             }
 
             // Show main window explicitly
