@@ -4,7 +4,8 @@
         xmlns:wf="clr-namespace:System.Windows.Forms;assembly=System.Windows.Forms"
         xmlns:wfi="clr-namespace:System.Windows.Forms.Integration;assembly=WindowsFormsIntegration"
         Title="MIPS Universal Emulator" Height="750" Width="1100"
-        Background="#F0F0F0" WindowStartupLocation="CenterScreen">
+        Background="#F0F0F0" WindowStartupLocation="CenterScreen"
+        ShowInTaskbar="True" Visibility="Visible" Loaded="MainWindow_Loaded">
     
     <DockPanel>
         <Menu DockPanel.Dock="Top" Background="White" BorderBrush="LightGray" BorderThickness="0,0,0,1">
