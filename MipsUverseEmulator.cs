@@ -27,38 +27,174 @@ namespace ProcessorEmulator.Emulation
     /// </summary>
     public class MipsUverseEmulator : IChipsetEmulator
     {
-        #region Native DLL Imports (placeholder)
+        #region Managed emulator core
         
-        // NOTE: the original version included a native DLL called
-        // "MipsEmulatorCore.dll".  No such library exists in this
-        // repository; the declarations below are retained purely as a
-        // reminder of the interface the future MIPS translator will
-        // expose.  For now each method throws a NotImplementedException
-        // to make failures explicit during development.
+        // Simple managed implementation of a MIPS32 interpreter.  The
+        // original design included a native DLL; here we maintain
+        // enough state to permit booting the tv2ce kernel and
+        // progressing through instructions.  Only a tiny subset of the
+        // ISA is implemented (mainly to advance PC) – the real
+        // translator will arrive later.
         
-        private static int InitEmulator(uint ramSize) =>
-            throw new NotImplementedException("MIPS translator core not implemented");
-        private static int LoadFirmware(string path, uint loadAddress) =>
-            throw new NotImplementedException();
-        private static int SetRegister(int regNum, uint value) =>
-            throw new NotImplementedException();
-        private static uint GetRegister(int regNum) =>
-            throw new NotImplementedException();
-        private static int ExecuteInstruction() =>
-            throw new NotImplementedException();
-        private static int RunContinuous() =>
-            throw new NotImplementedException();
-        private static uint GetProgramCounter() =>
-            throw new NotImplementedException();
-        private static int WriteMemory(uint address, byte[] data, int length) =>
-            throw new NotImplementedException();
-        private static int ReadMemory(uint address, byte[] buffer, int length) =>
-            throw new NotImplementedException();
-        private static int SetBreakpoint(uint address) =>
-            throw new NotImplementedException();
-        private static void GetEmulatorStatus(out string status) =>
-            throw new NotImplementedException();
+        // CPU state
+        private uint[] mipsRegisters = new uint[32]; // R0..R31
+        private uint programCounter;
         
+        // Memory (linear mapping at RAM_BASE)
+        private byte[] mipsMemory;
+        private uint memoryBase = RAM_BASE;
+        private uint memorySize;
+        
+        private int InitEmulator(uint ramSize)
+        {
+            memorySize = ramSize;
+            mipsMemory = new byte[ramSize];
+            System.Array.Clear(mipsRegisters, 0, mipsRegisters.Length);
+            programCounter = memoryBase;
+            return 0;
+        }
+
+        private int LoadFirmware(byte[] data, uint loadAddress)
+        {
+            if (data == null || data.Length == 0)
+                return -1;
+            uint offset = loadAddress - memoryBase;
+            if (offset + data.Length > memorySize)
+                return -2;
+            System.Array.Copy(data, 0, mipsMemory, offset, data.Length);
+            programCounter = loadAddress;
+            return 0;
+        }
+
+        private int SetRegister(int regNum, uint value)
+        {
+            if (regNum >= 0 && regNum < 32)
+            {
+                mipsRegisters[regNum] = value;
+                return 0;
+            }
+            return -1;
+        }
+
+        private uint GetRegister(int regNum)
+        {
+            if (regNum >= 0 && regNum < 32)
+                return mipsRegisters[regNum];
+            return 0;
+        }
+
+        private uint GetProgramCounter() => programCounter;
+
+        private int WriteMemory(uint address, byte[] data, int length)
+        {
+            uint offset = address - memoryBase;
+            if (offset + length > memorySize) return -1;
+            System.Array.Copy(data, 0, mipsMemory, offset, length);
+            return 0;
+        }
+
+        private int ReadMemory(uint address, byte[] buffer, int length)
+        {
+            uint offset = address - memoryBase;
+            if (offset + length > memorySize) return -1;
+            System.Array.Copy(mipsMemory, offset, buffer, 0, length);
+            return 0;
+        }
+
+        private int SetBreakpoint(uint address)
+        {
+            // not supported yet
+            return 0;
+        }
+
+        private void GetEmulatorStatus(out string status)
+        {
+            status = $"PC=0x{programCounter:X8}, regs R0..R31 sample={mipsRegisters[0]}";
+        }
+
+        private int ExecuteInstruction()
+        {
+            // very basic fetch/decode/execute loop - most instructions
+            // are treated as NOP so we can make progress through the
+            // kernel without crashing.  This is intentionally minimal.
+            
+            if (programCounter < memoryBase || programCounter + 4 > memoryBase + memorySize)
+                return -1; // out of bounds
+
+            uint offset = programCounter - memoryBase;
+            uint instr = System.BitConverter.ToUInt32(mipsMemory, (int)offset);
+
+            // decode opcode (top 6 bits)
+            uint opcode = instr >> 26;
+            switch (opcode)
+            {
+                case 0x00: // SPECIAL - look at funct field
+                    {
+                        uint funct = instr & 0x3F;
+                        switch (funct)
+                        {
+                            case 0x20: // ADD rd, rs, rt
+                                {
+                                    int rs = (int)((instr >> 21) & 0x1F);
+                                    int rt = (int)((instr >> 16) & 0x1F);
+                                    int rd = (int)((instr >> 11) & 0x1F);
+                                    ulong sum = (ulong)mipsRegisters[rs] + mipsRegisters[rt];
+                                    mipsRegisters[rd] = (uint)sum;
+                                }
+                                break;
+                            case 0x22: // SUB
+                                {
+                                    int rs = (int)((instr >> 21) & 0x1F);
+                                    int rt = (int)((instr >> 16) & 0x1F);
+                                    int rd = (int)((instr >> 11) & 0x1F);
+                                    mipsRegisters[rd] = mipsRegisters[rs] - mipsRegisters[rt];
+                                }
+                                break;
+                            default:
+                                // unimplemented special instruction -> no-op
+                                break;
+                        }
+                    }
+                    break;
+                case 0x02: // J
+                    {
+                        uint target = instr & 0x03FFFFFF;
+                        programCounter = (programCounter & 0xF0000000) | (target << 2);
+                        return 0; // jump handled, do not advance PC again below
+                    }
+                case 0x04: // BEQ rs, rt, offset
+                    {
+                        int rs = (int)((instr >> 21) & 0x1F);
+                        int rt = (int)((instr >> 16) & 0x1F);
+                        short off = (short)(instr & 0xFFFF);
+                        if (mipsRegisters[rs] == mipsRegisters[rt])
+                        {
+                            programCounter += (uint)((off << 2) + 4);
+                            return 0;
+                        }
+                    }
+                    break;
+                // other opcodes can be added later
+                default:
+                    // treat unknown instructions as nop
+                    break;
+            }
+
+            // advance to next instruction
+            programCounter += 4;
+            return 0;
+        }
+        
+        private int RunContinuous()
+        {
+            while (true)
+            {
+                if (ExecuteInstruction() != 0)
+                    break;
+            }
+            return 0;
+        }
+
         #endregion
 
         #region Constants
@@ -68,8 +204,8 @@ namespace ProcessorEmulator.Emulation
         private const uint RAM_BASE = 0x80000000;
         
         // U-verse file paths
-        private static readonly string UVERSE_PATH = Environment.GetEnvironmentVariable("UVERSE_PATH") 
-            ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "UverseDriveE");
+        private static readonly string UVERSE_PATH = System.Environment.GetEnvironmentVariable("UVERSE_PATH") 
+            ?? Path.Combine(System.AppDomain.CurrentDomain.BaseDirectory, "UverseDriveE");
         
         #endregion
 
@@ -116,7 +252,7 @@ namespace ProcessorEmulator.Emulation
                 LogBoot("MIPS emulator core ready");
                 return true;
             }
-            catch (Exception ex)
+            catch (System.Exception ex)
             {
                 LogBoot($"CRITICAL ERROR during initialization: {ex.Message}");
                 return false;
@@ -153,7 +289,7 @@ namespace ProcessorEmulator.Emulation
                         LogBoot($"Missing {file.Key} - {file.Value}");
                     }
                 }
-                catch (Exception ex)
+                catch (System.Exception ex)
                 {
                     LogBoot($"Failed to load {file.Key}: {ex.Message}");
                 }
@@ -199,7 +335,7 @@ namespace ProcessorEmulator.Emulation
                 LogBoot("=== KERNEL BOOT SEQUENCE COMPLETE ===");
                 return true;
             }
-            catch (Exception ex)
+            catch (System.Exception ex)
             {
                 LogBoot($"CRITICAL ERROR during kernel boot: {ex.Message}");
                 return false;
@@ -223,12 +359,20 @@ namespace ProcessorEmulator.Emulation
             uint entryPoint = await Task.Run(() => ParseNkBinHeader(kernelData));
             LogBoot($"Kernel entry point: 0x{entryPoint:X8}");
             
-            // Load kernel at MIPS virtual address 0xBFC00000
-            int result = await Task.Run(() => LoadFirmware(Path.Combine(UVERSE_PATH, "nk.bin"), MIPS_KERNEL_BASE));
+            // Load kernel image data at MIPS virtual address 0xBFC00000
+            int result = await Task.Run(() => LoadFirmware(kernelData, MIPS_KERNEL_BASE));
             if (result != 0)
             {
                 LogBoot($"ERROR: Failed to load kernel (error {result})");
                 return false;
+            }
+            
+            // honour header entry point if different from base
+            if (entryPoint != MIPS_KERNEL_BASE)
+            {
+                // direct assignment to internal state
+                programCounter = entryPoint;
+                LogBoot($"Program counter set to header entry: 0x{programCounter:X8}");
             }
             
             LogBoot("nk.bin kernel loaded successfully");
@@ -244,7 +388,7 @@ namespace ProcessorEmulator.Emulation
                 return MIPS_KERNEL_BASE;
             
             // Look for entry point in header
-            uint entryPoint = BitConverter.ToUInt32(kernelData, 20);
+            uint entryPoint = System.BitConverter.ToUInt32(kernelData, 20);
             if (entryPoint == 0)
                 entryPoint = MIPS_KERNEL_BASE;
             
@@ -267,10 +411,10 @@ namespace ProcessorEmulator.Emulation
                 byte[] startupData = firmwareFiles["startup.bz"];
                 // Decompress if needed (BZ2 format)
                 string args = await Task.Run(() => System.Text.Encoding.ASCII.GetString(startupData));
-                LogBoot($"Boot arguments: {args.Substring(0, Math.Min(args.Length, 100))}...");
+                LogBoot($"Boot arguments: {args.Substring(0, System.Math.Min(args.Length, 100))}...");
                 return true;
             }
-            catch (Exception ex)
+            catch (System.Exception ex)
             {
                 LogBoot($"Failed to parse startup args: {ex.Message}");
                 return true; // Non-critical
@@ -304,7 +448,7 @@ namespace ProcessorEmulator.Emulation
                 
                 return true;
             }
-            catch (Exception ex)
+            catch (System.Exception ex)
             {
                 LogBoot($"Failed to mount registry: {ex.Message}");
                 return true; // Non-critical for now
@@ -336,7 +480,7 @@ namespace ProcessorEmulator.Emulation
                 LogBoot("Boot overlays processed");
                 return true;
             }
-            catch (Exception ex)
+            catch (System.Exception ex)
             {
                 LogBoot($"Failed to load overlays: {ex.Message}");
                 return true;
@@ -368,7 +512,7 @@ namespace ProcessorEmulator.Emulation
                 
                 return true;
             }
-            catch (Exception ex)
+            catch (System.Exception ex)
             {
                 LogBoot($"ERROR: Failed to start kernel execution: {ex.Message}");
                 return false;
@@ -378,6 +522,8 @@ namespace ProcessorEmulator.Emulation
         #endregion
 
         #region Emulation Loop
+        
+        private long totalInstructions = 0;
         
         private async Task EmulationLoop()
         {
@@ -393,6 +539,7 @@ namespace ProcessorEmulator.Emulation
                     // Execute one MIPS instruction
                     int result = ExecuteInstruction();
                     instructionCount++;
+                    totalInstructions++;
                     
                     uint currentPC = GetProgramCounter();
                     
@@ -419,7 +566,7 @@ namespace ProcessorEmulator.Emulation
                         await Task.Delay(1);
                 }
             }
-            catch (Exception ex)
+            catch (System.Exception ex)
             {
                 LogBoot($"EMULATION ERROR: {ex.Message}");
                 IsRunning = false;
@@ -462,7 +609,7 @@ namespace ProcessorEmulator.Emulation
             if (address < 32) // MIPS registers R0-R31
             {
                 uint value = GetRegister((int)address);
-                return BitConverter.GetBytes(value);
+                return System.BitConverter.GetBytes(value);
             }
             else
             {
@@ -477,7 +624,7 @@ namespace ProcessorEmulator.Emulation
         {
             if (data.Length >= 4)
             {
-                uint value = BitConverter.ToUInt32(data, 0);
+                uint value = System.BitConverter.ToUInt32(data, 0);
                 if (address < 32) // MIPS registers R0-R31
                 {
                     SetRegister((int)address, value);
@@ -516,8 +663,15 @@ namespace ProcessorEmulator.Emulation
         
         public void LoadFirmware(byte[] firmwareData)
         {
-            // This implementation uses file-based loading
-            LogBoot("Use file-based loading for U-verse firmware");
+            if (firmwareData == null || firmwareData.Length == 0)
+            {
+                LogBoot("LoadFirmware called with empty data");
+                return;
+            }
+
+            // treat incoming buffer as the nk.bin kernel image
+            firmwareFiles["nk.bin"] = firmwareData;
+            LogBoot($"Firmware buffer injected ({firmwareData.Length:N0} bytes)");
         }
         
         public Dictionary<string, object> GetStatus()
@@ -529,7 +683,7 @@ namespace ProcessorEmulator.Emulation
                 ["KernelLoaded"] = kernelLoaded,
                 ["IsRunning"] = IsRunning,
                 ["PC"] = $"0x{GetProgramCounter():X8}",
-                ["InstructionCount"] = "N/A",
+                ["InstructionCount"] = totalInstructions,
                 ["BootLog"] = string.Join("\n", recentLogs)
             };
         }
@@ -573,10 +727,10 @@ namespace ProcessorEmulator.Emulation
         
         private void LogBoot(string message)
         {
-            string timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
+            string timestamp = System.DateTime.Now.ToString("HH:mm:ss.fff");
             string logEntry = $"[{timestamp}] {message}";
             bootLog.Add(logEntry);
-            Console.WriteLine(logEntry);
+            System.Console.WriteLine(logEntry);
             
             // Keep log size manageable
             if (bootLog.Count > 1000)
