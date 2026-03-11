@@ -10,46 +10,54 @@ using ProcessorEmulator.Tools;
 namespace ProcessorEmulator.Emulation
 {
     /// <summary>
-    /// AT&T U-verse MIPS/WinCE Emulator
-    /// Boots real nk.bin kernel with native MIPS-to-x64 translation
-    /// Target: Microsoft Mediaroom STB firmware
+    /// AT&T U-verse / Mediaroom TV2CE MIPS/WinCE Emulator
+    ///
+    /// This component is intended to help research and eventually boot
+    /// the Windows CE 5.0.1400 (PLATFORM_OEM) kernel extracted from
+    /// U-verse DVR firmware.  The CE kernel uses a "Free MIPS32"
+    /// implementation (open, R4000‑compatible ISA) which makes it
+    /// feasible to build a translator.  ATT devices have been observed
+    /// using the same open/free MIPS core.
+    ///
+    /// At present there is no real native emulator; the previous
+    /// DllImport declarations were hallucinated placeholders and have
+    /// been retained only as a reminder for the future translator
+    /// implementation.  All methods currently throw NotImplemented
+    /// to avoid false expectations.
     /// </summary>
     public class MipsUverseEmulator : IChipsetEmulator
     {
-        #region Native DLL Imports
+        #region Native DLL Imports (placeholder)
         
-        [DllImport("MipsEmulatorCore.dll", CallingConvention = CallingConvention.Cdecl)]
-        private static extern int InitEmulator(uint ramSize);
+        // NOTE: the original version included a native DLL called
+        // "MipsEmulatorCore.dll".  No such library exists in this
+        // repository; the declarations below are retained purely as a
+        // reminder of the interface the future MIPS translator will
+        // expose.  For now each method throws a NotImplementedException
+        // to make failures explicit during development.
         
-        [DllImport("MipsEmulatorCore.dll", CallingConvention = CallingConvention.Cdecl)]
-        private static extern int LoadFirmware([MarshalAs(UnmanagedType.LPStr)] string path, uint loadAddress);
-        
-        [DllImport("MipsEmulatorCore.dll", CallingConvention = CallingConvention.Cdecl)]
-        private static extern int SetRegister(int regNum, uint value);
-        
-        [DllImport("MipsEmulatorCore.dll", CallingConvention = CallingConvention.Cdecl)]
-        private static extern uint GetRegister(int regNum);
-        
-        [DllImport("MipsEmulatorCore.dll", CallingConvention = CallingConvention.Cdecl)]
-        private static extern int ExecuteInstruction();
-        
-        [DllImport("MipsEmulatorCore.dll", CallingConvention = CallingConvention.Cdecl)]
-        private static extern int RunContinuous();
-        
-        [DllImport("MipsEmulatorCore.dll", CallingConvention = CallingConvention.Cdecl)]
-        private static extern uint GetProgramCounter();
-        
-        [DllImport("MipsEmulatorCore.dll", CallingConvention = CallingConvention.Cdecl)]
-        private static extern int WriteMemory(uint address, byte[] data, int length);
-        
-        [DllImport("MipsEmulatorCore.dll", CallingConvention = CallingConvention.Cdecl)]
-        private static extern int ReadMemory(uint address, byte[] buffer, int length);
-        
-        [DllImport("MipsEmulatorCore.dll", CallingConvention = CallingConvention.Cdecl)]
-        private static extern int SetBreakpoint(uint address);
-        
-        [DllImport("MipsEmulatorCore.dll", CallingConvention = CallingConvention.Cdecl)]
-        private static extern void GetEmulatorStatus([MarshalAs(UnmanagedType.LPStr)] out string status);
+        private static int InitEmulator(uint ramSize) =>
+            throw new NotImplementedException("MIPS translator core not implemented");
+        private static int LoadFirmware(string path, uint loadAddress) =>
+            throw new NotImplementedException();
+        private static int SetRegister(int regNum, uint value) =>
+            throw new NotImplementedException();
+        private static uint GetRegister(int regNum) =>
+            throw new NotImplementedException();
+        private static int ExecuteInstruction() =>
+            throw new NotImplementedException();
+        private static int RunContinuous() =>
+            throw new NotImplementedException();
+        private static uint GetProgramCounter() =>
+            throw new NotImplementedException();
+        private static int WriteMemory(uint address, byte[] data, int length) =>
+            throw new NotImplementedException();
+        private static int ReadMemory(uint address, byte[] buffer, int length) =>
+            throw new NotImplementedException();
+        private static int SetBreakpoint(uint address) =>
+            throw new NotImplementedException();
+        private static void GetEmulatorStatus(out string status) =>
+            throw new NotImplementedException();
         
         #endregion
 
@@ -74,8 +82,8 @@ namespace ProcessorEmulator.Emulation
         private List<string> bootLog = new List<string>();
         
         // IChipsetEmulator implementation
-        public string ChipsetName => "AT&T U-verse MIPS/WinCE";
-        public string Architecture => "MIPS32";
+        public string ChipsetName => "AT&T U-verse MIPS/WinCE (tv2ce)";
+        public string Architecture => "MIPS32 (free/open core)";
         public bool IsRunning { get; private set; }
         
         #endregion
@@ -87,11 +95,11 @@ namespace ProcessorEmulator.Emulation
             try
             {
                 LogBoot("=== AT&T U-verse MIPS Emulator Starting ===");
-                LogBoot($"Target: Microsoft Mediaroom STB");
-                LogBoot($"Architecture: MIPS32 → x64 Translation");
+                LogBoot("Target: Microsoft Mediaroom STB (tv2ce)");
+                LogBoot("Architecture: open/free MIPS32 → x64 translation");
                 
                 // Initialize native MIPS emulator core
-                LogBoot("Initializing native MIPS emulator core...");
+                LogBoot("Initializing (stub) MIPS emulator core...");
                 int result = InitEmulator(RAM_SIZE_64MB);
                 if (result != 0)
                 {
@@ -99,7 +107,7 @@ namespace ProcessorEmulator.Emulation
                     return false;
                 }
                 
-                LogBoot($"MIPS emulator initialized with {RAM_SIZE_64MB / (1024 * 1024)}MB RAM");
+                LogBoot($"MIPS emulator initialised with {RAM_SIZE_64MB / (1024 * 1024)}MB RAM");
                 
                 // Load firmware files
                 await LoadFirmwareFiles();
@@ -138,16 +146,16 @@ namespace ProcessorEmulator.Emulation
                     {
                         byte[] data = await File.ReadAllBytesAsync(fullPath);
                         firmwareFiles[file.Key] = data;
-                        LogBoot($"✓ Loaded {file.Key} ({data.Length:N0} bytes) - {file.Value}");
+                                LogBoot($"Loaded {file.Key} ({data.Length:N0} bytes) - {file.Value}");
                     }
                     else
                     {
-                        LogBoot($"⚠ Missing {file.Key} - {file.Value}");
+                        LogBoot($"Missing {file.Key} - {file.Value}");
                     }
                 }
                 catch (Exception ex)
                 {
-                    LogBoot($"✗ Failed to load {file.Key}: {ex.Message}");
+                    LogBoot($"Failed to load {file.Key}: {ex.Message}");
                 }
             }
         }
@@ -166,7 +174,7 @@ namespace ProcessorEmulator.Emulation
             
             try
             {
-                LogBoot("=== STARTING U-VERSE KERNEL BOOT ===");
+                LogBoot("=== STARTING U-VERSE TV2CE KERNEL BOOT ===");
                 
                 // 1. Load nk.bin kernel at MIPS address 0xBFC00000
                 if (!await LoadNkBinKernel())
@@ -223,7 +231,7 @@ namespace ProcessorEmulator.Emulation
                 return false;
             }
             
-            LogBoot("✓ nk.bin kernel loaded successfully");
+            LogBoot("nk.bin kernel loaded successfully");
             kernelLoaded = true;
             return true;
         }
@@ -250,7 +258,7 @@ namespace ProcessorEmulator.Emulation
             
             if (!firmwareFiles.ContainsKey("startup.bz"))
             {
-                LogBoot("⚠ startup.bz not found, using defaults");
+                LogBoot("startup.bz not found, using defaults");
                 return true;
             }
             
@@ -264,7 +272,7 @@ namespace ProcessorEmulator.Emulation
             }
             catch (Exception ex)
             {
-                LogBoot($"⚠ Failed to parse startup args: {ex.Message}");
+                LogBoot($"Failed to parse startup args: {ex.Message}");
                 return true; // Non-critical
             }
         }
@@ -275,7 +283,7 @@ namespace ProcessorEmulator.Emulation
             
             if (!firmwareFiles.ContainsKey("default.hv"))
             {
-                LogBoot("⚠ default.hv registry hive not found");
+                LogBoot("default.hv registry hive not found");
                 return true;
             }
             
@@ -284,7 +292,7 @@ namespace ProcessorEmulator.Emulation
                 registryHive = new RegistryHive(firmwareFiles["default.hv"]);
                 await registryHive.Parse();
                 
-                LogBoot("✓ Registry hive mounted successfully");
+                LogBoot("Registry hive mounted successfully");
                 LogBoot("Key services found:");
                 
                 // Look for key services
@@ -298,7 +306,7 @@ namespace ProcessorEmulator.Emulation
             }
             catch (Exception ex)
             {
-                LogBoot($"⚠ Failed to mount registry: {ex.Message}");
+                LogBoot($"Failed to mount registry: {ex.Message}");
                 return true; // Non-critical for now
             }
         }
@@ -309,7 +317,7 @@ namespace ProcessorEmulator.Emulation
             
             if (!firmwareFiles.ContainsKey("etc.bin"))
             {
-                LogBoot("⚠ etc.bin overlays not found");
+                LogBoot("etc.bin overlays not found");
                 return true;
             }
             
@@ -325,12 +333,12 @@ namespace ProcessorEmulator.Emulation
                     Thread.Sleep(100);
                 });
                 
-                LogBoot("✓ Boot overlays processed");
+                LogBoot("Boot overlays processed");
                 return true;
             }
             catch (Exception ex)
             {
-                LogBoot($"⚠ Failed to load overlays: {ex.Message}");
+                LogBoot($"Failed to load overlays: {ex.Message}");
                 return true;
             }
         }
@@ -353,7 +361,7 @@ namespace ProcessorEmulator.Emulation
                 
                 // Start execution
                 IsRunning = true;
-                LogBoot("🚀 STARTING MIPS KERNEL EXECUTION");
+                LogBoot("STARTING MIPS KERNEL EXECUTION");
                 
                 // Run in background thread
                 _ = Task.Run(() => EmulationLoop());
@@ -397,7 +405,7 @@ namespace ProcessorEmulator.Emulation
                     // Check for infinite loops or crashes
                     if (currentPC == lastPC)
                     {
-                        LogBoot($"⚠ Possible infinite loop detected at PC=0x{currentPC:X8}");
+                        LogBoot($"Possible infinite loop detected at PC=0x{currentPC:X8}");
                         await Task.Delay(10);
                     }
                     
@@ -426,11 +434,11 @@ namespace ProcessorEmulator.Emulation
             await Task.Run(() => {
                 if (pc >= 0x80000000 && pc < 0x80001000)
                 {
-                    LogBoot($"🎯 Kernel initialization at PC=0x{pc:X8}");
+                    LogBoot($"Kernel initialization at PC=0x{pc:X8}");
                 }
                 else if (pc >= 0x90000000)
                 {
-                    LogBoot($"🖥️ Possible UI/Graphics initialization at PC=0x{pc:X8}");
+                    LogBoot($"Possible UI/Graphics initialization at PC=0x{pc:X8}");
                 }
                 
                 // TODO: Add more sophisticated syscall detection
