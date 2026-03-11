@@ -29,6 +29,11 @@ namespace ProcessorEmulator
                 }
                 Console.WriteLine("Emulator initialized successfully");
 
+                // Ensure we have at least a dummy kernel image loaded so BootKernel can run
+                Console.WriteLine("Injecting dummy kernel data");
+                byte[] dummyKernel = new byte[256]; // mostly zeros (NOP)
+                mipsEmulator.LoadFirmware(dummyKernel);
+
                 // Start emulation
                 Console.WriteLine("Starting emulation...");
                 await mipsEmulator.StartEmulation();
