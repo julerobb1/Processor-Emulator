@@ -81,7 +81,7 @@ namespace ProcessorEmulator
                 httpListener.Prefixes.Add($"http://localhost:{SERVER_PORT}/");
                 httpListener.Start();
                 
-                Console.WriteLine($"✅ Comcast service emulator started on port {SERVER_PORT}");
+                Console.WriteLine($"Comcast service emulator started on port {SERVER_PORT}");
                 Console.WriteLine("Endpoints available:");
                 Console.WriteLine($"  - http://localhost:{SERVER_PORT}/device/bootstrap");
                 Console.WriteLine($"  - http://localhost:{SERVER_PORT}/channelMap");
@@ -101,7 +101,7 @@ namespace ProcessorEmulator
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Failed to start service emulator: {ex.Message}");
+                Console.WriteLine($"Failed to start service emulator: {ex.Message}");
                 throw;
             }
         }
@@ -117,7 +117,7 @@ namespace ProcessorEmulator
                 }
                 catch (Exception ex) when (isRunning)
                 {
-                    Console.WriteLine($"❌ Request handling error: {ex.Message}");
+                    Console.WriteLine($"Request handling error: {ex.Message}");
                 }
             }
         }
@@ -166,7 +166,7 @@ namespace ProcessorEmulator
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Error processing request: {ex.Message}");
+                Console.WriteLine($"Error processing request: {ex.Message}");
                 try
                 {
                     response.StatusCode = 500;
@@ -472,12 +472,12 @@ namespace ProcessorEmulator
                 
                 await Task.Delay(100); // Simulate network delay
                 
-                Console.WriteLine($"✅ Bootstrap complete: {response.DeviceId}");
+                Console.WriteLine($"Bootstrap complete: {response.DeviceId}");
                 return new ServiceResult<BootstrapResponse> { Success = true, Data = response };
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Bootstrap failed: {ex.Message}");
+                Console.WriteLine($"Bootstrap failed: {ex.Message}");
                 return new ServiceResult<BootstrapResponse> { Success = false, Error = ex.Message };
             }
         }
@@ -499,12 +499,12 @@ namespace ProcessorEmulator
                 
                 await Task.Delay(150); // Simulate network delay
                 
-                Console.WriteLine($"✅ Channel map loaded: {response.ChannelCount} channels");
+                Console.WriteLine($"Channel map loaded: {response.ChannelCount} channels");
                 return new ServiceResult<ChannelMapResponse> { Success = true, Data = response };
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Channel map failed: {ex.Message}");
+                Console.WriteLine($"Channel map failed: {ex.Message}");
                 return new ServiceResult<ChannelMapResponse> { Success = false, Error = ex.Message };
             }
         }
@@ -525,12 +525,12 @@ namespace ProcessorEmulator
                 
                 await Task.Delay(200); // Simulate network delay
                 
-                Console.WriteLine($"✅ Guide data loaded: {response.ProgramCount} programs");
+                Console.WriteLine($"Guide data loaded: {response.ProgramCount} programs");
                 return new ServiceResult<GuideResponse> { Success = true, Data = response };
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Guide data failed: {ex.Message}");
+                Console.WriteLine($"Guide data failed: {ex.Message}");
                 return new ServiceResult<GuideResponse> { Success = false, Error = ex.Message };
             }
         }
@@ -543,7 +543,7 @@ namespace ProcessorEmulator
                 httpListener.Stop();
                 httpListener.Close();
                 isRunning = false;
-                Console.WriteLine("✅ Service emulator stopped");
+                Console.WriteLine("Service emulator stopped");
             }
             await Task.CompletedTask;
             return true;
