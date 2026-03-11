@@ -11,18 +11,18 @@ namespace ProcessorEmulator
     {
         public static async Task RunTest()
         {
-            Console.WriteLine("=== U-verse MIPS Emulator Test ===");
+            Console.WriteLine("=== U-verse TV2CE MIPS Emulator Test ===");
             Console.WriteLine();
 
             try
             {
                 // Create the MIPS U-verse emulator
                 var mipsEmulator = new MipsUverseEmulator();
-                Console.WriteLine($"Created emulator: {mipsEmulator.ChipsetName}");
+                Console.WriteLine($"Created emulator: {mipsEmulator.ChipsetName} -- {mipsEmulator.Architecture}");
 
                 // Initialize the emulator
                 Console.WriteLine("Initializing emulator...");
-                if (!mipsEmulator.Initialize(""))
+                if (!await mipsEmulator.Initialize())
                 {
                     Console.WriteLine("Failed to initialize MIPS emulator");
                     return;
