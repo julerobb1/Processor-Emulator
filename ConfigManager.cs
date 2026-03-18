@@ -1,4 +1,8 @@
-﻿
+﻿using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Text.Json;
+
 namespace ProcessorEmulator
 {
     /// <summary>
@@ -23,7 +27,7 @@ namespace ProcessorEmulator
         private static readonly string ConfigFilePath =
             Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.json");
 
-        private static AppConfig _config;
+        private static AppConfig? _config;
 
         public static AppConfig Config => _config ??= Load();
 
