@@ -1,3 +1,6 @@
+using System;
+using System.Diagnostics;
+using System.Windows;
 
 namespace ProcessorEmulator
 {
@@ -43,8 +46,8 @@ namespace ProcessorEmulator
             }
 
             // Show main window explicitly
-            MainWindow = new MainWindow();
-            MainWindow.Show();
+            this.MainWindow = new MainWindow();
+            this.MainWindow.Show();
         }
     }
 }
