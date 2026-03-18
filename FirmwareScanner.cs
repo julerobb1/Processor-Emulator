@@ -1,4 +1,3 @@
-
 namespace ProcessorEmulator
 {
     /// <summary>
