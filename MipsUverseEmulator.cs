@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -39,7 +41,7 @@ namespace ProcessorEmulator.Emulation
         private uint programCounter;
         
         // Memory (linear mapping at RAM_BASE)
-        private byte[] mipsMemory;
+        private byte[]? mipsMemory;
         private uint memoryBase = RAM_BASE;
         private uint memorySize;
         
@@ -212,7 +214,7 @@ namespace ProcessorEmulator.Emulation
         private bool isInitialized = false;
         private bool kernelLoaded = false;
         private Dictionary<string, byte[]> firmwareFiles = new Dictionary<string, byte[]>();
-        private RegistryHive registryHive;
+        private RegistryHive? registryHive;
         private List<string> bootLog = new List<string>();
         
         // IChipsetEmulator implementation
