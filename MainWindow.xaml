@@ -26,10 +26,30 @@
             </StatusBarItem>
         </StatusBar>
 
-        <Grid Background="#E5E5E5">
-            <wfi:WindowsFormsHost x:Name="Host">
-                <wf:TabControl x:Name="MainTabs" Dock="Fill"/>
-            </wfi:WindowsFormsHost>
+        <Grid>
+            <TabControl x:Name="MainTabs">
+                <TabItem Header="System Console">
+                    <wfi:WindowsFormsHost x:Name="ConsoleHost"/>
+                </TabItem>
+                <TabItem Header="Process Execution">
+                    <DockPanel>
+                        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="5">
+                            <Button x:Name="LoadExeButton" Content="Load Executable..." Click="LoadExeButton_Click" Margin="0,0,5,0"/>
+                            <Button x:Name="RunButton" Content="Run" Click="RunButton_Click" IsEnabled="False"/>
+                        </StackPanel>
+                        <ListView x:Name="ProcessListView" Margin="5">
+                            <ListView.View>
+                                <GridView>
+                                    <GridViewColumn Header="Process ID" DisplayMemberBinding="{Binding ProcessId}" Width="200"/>
+                                    <GridViewColumn Header="Executable" DisplayMemberBinding="{Binding ExePath}" Width="250"/>
+                                    <GridViewColumn Header="Status" DisplayMemberBinding="{Binding IsRunning}" Width="100"/>
+                                    <GridViewColumn Header="Runtime (s)" DisplayMemberBinding="{Binding RunTime.TotalSeconds}" Width="150"/>
+                                </GridView>
+                            </ListView.View>
+                        </ListView>
+                    </DockPanel>
+                </TabItem>
+            </TabControl>
         </Grid>
     </DockPanel>
 </Window>
