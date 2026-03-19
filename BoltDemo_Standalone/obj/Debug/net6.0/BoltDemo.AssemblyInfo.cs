@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("BoltDemo")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+0dcf564f673686e5e023dfb1aa4828980b2b9e4d")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+c7e964fd3e5eb113823aa7ea1dee789efa445fb0")]
 [assembly: System.Reflection.AssemblyProductAttribute("BoltDemo")]
 [assembly: System.Reflection.AssemblyTitleAttribute("BoltDemo")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
