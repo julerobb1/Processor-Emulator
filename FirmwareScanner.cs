@@ -1,3 +1,5 @@
+﻿using System.IO;
+
 namespace ProcessorEmulator
 {
     /// <summary>
@@ -22,7 +24,7 @@ namespace ProcessorEmulator
                 return null;
 
             // try the top level first (cheap)
-            var top = Directory.EnumerateFiles(startPath, pattern, SearchOption.TopDirectoryOnly);            
+            var top = Directory.EnumerateFiles(startPath, pattern, SearchOption.TopDirectoryOnly);
             foreach (var f in top)
                 return f;
 
