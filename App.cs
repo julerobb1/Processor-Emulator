@@ -1,4 +1,7 @@
-﻿
+﻿using System;
+using System.Diagnostics;
+using System.Windows;
+
 namespace ProcessorEmulator
 {
     public partial class App : Application
