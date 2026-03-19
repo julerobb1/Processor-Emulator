@@ -45,9 +45,6 @@ namespace ProcessorEmulator
                 return;
             }
 
-            // Show main window explicitly
-            this.MainWindow = new MainWindow();
-            this.MainWindow.Show();
         }
     }
 }
