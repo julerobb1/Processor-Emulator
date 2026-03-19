@@ -1,4 +1,4 @@
-
+﻿
 namespace ProcessorEmulator
 {
     public partial class App : Application
