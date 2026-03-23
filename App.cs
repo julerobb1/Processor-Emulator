@@ -17,7 +17,7 @@ namespace ProcessorEmulator
                 MessageBox.Show($"Unhandled domain exception: {ex}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             };
 
-            this.DispatcherUnhandledException += (s, ev) =>
+            DispatcherUnhandledException += (s, ev) =>
             {
                 MessageBox.Show($"Dispatcher exception: {ev.Exception}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 ev.Handled = true;
@@ -39,7 +39,7 @@ namespace ProcessorEmulator
             if (e.Args != null && e.Args.Length > 0 && e.Args[0] == "--test-uverse")
             {
                 // run the async test synchronously for simplicity
-                ProcessorEmulator.UverseEmulatorTest.RunTest().GetAwaiter().GetResult();
+                UverseEmulatorTest.RunTest().GetAwaiter().GetResult();
                 // after test exit application immediately
                 Current.Shutdown();
                 return;
