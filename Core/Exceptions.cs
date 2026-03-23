@@ -11,11 +11,24 @@ namespace ProcessorEmulator.Core
     }
 
     /// <summary>
-    /// Thrown when a memory access is to an invalid or unmapped address.
+    /// Thrown when the TLB does not contain a valid mapping for a virtual address.
+    /// This is a specific type of memory exception that the MIPS kernel is expected to handle.
     /// </summary>
-    public class BusErrorException : Exception
+    public class TlbMissException : Exception
     {
-        public BusErrorException(string message) : base(message) { }
+        public uint FaultingAddress { get; }
+        public TlbMissException(string message, uint faultingAddress) : base(message) 
+        {
+            FaultingAddress = faultingAddress;
+        }
+    }
+
+    /// <summary>
+    /// Thrown when a physical address does not map to any known device on the bus.
+    /// </summary>
+    public class AddressErrorException : Exception
+    {
+        public AddressErrorException(string message) : base(message) { }
     }
 
     /// <summary>
