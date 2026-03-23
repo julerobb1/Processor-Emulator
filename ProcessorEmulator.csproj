@@ -21,8 +21,9 @@
     <PackageReference Include="System.Management" Version="8.0.0" />
   </ItemGroup>
 
+  <!-- Exclude duplicate emulator display class file to avoid duplicate type compile errors -->
   <ItemGroup>
-    <FrameworkReference Include="Microsoft.WindowsDesktop.App.WPF" />
+    <Compile Remove="Emulation\EmulatorDisplay.cs" />
   </ItemGroup>
 
   <!-- Exclude duplicate/demo files to reduce duplicate-type compile errors quickly. These are non-destructive exclusions and can be reverted. -->
