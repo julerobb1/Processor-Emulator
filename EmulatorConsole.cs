@@ -12,15 +12,15 @@ namespace ProcessorEmulator
         public EmulatorConsole()
         {
             this.Text = "MIPS System Console";
-            this.BackColor = SystemColors.Control;
-            this.Size = new Size(800, 600);
+            this.BackColor = System.Drawing.SystemColors.Control;
+            this.Size = new System.Drawing.Size(800, 600);
 
             _terminal = new WinForms.RichTextBox
             {
                 Dock = WinForms.DockStyle.Fill,
                 BackColor = Color.Black,
                 ForeColor = Color.Lime,
-                Font = new Font("Lucida Console", 10, FontStyle.Regular),
+                Font = new System.Drawing.Font("Lucida Console", 10, System.Drawing.FontStyle.Regular),
                 ReadOnly = true,
                 Multiline = true,
                 ScrollBars = WinForms.RichTextBoxScrollBars.Vertical
