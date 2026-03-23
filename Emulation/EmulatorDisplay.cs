@@ -33,7 +33,7 @@ namespace ProcessorEmulator.Emulation
 
             // XP/7 Professional Look
             this.Text = "Hardware Video Buffer - Broadcom BCM7405 Target";
-            this.BackColor = SystemColors.Control;
+            this.BackColor = System.Drawing.SystemColors.Control;
             this.FormBorderStyle = FormBorderStyle.FixedDialog; // Prevents modern resizing
             this.StartPosition = FormStartPosition.CenterScreen;
             this.Icon = SystemIcons.Application; // Classic generic app icon
@@ -42,8 +42,8 @@ namespace ProcessorEmulator.Emulation
             // Main Video Container
             _screen = new PictureBox
             {
-                Size = new Size(640, 480),
-                Location = new Point(10, 10), // Margin like classic Win32 apps
+                Size = new System.Drawing.Size(640, 480),
+                Location = new System.Drawing.Point(10, 10), // Margin like classic Win32 apps
                 BackColor = Color.Black,
                 BorderStyle = BorderStyle.Fixed3D, // Gives it that "sunken" CRT look
                 SizeMode = PictureBoxSizeMode.Normal
@@ -56,7 +56,7 @@ namespace ProcessorEmulator.Emulation
 
             this.Controls.Add(_screen);
             this.Controls.Add(statusBar);
-            this.ClientSize = new Size(_screen.Width + 20, _screen.Height + statusBar.Height + 20);
+            this.ClientSize = new System.Drawing.Size(_screen.Width + 20, _screen.Height + statusBar.Height + 20);
 
             _backBuffer = new Bitmap(640, 480, PixelFormat.Format32bppRgb);
             _screen.Image = _backBuffer;
@@ -72,10 +72,10 @@ namespace ProcessorEmulator.Emulation
                 //View = View.Details,
                 FullRowSelect = true,
                 GridLines = true,
-                Location = new Point(660, 12),
-                Size = new Size(250, 482),
+                Location = new System.Drawing.Point(660, 12),
+                Size = new System.Drawing.Size(250, 482),
                 //BackColor = SystemColors.Window,
-                //Font = new Font("Segoe UI", 9) // The Windows 7 standard font
+                //Font = new System.Drawing.Font("Segoe UI", 9) // The Windows 7 standard font
             };
 
             hardwareList.Columns.Add("Component", 100);
