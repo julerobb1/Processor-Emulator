@@ -2,5 +2,7 @@
 // Only common, non-conflicting namespaces are included here. Specific UI
 // namespaces are added in individual files to maintain clarity.
 
+global using System.Collections.Generic;
 global using System.Diagnostics;
+global using System.Linq;
 global using System.Text;
