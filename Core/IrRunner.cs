@@ -2,6 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using ProcessorEmulator.Core.Emulation;
+using ProcessorEmulator.Core.Decoders;
+using ProcessorEmulator.Core.Backends;
 
 namespace ProcessorEmulator.Core
 {
