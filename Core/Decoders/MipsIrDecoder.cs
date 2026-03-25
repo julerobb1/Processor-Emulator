@@ -1,10 +1,12 @@
+using System.Collections.Generic;
+using ProcessorEmulator.Core.Emulation;
 
 namespace ProcessorEmulator.Core.Decoders
 {
     /// <summary>
     /// IR decoder wrapper for the existing MIPS decode pipeline.
     /// </summary>
-    public class MipsIrDecoderLegacy : IInstructionDecoder
+    public class MipsIrDecoder : IInstructionDecoder
     {
         public IEnumerable<IrStatement> Decode(ulong address, IMemoryManager memory)
         {
