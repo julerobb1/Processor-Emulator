@@ -1,7 +1,3 @@
-using System;
-using System.Linq;
-using System.Text;
-using ProcessorEmulator.Core.Emulation;
 using ProcessorEmulator.Core.Decoders;
 using ProcessorEmulator.Core.Backends;
 
@@ -23,7 +19,7 @@ namespace ProcessorEmulator.Core
         {
             _state = state;
             _memory = memory;
-            _decoder = new MipsDecoder();
+            _decoder = new MipsIrDecoder();
             _executor = new BaseIrExecutor();
         }
 
