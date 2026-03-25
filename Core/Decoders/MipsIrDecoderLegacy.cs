@@ -1,7 +1,9 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
 
-using ProcessorEmulator.Core.Emulation;
-
-namespace ProcessorEmulator.Core.Decoders
+namespace ProcessorEmulator.Core
 {
     /// <summary>
     /// IR decoder wrapper for the existing MIPS decode pipeline.
