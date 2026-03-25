@@ -31,7 +31,6 @@
        MainWindow.cs must be included for the WPF UI to appear.  Retain other removals only
        if duplicates still exist, but leave MainWindow enabled. -->
   <ItemGroup>
-    <Compile Remove="ArmHypervisor.cs" />
     <Compile Remove="StandaloneBoltDemo.cs" />
     <Compile Remove="BoltDemo_Standalone\**\*.cs" />
     <Compile Remove="Emulation\HomebrewEmulatorClean.cs" />
