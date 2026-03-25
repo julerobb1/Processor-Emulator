@@ -38,4 +38,12 @@ namespace ProcessorEmulator.Core
     {
         public IllegalInstructionException(string message) : base(message) { }
     }
+
+    /// <summary>
+    /// Thrown when a bus access triggers a memory mapping violation / alignment issue.
+    /// </summary>
+    public class BusErrorException : Exception
+    {
+        public BusErrorException(string message) : base(message) { }
+    }
 }
