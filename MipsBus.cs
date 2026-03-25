@@ -1,3 +1,4 @@
+using System;
 using ProcessorEmulator.Core;
 
 namespace ProcessorEmulator.Emulation
