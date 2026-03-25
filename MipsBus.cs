@@ -1,5 +1,3 @@
-using System;
-using System.Collections.Generic;
 using ProcessorEmulator.Core;
 
 namespace ProcessorEmulator.Emulation
@@ -144,6 +142,16 @@ namespace ProcessorEmulator.Emulation
                 return;
             }
             throw new AddressErrorException($"Write to unmapped physical address 0x{paddr:X8}");
+        }
+
+        public void WriteBytes(uint vaddr, byte[] data)
+        {
+            if (data == null) throw new ArgumentNullException(nameof(data));
+
+            for (uint i = 0; i < data.Length; i++)
+            {
+                Write8(vaddr + i, data[i]);
+            }
         }
     }
 }
