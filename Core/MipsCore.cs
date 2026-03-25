@@ -1,4 +1,6 @@
 
+using ProcessorEmulator.Emulation;
+
 namespace ProcessorEmulator.Core
 {
     /// <summary>
@@ -62,7 +64,7 @@ namespace ProcessorEmulator.Core
                     _state.SetRegister((int)instr.Rt, _state.GetRegister((int)instr.Rs) | instr.Imm);
                     break;
                 case 0x0F: // LUI
-                    _state.SetRegister((int)instr.Rt, instr.Imm << 16);
+                    _state.SetRegister((int)instr.Rt, (uint)instr.Imm << 16);
                     break;
                 case 0x23: // LW
                     {
