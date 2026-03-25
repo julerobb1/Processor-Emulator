@@ -1,7 +1,9 @@
-using System.Threading.Tasks;
 using System.Windows;
-using System.Text;
+using System.IO;
 using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Collections.Generic;
 using ProcessorEmulator.Emulation; // Added for MipsCpuEmulator, MipsBus, CP0
 
 namespace ProcessorEmulator
