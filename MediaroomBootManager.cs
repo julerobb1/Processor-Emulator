@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Text;
@@ -83,8 +80,8 @@ namespace ProcessorEmulator
             LogBoot($"Firmware Path: {baseFirmwarePath}");
 
             // Initialize MIPS emulation components
-            _mipsBus = new MipsBus(RAM_SIZE); // Assuming RAM_SIZE for the bus
             _cp0 = new CP0();
+            _mipsBus = new MipsBus(_cp0); // MipsBus requires CP0 for translation
             _mipsCpu = new MipsCpuEmulator(_mipsBus, _cp0);
             
             // Add UART peripheral
