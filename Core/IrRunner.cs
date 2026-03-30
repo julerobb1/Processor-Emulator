@@ -1,3 +1,4 @@
+using System;
 using System.Text;
 using ProcessorEmulator.Core.Emulation;
 using ProcessorEmulator.Core.Decoders;
