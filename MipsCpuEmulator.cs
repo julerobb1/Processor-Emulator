@@ -10,6 +10,8 @@ namespace ProcessorEmulator.Emulation
 
         private uint[] registers;
         private uint programCounter;
+        private uint hi;
+        private uint lo;
         private float[] floatingPointRegisters;
         private readonly CP0 _cp0;
         private readonly MipsBus _bus;
@@ -21,6 +23,8 @@ namespace ProcessorEmulator.Emulation
             registers = new uint[RegisterCount];
             floatingPointRegisters = new float[RegisterCount];
             programCounter = 0xBFC00000; // MIPS Reset Vector
+            hi = 0;
+            lo = 0;
         }
 
         // Execute a single fetch/decode/execute cycle (or multiple cycles)
@@ -93,39 +97,56 @@ namespace ProcessorEmulator.Emulation
             {
                 switch (opcode)
                 {
-                    case 0x00: // R-type instructions
+                    case 0x00: // SPECIAL (R-type)
                         ExecuteRType(instruction);
                         break;
-                    case 0x10: // COP0 instructions
-                        ExecuteCOP0(instruction);
+                    case 0x02: // J
+                        ExecuteJump(instruction, false);
                         break;
-                    case 0x08: // addi
-                        ExecuteAddImmediate(instruction);
+                    case 0x03: // JAL
+                        ExecuteJump(instruction, true);
                         break;
-                    case 0x0C: // andi
-                        ExecuteAndImmediate(instruction);
-                        break;
-                    case 0x0D: // ori
-                        ExecuteOrImmediate(instruction);
-                        break;
-                    case 0x0E: // xori
-                        ExecuteXorImmediate(instruction);
-                        break;
-                    case 0x23: // lw
-                        ExecuteLoadWord(instruction);
-                        break;
-                    case 0x2B: // sw
-                        ExecuteStoreWord(instruction);
-                        break;
-                    case 0x04: // beq
+                    case 0x04: // BEQ
                         ExecuteBranchEqual(instruction);
                         break;
-                    case 0x05: // bne
+                    case 0x05: // BNE
                         ExecuteBranchNotEqual(instruction);
                         break;
-                    // ...add more opcodes as needed...
+                    case 0x08: // ADDI
+                        ExecuteAddImmediate(instruction);
+                        break;
+                    case 0x09: // ADDIU
+                        ExecuteAddImmediateUnsigned(instruction);
+                        break;
+                    case 0x0A: // SLTI
+                        ExecuteSetLessThanImmediate(instruction);
+                        break;
+                    case 0x0B: // SLTIU
+                        ExecuteSetLessThanImmediateUnsigned(instruction);
+                        break;
+                    case 0x0C: // ANDI
+                        ExecuteAndImmediate(instruction);
+                        break;
+                    case 0x0D: // ORI
+                        ExecuteOrImmediate(instruction);
+                        break;
+                    case 0x0E: // XORI
+                        ExecuteXorImmediate(instruction);
+                        break;
+                    case 0x0F: // LUI
+                        ExecuteLoadUpperImmediate(instruction);
+                        break;
+                    case 0x10: // COP0
+                        ExecuteCOP0(instruction);
+                        break;
+                    case 0x23: // LW
+                        ExecuteLoadWord(instruction);
+                        break;
+                    case 0x2B: // SW
+                        ExecuteStoreWord(instruction);
+                        break;
                     default:
-                        TriggerException(10); // 10 is Reserved Instruction exception
+                        TriggerException(10); // Reserved Instruction
                         break;
                 }
             }
@@ -193,42 +214,113 @@ namespace ProcessorEmulator.Emulation
             uint rd = (instruction >> 11) & 0x1F;
             uint shamt = (instruction >> 6) & 0x1F;
 
-            // Register 0 is hardwired to zero
-            if (rd == 0) return;
-
             switch (funct)
             {
-                case 0x20: // add
-                    registers[rd] = registers[rs] + registers[rt];
+                case 0x00: // SLL
+                    if (rd != 0) registers[rd] = registers[rt] << (int)shamt;
                     break;
-                case 0x22: // sub
-                    registers[rd] = registers[rs] - registers[rt];
+                case 0x02: // SRL
+                    if (rd != 0) registers[rd] = registers[rt] >> (int)shamt;
                     break;
-                case 0x24: // and
-                    registers[rd] = registers[rs] & registers[rt];
+                case 0x03: // SRA
+                    if (rd != 0) registers[rd] = (uint)((int)registers[rt] >> (int)shamt);
                     break;
-                case 0x25: // or
-                    registers[rd] = registers[rs] | registers[rt];
+                case 0x08: // JR
+                    programCounter = registers[rs];
                     break;
-                case 0x27: // nor
-                    registers[rd] = ~(registers[rs] | registers[rt]);
+                case 0x09: // JALR
+                    {
+                        uint returnAddr = programCounter;
+                        programCounter = registers[rs];
+                        if (rd != 0) registers[rd] = returnAddr;
+                    }
                     break;
-                case 0x00: // sll
-                    registers[rd] = registers[rt] << (int)shamt;
+                case 0x10: // MFHI
+                    if (rd != 0) registers[rd] = hi;
                     break;
-                case 0x02: // srl
-                    registers[rd] = registers[rt] >> (int)shamt;
+                case 0x11: // MTHI
+                    hi = registers[rs];
                     break;
-                case 0x08: // jr
-                    ExecuteJumpRegister(instruction);
+                case 0x12: // MFLO
+                    if (rd != 0) registers[rd] = lo;
                     break;
-                case 0x0C: // syscall
-                     TriggerException(8); // Syscall exception
-                     break;
+                case 0x13: // MTLO
+                    lo = registers[rs];
+                    break;
+                case 0x18: // MULT
+                    {
+                        long result = (long)(int)registers[rs] * (long)(int)registers[rt];
+                        lo = (uint)result;
+                        hi = (uint)(result >> 32);
+                    }
+                    break;
+                case 0x19: // MULTU
+                    {
+                        ulong result = (ulong)registers[rs] * (ulong)registers[rt];
+                        lo = (uint)result;
+                        hi = (uint)(result >> 32);
+                    }
+                    break;
+                case 0x1A: // DIV
+                    if (registers[rt] != 0)
+                    {
+                        lo = (uint)((int)registers[rs] / (int)registers[rt]);
+                        hi = (uint)((int)registers[rs] % (int)registers[rt]);
+                    }
+                    break;
+                case 0x1B: // DIVU
+                    if (registers[rt] != 0)
+                    {
+                        lo = registers[rs] / registers[rt];
+                        hi = registers[rs] % registers[rt];
+                    }
+                    break;
+                case 0x20: // ADD
+                    if (rd != 0) registers[rd] = registers[rs] + registers[rt];
+                    break;
+                case 0x21: // ADDU
+                    if (rd != 0) registers[rd] = registers[rs] + registers[rt];
+                    break;
+                case 0x22: // SUB
+                    if (rd != 0) registers[rd] = registers[rs] - registers[rt];
+                    break;
+                case 0x23: // SUBU
+                    if (rd != 0) registers[rd] = registers[rs] - registers[rt];
+                    break;
+                case 0x24: // AND
+                    if (rd != 0) registers[rd] = registers[rs] & registers[rt];
+                    break;
+                case 0x25: // OR
+                    if (rd != 0) registers[rd] = registers[rs] | registers[rt];
+                    break;
+                case 0x26: // XOR
+                    if (rd != 0) registers[rd] = registers[rs] ^ registers[rt];
+                    break;
+                case 0x27: // NOR
+                    if (rd != 0) registers[rd] = ~(registers[rs] | registers[rt]);
+                    break;
+                case 0x2A: // SLT
+                    if (rd != 0) registers[rd] = ((int)registers[rs] < (int)registers[rt]) ? 1u : 0u;
+                    break;
+                case 0x2B: // SLTU
+                    if (rd != 0) registers[rd] = (registers[rs] < registers[rt]) ? 1u : 0u;
+                    break;
+                case 0x0C: // SYSCALL
+                    TriggerException(8);
+                    break;
                 default:
-                    TriggerException(10); // Reserved Instruction
+                    TriggerException(10);
                     break;
-            };
+            }
+        }
+
+        private void ExecuteJump(uint instruction, bool link)
+        {
+            uint target = (instruction & 0x03FFFFFF) << 2;
+            uint region = programCounter & 0xF0000000;
+            if (link)
+                registers[31] = programCounter; // already advanced past the jump
+            programCounter = region | target;
         }
 
         private void ExecuteLoadWord(uint instruction)
@@ -307,6 +399,49 @@ namespace ProcessorEmulator.Emulation
             }
         }
 
+        private void ExecuteAddImmediateUnsigned(uint instruction)
+        {
+            uint rs = (instruction >> 21) & 0x1F;
+            uint rt = (instruction >> 16) & 0x1F;
+            int imm = (short)(instruction & 0xFFFF);
+            if (rt != 0)
+            {
+                registers[rt] = registers[rs] + (uint)imm;
+            }
+        }
+
+        private void ExecuteSetLessThanImmediate(uint instruction)
+        {
+            uint rs = (instruction >> 21) & 0x1F;
+            uint rt = (instruction >> 16) & 0x1F;
+            int imm = (short)(instruction & 0xFFFF);
+            if (rt != 0)
+            {
+                registers[rt] = ((int)registers[rs] < imm) ? 1u : 0u;
+            }
+        }
+
+        private void ExecuteSetLessThanImmediateUnsigned(uint instruction)
+        {
+            uint rs = (instruction >> 21) & 0x1F;
+            uint rt = (instruction >> 16) & 0x1F;
+            uint imm = instruction & 0xFFFF;
+            if (rt != 0)
+            {
+                registers[rt] = (registers[rs] < imm) ? 1u : 0u;
+            }
+        }
+
+        private void ExecuteLoadUpperImmediate(uint instruction)
+        {
+            uint rt = (instruction >> 16) & 0x1F;
+            uint imm = instruction & 0xFFFF;
+            if (rt != 0)
+            {
+                registers[rt] = imm << 16;
+            }
+        }
+
         private void ExecuteAndImmediate(uint instruction)
         {
             uint rs = (instruction >> 21) & 0x1F;
@@ -353,5 +488,8 @@ namespace ProcessorEmulator.Emulation
         }
 
         public uint ProgramCounter => programCounter;
+
+        public uint Hi => hi;
+        public uint Lo => lo;
     }
 }
