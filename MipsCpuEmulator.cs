@@ -112,6 +112,28 @@ namespace ProcessorEmulator.Emulation
                     }
                 }
 
+                if (programCounter == CeRomTocFiles.BindImpMiss)
+                {
+                    uint e32Lite = registers[23];
+                    uint fp = registers[30];
+                    uint s4 = registers[20];
+                    try
+                    {
+                        uint o32List = _bus.Read32(fp + 180);
+                        uint lookup = _bus.Read32(s4 + 0x10);
+                        if (CeRomTocFiles.TryFillEmptyO32Lite(_bus, e32Lite, o32List, lookup))
+                        {
+                            programCounter = CeRomTocFiles.BindImpWalk;
+                            _cp0.UpdateTimer(1);
+                            _bus.Tick(1);
+                            continue;
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+
                 _currentPc = programCounter;
                 try
                 {
