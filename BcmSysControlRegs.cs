@@ -7,9 +7,12 @@ namespace ProcessorEmulator.Emulation
         public uint StartAddress { get; }
         public uint Size { get; }
         private readonly uint[] _regs;
+        private readonly CP0 _cp0;
+        private bool _irqDelivered;
 
-        public BcmSysControlRegs(uint startAddress = 0x10400000, uint size = 0x1000)
+        public BcmSysControlRegs(CP0 cp0 = null, uint startAddress = 0x10400000, uint size = 0x10000)
         {
+            _cp0 = cp0;
             StartAddress = startAddress;
             Size = size;
             _regs = new uint[size / 4];
@@ -30,6 +33,34 @@ namespace ProcessorEmulator.Emulation
                 return;
             _regs[offset / 4] = value;
             Console.WriteLine($"[SYSCTL] Write 0x{StartAddress + offset:X8} = 0x{value:X8}");
+            if (offset == 0x60C8)
+                UpdateArmedTimer(value);
+        }
+
+        private void UpdateArmedTimer(uint enable)
+        {
+            if (enable == 0)
+                return;
+
+            // Firmware arms UPG timer 0x104060C8=1 and later reads
+            // 0x104060D4 bit0 / 0x1040A000 bit0 from the PIC path (IRQ 23).
+            _regs[0x60D4 / 4] |= 1u;
+            if (0xA000 + 4 <= Size)
+                _regs[0xA000 / 4] |= 1u;
+
+            if (_cp0 == null)
+                return;
+
+            if (!_irqDelivered)
+            {
+                _cp0.SetExternalIrq(true);
+                _irqDelivered = true;
+            }
+            else
+            {
+                // Re-enable from the ISR is an ack, not a new arm.
+                _cp0.SetExternalIrq(false);
+            }
         }
 
         public byte Read8(uint offset)

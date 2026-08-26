@@ -67,7 +67,16 @@ namespace ProcessorEmulator.Emulation
         private const uint BEV_BIT = 1 << 22;       // Boot Exception Vector
         
         // Cause Register bits
+        private const uint CAUSE_IP2_BIT = 1 << 10; // HWINT0 / external PIC
         private const uint CAUSE_IP7_BIT = 1 << 15; // Timer Interrupt Pending
+
+        public void SetExternalIrq(bool pending)
+        {
+            if (pending)
+                Cause |= CAUSE_IP2_BIT;
+            else
+                Cause &= ~CAUSE_IP2_BIT;
+        }
 
         public CP0()
         {
