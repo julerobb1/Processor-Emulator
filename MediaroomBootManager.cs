@@ -22,7 +22,7 @@ namespace ProcessorEmulator
         
         private const uint WINCE_KERNEL_BASE = 0x80000000;
         private const uint MEDIAROOM_BASE = 0x90000000;
-        private const uint RAM_SIZE = 128 * 1024 * 1024; // 128MB typical for U-verse STB
+        private const uint RAM_SIZE = 256 * 1024 * 1024; // covers firmware TLBWI PFN 0x0D140000
         
         private const uint UART_BASE_ADDRESS = 0xB0000000;
         private const uint UART_SIZE = 0x1000;
