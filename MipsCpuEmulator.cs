@@ -208,6 +208,9 @@ namespace ProcessorEmulator.Emulation
                     case 0x0A: // slti
                         ExecuteSlti(instruction);
                         break;
+                    case 0x0B: // sltiu
+                        ExecuteSltiu(instruction);
+                        break;
                     case 0x0C: // andi
                         ExecuteAndImmediate(instruction);
                         break;
@@ -451,6 +454,17 @@ namespace ProcessorEmulator.Emulation
             if (rt != 0)
             {
                 registers[rt] = (int)registers[rs] < imm ? 1u : 0u;
+            }
+        }
+
+        private void ExecuteSltiu(uint instruction)
+        {
+            uint rs = (instruction >> 21) & 0x1F;
+            uint rt = (instruction >> 16) & 0x1F;
+            int imm = (short)(instruction & 0xFFFF);
+            if (rt != 0)
+            {
+                registers[rt] = registers[rs] < (uint)imm ? 1u : 0u;
             }
         }
 
