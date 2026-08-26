@@ -350,6 +350,8 @@ namespace ProcessorEmulator.Emulation
                     case 0x07: // bgtz
                         ExecuteBranchVsZero(instruction, greaterThan: true);
                         break;
+                    case 0x2F: // cache — no data cache in this interpreter
+                        break;
                     default:
                         TriggerException(10); // 10 is Reserved Instruction exception
                         break;
