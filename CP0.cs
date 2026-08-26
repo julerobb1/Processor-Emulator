@@ -81,12 +81,18 @@ namespace ProcessorEmulator.Emulation
             // Initialize Config register for nk.bin
             // Set to little-endian
             registers[ConfigReg] = 0;
+
+            // Random is read-only and counts down from 31 to Wired.
+            registers[RandomReg] = TLB_ENTRIES - 1;
         }
 
         public void WriteRegister(int reg, uint value)
         {
             if (reg >= 0 && reg < 32)
             {
+                if (reg == RandomReg)
+                    return;
+
                 // When the guest OS writes to the Compare register, it clears the timer interrupt.
                 if (reg == CompareReg)
                 {
@@ -170,6 +176,19 @@ namespace ProcessorEmulator.Emulation
             {
                 Cause |= CAUSE_IP7_BIT;
             }
+
+            uint wired = registers[WiredReg] & 0x1F;
+            if (wired >= TLB_ENTRIES)
+                wired = 0;
+            uint random = registers[RandomReg] & 0x1F;
+            for (int i = 0; i < cycles; i++)
+            {
+                if (random <= wired)
+                    random = (uint)(TLB_ENTRIES - 1);
+                else
+                    random--;
+            }
+            registers[RandomReg] = random;
         }
 
         /// <summary>
@@ -269,23 +288,18 @@ namespace ProcessorEmulator.Emulation
         /// </summary>
         public void WriteTLBEntryRandom()
         {
-            // MIPS architecture has 'wired' entries that cannot be overwritten randomly.
-            // For simplicity, we'll assume a fixed set of wired entries (e.g., 0-7)
-            // and use a very simple 'random' for now (e.g., just write to index 8).
-            // A real Random register would decrement and wrap around.
-            int index = 8; // Example: Fixed non-wired entry
-            if (index < TLB_ENTRIES)
-            {
-                _tlb[index].EntryHi = EntryHi;
-                _tlb[index].EntryLo0 = EntryLo0;
-                _tlb[index].EntryLo1 = EntryLo1;
-                _tlb[index].PageMask = registers[PageMaskReg];
-                Console.WriteLine($"CP0 TLBWR: Wrote TLB entry randomly at {index}");
-            }
-            else
-            {
-                Console.WriteLine($"CP0 TLBWR: No random entry available (or TLB_ENTRIES is too small)");
-            }
+            uint wired = registers[WiredReg] & 0x1F;
+            if (wired >= TLB_ENTRIES)
+                wired = 0;
+            uint random = registers[RandomReg] & 0x1F;
+            if (random < wired || random >= TLB_ENTRIES)
+                random = (uint)(TLB_ENTRIES - 1);
+            int index = (int)random;
+            _tlb[index].EntryHi = EntryHi;
+            _tlb[index].EntryLo0 = EntryLo0;
+            _tlb[index].EntryLo1 = EntryLo1;
+            _tlb[index].PageMask = registers[PageMaskReg];
+            Console.WriteLine($"CP0 TLBWR: Wrote TLB entry randomly at {index}");
         }
 
         /// <summary>
