@@ -25,6 +25,11 @@ namespace ProcessorEmulator.Core
             string baseName = Basename(bus, path);
             if (string.IsNullOrEmpty(baseName))
                 return false;
+            // LoadLibraryExW and CreateProcess already map TOC modules when
+            // this helper returns 2. Only the DEVMGR CreateFile caller treats
+            // that miss as fatal, so only that basename continues at 0x8001D44C.
+            if (!NamesEqual(baseName, "devmgr.dll"))
+                return false;
 
             uint toc;
             uint nmods;
