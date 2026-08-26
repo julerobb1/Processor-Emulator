@@ -29,6 +29,7 @@ namespace ProcessorEmulator.Emulation
         private readonly MipsBus _bus;
         private VirtualRegistry _virtualRegistry; // Declared VirtualRegistry
         private readonly string _logFilePath;
+        private bool _inDelaySlot;
 
         public event Action<string> OnLogMessage; // Event for logging to UI
 
@@ -326,8 +327,8 @@ namespace ProcessorEmulator.Emulation
         private void ExecuteJ(uint instruction)
         {
             uint oldPc = programCounter;
-            uint target = instruction & 0x3FFFFFF;
-            programCounter = (programCounter & 0xF0000000) | (target << 2);
+            uint target = (programCounter & 0xF0000000) | ((instruction & 0x3FFFFFF) << 2);
+            ExecuteDelaySlotThenJump(target);
             LogBranch(oldPc, programCounter, "J");
         }
 
@@ -337,6 +338,28 @@ namespace ProcessorEmulator.Emulation
             registers[31] = programCounter + 4; // Return address is the instruction after the delay slot
             ExecuteJ(instruction);
             LogBranch(oldPc, programCounter, "JAL");
+        }
+
+        private void ExecuteDelaySlotThenJump(uint target)
+        {
+            if (_inDelaySlot)
+            {
+                programCounter = target;
+                return;
+            }
+
+            _inDelaySlot = true;
+            try
+            {
+                uint delayInstr = FetchInstruction();
+                DecodeAndExecute(delayInstr);
+            }
+            finally
+            {
+                _inDelaySlot = false;
+            }
+
+            programCounter = target;
         }
 
 
@@ -700,9 +723,9 @@ namespace ProcessorEmulator.Emulation
         private void ExecuteJumpRegister(uint instruction)
         {
             uint oldPc = programCounter;
-            // Note: Simplified implementation without correct delay slot exception handling.
             uint rs = (instruction >> 21) & 0x1F;
-            programCounter = registers[rs];
+            uint target = registers[rs];
+            ExecuteDelaySlotThenJump(target);
             LogBranch(oldPc, programCounter, "JR");
         }
 
