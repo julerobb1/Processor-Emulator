@@ -5,7 +5,9 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Collections.Generic;
-using ProcessorEmulator.Emulation; // Added for MipsCpuEmulator, MipsBus, CP0
+using ProcessorEmulator.Emulation;
+using ProcessorEmulator.Core.Emulation;
+using ProcessorEmulator.Core.Loaders;
 
 namespace ProcessorEmulator
 {
@@ -84,10 +86,10 @@ namespace ProcessorEmulator
 
             // Initialize MIPS emulation components
             _cp0 = new CP0();
-            _mipsBus = new MipsBus(_cp0); // MipsBus requires CP0 for translation
+            _mipsBus = new MipsBus(_cp0);
+            _mipsBus.IsBigEndian = false;
+            _mipsBus.AddDevice(new RamDevice(0x00000000, RAM_SIZE));
             _mipsCpu = new MipsCpuEmulator(_mipsBus, _cp0);
-            
-            // Add UART peripheral
             _mipsBus.AddDevice(new MipsUart(UART_BASE_ADDRESS, UART_SIZE));
             
         }
@@ -181,6 +183,16 @@ namespace ProcessorEmulator
             LogBoot("📦 Stage 1: Loading Mediaroom firmware components...");
             currentStage = BootStage.Initial;
             
+            if (!File.Exists(Path.Combine(baseFirmwarePath, "nk.bin")))
+            {
+                string located = FindExistingNkBinDirectory();
+                if (located != null)
+                {
+                    baseFirmwarePath = located;
+                    LogBoot($"Using existing firmware directory: {baseFirmwarePath}");
+                }
+            }
+
             if (!Directory.Exists(baseFirmwarePath))
             {
                 LogBoot($"⚠️ Creating firmware directory: {baseFirmwarePath}");
@@ -232,58 +244,68 @@ namespace ProcessorEmulator
         
         private async Task<bool> BootWinCEKernel()
         {
+            await Task.CompletedTask;
             LogBoot("🔧 Stage 2: Booting WinCE kernel...");
             currentStage = BootStage.KernelLoad;
             
             byte[] kernelData = firmwareComponents["nk.bin"];
             LogBoot($"Kernel size: {kernelData.Length:N0} bytes");
-            
-            // Parse WinCE NK.bin header
-            var kernelInfo = ParseNKBinHeader(kernelData);
-            LogBoot($"Entry point: 0x{kernelInfo.EntryPoint:X8}");
-            LogBoot($"Image base: 0x{kernelInfo.ImageBase:X8}");
-            LogBoot($"Image size: 0x{kernelInfo.ImageSize:X8}");
-            
-            // Load kernel data into MIPS bus memory
-            _mipsBus.WriteBytes(kernelInfo.ImageBase, kernelData);
-            _mipsCpu.SetRegister(MipsCpuEmulator.Register.PC, kernelInfo.EntryPoint); // Set PC
-            _mipsCpu.SetRegister(MipsCpuEmulator.Register.SP, WINCE_KERNEL_BASE + RAM_SIZE - 0x1000); // Set a basic stack pointer
-            
-            LogBoot("🔄 Executing WinCE kernel...");
-            // Execute a fixed number of instructions to simulate initial kernel boot
-            // In a real scenario, this would run until a specific syscall or exception
-            _mipsCpu.Step(100000); // Execute 100,000 MIPS instructions
-            
-            LogBoot("🔄 Loading kernel modules...");
-            
-            var modules = new[]
+
+            uint entryPoint;
+            uint imageBase;
+            uint imageSize;
+            try
             {
-                "KERNEL.DLL - Core kernel",
-                "NK.EXE - System executive", 
-                "FILESYS.DLL - File system",
-                "GWES.DLL - Graphics subsystem",
-                "COREDLL.DLL - Core API library",
-                "NETAPI32.DLL - Network API",
-                "WINSOCK.DLL - Socket interface"
-            };
-            
-            foreach (var module in modules)
-            {
-                // In a real scenario, these would be loaded by the emulated kernel
-                // and potentially involve more CPU execution.
-                LogBoot($"  ↳ {module}");
+                if (NkBinLoader.IsB000Ff(kernelData))
+                {
+                    NkLoadResult loaded = NkBinLoader.Load(kernelData, new BusMemoryAdapter(_mipsBus));
+                    entryPoint = (uint)loaded.EntryPoint;
+                    imageBase = loaded.ImageStart;
+                    imageSize = loaded.ImageLength;
+                    LogBoot($"B000FF image: {loaded.RecordsLoaded} records, start=0x{imageBase:X8}, size=0x{imageSize:X8}{(loaded.Truncated ? " (truncated)" : "")}");
+                }
+                else
+                {
+                    var kernelInfo = ParseNKBinHeader(kernelData);
+                    entryPoint = kernelInfo.EntryPoint;
+                    imageBase = kernelInfo.ImageBase;
+                    imageSize = kernelInfo.ImageSize;
+                    _mipsBus.WriteBytes(imageBase, kernelData);
+                }
             }
-            
-            // Mount registry hive
-            if (firmwareComponents.ContainsKey("default.hv"))
+            catch (Exception ex)
             {
-                LogBoot("Mounting registry hive...");
-                await ParseRegistryHive(); // Still async, but doesn't block CPU
+                LogBoot($"Failed to map nk.bin into RAM: {ex.Message}");
+                return false;
             }
-            
-            LogBoot("WinCE kernel boot complete");
-            isKernelLoaded = true;
-            return true;
+
+            LogBoot($"Entry point: 0x{entryPoint:X8}");
+            LogBoot($"Image base: 0x{imageBase:X8}");
+            LogBoot($"Image size: 0x{imageSize:X8}");
+
+            _mipsCpu.SetRegister(MipsCpuEmulator.Register.PC, entryPoint);
+            _mipsCpu.SetRegister(MipsCpuEmulator.Register.SP, WINCE_KERNEL_BASE + RAM_SIZE - 0x1000);
+
+            LogBoot("Probing first kernel instructions (not a CE boot)");
+            const int probeSteps = 8;
+            try
+            {
+                for (int i = 0; i < probeSteps; i++)
+                {
+                    uint pc = _mipsCpu.ProgramCounter;
+                    uint instr = _mipsBus.Read32(pc);
+                    _mipsCpu.Step(1);
+                    LogBoot($"  [{i}] PC=0x{pc:X8} instr=0x{instr:X8} next=0x{_mipsCpu.ProgramCounter:X8}");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogBoot($"CPU probe stopped: {ex.GetType().Name}: {ex.Message} PC=0x{_mipsCpu.ProgramCounter:X8}");
+                return false;
+            }
+
+            LogBoot("nk.bin mapped; CE kernel/userland not reached");
+            return false;
         }
         
         private async Task<bool> InitializeSystemServices()
@@ -408,6 +430,42 @@ namespace ProcessorEmulator
         
         #region Helper Methods
         
+        private static string FindExistingNkBinDirectory()
+        {
+            string[] candidates =
+            {
+                Path.Combine(Environment.CurrentDirectory, "UverseDriveE"),
+                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "UverseDriveE"),
+                Path.Combine(Environment.CurrentDirectory, "UverseFirmware")
+            };
+
+            foreach (string dir in candidates)
+            {
+                if (File.Exists(Path.Combine(dir, "nk.bin")))
+                    return dir;
+            }
+
+            return null;
+        }
+
+        private sealed class BusMemoryAdapter : IMemoryManager
+        {
+            private readonly MipsBus _bus;
+
+            public BusMemoryAdapter(MipsBus bus)
+            {
+                _bus = bus;
+            }
+
+            public bool IsLittleEndian => !_bus.IsBigEndian;
+
+            public uint ReadMemory32(ulong address) => _bus.Read32((uint)address);
+
+            public void WriteMemory32(ulong address, uint value) => _bus.Write32((uint)address, value);
+
+            public void WriteMemory(ulong address, byte[] data) => _bus.WriteBytes((uint)address, data);
+        }
+
         private (uint EntryPoint, uint ImageBase, uint ImageSize) ParseNKBinHeader(byte[] kernelData)
         {
             // Simplified NK.bin header parsing
