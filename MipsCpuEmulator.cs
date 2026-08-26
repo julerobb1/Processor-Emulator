@@ -684,13 +684,7 @@ namespace ProcessorEmulator.Emulation
             short offset = (short)(instruction & 0xFFFF); // Sign-extended offset
 
             if (registers[rs] == registers[rt])
-            {
-                uint oldPc = programCounter;
-                // MIPS branches are PC-relative: PC + 4 + (offset << 2)
-                // We use +4 because the PC has already advanced or is at the delay slot
-                programCounter += (uint)(offset << 2);
-                LogBranch(oldPc, programCounter, "BEQ");
-            }
+                TakeBranch(offset, "BEQ");
         }
 
         private void ExecuteBranchNotEqual(uint instruction)
@@ -700,11 +694,7 @@ namespace ProcessorEmulator.Emulation
             short offset = (short)(instruction & 0xFFFF);
 
             if (registers[rs] != registers[rt])
-            {
-                uint oldPc = programCounter;
-                programCounter += (uint)(offset << 2);
-                LogBranch(oldPc, programCounter, "BNE");
-            }
+                TakeBranch(offset, "BNE");
         }
 
         private void ExecuteRegimm(uint instruction)
@@ -742,11 +732,7 @@ namespace ProcessorEmulator.Emulation
             }
 
             if (taken)
-            {
-                uint oldPc = programCounter;
-                programCounter += (uint)(offset << 2);
-                LogBranch(oldPc, programCounter, name);
-            }
+                TakeBranch(offset, name);
         }
 
         private void ExecuteBranchVsZero(uint instruction, bool greaterThan)
@@ -756,11 +742,15 @@ namespace ProcessorEmulator.Emulation
             int value = (int)registers[rs];
             bool taken = greaterThan ? value > 0 : value <= 0;
             if (taken)
-            {
-                uint oldPc = programCounter;
-                programCounter += (uint)(offset << 2);
-                LogBranch(oldPc, programCounter, greaterThan ? "BGTZ" : "BLEZ");
-            }
+                TakeBranch(offset, greaterThan ? "BGTZ" : "BLEZ");
+        }
+
+        private void TakeBranch(short offset, string name)
+        {
+            uint oldPc = programCounter;
+            uint target = programCounter + (uint)(offset << 2);
+            ExecuteDelaySlotThenJump(target);
+            LogBranch(oldPc, programCounter, name);
         }
         
         private void ExecuteJumpRegister(uint instruction)
