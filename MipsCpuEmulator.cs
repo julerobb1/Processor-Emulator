@@ -232,7 +232,9 @@ namespace ProcessorEmulator.Emulation
                     case 0x05: // bne
                         ExecuteBranchNotEqual(instruction);
                         break;
-                    // ...add more opcodes as needed...
+                    case 0x01: // REGIMM (bltz / bgez / bltzal / bgezal)
+                        ExecuteRegimm(instruction);
+                        break;
                     default:
                         TriggerException(10); // 10 is Reserved Instruction exception
                         break;
@@ -494,6 +496,48 @@ namespace ProcessorEmulator.Emulation
                 uint oldPc = programCounter;
                 programCounter += (uint)(offset << 2);
                 LogBranch(oldPc, programCounter, "BNE");
+            }
+        }
+
+        private void ExecuteRegimm(uint instruction)
+        {
+            uint rs = (instruction >> 21) & 0x1F;
+            uint rt = (instruction >> 16) & 0x1F;
+            short offset = (short)(instruction & 0xFFFF);
+            bool negative = (int)registers[rs] < 0;
+            bool taken;
+            string name;
+
+            switch (rt)
+            {
+                case 0x00:
+                    taken = negative;
+                    name = "BLTZ";
+                    break;
+                case 0x01:
+                    taken = !negative;
+                    name = "BGEZ";
+                    break;
+                case 0x10:
+                    registers[31] = programCounter + 4;
+                    taken = negative;
+                    name = "BLTZAL";
+                    break;
+                case 0x11:
+                    registers[31] = programCounter + 4;
+                    taken = !negative;
+                    name = "BGEZAL";
+                    break;
+                default:
+                    TriggerException(10);
+                    return;
+            }
+
+            if (taken)
+            {
+                uint oldPc = programCounter;
+                programCounter += (uint)(offset << 2);
+                LogBranch(oldPc, programCounter, name);
             }
         }
         
