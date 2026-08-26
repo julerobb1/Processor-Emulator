@@ -328,7 +328,18 @@ namespace ProcessorEmulator.Emulation
             uint rd = (instruction >> 11) & 0x1F;
             uint shamt = (instruction >> 6) & 0x1F;
 
-            // Register 0 is hardwired to zero
+            // jr / syscall do not write rd; $zero discard must not skip them.
+            if (funct == 0x08)
+            {
+                ExecuteJumpRegister(instruction);
+                return;
+            }
+            if (funct == 0x0C)
+            {
+                ExecuteSyscall(instruction);
+                return;
+            }
+
             if (rd == 0) return;
 
             switch (funct)
@@ -360,12 +371,6 @@ namespace ProcessorEmulator.Emulation
                 case 0x06: // srlv
                     registers[rd] = registers[rt] >> (int)registers[rs];
                     break;
-                case 0x08: // jr
-                    ExecuteJumpRegister(instruction);
-                    break;
-                case 0x0C: // syscall
-                     ExecuteSyscall(instruction); // Call the new ExecuteSyscall method
-                     break;
                 default:
                     TriggerException(10); // Reserved Instruction
                     break;
