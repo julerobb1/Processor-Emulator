@@ -32,6 +32,8 @@ namespace ProcessorEmulator.Emulation
         private readonly string _logFilePath;
         private bool _inDelaySlot;
         private uint _currentPc;
+        private uint _hi;
+        private uint _lo;
 
         public event Action<string> OnLogMessage; // Event for logging to UI
 
@@ -488,11 +490,27 @@ namespace ProcessorEmulator.Emulation
                 ExecuteSyscall(instruction);
                 return;
             }
+            if (funct == 0x11) // mthi
+            {
+                _hi = registers[rs];
+                return;
+            }
+            if (funct == 0x13) // mtlo
+            {
+                _lo = registers[rs];
+                return;
+            }
 
             if (rd == 0) return;
 
             switch (funct)
             {
+                case 0x10: // mfhi
+                    registers[rd] = _hi;
+                    break;
+                case 0x12: // mflo
+                    registers[rd] = _lo;
+                    break;
                 case 0x20: // add
                 case 0x21: // addu
                     registers[rd] = registers[rs] + registers[rt];
