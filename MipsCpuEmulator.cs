@@ -86,8 +86,8 @@ namespace ProcessorEmulator.Emulation
                 if (_cp0.ShouldTriggerInterrupt())
                 {
                     TriggerException(0); // 0 is the code for Interrupt
-                    // The exception has changed the PC, so we continue to the next loop iteration
-                    // to fetch from the new interrupt handler address.
+                    // Vector this step; fetch 0x80000180 on the next iteration.
+                    continue;
                 }
 
                 _currentPc = programCounter;
@@ -107,6 +107,7 @@ namespace ProcessorEmulator.Emulation
 
                 // Advance the internal timer by one cycle per instruction.
                 _cp0.UpdateTimer(1);
+                _bus.Tick(1);
             }
         }
 

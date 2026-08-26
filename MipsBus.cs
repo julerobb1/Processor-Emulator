@@ -12,6 +12,7 @@ namespace ProcessorEmulator.Emulation
         // A lookup table mapping the upper 16 bits of the address space to a device.
         // This gives 65,536 entries, each covering a 64KB chunk of the 4GB address space.
         private readonly IBusDevice[] _lookupTable = new IBusDevice[1 << 16];
+        private readonly System.Collections.Generic.List<IBusDevice> _devices = new System.Collections.Generic.List<IBusDevice>();
 
         private readonly CP0 _cp0;
         public bool IsBigEndian { get; set; } = true; // Default to Big Endian for MIPS set-top boxes
@@ -37,6 +38,16 @@ namespace ProcessorEmulator.Emulation
                     throw new InvalidOperationException($"Address space conflict. Block 0x{i:X4}0000 is already mapped.");
                 }
                 _lookupTable[i] = device;
+            }
+            _devices.Add(device);
+        }
+
+        public void Tick(int cycles)
+        {
+            for (int i = 0; i < _devices.Count; i++)
+            {
+                if (_devices[i] is BcmSysControlRegs sysctl)
+                    sysctl.Tick(cycles);
             }
         }
         
