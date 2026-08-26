@@ -4,21 +4,26 @@ namespace ProcessorEmulator.Core
 {
     // 0x8001D3A0 CreateFile has no TOC fallback: INVALID_HANDLE returns 2.
     // LoadLibraryExW and CreateProcess already map TOC modules on that miss.
-    // device.exe CreateFile of DEVMGR.dll does not, so only that basename
-    // continues at the firmware ROM-module site (0x8001D44C) with
-    // FILE_ATTRIBUTE_ROMMODULE. Image bytes stay in RAM; no handle is created.
+    // device.exe CreateFile of DEVMGR.dll does not. Helper 0 with type 2
+    // left object+0 as INVALID_HANDLE, and 0x80016584/0x8003DFD8 then
+    // failed that handle (ERROR_BAD_EXE_FORMAT). 0x80016AFC already
+    // attaches a TOC module as object+0=TOCentry, object+4=7 so
+    // 0x800196E4 uses e32 at TOC+0x14. Only DEVMGR gets that attach.
+    // Image bytes stay in RAM; no handle is created.
     public static class CeRomTocFiles
     {
         public const uint CreateFileFail = 0x8001D400;
-        public const uint RomModuleContinue = 0x8001D44C;
+        public const uint NameCopyContinue = 0x8001D464;
         public const uint EcecTocPtr = 0x80010044;
         public const uint RomHdrNumMods = 0x10;
         public const uint TocFirst = 0x54;
         public const uint TocEntrySize = 32;
+        public const byte TocAttachType = 7;
 
-        public static bool TryContinueRomModule(MipsBus bus, uint path, out uint attr)
+        public static bool TryContinueRomModule(MipsBus bus, uint path, out uint attr, out uint tocEntry)
         {
             attr = 0;
+            tocEntry = 0;
             if (bus == null || path == 0)
                 return false;
 
@@ -27,7 +32,8 @@ namespace ProcessorEmulator.Core
                 return false;
             // LoadLibraryExW and CreateProcess already map TOC modules when
             // this helper returns 2. Only the DEVMGR CreateFile caller treats
-            // that miss as fatal, so only that basename continues at 0x8001D44C.
+            // that miss as fatal, so only that basename gets the 0x80016AFC
+            // TOC attach (entry pointer + type 7).
             if (!NamesEqual(baseName, "devmgr.dll"))
                 return false;
 
@@ -58,6 +64,7 @@ namespace ProcessorEmulator.Core
                         continue;
                     uint tocAttr = bus.Read32(entry);
                     attr = (tocAttr & 0xFFFFEFFFu) | 0x2040u;
+                    tocEntry = entry;
                     return true;
                 }
             }
