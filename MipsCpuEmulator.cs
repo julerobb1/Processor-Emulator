@@ -100,6 +100,10 @@ namespace ProcessorEmulator.Emulation
                 {
                     TriggerTlbException(ex);
                 }
+                catch (CpuAlignmentException)
+                {
+                    TriggerAddressError(_currentPc);
+                }
 
                 // Advance the internal timer by one cycle per instruction.
                 _cp0.UpdateTimer(1);
@@ -160,9 +164,24 @@ namespace ProcessorEmulator.Emulation
                 programCounter = bev ? 0xBFC00380u : 0x80000180u;
         }
 
+        private void TriggerAddressError(uint vaddr)
+        {
+            Console.WriteLine($"--- EXCEPTION: Code 4 AdEL vaddr=0x{vaddr:X8} ---");
+            _cp0.BadVAddr = vaddr;
+            _cp0.EPC = vaddr;
+            uint cause = (_cp0.Cause & 0xFFFFFF83) | (4u << 2);
+            cause &= 0x7FFFFFFF;
+            _cp0.Cause = cause;
+            _cp0.Status |= (1 << 1);
+            bool bev = (_cp0.Status & (1 << 22)) != 0;
+            programCounter = bev ? 0xBFC00380u : 0x80000180u;
+        }
+
 
         private uint FetchInstruction()
         {
+            if ((programCounter & 3) != 0)
+                throw new CpuAlignmentException($"Unaligned fetch PC=0x{programCounter:X8}");
             uint instruction = ReadMemory32(programCounter); // Use new ReadMemory32
             Console.WriteLine($"PC: 0x{programCounter:X8} -> PADDR: 0x{_bus.Translate(programCounter):X8}, INSTR: 0x{instruction:X8}");
             programCounter += 4;
