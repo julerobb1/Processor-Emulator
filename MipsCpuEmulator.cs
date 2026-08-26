@@ -90,16 +90,13 @@ namespace ProcessorEmulator.Emulation
                     continue;
                 }
 
-                if (programCounter == CeRomTocFiles.GetRomFileInfo)
+                if (programCounter == CeRomTocFiles.CreateFileFail)
                 {
-                    uint romType = registers[4];
-                    uint findData = registers[5];
-                    uint romIndex = registers[6];
-                    if (CeRomTocFiles.TryServeType2Module(
-                            _bus, romType, findData, romIndex, out uint served))
+                    uint path = registers[23];
+                    if (CeRomTocFiles.TryContinueRomModule(_bus, path, out uint attr))
                     {
-                        registers[2] = served;
-                        programCounter = registers[31];
+                        registers[3] = attr;
+                        programCounter = CeRomTocFiles.RomModuleContinue;
                         _cp0.UpdateTimer(1);
                         _bus.Tick(1);
                         continue;

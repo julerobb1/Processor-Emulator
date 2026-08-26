@@ -2,36 +2,37 @@ using ProcessorEmulator.Emulation;
 
 namespace ProcessorEmulator.Core
 {
-    // GetRomFileInfo type 1 already copies a TOC module into WIN32_FIND_DATA.
-    // Firmware filesys/coredll only walks type 2 (FILESentry). After those
-    // eight names, continue the same walk with TOC modules so \Windows\*.dll
-    // sees what is already in the image. No extra bytes are written to ROM.
+    // 0x8001D3A0 CreateFile has no TOC fallback: INVALID_HANDLE returns 2.
+    // LoadLibraryExW already resolves TOC basenames. When CreateFile misses
+    // and the path basename is a TOC module, continue at the firmware
+    // ROM-module success site (0x8001D44C) with FILE_ATTRIBUTE_ROMMODULE.
+    // The image is already in RAM; no handle and no extra bytes are created.
     public static class CeRomTocFiles
     {
-        public const uint GetRomFileInfo = 0x80045C4C;
+        public const uint CreateFileFail = 0x8001D400;
+        public const uint RomModuleContinue = 0x8001D44C;
         public const uint EcecTocPtr = 0x80010044;
-        public const uint TypeFiles = 2;
         public const uint RomHdrNumMods = 0x10;
-        public const uint RomHdrType2FileCount = 0x30;
         public const uint TocFirst = 0x54;
         public const uint TocEntrySize = 32;
-        public const uint FindNameOff = 0x28;
 
-        public static bool TryServeType2Module(MipsBus bus, uint type, uint findData, uint index, out uint v0)
+        public static bool TryContinueRomModule(MipsBus bus, uint path, out uint attr)
         {
-            v0 = 0;
-            if (bus == null || type != TypeFiles || findData == 0)
+            attr = 0;
+            if (bus == null || path == 0)
+                return false;
+
+            string baseName = Basename(bus, path);
+            if (string.IsNullOrEmpty(baseName))
                 return false;
 
             uint toc;
-            uint nfiles;
             uint nmods;
             try
             {
                 toc = bus.Read32(EcecTocPtr);
                 if (toc == 0)
                     return false;
-                nfiles = bus.Read32(toc + RomHdrType2FileCount);
                 nmods = bus.Read32(toc + RomHdrNumMods);
             }
             catch
@@ -39,64 +40,87 @@ namespace ProcessorEmulator.Core
                 return false;
             }
 
-            if (index < nfiles)
+            if (nmods == 0 || nmods > 64)
                 return false;
-            uint mod = index - nfiles;
-            if (mod >= nmods)
-            {
-                v0 = 0;
-                return true;
-            }
 
             try
             {
-                uint entry = toc + TocFirst + mod * TocEntrySize;
-                uint attr = bus.Read32(entry);
-                uint ftLo = bus.Read32(entry + 4);
-                uint ftHi = bus.Read32(entry + 8);
-                uint size = bus.Read32(entry + 0xC);
-                uint name = bus.Read32(entry + 0x10);
-                uint outAttr = (attr & 0xFFFFEFFFu) | 0x2040u;
-                bus.Write32(findData, outAttr);
-                bus.Write32(findData + 4, ftLo);
-                bus.Write32(findData + 8, ftHi);
-                bus.Write32(findData + 0xC, ftLo);
-                bus.Write32(findData + 0x10, ftHi);
-                bus.Write32(findData + 0x14, ftLo);
-                bus.Write32(findData + 0x18, ftHi);
-                bus.Write32(findData + 0x1C, 0);
-                bus.Write32(findData + 0x20, size);
-
-                uint dst = findData + FindNameOff;
-                for (int i = 0; i < 259; i++)
+                for (uint i = 0; i < nmods; i++)
                 {
-                    uint src = name + (uint)i;
-                    uint word = bus.Read32(src & ~3u);
-                    uint ch = (word >> (8 * (int)(src & 3))) & 0xFF;
-                    WriteU16(bus, dst, ch);
-                    if (ch == 0)
-                        break;
-                    dst += 2;
+                    uint entry = toc + TocFirst + i * TocEntrySize;
+                    uint name = bus.Read32(entry + 0x10);
+                    if (!NamesEqual(baseName, ReadAscii(bus, name)))
+                        continue;
+                    uint tocAttr = bus.Read32(entry);
+                    attr = (tocAttr & 0xFFFFEFFFu) | 0x2040u;
+                    return true;
                 }
-
-                v0 = 1;
-                return true;
             }
             catch
             {
                 return false;
             }
+
+            return false;
         }
 
-        private static void WriteU16(MipsBus bus, uint addr, uint ch)
+        private static string Basename(MipsBus bus, uint path)
         {
-            uint aligned = addr & ~3u;
-            uint word = bus.Read32(aligned);
-            if ((addr & 2) == 0)
-                word = (word & 0xFFFF0000u) | (ch & 0xFFFF);
-            else
-                word = (word & 0x0000FFFFu) | (ch << 16);
-            bus.Write32(aligned, word);
+            var sb = new System.Text.StringBuilder();
+            int start = 0;
+            for (int i = 0; i < 260; i++)
+            {
+                uint p = path + (uint)(i * 2);
+                uint word = bus.Read32(p & ~3u);
+                uint ch = ((p & 2) == 0) ? (word & 0xFFFF) : (word >> 16);
+                if (ch == 0)
+                    break;
+                if (ch == '\\' || ch == '/')
+                {
+                    sb.Length = 0;
+                    start = i + 1;
+                    continue;
+                }
+                if (ch < 0x20 || ch > 0x7E)
+                    return "";
+                sb.Append((char)ch);
+            }
+            return start >= 0 ? sb.ToString() : "";
+        }
+
+        private static string ReadAscii(MipsBus bus, uint addr)
+        {
+            if (addr == 0)
+                return "";
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < 80; i++)
+            {
+                uint src = addr + (uint)i;
+                uint word = bus.Read32(src & ~3u);
+                uint ch = (word >> (8 * (int)(src & 3))) & 0xFF;
+                if (ch == 0)
+                    break;
+                if (ch < 0x20 || ch > 0x7E)
+                    return "";
+                sb.Append((char)ch);
+            }
+            return sb.ToString();
+        }
+
+        private static bool NamesEqual(string a, string b)
+        {
+            if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b) || a.Length != b.Length)
+                return false;
+            for (int i = 0; i < a.Length; i++)
+            {
+                char ca = a[i];
+                char cb = b[i];
+                if (ca >= 'A' && ca <= 'Z') ca = (char)(ca + 32);
+                if (cb >= 'A' && cb <= 'Z') cb = (char)(cb + 32);
+                if (ca != cb)
+                    return false;
+            }
+            return true;
         }
     }
 }
