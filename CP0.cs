@@ -82,7 +82,7 @@ namespace ProcessorEmulator.Emulation
             // Set to little-endian
             registers[ConfigReg] = 0;
 
-            // Random is read-only and counts down from 31 to Wired.
+            // Random is read-only; tlbwr consumes it and counts down to Wired.
             registers[RandomReg] = TLB_ENTRIES - 1;
         }
 
@@ -176,19 +176,6 @@ namespace ProcessorEmulator.Emulation
             {
                 Cause |= CAUSE_IP7_BIT;
             }
-
-            uint wired = registers[WiredReg] & 0x1F;
-            if (wired >= TLB_ENTRIES)
-                wired = 0;
-            uint random = registers[RandomReg] & 0x1F;
-            for (int i = 0; i < cycles; i++)
-            {
-                if (random <= wired)
-                    random = (uint)(TLB_ENTRIES - 1);
-                else
-                    random--;
-            }
-            registers[RandomReg] = random;
         }
 
         /// <summary>
@@ -283,8 +270,9 @@ namespace ProcessorEmulator.Emulation
         }
 
         /// <summary>
-        /// Writes EntryHi, EntryLo0, EntryLo1, and PageMask to a random TLB entry.
-        /// (Simplified: for now, it's not truly random, just uses a fixed index after wired entries)
+        /// Writes EntryHi, EntryLo0, EntryLo1, and PageMask to the TLB entry
+        /// selected by Random (clamped to [Wired, 31]). Random then counts
+        /// down and wraps at Wired so consecutive tlbwr hits different slots.
         /// </summary>
         public void WriteTLBEntryRandom()
         {
@@ -299,6 +287,13 @@ namespace ProcessorEmulator.Emulation
             _tlb[index].EntryLo0 = EntryLo0;
             _tlb[index].EntryLo1 = EntryLo1;
             _tlb[index].PageMask = registers[PageMaskReg];
+            // Advance after tlbwr. Per-instruction decrement locks to one slot
+            // when the refill path length equals the Random range (Wired..31).
+            if (random <= wired)
+                random = (uint)(TLB_ENTRIES - 1);
+            else
+                random--;
+            registers[RandomReg] = random;
             Console.WriteLine($"CP0 TLBWR: Wrote TLB entry randomly at {index}");
         }
 
