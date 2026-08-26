@@ -235,6 +235,12 @@ namespace ProcessorEmulator.Emulation
                     case 0x01: // REGIMM (bltz / bgez / bltzal / bgezal)
                         ExecuteRegimm(instruction);
                         break;
+                    case 0x06: // blez
+                        ExecuteBranchVsZero(instruction, greaterThan: false);
+                        break;
+                    case 0x07: // bgtz
+                        ExecuteBranchVsZero(instruction, greaterThan: true);
+                        break;
                     default:
                         TriggerException(10); // 10 is Reserved Instruction exception
                         break;
@@ -538,6 +544,20 @@ namespace ProcessorEmulator.Emulation
                 uint oldPc = programCounter;
                 programCounter += (uint)(offset << 2);
                 LogBranch(oldPc, programCounter, name);
+            }
+        }
+
+        private void ExecuteBranchVsZero(uint instruction, bool greaterThan)
+        {
+            uint rs = (instruction >> 21) & 0x1F;
+            short offset = (short)(instruction & 0xFFFF);
+            int value = (int)registers[rs];
+            bool taken = greaterThan ? value > 0 : value <= 0;
+            if (taken)
+            {
+                uint oldPc = programCounter;
+                programCounter += (uint)(offset << 2);
+                LogBranch(oldPc, programCounter, greaterThan ? "BGTZ" : "BLEZ");
             }
         }
         
