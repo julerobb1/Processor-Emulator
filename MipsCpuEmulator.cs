@@ -353,9 +353,11 @@ namespace ProcessorEmulator.Emulation
             switch (funct)
             {
                 case 0x20: // add
+                case 0x21: // addu
                     registers[rd] = registers[rs] + registers[rt];
                     break;
                 case 0x22: // sub
+                case 0x23: // subu
                     registers[rd] = registers[rs] - registers[rt];
                     break;
                 case 0x24: // and
