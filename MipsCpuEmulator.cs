@@ -95,6 +95,10 @@ namespace ProcessorEmulator.Emulation
                     uint path = registers[23];
                     if (CeRomTocFiles.TryContinueRomModule(_bus, path, out uint attr))
                     {
+                        // Firmware at 0x8001D4B8 reloads attributes from 40($sp),
+                        // the GetFileInformation buffer we never filled. Prime it
+                        // so the existing 0x2000 ROM-module branch is taken.
+                        _bus.Write32(registers[29] + 40, attr);
                         registers[3] = attr;
                         programCounter = CeRomTocFiles.RomModuleContinue;
                         _cp0.UpdateTimer(1);
