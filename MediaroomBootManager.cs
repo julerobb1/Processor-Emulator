@@ -89,6 +89,7 @@ namespace ProcessorEmulator
             _mipsBus = new MipsBus(_cp0);
             _mipsBus.IsBigEndian = false;
             _mipsBus.AddDevice(new RamDevice(0x00000000, RAM_SIZE));
+            _mipsBus.AddDevice(new BcmSysControlRegs());
             _mipsCpu = new MipsCpuEmulator(_mipsBus, _cp0);
             _mipsBus.AddDevice(new MipsUart(UART_BASE_ADDRESS, UART_SIZE));
             
