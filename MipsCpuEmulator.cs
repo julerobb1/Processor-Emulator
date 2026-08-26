@@ -442,6 +442,12 @@ namespace ProcessorEmulator.Emulation
                 case 0x27: // nor
                     registers[rd] = ~(registers[rs] | registers[rt]);
                     break;
+                case 0x2A: // slt
+                    registers[rd] = (int)registers[rs] < (int)registers[rt] ? 1u : 0u;
+                    break;
+                case 0x2B: // sltu
+                    registers[rd] = registers[rs] < registers[rt] ? 1u : 0u;
+                    break;
                 case 0x00: // sll
                     registers[rd] = registers[rt] << (int)shamt;
                     break;
