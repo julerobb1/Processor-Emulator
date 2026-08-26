@@ -3,10 +3,10 @@ using ProcessorEmulator.Emulation;
 namespace ProcessorEmulator.Core
 {
     // 0x8001D3A0 CreateFile has no TOC fallback: INVALID_HANDLE returns 2.
-    // LoadLibraryExW already resolves TOC basenames. When CreateFile misses
-    // and the path basename is a TOC module, continue at the firmware
-    // ROM-module success site (0x8001D44C) with FILE_ATTRIBUTE_ROMMODULE.
-    // The image is already in RAM; no handle and no extra bytes are created.
+    // LoadLibraryExW and CreateProcess already map TOC modules on that miss.
+    // device.exe CreateFile of DEVMGR.dll does not, so only that basename
+    // continues at the firmware ROM-module site (0x8001D44C) with
+    // FILE_ATTRIBUTE_ROMMODULE. Image bytes stay in RAM; no handle is created.
     public static class CeRomTocFiles
     {
         public const uint CreateFileFail = 0x8001D400;
