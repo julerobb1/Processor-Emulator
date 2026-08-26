@@ -472,10 +472,15 @@ namespace ProcessorEmulator.Emulation
             uint rd = (instruction >> 11) & 0x1F;
             uint shamt = (instruction >> 6) & 0x1F;
 
-            // jr / syscall do not write rd; $zero discard must not skip them.
+            // jr / jalr / syscall: $zero discard must not skip the transfer.
             if (funct == 0x08)
             {
                 ExecuteJumpRegister(instruction);
+                return;
+            }
+            if (funct == 0x09)
+            {
+                ExecuteJumpAndLinkRegister(instruction);
                 return;
             }
             if (funct == 0x0C)
@@ -760,6 +765,18 @@ namespace ProcessorEmulator.Emulation
             uint target = registers[rs];
             ExecuteDelaySlotThenJump(target);
             LogBranch(oldPc, programCounter, "JR");
+        }
+
+        private void ExecuteJumpAndLinkRegister(uint instruction)
+        {
+            uint oldPc = programCounter;
+            uint rs = (instruction >> 21) & 0x1F;
+            uint rd = (instruction >> 11) & 0x1F;
+            uint target = registers[rs];
+            if (rd != 0)
+                registers[rd] = programCounter + 4;
+            ExecuteDelaySlotThenJump(target);
+            LogBranch(oldPc, programCounter, "JALR");
         }
 
         private static void HandleEmulatorError(string message)
