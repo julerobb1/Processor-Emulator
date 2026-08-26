@@ -338,6 +338,9 @@ namespace ProcessorEmulator.Emulation
                     case 0x29: // sh
                         ExecuteStoreHalf(instruction);
                         break;
+                    case 0x2A: // swl
+                        ExecuteStoreWordLeft(instruction);
+                        break;
                     case 0x2B: // sw
                         ExecuteStoreWord(instruction);
                         break;
@@ -796,6 +799,39 @@ namespace ProcessorEmulator.Emulation
 
             uint address = registers[baseReg] + (uint)offset;
             WriteMemory32(address, registers[rt]); // Use new WriteMemory32
+        }
+
+        private void ExecuteStoreWordLeft(uint instruction)
+        {
+            uint baseReg = (instruction >> 21) & 0x1F;
+            uint rt = (instruction >> 16) & 0x1F;
+            int offset = (short)(instruction & 0xFFFF);
+            uint address = registers[baseReg] + (uint)offset;
+            uint aligned = address & ~3u;
+            uint word = ReadMemory32(aligned);
+            int align = (int)(address & 3);
+            uint src = registers[rt];
+            if (_bus.IsBigEndian)
+            {
+                switch (align)
+                {
+                    case 0: word = src; break;
+                    case 1: word = (src >> 8) | (word & 0xFF000000u); break;
+                    case 2: word = (src >> 16) | (word & 0xFFFF0000u); break;
+                    default: word = (src >> 24) | (word & 0xFFFFFF00u); break;
+                }
+            }
+            else
+            {
+                switch (align)
+                {
+                    case 0: word = (src >> 24) | (word & 0xFFFFFF00u); break;
+                    case 1: word = (src >> 16) | (word & 0xFFFF0000u); break;
+                    case 2: word = (src >> 8) | (word & 0xFF000000u); break;
+                    default: word = src; break;
+                }
+            }
+            WriteMemory32(aligned, word);
         }
 
         private void ExecuteStoreWordRight(uint instruction)
