@@ -326,6 +326,9 @@ namespace ProcessorEmulator.Emulation
                     case 0x24: // lbu
                         ExecuteLoadByte(instruction, unsigned: true);
                         break;
+                    case 0x26: // lwr
+                        ExecuteLoadWordRight(instruction);
+                        break;
                     case 0x25: // lhu
                         ExecuteLoadHalf(instruction, unsigned: true);
                         break;
@@ -716,6 +719,41 @@ namespace ProcessorEmulator.Emulation
                     case 1: dest = (word << 16) | (dest & 0x0000FFFFu); break;
                     case 2: dest = (word << 8) | (dest & 0x000000FFu); break;
                     default: dest = word; break;
+                }
+            }
+            registers[rt] = dest;
+        }
+
+        private void ExecuteLoadWordRight(uint instruction)
+        {
+            uint baseReg = (instruction >> 21) & 0x1F;
+            uint rt = (instruction >> 16) & 0x1F;
+            int offset = (short)(instruction & 0xFFFF);
+            uint address = registers[baseReg] + (uint)offset;
+            if (rt == 0)
+                return;
+
+            uint word = ReadMemory32(address & ~3u);
+            int align = (int)(address & 3);
+            uint dest = registers[rt];
+            if (_bus.IsBigEndian)
+            {
+                switch (align)
+                {
+                    case 0: dest = (word >> 24) | (dest & 0xFFFFFF00u); break;
+                    case 1: dest = (word >> 16) | (dest & 0xFFFF0000u); break;
+                    case 2: dest = (word >> 8) | (dest & 0xFF000000u); break;
+                    default: dest = word; break;
+                }
+            }
+            else
+            {
+                switch (align)
+                {
+                    case 0: dest = word; break;
+                    case 1: dest = (word >> 8) | (dest & 0xFF000000u); break;
+                    case 2: dest = (word >> 16) | (dest & 0xFFFF0000u); break;
+                    default: dest = (word >> 24) | (dest & 0xFFFFFF00u); break;
                 }
             }
             registers[rt] = dest;
