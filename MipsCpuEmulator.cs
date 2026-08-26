@@ -341,6 +341,9 @@ namespace ProcessorEmulator.Emulation
                     case 0x2B: // sw
                         ExecuteStoreWord(instruction);
                         break;
+                    case 0x2E: // swr
+                        ExecuteStoreWordRight(instruction);
+                        break;
                     case 0x04: // beq
                         ExecuteBranchEqual(instruction);
                         break;
@@ -793,6 +796,39 @@ namespace ProcessorEmulator.Emulation
 
             uint address = registers[baseReg] + (uint)offset;
             WriteMemory32(address, registers[rt]); // Use new WriteMemory32
+        }
+
+        private void ExecuteStoreWordRight(uint instruction)
+        {
+            uint baseReg = (instruction >> 21) & 0x1F;
+            uint rt = (instruction >> 16) & 0x1F;
+            int offset = (short)(instruction & 0xFFFF);
+            uint address = registers[baseReg] + (uint)offset;
+            uint aligned = address & ~3u;
+            uint word = ReadMemory32(aligned);
+            int align = (int)(address & 3);
+            uint src = registers[rt];
+            if (_bus.IsBigEndian)
+            {
+                switch (align)
+                {
+                    case 0: word = (src << 24) | (word & 0x00FFFFFFu); break;
+                    case 1: word = (src << 16) | (word & 0x0000FFFFu); break;
+                    case 2: word = (src << 8) | (word & 0x000000FFu); break;
+                    default: word = src; break;
+                }
+            }
+            else
+            {
+                switch (align)
+                {
+                    case 0: word = src; break;
+                    case 1: word = (src << 8) | (word & 0x000000FFu); break;
+                    case 2: word = (src << 16) | (word & 0x0000FFFFu); break;
+                    default: word = (src << 24) | (word & 0x00FFFFFFu); break;
+                }
+            }
+            WriteMemory32(aligned, word);
         }
 
         private void ExecuteStoreHalf(uint instruction)
