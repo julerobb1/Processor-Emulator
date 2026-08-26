@@ -148,6 +148,23 @@ namespace ProcessorEmulator.Emulation
             return _bus.Read32(address);
         }
 
+        private uint ReadMemory16(uint address)
+        {
+            if (address >= 0x1F000000 && address <= 0x1F000FFF)
+                return HandlePeripheralRead(address) & 0xFFFF;
+
+            byte a = _bus.Read8(address);
+            byte b = _bus.Read8(address + 1);
+            return _bus.IsBigEndian ? (uint)((a << 8) | b) : (uint)(a | (b << 8));
+        }
+
+        private byte ReadMemory8(uint address)
+        {
+            if (address >= 0x1F000000 && address <= 0x1F000FFF)
+                return (byte)HandlePeripheralRead(address);
+            return _bus.Read8(address);
+        }
+
         private void WriteMemory32(uint address, uint value)
         {
             // Handle Hardware-Specific Registers (Broadcom/Mediaroom)
@@ -159,6 +176,38 @@ namespace ProcessorEmulator.Emulation
 
             // Standard RAM access
             _bus.Write32(address, value);
+        }
+
+        private void WriteMemory16(uint address, uint value)
+        {
+            if (address >= 0x1F000000 && address <= 0x1F000FFF)
+            {
+                HandlePeripheralWrite(address, value & 0xFFFF);
+                return;
+            }
+
+            byte lo = (byte)(value & 0xFF);
+            byte hi = (byte)((value >> 8) & 0xFF);
+            if (_bus.IsBigEndian)
+            {
+                _bus.Write8(address, hi);
+                _bus.Write8(address + 1, lo);
+            }
+            else
+            {
+                _bus.Write8(address, lo);
+                _bus.Write8(address + 1, hi);
+            }
+        }
+
+        private void WriteMemory8(uint address, byte value)
+        {
+            if (address >= 0x1F000000 && address <= 0x1F000FFF)
+            {
+                HandlePeripheralWrite(address, value);
+                return;
+            }
+            _bus.Write8(address, value);
         }
 
         private uint HandlePeripheralRead(uint address)
@@ -223,8 +272,26 @@ namespace ProcessorEmulator.Emulation
                     case 0x0F: // lui
                         ExecuteLui(instruction);
                         break;
+                    case 0x20: // lb
+                        ExecuteLoadByte(instruction, unsigned: false);
+                        break;
+                    case 0x21: // lh
+                        ExecuteLoadHalf(instruction, unsigned: false);
+                        break;
                     case 0x23: // lw
                         ExecuteLoadWord(instruction);
+                        break;
+                    case 0x24: // lbu
+                        ExecuteLoadByte(instruction, unsigned: true);
+                        break;
+                    case 0x25: // lhu
+                        ExecuteLoadHalf(instruction, unsigned: true);
+                        break;
+                    case 0x28: // sb
+                        ExecuteStoreByte(instruction);
+                        break;
+                    case 0x29: // sh
+                        ExecuteStoreHalf(instruction);
                         break;
                     case 0x2B: // sw
                         ExecuteStoreWord(instruction);
@@ -481,6 +548,32 @@ namespace ProcessorEmulator.Emulation
             }
         }
 
+        private void ExecuteLoadHalf(uint instruction, bool unsigned)
+        {
+            uint baseReg = (instruction >> 21) & 0x1F;
+            uint rt = (instruction >> 16) & 0x1F;
+            int offset = (short)(instruction & 0xFFFF);
+            uint address = registers[baseReg] + (uint)offset;
+            if (rt != 0)
+            {
+                ushort half = (ushort)ReadMemory16(address);
+                registers[rt] = unsigned ? half : (uint)(short)half;
+            }
+        }
+
+        private void ExecuteLoadByte(uint instruction, bool unsigned)
+        {
+            uint baseReg = (instruction >> 21) & 0x1F;
+            uint rt = (instruction >> 16) & 0x1F;
+            int offset = (short)(instruction & 0xFFFF);
+            uint address = registers[baseReg] + (uint)offset;
+            if (rt != 0)
+            {
+                byte value = ReadMemory8(address);
+                registers[rt] = unsigned ? value : (uint)(sbyte)value;
+            }
+        }
+
         private void ExecuteStoreWord(uint instruction)
         {
             uint baseReg = (instruction >> 21) & 0x1F;
@@ -489,6 +582,24 @@ namespace ProcessorEmulator.Emulation
 
             uint address = registers[baseReg] + (uint)offset;
             WriteMemory32(address, registers[rt]); // Use new WriteMemory32
+        }
+
+        private void ExecuteStoreHalf(uint instruction)
+        {
+            uint baseReg = (instruction >> 21) & 0x1F;
+            uint rt = (instruction >> 16) & 0x1F;
+            int offset = (short)(instruction & 0xFFFF);
+            uint address = registers[baseReg] + (uint)offset;
+            WriteMemory16(address, registers[rt]);
+        }
+
+        private void ExecuteStoreByte(uint instruction)
+        {
+            uint baseReg = (instruction >> 21) & 0x1F;
+            uint rt = (instruction >> 16) & 0x1F;
+            int offset = (short)(instruction & 0xFFFF);
+            uint address = registers[baseReg] + (uint)offset;
+            WriteMemory8(address, (byte)registers[rt]);
         }
 
         private void ExecuteBranchEqual(uint instruction)
