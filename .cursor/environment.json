@@ -1,0 +1,4 @@
+{
+  "name": "Processor-Emulator",
+  "install": "bash .cursor/install.sh"
+}
