@@ -34,6 +34,14 @@ namespace ProcessorEmulator.Emulation
             Console.WriteLine($"[{_tag}] Write 0x{StartAddress + offset:X8} = 0x{value:X8}");
         }
 
+        public void Or32(uint offset, uint bits)
+        {
+            if (offset + 4 > Size)
+                return;
+            _regs[offset / 4] |= bits;
+            Console.WriteLine($"[{_tag}] Or 0x{StartAddress + offset:X8} |= 0x{bits:X8} -> 0x{_regs[offset / 4]:X8}");
+        }
+
         public byte Read8(uint offset)
         {
             uint aligned = offset & ~3u;

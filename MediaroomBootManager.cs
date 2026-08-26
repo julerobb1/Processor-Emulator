@@ -89,10 +89,11 @@ namespace ProcessorEmulator
             _mipsBus = new MipsBus(_cp0);
             _mipsBus.IsBigEndian = false;
             _mipsBus.AddDevice(new RamDevice(0x00000000, RAM_SIZE));
-            _mipsBus.AddDevice(new BcmSysControlRegs(_cp0));
+            var pic1000 = new BcmStickyMmio(0x10001000, 0x1000, "MMIO1000");
+            _mipsBus.AddDevice(new BcmSysControlRegs(_cp0, pic1000));
             _mipsBus.AddDevice(new BcmStickyMmio(0x11F00000, 0x1000, "MMIO11F"));
             _mipsBus.AddDevice(new BcmStickyMmio(0x10500000, 0x1000, "MMIO1050"));
-            _mipsBus.AddDevice(new BcmStickyMmio(0x10001000, 0x1000, "MMIO1000"));
+            _mipsBus.AddDevice(pic1000);
             _mipsBus.AddDevice(new BcmStickyMmio(0x10104000, 0x1000, "MMIO1010"));
             _mipsBus.AddDevice(new BcmStickyMmio(0x10080000, 0x1000, "MMIO1008"));
             _mipsBus.AddDevice(new BcmStickyMmio(0x10090000, 0x1000, "MMIO1009"));

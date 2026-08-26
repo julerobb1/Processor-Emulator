@@ -8,6 +8,7 @@ namespace ProcessorEmulator.Emulation
         public uint Size { get; }
         private readonly uint[] _regs;
         private readonly CP0 _cp0;
+        private readonly BcmStickyMmio _pic;
         private uint _remaining;
         private bool _running;
 
@@ -15,11 +16,15 @@ namespace ProcessorEmulator.Emulation
         private const uint OffEnable = 0x60C8;
         private const uint OffStatus = 0x60D4;
         private const uint OffPicPend = 0xA000;
+        // Walker at 0x80056500: (~*0x1000140C) & *0x10001400. IRQ 23 = bit 23.
+        private const uint PicStatusOff = 0x400;
+        private const uint Irq23Bit = 1u << 23;
 
         // 64KB matches the bus slot already claimed for 0x1040xxxx.
-        public BcmSysControlRegs(CP0 cp0 = null, uint startAddress = 0x10400000, uint size = 0x10000)
+        public BcmSysControlRegs(CP0 cp0 = null, BcmStickyMmio pic = null, uint startAddress = 0x10400000, uint size = 0x10000)
         {
             _cp0 = cp0;
+            _pic = pic;
             StartAddress = startAddress;
             Size = size;
             _regs = new uint[size / 4];
@@ -83,8 +88,10 @@ namespace ProcessorEmulator.Emulation
             _regs[OffStatus / 4] |= 1u;
             if (OffPicPend + 4 <= Size)
                 _regs[OffPicPend / 4] |= 1u;
+            // 0x140C stays 0 (mask/NOR side). Setting it would hide IRQ 23.
+            _pic?.Or32(PicStatusOff, Irq23Bit);
             _cp0?.SetExternalIrq(true);
-            Console.WriteLine($"[SYSCTL] UPG timer expired pending=0x{_regs[OffStatus / 4]:X8}");
+            Console.WriteLine($"[SYSCTL] UPG timer expired pending=0x{_regs[OffStatus / 4]:X8} pic23=0x{Irq23Bit:X8}");
         }
 
         private void ClearPending()
