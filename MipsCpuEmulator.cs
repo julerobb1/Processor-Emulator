@@ -436,6 +436,9 @@ namespace ProcessorEmulator.Emulation
                 case 0x25: // or
                     registers[rd] = registers[rs] | registers[rt];
                     break;
+                case 0x26: // xor
+                    registers[rd] = registers[rs] ^ registers[rt];
+                    break;
                 case 0x27: // nor
                     registers[rd] = ~(registers[rs] | registers[rt]);
                     break;
