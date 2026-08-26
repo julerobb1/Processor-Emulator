@@ -102,10 +102,21 @@ namespace ProcessorEmulator.Emulation
                 if (reg == RandomReg)
                     return;
 
-                // When the guest OS writes to the Compare register, it clears the timer interrupt.
+                // Writing Compare acks IP7. Firmware SetCompare is
+                //   Compare = Count + delta
+                // (0x80059CAC). Live delta is 0, and the jal/mtc0 delay
+                // leaves Count a few ticks past that target, so the
+                // increment equality in UpdateTimer never hits. Latch IP7
+                // only when Count has already reached the programmed value
+                // by that small delay — not on a future/wrap target.
                 if (reg == CompareReg)
                 {
                     Cause &= ~CAUSE_IP7_BIT;
+                    registers[CompareReg] = value;
+                    uint passed = Count - value;
+                    if (passed < 0x80u)
+                        Cause |= CAUSE_IP7_BIT;
+                    return;
                 }
 
                 // Writing to the Cause register can only clear interrupt pending bits, not set them.
