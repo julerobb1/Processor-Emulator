@@ -42,6 +42,11 @@ namespace ProcessorEmulator.Emulation
         
         public uint Translate(uint vaddr)
         {
+            return Translate(vaddr, isStore: false);
+        }
+
+        public uint Translate(uint vaddr, bool isStore)
+        {
             // kseg0 (0x80000000 - 0x9FFFFFFF) and kseg1 (0xA0000000 - 0xBFFFFFFF)
             // are unmapped (direct mapped) physical memory regions.
             if ((vaddr & 0xE0000000) == 0x80000000 || (vaddr & 0xE0000000) == 0xA0000000)
@@ -49,38 +54,18 @@ namespace ProcessorEmulator.Emulation
                 return vaddr & 0x1FFFFFFF; // Direct map to lower 512MB physical
             }
 
-            // For any other segment (kuseg, kseg2), we need to use the TLB.
-            // This is a placeholder for a full TLB search.
-            return PerformTlbLookup(vaddr);
+            return PerformTlbLookup(vaddr, isStore);
         }
 
-        private uint PerformTlbLookup(uint vaddr)
+        private uint PerformTlbLookup(uint vaddr, bool isStore)
         {
-            // In a real MIPS CPU, this would search all TLB entries.
-            // For now, we simulate a very basic single-entry TLB check.
-            const uint PageMask4KB = 0xFFFFF000;
-            uint vpn2 = (vaddr >> 13); // Virtual Page Number (for 8KB pages)
-            
-            // Simplified check against EntryHi
-            if ((_cp0.EntryHi & PageMask4KB) == (vaddr & PageMask4KB))
-            {
-                 // Simplified check against EntryLo0/1 based on page
-                 uint pageOffset = vaddr & 0x0FFF;
-                 uint pfn; // Physical Frame Number
-                 if ((vaddr & 0x1000) == 0) // Check if it's the even page of a pair
-                 {
-                     pfn = (_cp0.EntryLo0 & 0x3FFFFC0) << 6;
-                 }
-                 else
-                 {
-                     pfn = (_cp0.EntryLo1 & 0x3FFFFC0) << 6;
-                 }
-                 return pfn | pageOffset;
-            }
+            CP0.TlbTranslateStatus status = _cp0.TryTranslate(vaddr, out uint paddr);
+            if (status == CP0.TlbTranslateStatus.Hit)
+                return paddr;
 
-            // If we get here, no valid translation was found in the TLB.
-            // This should trigger a TLB Miss exception for the CPU to handle.
-            throw new TlbMissException($"TLB Miss for virtual address 0x{vaddr:X8}", vaddr);
+            bool invalid = status == CP0.TlbTranslateStatus.Invalid;
+            string kind = invalid ? "TLB Invalid" : "TLB Miss";
+            throw new TlbMissException($"{kind} for virtual address 0x{vaddr:X8}", vaddr, isStore, invalid);
         }
 
         private static uint Swap(uint value)
@@ -93,7 +78,7 @@ namespace ProcessorEmulator.Emulation
 
         public uint Read32(uint vaddr)
         {
-            uint paddr = Translate(vaddr);
+            uint paddr = Translate(vaddr, isStore: false);
             IBusDevice device = _lookupTable[paddr >> 16];
 
             if (device != null)
@@ -106,7 +91,7 @@ namespace ProcessorEmulator.Emulation
 
         public void Write32(uint vaddr, uint value)
         {
-            uint paddr = Translate(vaddr);
+            uint paddr = Translate(vaddr, isStore: true);
             IBusDevice device = _lookupTable[paddr >> 16];
 
             if (device != null)
@@ -120,7 +105,7 @@ namespace ProcessorEmulator.Emulation
         
         public byte Read8(uint vaddr)
         {
-            uint paddr = Translate(vaddr);
+            uint paddr = Translate(vaddr, isStore: false);
             IBusDevice device = _lookupTable[paddr >> 16];
 
             if (device != null)
@@ -134,7 +119,7 @@ namespace ProcessorEmulator.Emulation
 
         public void Write8(uint vaddr, byte value)
         {
-            uint paddr = Translate(vaddr);
+            uint paddr = Translate(vaddr, isStore: true);
             IBusDevice device = _lookupTable[paddr >> 16];
 
             if (device != null)

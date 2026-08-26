@@ -36,6 +36,8 @@ namespace ProcessorEmulator.Emulation
         public uint EntryHi { get => _entryHi; set => _entryHi = value; }
         public uint EntryLo0 { get => _entryLo0; set => _entryLo0 = value; }
         public uint EntryLo1 { get => _entryLo1; set => _entryLo1 = value; }
+        public uint BadVAddr { get => registers[BadVAddrReg]; set => registers[BadVAddrReg] = value; }
+        public uint Context { get => registers[ContextReg]; set => registers[ContextReg] = value; }
 
 
         public uint PRId { get; set; }
@@ -49,8 +51,15 @@ namespace ProcessorEmulator.Emulation
             public uint PageMask;   // Page size
         }
 
-        private const int TLB_ENTRIES = 16; // MIPS typically has 16 or 32 TLB entries
+        private const int TLB_ENTRIES = 32;
         private TLBEntry[] _tlb = new TLBEntry[TLB_ENTRIES];
+
+        public enum TlbTranslateStatus
+        {
+            Hit,
+            Miss,
+            Invalid
+        }
 
         // Status Register bits
         private const uint STATUS_IE_BIT = 1 << 0;  // Interrupt Enable
@@ -178,6 +187,37 @@ namespace ProcessorEmulator.Emulation
             uint interruptPending = (Cause >> 8) & 0xFF;
 
             return interruptsEnabled && !inException && (interruptPending & interruptMask) != 0;
+        }
+
+        public TlbTranslateStatus TryTranslate(uint vaddr, out uint paddr)
+        {
+            paddr = 0;
+            uint vpn2 = (vaddr >> 13) & 0x7FFFF;
+            bool odd = (vaddr & 0x1000) != 0;
+            uint pageOffset = vaddr & 0x0FFF;
+
+            for (int i = 0; i < TLB_ENTRIES; i++)
+            {
+                uint tlbVpn2 = (_tlb[i].EntryHi >> 13) & 0x7FFFF;
+                if (tlbVpn2 != vpn2)
+                    continue;
+
+                uint lo = odd ? _tlb[i].EntryLo1 : _tlb[i].EntryLo0;
+                if ((lo & 2) == 0)
+                    return TlbTranslateStatus.Invalid;
+
+                paddr = ((lo & 0x3FFFFC0) << 6) | pageOffset;
+                return TlbTranslateStatus.Hit;
+            }
+
+            return TlbTranslateStatus.Miss;
+        }
+
+        public void PrepareTlbException(uint vaddr)
+        {
+            BadVAddr = vaddr;
+            EntryHi = (vaddr & 0xFFFFE000) | (EntryHi & 0xFF);
+            Context = (Context & 0xFF800000) | ((vaddr >> 13) << 4);
         }
 
         // MIPS TLB operations

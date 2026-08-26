@@ -17,9 +17,13 @@ namespace ProcessorEmulator.Core
     public class TlbMissException : Exception
     {
         public uint FaultingAddress { get; }
-        public TlbMissException(string message, uint faultingAddress) : base(message) 
+        public bool IsStore { get; }
+        public bool IsInvalid { get; }
+        public TlbMissException(string message, uint faultingAddress, bool isStore = false, bool isInvalid = false) : base(message)
         {
             FaultingAddress = faultingAddress;
+            IsStore = isStore;
+            IsInvalid = isInvalid;
         }
     }
 

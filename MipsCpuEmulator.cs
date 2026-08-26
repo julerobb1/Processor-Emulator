@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Windows;
 using System.Diagnostics; // Added for Debug.WriteLine
+using ProcessorEmulator.Core;
 
 namespace ProcessorEmulator.Emulation
 {
@@ -30,6 +31,7 @@ namespace ProcessorEmulator.Emulation
         private VirtualRegistry _virtualRegistry; // Declared VirtualRegistry
         private readonly string _logFilePath;
         private bool _inDelaySlot;
+        private uint _currentPc;
 
         public event Action<string> OnLogMessage; // Event for logging to UI
 
@@ -86,8 +88,16 @@ namespace ProcessorEmulator.Emulation
                     // to fetch from the new interrupt handler address.
                 }
 
-                uint instruction = FetchInstruction();
-                DecodeAndExecute(instruction);
+                _currentPc = programCounter;
+                try
+                {
+                    uint instruction = FetchInstruction();
+                    DecodeAndExecute(instruction);
+                }
+                catch (TlbMissException ex)
+                {
+                    TriggerTlbException(ex);
+                }
 
                 // Advance the internal timer by one cycle per instruction.
                 _cp0.UpdateTimer(1);
@@ -120,6 +130,32 @@ namespace ProcessorEmulator.Emulation
             {
                 programCounter = 0x80000180;
             }
+        }
+
+        private void TriggerTlbException(TlbMissException ex)
+        {
+            uint code = ex.IsStore ? 3u : 2u;
+            Console.WriteLine($"--- EXCEPTION: Code {code} TLB {(ex.IsStore ? "Store" : "Load")} {(ex.IsInvalid ? "Invalid" : "Refill")} vaddr=0x{ex.FaultingAddress:X8} ---");
+
+            bool alreadyExl = (_cp0.Status & (1 << 1)) != 0;
+            _cp0.PrepareTlbException(ex.FaultingAddress);
+
+            uint cause = (_cp0.Cause & 0xFFFFFF83) | (code << 2);
+            if (_inDelaySlot)
+                cause |= 1u << 31;
+            else
+                cause &= 0x7FFFFFFF;
+            _cp0.Cause = cause;
+
+            _cp0.EPC = _currentPc;
+            _cp0.Status |= (1 << 1);
+
+            bool bev = (_cp0.Status & (1 << 22)) != 0;
+            bool refill = !ex.IsInvalid && !alreadyExl;
+            if (refill)
+                programCounter = bev ? 0xBFC00200u : 0x80000000u;
+            else
+                programCounter = bev ? 0xBFC00380u : 0x80000180u;
         }
 
 
@@ -317,6 +353,10 @@ namespace ProcessorEmulator.Emulation
                         break;
                 }
             }
+            catch (TlbMissException)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 // Catching emulator-level errors, not guest exceptions.
@@ -353,13 +393,16 @@ namespace ProcessorEmulator.Emulation
             {
                 uint delayInstr = FetchInstruction();
                 DecodeAndExecute(delayInstr);
+                programCounter = target;
+            }
+            catch (TlbMissException ex)
+            {
+                TriggerTlbException(ex);
             }
             finally
             {
                 _inDelaySlot = false;
             }
-
-            programCounter = target;
         }
 
 
