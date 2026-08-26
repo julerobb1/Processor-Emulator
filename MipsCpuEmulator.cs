@@ -502,6 +502,38 @@ namespace ProcessorEmulator.Emulation
                 _lo = registers[rs];
                 return;
             }
+            if (funct == 0x18) // mult — HI/LO write; rd is always $zero
+            {
+                long result = (long)(int)registers[rs] * (long)(int)registers[rt];
+                _lo = (uint)result;
+                _hi = (uint)(result >> 32);
+                return;
+            }
+            if (funct == 0x19) // multu
+            {
+                ulong result = (ulong)registers[rs] * (ulong)registers[rt];
+                _lo = (uint)result;
+                _hi = (uint)(result >> 32);
+                return;
+            }
+            if (funct == 0x1A) // div
+            {
+                if (registers[rt] != 0)
+                {
+                    _lo = (uint)((int)registers[rs] / (int)registers[rt]);
+                    _hi = (uint)((int)registers[rs] % (int)registers[rt]);
+                }
+                return;
+            }
+            if (funct == 0x1B) // divu
+            {
+                if (registers[rt] != 0)
+                {
+                    _lo = registers[rs] / registers[rt];
+                    _hi = registers[rs] % registers[rt];
+                }
+                return;
+            }
 
             if (rd == 0) return;
 
