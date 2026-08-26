@@ -96,6 +96,7 @@ namespace ProcessorEmulator
             _mipsBus.AddDevice(new BcmStickyMmio(0x10104000, 0x1000, "MMIO1010"));
             _mipsBus.AddDevice(new BcmStickyMmio(0x10080000, 0x1000, "MMIO1008"));
             _mipsBus.AddDevice(new BcmStickyMmio(0x10090000, 0x1000, "MMIO1009"));
+            _mipsBus.AddDevice(new BcmStickyMmio(0x10480000, 0x1000, "MMIO1048"));
             _mipsCpu = new MipsCpuEmulator(_mipsBus, _cp0);
             _mipsBus.AddDevice(new MipsUart(UART_BASE_ADDRESS, UART_SIZE));
             
