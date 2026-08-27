@@ -40,6 +40,7 @@ namespace ProcessorEmulator.Core
         private static bool _readServed;
 
         public static bool IsPresent => _image != null && _image.Length > 0;
+        public static bool IsOpen => _opened;
         public static bool HasServedRead => _readServed;
 
         public static void Attach(byte[] image)

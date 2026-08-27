@@ -40,6 +40,7 @@ namespace ProcessorEmulator.Core
 
         public static bool IsPresent => _image != null && _image.Length > 0;
         public static bool IsOpen => _opened;
+        public static bool DetailFilled => _detailFilled;
         public static string Root => _root;
 
         public static void Attach()
@@ -137,11 +138,12 @@ namespace ProcessorEmulator.Core
         {
             if (_notified)
                 return false;
-            // WFMO #2 is the HD slot. The first wait after BINBlk
-            // notify is still BINFS MountDisk (partition/ioctls).
-            // Wait until BINBlk has served a READ so we do not steal
-            // that wait. No SetEvent of the filesys pump.
-            if (BinBlkMedia.IsPresent && !BinBlkMedia.HasServedRead)
+            // WFMO #2 is the HD slot. Do not fire before BINBlk
+            // CreateFile; the ioctl burst that follows is still
+            // BINBlk. The next WaitForMultipleObjects at this
+            // jalr is the second BLOCK_DRIVER wait. No READ
+            // requirement: BINFS MountDisk may never DISK_READ.
+            if (BinBlkMedia.IsPresent && !BinBlkMedia.IsOpen)
                 return false;
             _notified = true;
             registers[2] = 0;
