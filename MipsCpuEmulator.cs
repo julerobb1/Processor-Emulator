@@ -34,6 +34,9 @@ namespace ProcessorEmulator.Emulation
         private uint _currentPc;
         private uint _hi;
         private uint _lo;
+        // Same HI/LO pair as _hi/_lo (main-side names).
+        private uint hi { get => _hi; set => _hi = value; }
+        private uint lo { get => _lo; set => _lo = value; }
 
         public event Action<string> OnLogMessage; // Event for logging to UI
 
@@ -47,6 +50,8 @@ namespace ProcessorEmulator.Emulation
             registers = new uint[RegisterCount];
             floatingPointRegisters = new float[RegisterCount];
             programCounter = 0xBFC00000; // MIPS Reset Vector
+            hi = 0;
+            lo = 0;
             _virtualRegistry = new VirtualRegistry(); // Initialized VirtualRegistry
             _logFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "emulator_log.txt"); // Log file in exe directory
 
@@ -68,6 +73,8 @@ namespace ProcessorEmulator.Emulation
             registers = new uint[RegisterCount];
             floatingPointRegisters = new float[RegisterCount];
             programCounter = 0xBFC00000; // MIPS Reset Vector
+            hi = 0;
+            lo = 0;
             _virtualRegistry = new VirtualRegistry();
             _logFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "emulator_log.txt");
 
@@ -346,10 +353,10 @@ namespace ProcessorEmulator.Emulation
                         ExecuteRType(instruction);
                         break;
                     case 0x02: // j
-                        ExecuteJ(instruction);
+                        ExecuteJump(instruction, false);
                         break;
                     case 0x03: // jal
-                        ExecuteJal(instruction);
+                        ExecuteJump(instruction, true);
                         break;
                     case 0x10: // COP0 instructions
                         ExecuteCOP0(instruction);
@@ -358,13 +365,13 @@ namespace ProcessorEmulator.Emulation
                         ExecuteAddImmediate(instruction);
                         break;
                     case 0x09: // addiu
-                        ExecuteAddImmediate(instruction); // ADDIU is handled by ADDI logic, no overflow trapping
+                        ExecuteAddImmediateUnsigned(instruction);
                         break;
                     case 0x0A: // slti
-                        ExecuteSlti(instruction);
+                        ExecuteSetLessThanImmediate(instruction);
                         break;
                     case 0x0B: // sltiu
-                        ExecuteSltiu(instruction);
+                        ExecuteSetLessThanImmediateUnsigned(instruction);
                         break;
                     case 0x0C: // andi
                         ExecuteAndImmediate(instruction);
@@ -376,7 +383,7 @@ namespace ProcessorEmulator.Emulation
                         ExecuteXorImmediate(instruction);
                         break;
                     case 0x0F: // lui
-                        ExecuteLui(instruction);
+                        ExecuteLoadUpperImmediate(instruction);
                         break;
                     case 0x20: // lb
                         ExecuteLoadByte(instruction, unsigned: false);
@@ -463,6 +470,15 @@ namespace ProcessorEmulator.Emulation
             LogBranch(oldPc, programCounter, "JAL");
         }
 
+        // main-side names: same J/JAL, through the delay-slot path.
+        private void ExecuteJump(uint instruction, bool link)
+        {
+            if (link)
+                ExecuteJal(instruction);
+            else
+                ExecuteJ(instruction);
+        }
+
         private void ExecuteDelaySlotThenJump(uint target)
         {
             if (_inDelaySlot)
@@ -503,11 +519,11 @@ namespace ProcessorEmulator.Emulation
             switch (rs) // The 'rs' field (bits 25-21) defines the major COP0 operation
             {
                 case 0x00: // MFC0 (Move From Coprocessor 0)
-                    if (rt != 0) registers[rt] = _cp0.ReadRegister((int)rd);
+                    Execute_MFC0(rt, rd);
                     break;
                     
                 case 0x04: // MTC0 (Move To Coprocessor 0)
-                    _cp0.WriteRegister((int)rd, registers[rt]);
+                    Execute_MTC0(rt, rd);
                     break;
 
                 case 0x10: // COP0 functions with 'funct' field (e.g., TLB operations, ERET)
@@ -544,6 +560,17 @@ namespace ProcessorEmulator.Emulation
                     TriggerException(10); // Reserved Instruction
                     break;
             }
+        }
+
+        public void Execute_MTC0(uint rt, uint rd)
+        {
+            _cp0.WriteRegister((int)rd, registers[rt]);
+        }
+
+        public void Execute_MFC0(uint rt, uint rd)
+        {
+            if (rt != 0)
+                registers[rt] = _cp0.ReadRegister((int)rd);
         }
 
 
@@ -1069,6 +1096,26 @@ namespace ProcessorEmulator.Emulation
             }
         }
 
+        private void ExecuteAddImmediateUnsigned(uint instruction)
+        {
+            ExecuteAddImmediate(instruction);
+        }
+
+        private void ExecuteSetLessThanImmediate(uint instruction)
+        {
+            ExecuteSlti(instruction);
+        }
+
+        private void ExecuteSetLessThanImmediateUnsigned(uint instruction)
+        {
+            ExecuteSltiu(instruction);
+        }
+
+        private void ExecuteLoadUpperImmediate(uint instruction)
+        {
+            ExecuteLui(instruction);
+        }
+
         private void ExecuteAndImmediate(uint instruction)
         {
             uint rs = (instruction >> 21) & 0x1F;
@@ -1171,6 +1218,9 @@ namespace ProcessorEmulator.Emulation
         }
 
         public uint ProgramCounter => programCounter;
+
+        public uint Hi => hi;
+        public uint Lo => lo;
 
         private void LogSyscall(uint syscallCode, uint instruction)
         {
