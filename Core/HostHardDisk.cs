@@ -48,6 +48,7 @@ namespace ProcessorEmulator.Core
         public const uint FilesysRegQuery = 0x000200D8;
         public const uint FilesysRegQuery2 = 0x000204E0;
         public const uint FilesysRegEnum = 0x00020CC4;
+        public const uint FilesysRegEnum2 = 0x0002091C;
         public const uint HkFatfs = 0xFA7F5001;
         public const uint HkProfile = 0xFA7F5002;
         public const uint HkProfileFatfs = 0xFA7F5003;
@@ -155,6 +156,15 @@ namespace ProcessorEmulator.Core
                 return TryRegQuery(registers, bus, ref programCounter);
             if (pc == FilesysRegEnum)
                 return TryRegEnum(registers, bus, ref programCounter);
+            if (pc == FilesysRegEnum2)
+                return TryRegQueryInfo(registers, bus, ref programCounter);
+            // FSDMGR enums Filters through the kernel thunk, not
+            // always 0x00020CC4. a1 is the index, a2 the name buf.
+            if (IsStoreKey(registers[4]) && registers[5] < 8
+                && LooksLikePtr(registers[6]))
+                return TryRegEnum(registers, bus, ref programCounter);
+            if (IsStoreKey(registers[4]))
+                return TryRegQuery(registers, bus, ref programCounter);
             return false;
         }
 
@@ -235,6 +245,44 @@ namespace ProcessorEmulator.Core
             programCounter = registers[31];
             if (_logged.Add("re:" + filt))
                 System.Console.WriteLine("[HardDisk] RegEnum Filters \"" + filt + "\"");
+            return true;
+        }
+
+        private static bool TryRegQueryInfo(uint[] registers, MipsBus bus, ref uint programCounter)
+        {
+            uint hKey = registers[4];
+            if (!IsStoreKey(hKey))
+                return false;
+            uint nSub = hKey == HkFilters ? 1u : 0u;
+            uint nVal = (hKey == HkSigCheck || hKey == HkFatfs || hKey == HkProfile) ? 1u : 0u;
+            uint sp = registers[29];
+            uint[] slots = new uint[6];
+            for (int i = 0; i < 6; i++)
+            {
+                try { slots[i] = bus.Read32(sp + 16 + (uint)(i * 4)); }
+                catch { }
+            }
+            // RegQueryInfoKey: 16(sp)=lpcSubKeys, 20=lpcMaxSubKeyLen,
+            // 24=lpcMaxClass, 28=lpcValues.
+            if (LooksLikePtr(slots[0]))
+            {
+                try { bus.Write32(slots[0], nSub); }
+                catch { }
+            }
+            if (LooksLikePtr(slots[1]))
+            {
+                try { bus.Write32(slots[1], 32); }
+                catch { }
+            }
+            if (LooksLikePtr(slots[3]))
+            {
+                try { bus.Write32(slots[3], nVal); }
+                catch { }
+            }
+            registers[2] = 0;
+            programCounter = registers[31];
+            if (_logged.Add("ri:" + hKey.ToString("X")))
+                System.Console.WriteLine($"[HardDisk] RegQueryInfo hk=0x{hKey:X8} sub={nSub} val={nVal}");
             return true;
         }
 
