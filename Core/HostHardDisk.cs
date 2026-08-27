@@ -158,13 +158,11 @@ namespace ProcessorEmulator.Core
                 return TryRegEnum(registers, bus, ref programCounter);
             if (pc == FilesysRegEnum2)
                 return TryRegQueryInfo(registers, bus, ref programCounter);
-            // FSDMGR enums Filters through the kernel thunk, not
-            // always 0x00020CC4. a1 is the index, a2 the name buf.
-            if (IsStoreKey(registers[4]) && registers[5] < 8
+            // Only the Filters handle. A broad IsStoreKey query
+            // stole FATFS Dll walk after the open (stuck at 0x03E93954).
+            if (registers[4] == HkFilters && registers[5] < 8
                 && LooksLikePtr(registers[6]))
                 return TryRegEnum(registers, bus, ref programCounter);
-            if (IsStoreKey(registers[4]))
-                return TryRegQuery(registers, bus, ref programCounter);
             return false;
         }
 
