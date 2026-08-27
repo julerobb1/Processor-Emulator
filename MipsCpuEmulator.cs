@@ -112,6 +112,9 @@ namespace ProcessorEmulator.Emulation
                     }
                 }
 
+                if (programCounter == CeRomTocFiles.HeapCreateStore)
+                    registers[2] = CeRomTocFiles.KeepProcessHeapIfCreateFailed(_bus, registers[2], registers[3]);
+
                 if (programCounter == CeRomTocFiles.BindImpMiss)
                 {
                     uint e32Lite = registers[23];

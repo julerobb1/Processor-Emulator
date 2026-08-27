@@ -24,6 +24,13 @@ namespace ProcessorEmulator.Core
         public const byte TocAttachType = 7;
         public const uint O32RomSize = 0x18;
         public const uint O32LiteSize = 0x1C;
+        // coredll 0x03F7A960 bne v0,0 / delay sw v0, (0x01FFFFA0).
+        // HeapCreate(0,0,0) returned 0 in device.exe and the delay
+        // slot wrote that 0 over the heap filesys already stored.
+        // 0x01FFF000 is one physical page here, so that wipe makes
+        // LocalAlloc call HeapAlloc(0) and RegOpen returns 14.
+        public const uint HeapCreateStore = 0x03F7A964;
+        public const uint ProcessHeapPtr = 0x01FFFFA0;
 
         public static bool TryContinueRomModule(MipsBus bus, uint path, out uint attr, out uint tocEntry)
         {
@@ -217,6 +224,22 @@ namespace ProcessorEmulator.Core
                 sb.Append((char)ch);
             }
             return sb.ToString();
+        }
+
+        public static uint KeepProcessHeapIfCreateFailed(MipsBus bus, uint created, uint dest)
+        {
+            if (created != 0 || dest != ProcessHeapPtr || bus == null)
+                return created;
+            try
+            {
+                uint old = bus.Read32(ProcessHeapPtr);
+                if (old != 0)
+                    return old;
+            }
+            catch
+            {
+            }
+            return created;
         }
 
         private static bool NamesEqual(string a, string b)
