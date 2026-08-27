@@ -24,6 +24,17 @@ namespace ProcessorEmulator.Core
         // when 32($sp) entryrva is still 0. jalr 0 never returns
         // to FSDMGR 0x03E8604C. Fill vbase+entryrva from TOC e32.
         public const uint CallDllStartip = 0x80018BAC;
+        // 0x8001F12C andi s4, 0x8000 / beq skip CallDLL a1=1.
+        // User-mode LoadLibrary keeps s4=0 (same for CEDDK/HAL/
+        // filter). coredll 0x03F73050 then walks 3 new modules
+        // with reason 1: CEDDK, HAL, filter. HAL DllMain never
+        // returns, so the outer filter never gets a1=1 and
+        // LoadLibrary never returns to FSDMGR 0x03E8604C.
+        // Only the filter startip takes the firmware CallDLL
+        // path; CEDDK/HAL already get a1=1 from that walk.
+        public const uint ProcessAttachGate = 0x8001F12C;
+        public const uint FilterStartip = 0x03DF4BDC;
+        public const uint CallDllFlag = 0x8000;
         public const uint ModuleStartip = 0x5C;
         public const uint ModuleFileObj = 96;
         public const uint CurProc = 0xFFFFDAC4;
@@ -101,6 +112,26 @@ namespace ProcessorEmulator.Core
             }
 
             return false;
+        }
+
+        public static void TryEnableFilterProcessAttach(MipsBus bus, uint[] regs)
+        {
+            if (bus == null || regs == null || regs.Length <= 30)
+                return;
+            try
+            {
+                if ((regs[20] & CallDllFlag) != 0)
+                    return;
+                uint module = regs[30];
+                if (module == 0)
+                    return;
+                if (bus.Read32(module + ModuleStartip) != FilterStartip)
+                    return;
+                regs[20] |= CallDllFlag;
+            }
+            catch
+            {
+            }
         }
 
         public static void TryFillTocStartip(MipsBus bus, uint module)
