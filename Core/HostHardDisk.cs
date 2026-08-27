@@ -371,7 +371,7 @@ namespace ProcessorEmulator.Core
             try
             {
                 if ((code == BinBlkMedia.DiskIoctlGetInfo || code == IoctlDiskGetInfo)
-                    && buf != 0 && size >= 24)
+                    && buf != 0)
                 {
                     uint sectors = (uint)((_image.Length + (int)SectorSize - 1) / (int)SectorSize);
                     bus.Write32(buf + 0, sectors);
@@ -455,6 +455,8 @@ namespace ProcessorEmulator.Core
                 Write8(bus, dest + i, b);
             }
             bus.Write32(sg + 12, 0);
+            if (_logged.Add("read:" + start))
+                System.Console.WriteLine($"[HardDisk] DISK_READ lba={start} n={num}");
             return 0;
         }
 
