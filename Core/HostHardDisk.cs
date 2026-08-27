@@ -108,8 +108,10 @@ namespace ProcessorEmulator.Core
             }
             if (pc == BinBlkMedia.DiskIoctl)
                 return TryIoctl(registers, bus, ref programCounter);
-            if (pc == BinBlkMedia.FsdmgrDiskIoctl || pc == FsdmgrIoImpl)
+            if (pc == BinBlkMedia.FsdmgrDiskIoctl)
                 return TryFsdmgrDiskIoctl(registers, bus, ref programCounter);
+            if (pc == FsdmgrIoImpl)
+                return TryFsdmgrIoImpl(registers, bus, ref programCounter);
             return false;
         }
 
@@ -222,11 +224,25 @@ namespace ProcessorEmulator.Core
             uint size = 0;
             try { size = bus.Read32(registers[29] + 16); }
             catch { }
-            uint err = ServeIoctl(bus, code, buf, size);
+            uint err = ServeIoctl(bus, code, buf, size, registers[29]);
             registers[2] = err;
             programCounter = registers[31];
             System.Console.WriteLine($"[HardDisk] IOCTL 0x{code:X} err={err}");
             return true;
+        }
+
+        private static bool TryFsdmgrIoImpl(uint[] registers, MipsBus bus, ref uint programCounter)
+        {
+            if (!_opened)
+                return false;
+            uint hdsk = registers[4];
+            if (!OwnsHdsk(bus, hdsk))
+                return false;
+            uint a1 = registers[5];
+            // mspart hits this with a1=0 (not an ioctl). Do not steal it.
+            if (a1 == 0)
+                return false;
+            return TryFsdmgrDiskIoctl(registers, bus, ref programCounter);
         }
 
         private static bool TryFsdmgrDiskIoctl(uint[] registers, MipsBus bus, ref uint programCounter)
@@ -237,10 +253,12 @@ namespace ProcessorEmulator.Core
             if (!OwnsHdsk(bus, hdsk))
                 return false;
             uint a1 = registers[5];
+            if (a1 == 0)
+                return false;
             // FSDMGR_GetDiskInfo(hDsk, pInfo): a1 is a user pointer.
             if (a1 > 0x10000 && (a1 < 0x71000 || a1 >= 0x80000))
             {
-                uint errInfo = ServeIoctl(bus, BinBlkMedia.DiskIoctlGetInfo, a1, 24);
+                uint errInfo = ServeIoctl(bus, BinBlkMedia.DiskIoctlGetInfo, a1, 24, registers[29]);
                 registers[2] = errInfo == 0 ? 1u : 0u;
                 programCounter = registers[31];
                 System.Console.WriteLine($"[HardDisk] GetDiskInfo err={errInfo} v0={registers[2]}");
@@ -254,14 +272,14 @@ namespace ProcessorEmulator.Core
                 try { size = bus.Read32(registers[29] + 20); }
                 catch { }
             }
-            uint err = ServeIoctl(bus, code, buf, size);
+            uint err = ServeIoctl(bus, code, buf, size, registers[29]);
             registers[2] = err == 0 ? 1u : 0u;
             programCounter = registers[31];
             System.Console.WriteLine($"[HardDisk] FSDIOCTL 0x{code:X} err={err} v0={registers[2]}");
             return true;
         }
 
-        private static uint ServeIoctl(MipsBus bus, uint code, uint buf, uint size)
+        private static uint ServeIoctl(MipsBus bus, uint code, uint buf, uint size, uint sp)
         {
             try
             {
@@ -283,14 +301,35 @@ namespace ProcessorEmulator.Core
                     WriteUtf16(bus, buf + 4, ProfileName);
                     return 0;
                 }
-                if (code == IoctlDiskGetStorageId && buf != 0)
+                if (code == IoctlDiskGetStorageId)
                 {
-                    if (size < 16)
+                    uint outBuf = buf;
+                    uint outLen = size;
+                    if (outBuf == 0 || outLen < 16)
+                    {
+                        uint s16 = 0, s20 = 0, s24 = 0;
+                        try { s16 = bus.Read32(sp + 16); } catch { }
+                        try { s20 = bus.Read32(sp + 20); } catch { }
+                        try { s24 = bus.Read32(sp + 24); } catch { }
+                        if (s16 > 0x1000 && s16 < 0x80000000 && outBuf == 0)
+                        {
+                            outBuf = s16;
+                            outLen = s20;
+                        }
+                        else if (s20 > 0x1000 && s20 < 0x80000000)
+                        {
+                            outBuf = s20;
+                            outLen = s24;
+                        }
+                    }
+                    if (outBuf == 0)
+                        return 87;
+                    if (outLen < 16)
                         return 122;
-                    bus.Write32(buf + 0, 16);
-                    bus.Write32(buf + 4, 3);
-                    bus.Write32(buf + 8, 0);
-                    bus.Write32(buf + 12, 0);
+                    bus.Write32(outBuf + 0, 16);
+                    bus.Write32(outBuf + 4, 3);
+                    bus.Write32(outBuf + 8, 0);
+                    bus.Write32(outBuf + 12, 0);
                     return 0;
                 }
                 if (code == BinBlkMedia.DiskIoctlRead && buf != 0)
