@@ -77,6 +77,9 @@ namespace ProcessorEmulator.Core
             uint pc = programCounter;
             if (pc == KernelCreateFile)
             {
+                string kn = ReadUtf16(bus, registers[4]);
+                if ((_notified || IsHardDiskPath(kn)) && _logged.Add("k:" + kn))
+                    System.Console.WriteLine($"[HardDisk] kCreateFile \"{kn}\"");
                 LogKernelCreateFile(bus, registers[4]);
                 return false;
             }
@@ -89,7 +92,12 @@ namespace ProcessorEmulator.Core
             if (pc == BinBlkMedia.ReadMsgJal)
                 return TryFillDevDetail(registers, bus, ref programCounter);
             if (pc == BinBlkMedia.CreateFile1 || pc == BinBlkMedia.CreateFile2)
+            {
+                string fn = ReadUtf16(bus, registers[4]);
+                if (_notified && _logged.Add("f:" + fn))
+                    System.Console.WriteLine($"[HardDisk] fsdCreateFile \"{fn}\"");
                 return TryCreateFile(registers, bus, pc, ref programCounter);
+            }
             if (pc == BinBlkMedia.DiskIoctl)
                 return TryIoctl(registers, bus, ref programCounter);
             if (pc == BinBlkMedia.FsdmgrDiskIoctl)
@@ -128,6 +136,12 @@ namespace ProcessorEmulator.Core
         private static bool TrySatisfyWfmo(uint[] registers, ref uint programCounter)
         {
             if (_notified)
+                return false;
+            // WFMO #2 is the HD slot. The first wait after BINBlk
+            // notify is still BINFS MountDisk (partition/ioctls).
+            // Wait until BINBlk has served a READ so we do not steal
+            // that wait. No SetEvent of the filesys pump.
+            if (BinBlkMedia.IsPresent && !BinBlkMedia.HasServedRead)
                 return false;
             _notified = true;
             registers[2] = 0;
@@ -173,7 +187,7 @@ namespace ProcessorEmulator.Core
 
         private static bool TryCreateFile(uint[] registers, MipsBus bus, uint pc, ref uint programCounter)
         {
-            if (!NameIsOurs(bus, registers[4]))
+            if (!NameIsOurs(ReadUtf16(bus, registers[4])))
                 return false;
             try
             {
@@ -397,7 +411,20 @@ namespace ProcessorEmulator.Core
 
         private static bool NameIsOurs(MipsBus bus, uint addr)
         {
-            string n = ReadUtf16(bus, addr);
+            return NameIsOurs(ReadUtf16(bus, addr));
+        }
+
+        private static bool NameIsOurs(string n)
+        {
+            if (string.IsNullOrEmpty(n))
+                return false;
+            if (n.Length >= 1 && (n[0] == '\\' || n[0] == '/'))
+                n = n.TrimStart('\\', '/');
+            if (StartsWithIgnore(n, "Profiles\\"))
+                n = n.Substring("Profiles\\".Length);
+            int colon = n.IndexOf(':');
+            if (colon > 0)
+                n = n.Substring(0, colon);
             return EqualsIgnore(n, ProfileName) || EqualsIgnore(n, FolderName);
         }
 

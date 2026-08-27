@@ -37,8 +37,10 @@ namespace ProcessorEmulator.Core
         private static bool _notified;
         private static bool _detailFilled;
         private static bool _opened;
+        private static bool _readServed;
 
         public static bool IsPresent => _image != null && _image.Length > 0;
+        public static bool HasServedRead => _readServed;
 
         public static void Attach(byte[] image)
         {
@@ -46,6 +48,7 @@ namespace ProcessorEmulator.Core
             _notified = false;
             _detailFilled = false;
             _opened = false;
+            _readServed = false;
             if (IsPresent)
                 System.Console.WriteLine($"[BINBlk] media {_image.Length} bytes name={HiveName}");
         }
@@ -203,7 +206,12 @@ namespace ProcessorEmulator.Core
                     return 0;
                 }
                 if (code == DiskIoctlRead && buf != 0)
-                    return TryReadSg(bus, buf);
+                {
+                    uint err = TryReadSg(bus, buf);
+                    if (err == 0)
+                        _readServed = true;
+                    return err;
+                }
                 if (code == DiskIoctlWrite)
                     return 19;
             }
