@@ -1,18 +1,20 @@
 using System;
 using System.IO;
 using ProcessorEmulator.Core.Emulation;
+using ProcessorEmulator.Core;
 
 namespace ProcessorEmulator.Core.Loaders
 {
     public readonly struct NkLoadResult
     {
-        public NkLoadResult(ulong entryPoint, uint imageStart, uint imageLength, int recordsLoaded, bool truncated)
+        public NkLoadResult(ulong entryPoint, uint imageStart, uint imageLength, int recordsLoaded, bool truncated, byte[] image)
         {
             EntryPoint = entryPoint;
             ImageStart = imageStart;
             ImageLength = imageLength;
             RecordsLoaded = recordsLoaded;
             Truncated = truncated;
+            Image = image ?? Array.Empty<byte>();
         }
 
         public ulong EntryPoint { get; }
@@ -20,6 +22,7 @@ namespace ProcessorEmulator.Core.Loaders
         public uint ImageLength { get; }
         public int RecordsLoaded { get; }
         public bool Truncated { get; }
+        public byte[] Image { get; }
     }
 
     public static class NkBinLoader
@@ -110,7 +113,8 @@ namespace ProcessorEmulator.Core.Loaders
             if (entryPoint == 0)
                 throw new InvalidDataException("Could not determine kernel entry point from nk.bin file.");
 
-            return new NkLoadResult(entryPoint, imageStart, imageLength, records, truncated);
+            BinBlkMedia.Attach(data);
+            return new NkLoadResult(entryPoint, imageStart, imageLength, records, truncated, data);
         }
     }
 }
