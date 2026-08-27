@@ -11,11 +11,10 @@ namespace ProcessorEmulator.Core
     // dump files. Not a BINBlk/BINFS/ExtraROM object.
     //
     // FSDMGR WFMO #2 (after BINBlk) is already waiting on the
-    // BLOCK_DRIVER queue. Deliver HDProfile there. GETNAME is
-    // "Hard Disk" so firmware CreateFile \Hard Disk\NK.bin and
-    // HookVolume("Hard Disk") / \ETC.bin see this tree.
-    // FATFS MountDisk parses a real FAT16 image built from the
-    // directory. No SetEvent of store/BootPhase/Autoload/pump.
+    // BLOCK_DRIVER queue. Deliver HDProf there (7-char CE name).
+    // GETNAME is HDProfile so Profiles\HDProfile / Folder Hard Disk
+    // apply. mspart calls FSDMGR at FsdmgrIoImpl, not the binfs IAT.
+    // No SetEvent of store/BootPhase/Autoload/pump.
     public static class HostHardDisk
     {
         public const string EnvName = "UVERSE_HARD_DISK";
@@ -28,6 +27,10 @@ namespace ProcessorEmulator.Core
         public const string FolderName = "Hard Disk";
         public const uint Handle = 0xA15C0D15;
         public const uint KernelCreateFile = 0x8001D3A0;
+        // mspart PD_OpenStore calls this FSDMGR export, not binfs IAT 0x03EA4140.
+        public const uint FsdmgrIoImpl = 0x03E83C08;
+        public const uint IoctlDiskGetInfo = 0x00071C00;
+        public const uint IoctlDiskGetStorageId = 0x00071C24;
         public const uint SectorSize = 512;
 
         private static readonly uint[] BlockDriverGuid =
@@ -105,7 +108,7 @@ namespace ProcessorEmulator.Core
             }
             if (pc == BinBlkMedia.DiskIoctl)
                 return TryIoctl(registers, bus, ref programCounter);
-            if (pc == BinBlkMedia.FsdmgrDiskIoctl)
+            if (pc == BinBlkMedia.FsdmgrDiskIoctl || pc == FsdmgrIoImpl)
                 return TryFsdmgrDiskIoctl(registers, bus, ref programCounter);
             return false;
         }
@@ -233,7 +236,17 @@ namespace ProcessorEmulator.Core
             uint hdsk = registers[4];
             if (!OwnsHdsk(bus, hdsk))
                 return false;
-            uint code = registers[5];
+            uint a1 = registers[5];
+            // FSDMGR_GetDiskInfo(hDsk, pInfo): a1 is a user pointer.
+            if (a1 > 0x10000 && (a1 < 0x71000 || a1 >= 0x80000))
+            {
+                uint errInfo = ServeIoctl(bus, BinBlkMedia.DiskIoctlGetInfo, a1, 24);
+                registers[2] = errInfo == 0 ? 1u : 0u;
+                programCounter = registers[31];
+                System.Console.WriteLine($"[HardDisk] GetDiskInfo err={errInfo} v0={registers[2]}");
+                return true;
+            }
+            uint code = a1;
             uint buf = registers[6];
             uint size = registers[7];
             if (size == 0)
@@ -252,7 +265,8 @@ namespace ProcessorEmulator.Core
         {
             try
             {
-                if (code == BinBlkMedia.DiskIoctlGetInfo && buf != 0 && size >= 24)
+                if ((code == BinBlkMedia.DiskIoctlGetInfo || code == IoctlDiskGetInfo)
+                    && buf != 0 && size >= 24)
                 {
                     uint sectors = (uint)((_image.Length + (int)SectorSize - 1) / (int)SectorSize);
                     bus.Write32(buf + 0, sectors);
@@ -267,6 +281,16 @@ namespace ProcessorEmulator.Core
                 {
                     bus.Write32(buf, 0);
                     WriteUtf16(bus, buf + 4, ProfileName);
+                    return 0;
+                }
+                if (code == IoctlDiskGetStorageId && buf != 0)
+                {
+                    if (size < 16)
+                        return 122;
+                    bus.Write32(buf + 0, 16);
+                    bus.Write32(buf + 4, 3);
+                    bus.Write32(buf + 8, 0);
+                    bus.Write32(buf + 12, 0);
                     return 0;
                 }
                 if (code == BinBlkMedia.DiskIoctlRead && buf != 0)
