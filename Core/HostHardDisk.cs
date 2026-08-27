@@ -20,6 +20,10 @@ namespace ProcessorEmulator.Core
     {
         public const string EnvName = "UVERSE_HARD_DISK";
         public const string EnvNameAlt = "PROCESSOR_EMULATOR_HARD_DISK";
+        // CE device names are 7 chars max; HDProfile does not fit
+        // DEVDETAIL and becomes "HDProfi". Advertise HDProf, then
+        // GETNAME HDProfile so Profiles\HDProfile / Folder Hard Disk.
+        public const string DeviceName = "HDProf";
         public const string ProfileName = "HDProfile";
         public const string FolderName = "Hard Disk";
         public const uint Handle = 0xA15C0D15;
@@ -173,8 +177,8 @@ namespace ProcessorEmulator.Core
                 bus.Write32(buf + 12, BlockDriverGuid[3]);
                 bus.Write32(buf + 16, 0);
                 bus.Write32(buf + 20, 1);
-                bus.Write32(buf + 24, (uint)((ProfileName.Length + 1) * 2));
-                WriteUtf16(bus, buf + 28, ProfileName);
+                bus.Write32(buf + 24, (uint)((DeviceName.Length + 1) * 2));
+                WriteUtf16(bus, buf + 28, DeviceName);
             }
             catch
             {
@@ -183,7 +187,7 @@ namespace ProcessorEmulator.Core
             registers[2] = 1;
             programCounter = BinBlkMedia.ReadMsgRet;
             _detailFilled = true;
-            System.Console.WriteLine("[HardDisk] DEVDETAIL HDProfile");
+            System.Console.WriteLine("[HardDisk] DEVDETAIL " + DeviceName);
             return true;
         }
 
@@ -201,7 +205,7 @@ namespace ProcessorEmulator.Core
             registers[2] = Handle;
             programCounter = pc + 8;
             _opened = true;
-            System.Console.WriteLine("[HardDisk] CreateFile HDProfile");
+            System.Console.WriteLine("[HardDisk] CreateFile " + DeviceName);
             return true;
         }
 
@@ -262,7 +266,7 @@ namespace ProcessorEmulator.Core
                 if (code == BinBlkMedia.IoctlDiskGetName && buf != 0 && size >= 20)
                 {
                     bus.Write32(buf, 0);
-                    WriteUtf16(bus, buf + 4, FolderName);
+                    WriteUtf16(bus, buf + 4, ProfileName);
                     return 0;
                 }
                 if (code == BinBlkMedia.DiskIoctlRead && buf != 0)
@@ -427,7 +431,8 @@ namespace ProcessorEmulator.Core
             int colon = n.IndexOf(':');
             if (colon > 0)
                 n = n.Substring(0, colon);
-            return EqualsIgnore(n, ProfileName) || EqualsIgnore(n, FolderName);
+            return EqualsIgnore(n, DeviceName) || EqualsIgnore(n, ProfileName)
+                || EqualsIgnore(n, FolderName) || EqualsIgnore(n, "HDProfi");
         }
 
         private static bool StartsWithIgnore(string a, string b)
