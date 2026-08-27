@@ -665,6 +665,9 @@ namespace ProcessorEmulator.Emulation
                 case 0x06: // srlv
                     registers[rd] = registers[rt] >> (int)registers[rs];
                     break;
+                case 0x07: // srav
+                    registers[rd] = (uint)((int)registers[rt] >> (int)registers[rs]);
+                    break;
                 default:
                     TriggerException(10); // Reserved Instruction
                     break;
