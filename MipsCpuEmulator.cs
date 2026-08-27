@@ -104,6 +104,13 @@ namespace ProcessorEmulator.Emulation
                     continue;
                 }
 
+                if (HostHardDisk.TryStep(registers, _bus, ref programCounter))
+                {
+                    _cp0.UpdateTimer(1);
+                    _bus.Tick(1);
+                    continue;
+                }
+
                 if (programCounter == CeRomTocFiles.CreateFileFail)
                 {
                     uint path = registers[23];

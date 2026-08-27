@@ -114,6 +114,7 @@ namespace ProcessorEmulator.Core.Loaders
                 throw new InvalidDataException("Could not determine kernel entry point from nk.bin file.");
 
             BinBlkMedia.Attach(data);
+            HostHardDisk.Attach();
             return new NkLoadResult(entryPoint, imageStart, imageLength, records, truncated, data);
         }
     }

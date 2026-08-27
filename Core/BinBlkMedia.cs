@@ -158,6 +158,9 @@ namespace ProcessorEmulator.Core
         {
             if (!_opened)
                 return false;
+            uint hdsk = registers[4];
+            if (HostHardDisk.OwnsHdsk(bus, hdsk))
+                return false;
 
             uint code = registers[5];
             uint buf = registers[6];
