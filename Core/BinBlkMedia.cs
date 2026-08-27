@@ -17,6 +17,9 @@ namespace ProcessorEmulator.Core
         public const uint CreateFile1 = 0x03E8BCF0;
         public const uint CreateFile2 = 0x03E8BD44;
         public const uint DiskIoctl = 0x03E8BAE0;
+        // binfs FSD_MountDisk talks through FSDMGR_DiskIoControl
+        // (IAT thunk 0x03EA4140), not the store wrapper at DiskIoctl.
+        public const uint FsdmgrDiskIoctl = 0x03EA4140;
         public const uint Handle = 0xB1B10C01;
         public const uint DiskIoctlGetInfo = 1;
         public const uint DiskIoctlRead = 2;
@@ -61,6 +64,8 @@ namespace ProcessorEmulator.Core
                 return TryCreateFile(registers, bus, pc, ref programCounter);
             if (pc == DiskIoctl)
                 return TryIoctl(registers, bus, ref programCounter);
+            if (pc == FsdmgrDiskIoctl)
+                return TryFsdmgrDiskIoctl(registers, bus, ref programCounter);
             return false;
         }
 
@@ -140,7 +145,38 @@ namespace ProcessorEmulator.Core
             try { size = bus.Read32(registers[29] + 16); }
             catch { }
 
-            uint err = 50;
+            uint err = ServeIoctl(bus, code, buf, size);
+            registers[2] = err;
+            programCounter = registers[31];
+            System.Console.WriteLine($"[BINBlk] IOCTL 0x{code:X} err={err}");
+            return true;
+        }
+
+        // FSDMGR_DiskIoControl(HDSK, code, buf, inlen, ...): BOOL, not Win32 err.
+        // MountDisk (0x03EA1E50 / 0x03EA291C / 0x03EA2C54) uses this thunk.
+        private static bool TryFsdmgrDiskIoctl(uint[] registers, MipsBus bus, ref uint programCounter)
+        {
+            if (!_opened)
+                return false;
+
+            uint code = registers[5];
+            uint buf = registers[6];
+            uint size = registers[7];
+            if (size == 0)
+            {
+                try { size = bus.Read32(registers[29] + 20); }
+                catch { }
+            }
+
+            uint err = ServeIoctl(bus, code, buf, size);
+            registers[2] = err == 0 ? 1u : 0u;
+            programCounter = registers[31];
+            System.Console.WriteLine($"[BINBlk] FSDIOCTL 0x{code:X} err={err} v0={registers[2]}");
+            return true;
+        }
+
+        private static uint ServeIoctl(MipsBus bus, uint code, uint buf, uint size)
+        {
             try
             {
                 if (code == DiskIoctlGetInfo && buf != 0 && size >= 24)
@@ -152,35 +188,27 @@ namespace ProcessorEmulator.Core
                     bus.Write32(buf + 12, 0);
                     bus.Write32(buf + 16, 0);
                     bus.Write32(buf + 20, 0);
-                    err = 0;
+                    return 0;
                 }
-                else if (code == IoctlDiskGetName && buf != 0 && size >= 20)
+                if (code == IoctlDiskGetName && buf != 0 && size >= 20)
                 {
                     // FSDMGR keeps a DWORD at store+2460 and the
                     // profile tail at +2464 (ROEX showed Profiles\NBlk
                     // when the name started at offset 0).
                     bus.Write32(buf, 0);
                     WriteUtf16(bus, buf + 4, HiveName);
-                    err = 0;
+                    return 0;
                 }
-                else if (code == DiskIoctlRead && buf != 0)
-                {
-                    err = TryReadSg(bus, buf);
-                }
-                else if (code == DiskIoctlWrite)
-                {
-                    err = 19;
-                }
+                if (code == DiskIoctlRead && buf != 0)
+                    return TryReadSg(bus, buf);
+                if (code == DiskIoctlWrite)
+                    return 19;
             }
             catch
             {
-                err = 87;
+                return 87;
             }
-
-            registers[2] = err;
-            programCounter = registers[31];
-            System.Console.WriteLine($"[BINBlk] IOCTL 0x{code:X} err={err}");
-            return true;
+            return 50;
         }
 
         private static uint TryReadSg(MipsBus bus, uint sg)
