@@ -41,6 +41,10 @@ namespace ProcessorEmulator.Core
         public const uint KernelRegOpen = 0x8003D200;
         public const uint KernelRegQuery = 0x8003D2E0;
         public const uint FilesysRegOpen = 0x0001FEB0;
+        // Between FS_RegOpenKeyEx and FS_RegEnum. FSDMGR queries
+        // Dll here, not through the kernel export.
+        public const uint FilesysRegQuery = 0x000200D8;
+        public const uint FilesysRegQuery2 = 0x000204E0;
         public const uint HkFatfs = 0xFA7F5001;
         public const uint HkProfile = 0xFA7F5002;
         public const uint HkProfileFatfs = 0xFA7F5003;
@@ -61,6 +65,7 @@ namespace ProcessorEmulator.Core
         private static bool _notified;
         private static bool _detailFilled;
         private static bool _opened;
+        private static bool _fatSeen;
         private static readonly HashSet<string> _logged = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         public static bool IsPresent => _image != null && _image.Length > 0;
@@ -75,6 +80,7 @@ namespace ProcessorEmulator.Core
             _notified = false;
             _detailFilled = false;
             _opened = false;
+            _fatSeen = false;
             _logged.Clear();
             string dir = ResolveRoot();
             if (string.IsNullOrEmpty(dir))
@@ -136,17 +142,18 @@ namespace ProcessorEmulator.Core
                 return TryGetDiskInfo(registers, bus, ref programCounter);
             if (pc == KernelRegOpen || pc == FilesysRegOpen)
                 return TryRegOpen(registers, bus, ref programCounter);
-            if (pc == KernelRegQuery)
+            if (pc == KernelRegQuery || pc == FilesysRegQuery || pc == FilesysRegQuery2)
                 return TryRegQuery(registers, bus, ref programCounter);
             return false;
         }
 
         // BINFS hive replace drops the ROM StorageManager keys.
-        // Only after HDProf is open; early HDProfile still comes
-        // from the boot hive (PartitionDriver=mspart.dll).
+        // Do not steal the attach-time HDProfile open: that still
+        // comes from the boot hive (PartitionDriver=mspart.dll)
+        // before any FAT DISK_READ.
         private static bool TryRegOpen(uint[] registers, MipsBus bus, ref uint programCounter)
         {
-            if (!_opened)
+            if (!_opened || !_fatSeen)
                 return false;
             uint hk = KeyForPath(ReadUtf16(bus, registers[5]));
             if (hk == 0)
@@ -178,6 +185,10 @@ namespace ProcessorEmulator.Core
             bool isDword;
             if (!LookupValue(hKey, name, out text, out dword, out isDword))
             {
+                // Unknown a1: this entry may be RegClose/etc.
+                // Only force FILE_NOT_FOUND on the kernel query.
+                if (programCounter != KernelRegQuery)
+                    return false;
                 registers[2] = 2;
                 programCounter = registers[31];
                 if (_logged.Add("rqmiss:" + hKey.ToString("X") + ":" + name))
@@ -674,6 +685,7 @@ namespace ProcessorEmulator.Core
                     throw;
             }
             bus.Write32(sg + 12, 0);
+            _fatSeen = true;
             if (_logged.Add("read:" + start))
                 System.Console.WriteLine($"[HardDisk] DISK_READ lba={start} n={num}");
             return 0;
