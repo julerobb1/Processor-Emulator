@@ -140,10 +140,11 @@ namespace ProcessorEmulator.Core
                 return TryStoreIoctl2(registers, bus, ref programCounter);
             if (pc == FsdmgrGetDiskInfo)
                 return TryGetDiskInfo(registers, bus, ref programCounter);
-            if (pc == KernelRegOpen || pc == FilesysRegOpen)
+            // Kernel 0x8003D200 is a shared thunk, not RegOpen.
+            // Hook the filesys implementation those opens jalr into.
+            if (pc == FilesysRegOpen)
                 return TryRegOpen(registers, bus, ref programCounter);
-            if (pc == KernelRegQuery || pc == FilesysRegQuery || pc == FilesysRegQuery2
-                || IsStoreKey(registers[4]))
+            if (pc == KernelRegQuery || pc == FilesysRegQuery || pc == FilesysRegQuery2)
                 return TryRegQuery(registers, bus, ref programCounter);
             return false;
         }
@@ -171,7 +172,7 @@ namespace ProcessorEmulator.Core
             programCounter = registers[31];
             string path = ReadUtf16(bus, registers[5]);
             if (_logged.Add("ro:" + path))
-                System.Console.WriteLine($"[HardDisk] RegOpen \"{path}\" hk=0x{hk:X8}");
+                System.Console.WriteLine($"[HardDisk] RegOpen \"{path}\" hk=0x{hk:X8} phk=0x{phk:X8} ra=0x{registers[31]:X8}");
             return true;
         }
 
@@ -271,17 +272,11 @@ namespace ProcessorEmulator.Core
             string n = path.Replace('/', '\\');
             if (n.Length >= 1 && n[0] == '\\')
                 n = n.TrimStart('\\');
+            // Only the last FSDMGR fallback. Serving HDProfile or
+            // PartitionTable without a live query handle stops the
+            // walk that already knows the volume is FATFS.
             if (EqualsIgnore(n, "System\\StorageManager\\FATFS"))
                 return HkFatfs;
-            // Do not serve the parent HDProfile key. Attach and the
-            // post-FAT fallback both need a native miss there so
-            // FSDMGR still walks PartitionTable / FATFS for Dll.
-            if (EqualsIgnore(n, "System\\StorageManager\\Profiles\\HDProfile\\FATFS"))
-                return HkProfileFatfs;
-            if (EqualsIgnore(n, "System\\StorageManager\\PartitionTable"))
-                return HkPartTable;
-            if (EqualsIgnore(n, "System\\StorageManager\\Profiles\\HDProfile\\PartitionTable"))
-                return HkProfilePart;
             return 0;
         }
 
