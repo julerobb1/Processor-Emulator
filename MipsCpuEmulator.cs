@@ -104,8 +104,21 @@ namespace ProcessorEmulator.Emulation
                     continue;
                 }
 
-                if (HostHardDisk.TryStep(registers, _bus, ref programCounter))
+                _currentPc = programCounter;
+                try
                 {
+                    if (HostHardDisk.TryStep(registers, _bus, ref programCounter))
+                    {
+                        _cp0.UpdateTimer(1);
+                        _bus.Tick(1);
+                        continue;
+                    }
+                }
+                catch (TlbMissException ex)
+                {
+                    // HD DISK_READ writes a kuseg dest. Do not invent a PTE;
+                    // the firmware refill/demand-zero path already owns that VA.
+                    TriggerTlbException(ex);
                     _cp0.UpdateTimer(1);
                     _bus.Tick(1);
                     continue;

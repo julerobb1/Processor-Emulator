@@ -432,6 +432,10 @@ namespace ProcessorEmulator.Core
                 if (code == BinBlkMedia.DiskIoctlWrite)
                     return 19;
             }
+            catch (TlbMissException)
+            {
+                throw;
+            }
             catch
             {
                 return 87;
@@ -454,6 +458,40 @@ namespace ProcessorEmulator.Core
             ulong off = (ulong)start * SectorSize;
             if (off >= (ulong)_image.Length)
                 return 87;
+            uint at = KusegAlias(dest, sg);
+            try
+            {
+                WriteSectors(bus, at, off, want);
+            }
+            catch (TlbMissException)
+            {
+                if (at != dest)
+                    WriteSectors(bus, dest, off, want);
+                else
+                    throw;
+            }
+            bus.Write32(sg + 12, 0);
+            if (_logged.Add("read:" + start))
+                System.Console.WriteLine($"[HardDisk] DISK_READ lba={start} n={num}");
+            return 0;
+        }
+
+        // Slot 0 is the current-process alias. The SG lives in the
+        // real slot (0x04xxxxxx); dest 0x00081340 is the same page.
+        // Do not invent a PTE. If neither VA is in the TLB, throw so
+        // the firmware refill/demand-zero path maps it.
+        private static uint KusegAlias(uint dest, uint hint)
+        {
+            if (dest >= 0x02000000u)
+                return dest;
+            uint slot = hint & 0xFE000000u;
+            if (slot < 0x02000000u || slot >= 0x80000000u)
+                return dest;
+            return slot | (dest & 0x01FFFFFFu);
+        }
+
+        private static void WriteSectors(MipsBus bus, uint dest, ulong off, uint want)
+        {
             for (uint i = 0; i < want; i++)
             {
                 byte b = 0;
@@ -462,10 +500,6 @@ namespace ProcessorEmulator.Core
                     b = _image[(int)src];
                 Write8(bus, dest + i, b);
             }
-            bus.Write32(sg + 12, 0);
-            if (_logged.Add("read:" + start))
-                System.Console.WriteLine($"[HardDisk] DISK_READ lba={start} n={num}");
-            return 0;
         }
 
         internal static string ResolveRoot()
