@@ -142,7 +142,8 @@ namespace ProcessorEmulator.Core
                 return TryGetDiskInfo(registers, bus, ref programCounter);
             if (pc == KernelRegOpen || pc == FilesysRegOpen)
                 return TryRegOpen(registers, bus, ref programCounter);
-            if (pc == KernelRegQuery || pc == FilesysRegQuery || pc == FilesysRegQuery2)
+            if (pc == KernelRegQuery || pc == FilesysRegQuery || pc == FilesysRegQuery2
+                || IsStoreKey(registers[4]))
                 return TryRegQuery(registers, bus, ref programCounter);
             return false;
         }
@@ -272,8 +273,9 @@ namespace ProcessorEmulator.Core
                 n = n.TrimStart('\\');
             if (EqualsIgnore(n, "System\\StorageManager\\FATFS"))
                 return HkFatfs;
-            if (EqualsIgnore(n, "System\\StorageManager\\Profiles\\HDProfile"))
-                return HkProfile;
+            // Do not serve the parent HDProfile key. Attach and the
+            // post-FAT fallback both need a native miss there so
+            // FSDMGR still walks PartitionTable / FATFS for Dll.
             if (EqualsIgnore(n, "System\\StorageManager\\Profiles\\HDProfile\\FATFS"))
                 return HkProfileFatfs;
             if (EqualsIgnore(n, "System\\StorageManager\\PartitionTable"))
