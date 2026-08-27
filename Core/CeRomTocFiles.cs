@@ -95,6 +95,14 @@ namespace ProcessorEmulator.Core
         // that pointer at e32_lite+0x54 (0x06012008) but the list stays
         // zero. TOC o32_rom already has FirstThunk 0x2000 in section 1.
         // Copy those bytes into the firmware dest; do not invent a slot.
+        //
+        // After TOC-attach of a DLL, BindImp uses that module's e32_lite,
+        // not the current process. CurProc+0x50 is filesys.exe (objcnt 4);
+        // iptvcryptohal / ceddk / sigcheckfilter are objcnt 3, so the
+        // process TOC never matches. 0x800196E4 already wrote e32 vbase
+        // at e32_lite+8 (0x03D90000 / 0x03E60000 / 0x03DF0000). Use that
+        // when the process TOC misses. Slot vbase 0x00010000 is shared
+        // by filesys/gwes/device and stays on CurProc+0x50.
         public static bool TryFillEmptyO32Lite(MipsBus bus, uint e32Lite, uint o32List, uint lookup)
         {
             if (bus == null || e32Lite == 0 || o32List == 0)
@@ -102,6 +110,7 @@ namespace ProcessorEmulator.Core
 
             uint objcnt;
             uint tocEntry;
+            uint vbase;
             try
             {
                 objcnt = bus.Read32(e32Lite) & 0xFFFF;
@@ -113,13 +122,15 @@ namespace ProcessorEmulator.Core
                 if (proc == 0)
                     return false;
                 tocEntry = bus.Read32(proc + 0x50);
+                vbase = bus.Read32(e32Lite + 8);
             }
             catch
             {
                 return false;
             }
 
-            if (!TryGetTocO32(bus, tocEntry, objcnt, out uint o32Rom))
+            if (!TryGetTocO32(bus, tocEntry, objcnt, out uint o32Rom)
+                && !TryGetTocO32ByVbase(bus, vbase, objcnt, out o32Rom))
                 return false;
 
             try
@@ -184,6 +195,47 @@ namespace ProcessorEmulator.Core
                 return false;
             }
             return false;
+        }
+
+        // ROM DLL vbases in this image are unique (HAL 0x03D90000,
+        // CEDDK 0x03E60000, sigcheckfilter 0x03DF0000). Process EXEs
+        // share 0x00010000; those stay on CurProc+0x50.
+        private static bool TryGetTocO32ByVbase(MipsBus bus, uint vbase, uint objcnt, out uint o32Rom)
+        {
+            o32Rom = 0;
+            if (vbase < 0x03D00000u || vbase >= 0x04000000u)
+                return false;
+            try
+            {
+                uint toc = bus.Read32(EcecTocPtr);
+                uint nmods = bus.Read32(toc + RomHdrNumMods);
+                if (nmods == 0 || nmods > 64)
+                    return false;
+                uint found = 0;
+                for (uint i = 0; i < nmods; i++)
+                {
+                    uint entry = toc + TocFirst + i * TocEntrySize;
+                    uint e32 = bus.Read32(entry + 0x14);
+                    uint o32 = bus.Read32(entry + 0x18);
+                    if (e32 == 0 || o32 == 0)
+                        continue;
+                    if ((bus.Read32(e32) & 0xFFFF) != objcnt)
+                        continue;
+                    if (bus.Read32(e32 + 8) != vbase)
+                        continue;
+                    if (found != 0)
+                        return false;
+                    found = o32;
+                }
+                if (found == 0)
+                    return false;
+                o32Rom = found;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static string Basename(MipsBus bus, uint path)
