@@ -154,9 +154,13 @@ namespace ProcessorEmulator.Core
                     bus.Write32(buf + 20, 0);
                     err = 0;
                 }
-                else if (code == IoctlDiskGetName && buf != 0 && size >= 16)
+                else if (code == IoctlDiskGetName && buf != 0 && size >= 20)
                 {
-                    WriteUtf16(bus, buf, HiveName);
+                    // FSDMGR keeps a DWORD at store+2460 and the
+                    // profile tail at +2464 (ROEX showed Profiles\NBlk
+                    // when the name started at offset 0).
+                    bus.Write32(buf, 0);
+                    WriteUtf16(bus, buf + 4, HiveName);
                     err = 0;
                 }
                 else if (code == DiskIoctlRead && buf != 0)
