@@ -33,6 +33,9 @@ namespace ProcessorEmulator.Core
         // internals, not DiskIoctl 0x03E8BAE0.
         public const uint FsdmgrGetDiskInfo = 0x03E8332C;
         public const uint FsdmgrStoreIoctl2 = 0x03E8B618;
+        // After GETINFO, 0x03E8332C jal's here with (store, dest, nsec, lba).
+        // Native run never issued DISK_IOCTL_READ; serve the sector copy.
+        public const uint FsdmgrReadImpl = 0x03E83508;
         public const uint IoctlDiskGetInfo = 0x00071C00;
         public const uint IoctlDiskReadEx = 0x00075C08;
         public const uint IoctlDiskGetStorageId = 0x00071C24;
@@ -121,6 +124,8 @@ namespace ProcessorEmulator.Core
                 return TryStoreIoctl2(registers, bus, ref programCounter);
             if (pc == FsdmgrGetDiskInfo)
                 return TryGetDiskInfo(registers, bus, ref programCounter);
+            if (pc == FsdmgrReadImpl)
+                return TryReadImpl(registers, bus, ref programCounter);
             return false;
         }
 
@@ -303,6 +308,92 @@ namespace ProcessorEmulator.Core
             return true;
         }
 
+        private static bool TryReadImpl(uint[] registers, MipsBus bus, ref uint programCounter)
+        {
+            if (!_opened)
+                return false;
+            uint store = registers[4];
+            uint a1 = registers[5];
+            uint a2 = registers[6];
+            uint a3 = registers[7];
+            bool ours = store == Handle || OwnsHdsk(bus, store)
+                || NameIsOurs(bus, store) || NameIsOurs(bus, store + 16);
+            if (!ours)
+            {
+                if (_logged.Add("r08:" + store.ToString("X")))
+                    System.Console.WriteLine($"[HardDisk] ReadImpl miss a0=0x{store:X8} a1=0x{a1:X8} a2=0x{a2:X} a3=0x{a3:X}");
+                return false;
+            }
+            if (LooksLikeSg(bus, a1))
+            {
+                uint errSg = TryReadSg(bus, a1);
+                registers[2] = errSg;
+                programCounter = registers[31];
+                System.Console.WriteLine($"[HardDisk] ReadImpl SG err={errSg} sg=0x{a1:X8}");
+                return true;
+            }
+            uint first = 0;
+            try { first = bus.Read32(a1); } catch { }
+            // STOREINFO/PARTINFO start with cbSize. Do not smash those.
+            if (first >= 0x20 && first <= 0x400)
+            {
+                if (_logged.Add("r08info"))
+                    System.Console.WriteLine($"[HardDisk] ReadImpl info a0=0x{store:X8} a1=0x{a1:X8} cb=0x{first:X}");
+                return false;
+            }
+            uint sectors = (uint)((_image.Length + (int)SectorSize - 1) / (int)SectorSize);
+            if (LooksLikePtr(a1) && a2 >= 1 && a2 <= 256 && a3 < sectors)
+            {
+                uint err = ReadLinear(bus, a1, a3, a2);
+                registers[2] = err;
+                programCounter = registers[31];
+                return true;
+            }
+            if (_logged.Add("r08"))
+                System.Console.WriteLine($"[HardDisk] ReadImpl miss a0=0x{store:X8} a1=0x{a1:X8} a2=0x{a2:X} a3=0x{a3:X}");
+            return false;
+        }
+
+        private static bool LooksLikeSg(MipsBus bus, uint sg)
+        {
+            if (!LooksLikePtr(sg))
+                return false;
+            try
+            {
+                uint start = bus.Read32(sg + 0);
+                uint num = bus.Read32(sg + 4);
+                uint nsg = bus.Read32(sg + 8);
+                uint dest = bus.Read32(sg + 20);
+                uint len = bus.Read32(sg + 24);
+                uint sectors = (uint)((_image.Length + (int)SectorSize - 1) / (int)SectorSize);
+                return nsg == 1 && num >= 1 && num <= 256 && start < sectors
+                    && LooksLikePtr(dest) && len >= num * SectorSize;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static uint ReadLinear(MipsBus bus, uint dest, uint start, uint num)
+        {
+            uint want = num * SectorSize;
+            ulong off = (ulong)start * SectorSize;
+            if (off >= (ulong)_image.Length)
+                return 87;
+            for (uint i = 0; i < want; i++)
+            {
+                byte b = 0;
+                ulong src = off + i;
+                if (src < (ulong)_image.Length)
+                    b = _image[(int)src];
+                Write8(bus, dest + i, b);
+            }
+            if (_logged.Add("read:" + start))
+                System.Console.WriteLine($"[HardDisk] DISK_READ lba={start} n={num}");
+            return 0;
+        }
+
         private static bool IsIoctlCode(uint c)
         {
             return c == 1 || c == 2 || c == 3
@@ -374,12 +465,18 @@ namespace ProcessorEmulator.Core
                     && buf != 0)
                 {
                     uint sectors = (uint)((_image.Length + (int)SectorSize - 1) / (int)SectorSize);
+                    uint spt = 63;
+                    uint heads = 255;
+                    uint cyl = sectors / (spt * heads);
+                    if (cyl == 0)
+                        cyl = 1;
                     bus.Write32(buf + 0, sectors);
                     bus.Write32(buf + 4, SectorSize);
-                    bus.Write32(buf + 8, 0);
-                    bus.Write32(buf + 12, 0);
-                    bus.Write32(buf + 16, 0);
-                    bus.Write32(buf + 20, 0);
+                    bus.Write32(buf + 8, cyl);
+                    bus.Write32(buf + 12, heads);
+                    bus.Write32(buf + 16, spt);
+                    // DISK_INFO_FLAG_MBR. Image has a real MBR + FAT16 LBA.
+                    bus.Write32(buf + 20, 1);
                     return 0;
                 }
                 if (code == BinBlkMedia.IoctlDiskGetName && buf != 0 && size >= 20)
