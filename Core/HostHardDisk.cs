@@ -397,6 +397,18 @@ namespace ProcessorEmulator.Core
             text = "";
             dword = 0;
             isDword = false;
+            // FSDMGR queries the filter child default (lpValueName
+            // NULL / "") for the DLL. Named Dll stays valid too.
+            // Do not serve "" on FATFS — that miss is honest.
+            if (hKey == HkSigCheck)
+            {
+                if (string.IsNullOrEmpty(name) || EqualsIgnore(name, "Dll"))
+                {
+                    text = FilterDll;
+                    return true;
+                }
+                return false;
+            }
             if (string.IsNullOrEmpty(name))
                 return false;
             if (hKey == HkFatfs || hKey == HkProfileFatfs)
@@ -404,15 +416,6 @@ namespace ProcessorEmulator.Core
                 if (EqualsIgnore(name, "Dll"))
                 {
                     text = "fatfsd.dll";
-                    return true;
-                }
-                return false;
-            }
-            if (hKey == HkSigCheck)
-            {
-                if (EqualsIgnore(name, "Dll"))
-                {
-                    text = FilterDll;
                     return true;
                 }
                 return false;
