@@ -152,6 +152,16 @@ namespace ProcessorEmulator.Emulation
                 if (programCounter == CeRomTocFiles.ProcessAttachGate)
                     CeRomTocFiles.TryEnableFilterProcessAttach(_bus, registers);
 
+                if (programCounter == CeRomTocFiles.Win32CreateFile)
+                {
+                    if (CeRomTocFiles.TryMissMissingDevice(_bus, registers[4], registers, ref programCounter))
+                    {
+                        _cp0.UpdateTimer(1);
+                        _bus.Tick(1);
+                        continue;
+                    }
+                }
+
                 if (programCounter == CeRomTocFiles.HeapCreateStore)
                     registers[2] = CeRomTocFiles.KeepProcessHeapIfCreateFailed(_bus, registers[2], registers[3]);
 

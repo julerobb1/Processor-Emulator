@@ -32,7 +32,17 @@ namespace ProcessorEmulator.Core
         // LoadLibrary never returns to FSDMGR 0x03E8604C.
         // Only the filter startip takes the firmware CallDLL
         // path; CEDDK/HAL already get a1=1 from that walk.
+        //
+        // HAL DllMain then CreateFileW(L"BTV1:"). Win32
+        // 0x8003D700 calls filesys 0x00019CB8 on the same
+        // stack (sp 0x040CE438). That prologue needs 1784
+        // bytes and stores into 0x040CD000; the thread dies
+        // at 0x80000180. No BTV1 device is in this image.
+        // INVALID_HANDLE is the honest miss. Both HAL
+        // CreateFile paths return 1, so LoadLibrary can
+        // still reach FSDMGR 0x03E8604C.
         public const uint ProcessAttachGate = 0x8001F12C;
+        public const uint Win32CreateFile = 0x8003D700;
         public const uint FilterStartip = 0x03DF4BDC;
         public const uint CallDllFlag = 0x8000;
         public const uint ModuleStartip = 0x5C;
@@ -112,6 +122,35 @@ namespace ProcessorEmulator.Core
             }
 
             return false;
+        }
+
+        public static bool TryMissMissingDevice(MipsBus bus, uint path, uint[] regs, ref uint programCounter)
+        {
+            if (bus == null || regs == null || regs.Length <= 31 || path == 0)
+                return false;
+            try
+            {
+                string name = Basename(bus, path);
+                if (string.IsNullOrEmpty(name))
+                    return false;
+                int n = name.Length;
+                if (n > 0 && name[n - 1] == ':')
+                    n--;
+                if (n != 4)
+                    return false;
+                if ((name[0] != 'B' && name[0] != 'b')
+                    || (name[1] != 'T' && name[1] != 't')
+                    || (name[2] != 'V' && name[2] != 'v')
+                    || name[3] != '1')
+                    return false;
+                regs[2] = 0xFFFFFFFFu;
+                programCounter = regs[31];
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         public static void TryEnableFilterProcessAttach(MipsBus bus, uint[] regs)
