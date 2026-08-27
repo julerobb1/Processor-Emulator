@@ -14,7 +14,10 @@ namespace ProcessorEmulator.Core
     // BLOCK_DRIVER queue. Deliver HDProf there (7-char CE name).
     // GETNAME is HDProfile so Profiles\HDProfile / Folder Hard Disk
     // apply. mspart calls FSDMGR at FsdmgrIoImpl, not the binfs IAT.
-    // No SetEvent of store/BootPhase/Autoload/pump.
+    // After BINFS replaces the hive, HDProfile/FATFS open as
+    // ERROR_BADKEY and Dll stays empty (\Windows\.dll). Serve the
+    // ROM Folder=Hard Disk / Dll=fatfsd.dll / 0E=FATFS values.
+    // No fake MountDisk. No SetEvent of store/BootPhase/pump.
     public static class HostHardDisk
     {
         public const string EnvName = "UVERSE_HARD_DISK";
@@ -33,6 +36,16 @@ namespace ProcessorEmulator.Core
         // internals, not DiskIoctl 0x03E8BAE0.
         public const uint FsdmgrGetDiskInfo = 0x03E8332C;
         public const uint FsdmgrStoreIoctl2 = 0x03E8B618;
+        // Kernel / filesys RegOpenKeyEx and RegQueryValueEx.
+        // FSDMGR uses these after the FAT boot read.
+        public const uint KernelRegOpen = 0x8003D200;
+        public const uint KernelRegQuery = 0x8003D2E0;
+        public const uint FilesysRegOpen = 0x0001FEB0;
+        public const uint HkFatfs = 0xFA7F5001;
+        public const uint HkProfile = 0xFA7F5002;
+        public const uint HkProfileFatfs = 0xFA7F5003;
+        public const uint HkPartTable = 0xFA7F5004;
+        public const uint HkProfilePart = 0xFA7F5005;
         public const uint IoctlDiskGetInfo = 0x00071C00;
         public const uint IoctlDiskReadEx = 0x00075C08;
         public const uint IoctlDiskGetStorageId = 0x00071C24;
@@ -121,6 +134,196 @@ namespace ProcessorEmulator.Core
                 return TryStoreIoctl2(registers, bus, ref programCounter);
             if (pc == FsdmgrGetDiskInfo)
                 return TryGetDiskInfo(registers, bus, ref programCounter);
+            if (pc == KernelRegOpen || pc == FilesysRegOpen)
+                return TryRegOpen(registers, bus, ref programCounter);
+            if (pc == KernelRegQuery)
+                return TryRegQuery(registers, bus, ref programCounter);
+            return false;
+        }
+
+        // BINFS hive replace drops the ROM StorageManager keys.
+        // Only after HDProf is open; early HDProfile still comes
+        // from the boot hive (PartitionDriver=mspart.dll).
+        private static bool TryRegOpen(uint[] registers, MipsBus bus, ref uint programCounter)
+        {
+            if (!_opened)
+                return false;
+            uint hk = KeyForPath(ReadUtf16(bus, registers[5]));
+            if (hk == 0)
+                return false;
+            uint phk = 0;
+            try { phk = bus.Read32(registers[29] + 16); }
+            catch { }
+            if (phk != 0)
+            {
+                try { bus.Write32(phk, hk); }
+                catch { return false; }
+            }
+            registers[2] = 0;
+            programCounter = registers[31];
+            string path = ReadUtf16(bus, registers[5]);
+            if (_logged.Add("ro:" + path))
+                System.Console.WriteLine($"[HardDisk] RegOpen \"{path}\" hk=0x{hk:X8}");
+            return true;
+        }
+
+        private static bool TryRegQuery(uint[] registers, MipsBus bus, ref uint programCounter)
+        {
+            uint hKey = registers[4];
+            if (!IsStoreKey(hKey))
+                return false;
+            string name = ReadUtf16(bus, registers[5]);
+            string text;
+            uint dword;
+            bool isDword;
+            if (!LookupValue(hKey, name, out text, out dword, out isDword))
+            {
+                registers[2] = 2;
+                programCounter = registers[31];
+                if (_logged.Add("rqmiss:" + hKey.ToString("X") + ":" + name))
+                    System.Console.WriteLine($"[HardDisk] RegQuery \"{name}\" hk=0x{hKey:X8} miss");
+                return true;
+            }
+            uint type = isDword ? 4u : 1u;
+            uint bytes = isDword ? 4u : (uint)((text.Length + 1) * 2);
+            uint lpType = registers[7];
+            uint lpData = 0, lpcb = 0;
+            try { lpData = bus.Read32(registers[29] + 16); }
+            catch { }
+            try { lpcb = bus.Read32(registers[29] + 20); }
+            catch { }
+            if (!LooksLikePtr(lpData) && LooksLikePtr(registers[6]))
+            {
+                lpType = registers[6];
+                lpData = registers[7];
+                try { lpcb = bus.Read32(registers[29] + 16); }
+                catch { }
+            }
+            if (LooksLikePtr(lpType))
+            {
+                try { bus.Write32(lpType, type); }
+                catch { }
+            }
+            uint cb = 0;
+            if (LooksLikePtr(lpcb))
+            {
+                try { cb = bus.Read32(lpcb); }
+                catch { }
+            }
+            if (!LooksLikePtr(lpData))
+            {
+                if (LooksLikePtr(lpcb))
+                {
+                    try { bus.Write32(lpcb, bytes); }
+                    catch { }
+                }
+                registers[2] = 0;
+                programCounter = registers[31];
+                return true;
+            }
+            if (cb != 0 && cb < bytes)
+            {
+                if (LooksLikePtr(lpcb))
+                {
+                    try { bus.Write32(lpcb, bytes); }
+                    catch { }
+                }
+                registers[2] = 234;
+                programCounter = registers[31];
+                return true;
+            }
+            try
+            {
+                if (isDword)
+                    bus.Write32(lpData, dword);
+                else
+                    WriteUtf16(bus, lpData, text);
+                if (LooksLikePtr(lpcb))
+                    bus.Write32(lpcb, bytes);
+            }
+            catch
+            {
+                return false;
+            }
+            registers[2] = 0;
+            programCounter = registers[31];
+            if (_logged.Add("rq:" + name + "=" + (isDword ? dword.ToString() : text)))
+                System.Console.WriteLine($"[HardDisk] RegQuery \"{name}\"={(isDword ? dword.ToString() : text)}");
+            return true;
+        }
+
+        private static uint KeyForPath(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+                return 0;
+            string n = path.Replace('/', '\\');
+            if (n.Length >= 1 && n[0] == '\\')
+                n = n.TrimStart('\\');
+            if (EqualsIgnore(n, "System\\StorageManager\\FATFS"))
+                return HkFatfs;
+            if (EqualsIgnore(n, "System\\StorageManager\\Profiles\\HDProfile"))
+                return HkProfile;
+            if (EqualsIgnore(n, "System\\StorageManager\\Profiles\\HDProfile\\FATFS"))
+                return HkProfileFatfs;
+            if (EqualsIgnore(n, "System\\StorageManager\\PartitionTable"))
+                return HkPartTable;
+            if (EqualsIgnore(n, "System\\StorageManager\\Profiles\\HDProfile\\PartitionTable"))
+                return HkProfilePart;
+            return 0;
+        }
+
+        private static bool IsStoreKey(uint h)
+        {
+            return h == HkFatfs || h == HkProfile || h == HkProfileFatfs
+                || h == HkPartTable || h == HkProfilePart;
+        }
+
+        private static bool LookupValue(uint hKey, string name, out string text, out uint dword, out bool isDword)
+        {
+            text = "";
+            dword = 0;
+            isDword = false;
+            if (string.IsNullOrEmpty(name))
+                return false;
+            if (hKey == HkFatfs || hKey == HkProfileFatfs)
+            {
+                if (EqualsIgnore(name, "Dll"))
+                {
+                    text = "fatfsd.dll";
+                    return true;
+                }
+                return false;
+            }
+            if (hKey == HkProfile)
+            {
+                if (EqualsIgnore(name, "Folder") || EqualsIgnore(name, "Name"))
+                {
+                    text = FolderName;
+                    return true;
+                }
+                if (EqualsIgnore(name, "DefaultFileSystem"))
+                {
+                    text = "FATFS";
+                    return true;
+                }
+                if (EqualsIgnore(name, "PartitionDriver"))
+                {
+                    text = "mspart.dll";
+                    return true;
+                }
+                return false;
+            }
+            if (hKey == HkPartTable || hKey == HkProfilePart)
+            {
+                if (EqualsIgnore(name, "04") || EqualsIgnore(name, "06")
+                    || EqualsIgnore(name, "0B") || EqualsIgnore(name, "0C")
+                    || EqualsIgnore(name, "0E"))
+                {
+                    text = "FATFS";
+                    return true;
+                }
+                return false;
+            }
             return false;
         }
 
