@@ -9,8 +9,9 @@ namespace ProcessorEmulator.Core
     // failed that handle (ERROR_BAD_EXE_FORMAT). 0x80016AFC already
     // attaches a TOC module as object+0=TOCentry, object+4=7 so
     // 0x800196E4 uses e32 at TOC+0x14. DEVMGR, TOC[31]
-    // iptvcryptohal.dll, and TOC[20] ceddk.dll (packed at
-    // 0x8024B000) get that attach. Image bytes stay in RAM.
+    // iptvcryptohal.dll, TOC[20] ceddk.dll (packed at
+    // 0x8024B000), and TOC[26] sigcheckfilter.dll (0x4600 at
+    // 0x8027C000) get that attach. Image bytes stay in RAM.
     public static class CeRomTocFiles
     {
         public const uint CreateFileFail = 0x8001D400;
@@ -45,11 +46,14 @@ namespace ProcessorEmulator.Core
                 return false;
             // LoadLibraryExW and CreateProcess already map TOC modules when
             // this helper returns 2. DEVMGR CreateFile treats that miss as
-            // fatal. sigcheckfilter's CreateFile of IPTVCryptoHAL.dll is
-            // the same: TOC[31] is already in this image (not FILESentry).
+            // fatal. Filter LoadLibrary of sigcheckfilter.dll is the same
+            // miss: without this attach the entry ran a1=3 (not
+            // PROCESS_ATTACH) and FSDMGR never HookVolume. TOC[26] is
+            // already in this image (not FILESentry).
             if (!NamesEqual(baseName, "devmgr.dll")
                 && !NamesEqual(baseName, "iptvcryptohal.dll")
-                && !NamesEqual(baseName, "ceddk.dll"))
+                && !NamesEqual(baseName, "ceddk.dll")
+                && !NamesEqual(baseName, "sigcheckfilter.dll"))
                 return false;
 
             uint toc;
