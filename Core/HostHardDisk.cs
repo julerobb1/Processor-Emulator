@@ -18,6 +18,7 @@ namespace ProcessorEmulator.Core
     // ERROR_BADKEY and Dll stays empty (\Windows\.dll). Serve the
     // ROM Folder=Hard Disk / Dll=fatfsd.dll values after the first
     // FAT DISK_READ. Mount GETNAME (0x71800) size 0 writes Hard Disk.
+    // Filters enum names ROM sigcheckfilter.dll for HookVolume.
     // No fake MountDisk. No SetEvent of store/BootPhase/pump.
     public static class HostHardDisk
     {
@@ -46,11 +47,16 @@ namespace ProcessorEmulator.Core
         // Dll here, not through the kernel export.
         public const uint FilesysRegQuery = 0x000200D8;
         public const uint FilesysRegQuery2 = 0x000204E0;
+        public const uint FilesysRegEnum = 0x00020CC4;
         public const uint HkFatfs = 0xFA7F5001;
         public const uint HkProfile = 0xFA7F5002;
         public const uint HkProfileFatfs = 0xFA7F5003;
         public const uint HkPartTable = 0xFA7F5004;
         public const uint HkProfilePart = 0xFA7F5005;
+        public const uint HkFilters = 0xFA7F5006;
+        public const uint HkSigCheck = 0xFA7F5007;
+        public const string FilterDll = "sigcheckfilter.dll";
+        public const string FilterName = "sigcheckfilter";
         public const uint IoctlDiskGetInfo = 0x00071C00;
         public const uint IoctlDiskReadEx = 0x00075C08;
         public const uint IoctlDiskGetStorageId = 0x00071C24;
@@ -147,6 +153,8 @@ namespace ProcessorEmulator.Core
                 return TryRegOpen(registers, bus, ref programCounter);
             if (pc == KernelRegQuery || pc == FilesysRegQuery || pc == FilesysRegQuery2)
                 return TryRegQuery(registers, bus, ref programCounter);
+            if (pc == FilesysRegEnum)
+                return TryRegEnum(registers, bus, ref programCounter);
             return false;
         }
 
@@ -158,7 +166,10 @@ namespace ProcessorEmulator.Core
         {
             if (!_opened || !_fatSeen)
                 return false;
-            uint hk = KeyForPath(ReadUtf16(bus, registers[5]));
+            string path = ReadUtf16(bus, registers[5]);
+            uint hk = KeyForPath(path);
+            if (hk == 0)
+                hk = ChildKey(registers[4], path);
             if (hk == 0)
                 return false;
             uint phk = 0;
@@ -171,9 +182,59 @@ namespace ProcessorEmulator.Core
             }
             registers[2] = 0;
             programCounter = registers[31];
-            string path = ReadUtf16(bus, registers[5]);
             if (_logged.Add("ro:" + path))
                 System.Console.WriteLine($"[HardDisk] RegOpen \"{path}\" hk=0x{hk:X8} phk=0x{phk:X8} ra=0x{registers[31]:X8}");
+            return true;
+        }
+
+        private static bool TryRegEnum(uint[] registers, MipsBus bus, ref uint programCounter)
+        {
+            uint hKey = registers[4];
+            if (hKey != HkFilters)
+                return false;
+            uint index = registers[5];
+            if (index != 0)
+            {
+                registers[2] = 259;
+                programCounter = registers[31];
+                if (_logged.Add("re:end"))
+                    System.Console.WriteLine("[HardDisk] RegEnum Filters done");
+                return true;
+            }
+            uint nameBuf = registers[6];
+            uint cchPtr = registers[7];
+            if (!LooksLikePtr(nameBuf))
+                return false;
+            string filt = FilterName;
+            uint need = (uint)(filt.Length + 1);
+            uint cch = 0;
+            if (LooksLikePtr(cchPtr))
+            {
+                try { cch = bus.Read32(cchPtr); }
+                catch { }
+            }
+            if (cch != 0 && cch < need)
+            {
+                try { bus.Write32(cchPtr, need); }
+                catch { }
+                registers[2] = 234;
+                programCounter = registers[31];
+                return true;
+            }
+            try
+            {
+                WriteUtf16(bus, nameBuf, filt);
+                if (LooksLikePtr(cchPtr))
+                    bus.Write32(cchPtr, (uint)filt.Length);
+            }
+            catch
+            {
+                return false;
+            }
+            registers[2] = 0;
+            programCounter = registers[31];
+            if (_logged.Add("re:" + filt))
+                System.Console.WriteLine("[HardDisk] RegEnum Filters \"" + filt + "\"");
             return true;
         }
 
@@ -281,13 +342,52 @@ namespace ProcessorEmulator.Core
             // this gate so mspart comes from the boot hive.
             if (EqualsIgnore(n, "System\\StorageManager\\Profiles\\HDProfile"))
                 return HkProfile;
+            if (EqualsIgnore(n, "System\\StorageManager\\FATFS\\Filters")
+                || EqualsIgnore(n, "System\\StorageManager\\Profiles\\HDProfile\\FATFS\\Filters")
+                || EqualsIgnore(n, "System\\StorageManager\\Filters"))
+                return HkFilters;
+            if (IsFilterChild(n, "System\\StorageManager\\FATFS\\Filters")
+                || IsFilterChild(n, "System\\StorageManager\\Profiles\\HDProfile\\FATFS\\Filters")
+                || IsFilterChild(n, "System\\StorageManager\\Filters"))
+                return HkSigCheck;
             return 0;
+        }
+
+        private static uint ChildKey(uint parent, string sub)
+        {
+            if (string.IsNullOrEmpty(sub))
+                return 0;
+            string n = sub.Replace('/', '\\').TrimStart('\\');
+            if (parent == HkFilters && IsSigCheckName(n))
+                return HkSigCheck;
+            if (parent == HkFatfs && EqualsIgnore(n, "Filters"))
+                return HkFilters;
+            if ((parent == HkFatfs || parent == HkProfile)
+                && (EqualsIgnore(n, "FATFS\\Filters") || EqualsIgnore(n, "Filters")))
+                return HkFilters;
+            return 0;
+        }
+
+        private static bool IsFilterChild(string path, string parent)
+        {
+            if (!StartsWithIgnore(path, parent + "\\"))
+                return false;
+            return IsSigCheckName(path.Substring(parent.Length + 1));
+        }
+
+        private static bool IsSigCheckName(string n)
+        {
+            return EqualsIgnore(n, FilterName)
+                || EqualsIgnore(n, "SigCheckFilter")
+                || EqualsIgnore(n, "SigCheck")
+                || EqualsIgnore(n, "SIGCHECK");
         }
 
         private static bool IsStoreKey(uint h)
         {
             return h == HkFatfs || h == HkProfile || h == HkProfileFatfs
-                || h == HkPartTable || h == HkProfilePart;
+                || h == HkPartTable || h == HkProfilePart
+                || h == HkFilters || h == HkSigCheck;
         }
 
         private static bool LookupValue(uint hKey, string name, out string text, out uint dword, out bool isDword)
@@ -302,6 +402,24 @@ namespace ProcessorEmulator.Core
                 if (EqualsIgnore(name, "Dll"))
                 {
                     text = "fatfsd.dll";
+                    return true;
+                }
+                return false;
+            }
+            if (hKey == HkSigCheck)
+            {
+                if (EqualsIgnore(name, "Dll"))
+                {
+                    text = FilterDll;
+                    return true;
+                }
+                return false;
+            }
+            if (hKey == HkFilters)
+            {
+                if (IsSigCheckName(name) || EqualsIgnore(name, "Dll"))
+                {
+                    text = FilterDll;
                     return true;
                 }
                 return false;
