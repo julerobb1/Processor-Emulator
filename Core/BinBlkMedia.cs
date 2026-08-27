@@ -12,6 +12,7 @@ namespace ProcessorEmulator.Core
     {
         public const uint WfmoJalr = 0x03E88DF8;
         public const uint WfmoRet = 0x03E88E00;
+        public const uint ReadMsgJal = 0x03E88FAC;
         public const uint ReadMsgRet = 0x03E88FB4;
         public const uint CreateFile1 = 0x03E8BCF0;
         public const uint CreateFile2 = 0x03E8BD44;
@@ -54,11 +55,8 @@ namespace ProcessorEmulator.Core
             uint pc = programCounter;
             if (pc == WfmoJalr)
                 return TrySatisfyWfmo(registers, ref programCounter);
-            if (pc == ReadMsgRet)
-            {
-                TryFillDevDetail(registers, bus);
-                return false;
-            }
+            if (pc == ReadMsgJal)
+                return TryFillDevDetail(registers, bus, ref programCounter);
             if (pc == CreateFile1 || pc == CreateFile2)
                 return TryCreateFile(registers, bus, pc, ref programCounter);
             if (pc == DiskIoctl)
@@ -78,15 +76,18 @@ namespace ProcessorEmulator.Core
             return true;
         }
 
-        private static void TryFillDevDetail(uint[] registers, MipsBus bus)
+        private static bool TryFillDevDetail(uint[] registers, MipsBus bus, ref uint programCounter)
         {
-            if (_detailFilled || registers[2] != 0)
-                return;
+            if (_detailFilled || !_notified)
+                return false;
             uint buf = registers[18];
             if (buf == 0)
-                return;
+                buf = registers[5];
+            if (buf == 0)
+                return false;
             try
             {
+                bus.Write32(registers[29] + 16, registers[2]);
                 for (uint i = 0; i < 232; i += 4)
                     bus.Write32(buf + i, 0);
                 bus.Write32(buf + 0, BlockDriverGuid[0]);
@@ -100,11 +101,13 @@ namespace ProcessorEmulator.Core
             }
             catch
             {
-                return;
+                return false;
             }
             registers[2] = 1;
+            programCounter = ReadMsgRet;
             _detailFilled = true;
             System.Console.WriteLine("[BINBlk] DEVDETAIL");
+            return true;
         }
 
         private static bool TryCreateFile(uint[] registers, MipsBus bus, uint pc, ref uint programCounter)
