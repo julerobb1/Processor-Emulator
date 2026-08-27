@@ -146,6 +146,9 @@ namespace ProcessorEmulator.Emulation
                     }
                 }
 
+                if (programCounter == CeRomTocFiles.CallDllStartip)
+                    CeRomTocFiles.TryFillTocStartip(_bus, registers[23]);
+
                 if (programCounter == CeRomTocFiles.HeapCreateStore)
                     registers[2] = CeRomTocFiles.KeepProcessHeapIfCreateFailed(_bus, registers[2], registers[3]);
 

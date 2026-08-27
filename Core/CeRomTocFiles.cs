@@ -18,6 +18,14 @@ namespace ProcessorEmulator.Core
         public const uint NameCopyContinue = 0x8001D464;
         public const uint BindImpMiss = 0x80018F9C;
         public const uint BindImpWalk = 0x80018F3C;
+        // 0x80018B34 CallDLLEntry jalrs module+0x5C with no
+        // null check. TOC-attach writes object+0/4 so 0x800196E4
+        // can read e32, but 0x8001E960 skips the startip store
+        // when 32($sp) entryrva is still 0. jalr 0 never returns
+        // to FSDMGR 0x03E8604C. Fill vbase+entryrva from TOC e32.
+        public const uint CallDllStartip = 0x80018BAC;
+        public const uint ModuleStartip = 0x5C;
+        public const uint ModuleFileObj = 96;
         public const uint CurProc = 0xFFFFDAC4;
         public const uint EcecTocPtr = 0x80010044;
         public const uint RomHdrNumMods = 0x10;
@@ -93,6 +101,34 @@ namespace ProcessorEmulator.Core
             }
 
             return false;
+        }
+
+        public static void TryFillTocStartip(MipsBus bus, uint module)
+        {
+            if (bus == null || module == 0)
+                return;
+            try
+            {
+                if (bus.Read32(module + ModuleStartip) != 0)
+                    return;
+                uint obj = module + ModuleFileObj;
+                if (bus.Read8(obj + 4) != TocAttachType)
+                    return;
+                uint tocEntry = bus.Read32(obj);
+                if (tocEntry == 0)
+                    return;
+                uint e32 = bus.Read32(tocEntry + 0x14);
+                if (e32 == 0)
+                    return;
+                uint entryrva = bus.Read32(e32 + 4);
+                uint vbase = bus.Read32(e32 + 8);
+                if (entryrva == 0 || vbase < 0x03D00000u || vbase >= 0x04000000u)
+                    return;
+                bus.Write32(module + ModuleStartip, vbase + entryrva);
+            }
+            catch
+            {
+            }
         }
 
         // 0x80018F9C walks o32_lite at 180($fp). device.exe PROCESS stores
