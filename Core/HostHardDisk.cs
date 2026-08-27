@@ -16,7 +16,8 @@ namespace ProcessorEmulator.Core
     // apply. mspart calls FSDMGR at FsdmgrIoImpl, not the binfs IAT.
     // After BINFS replaces the hive, HDProfile/FATFS open as
     // ERROR_BADKEY and Dll stays empty (\Windows\.dll). Serve the
-    // ROM Folder=Hard Disk / Dll=fatfsd.dll / 0E=FATFS values.
+    // ROM Folder=Hard Disk / Dll=fatfsd.dll values after the first
+    // FAT DISK_READ. Mount GETNAME (0x71800) size 0 writes Hard Disk.
     // No fake MountDisk. No SetEvent of store/BootPhase/pump.
     public static class HostHardDisk
     {
@@ -272,11 +273,14 @@ namespace ProcessorEmulator.Core
             string n = path.Replace('/', '\\');
             if (n.Length >= 1 && n[0] == '\\')
                 n = n.TrimStart('\\');
-            // Only the last FSDMGR fallback. Serving HDProfile or
-            // PartitionTable without a live query handle stops the
-            // walk that already knows the volume is FATFS.
             if (EqualsIgnore(n, "System\\StorageManager\\FATFS"))
                 return HkFatfs;
+            // After the first FAT DISK_READ only (_fatSeen).
+            // Folder=Hard Disk is what FSDMGR / sigcheckfilter HookVolume
+            // use as the mount name. Attach-time HDProfile still misses
+            // this gate so mspart comes from the boot hive.
+            if (EqualsIgnore(n, "System\\StorageManager\\Profiles\\HDProfile"))
+                return HkProfile;
             return 0;
         }
 
@@ -486,7 +490,7 @@ namespace ProcessorEmulator.Core
             // on 0. This entry is BOOL (1=ok), not a Win32 error code.
             registers[2] = err == 0 ? 1u : 0u;
             programCounter = registers[31];
-            System.Console.WriteLine($"[HardDisk] IOCTL2 0x{code:X} err={err} v0={registers[2]} buf=0x{buf:X8}");
+            System.Console.WriteLine($"[HardDisk] IOCTL2 0x{code:X} err={err} v0={registers[2]} buf=0x{buf:X8} size={size}");
             return true;
         }
 
@@ -601,10 +605,29 @@ namespace ProcessorEmulator.Core
                     bus.Write32(buf + 20, 1);
                     return 0;
                 }
-                if (code == BinBlkMedia.IoctlDiskGetName && buf != 0 && size >= 20)
+                if (code == BinBlkMedia.IoctlDiskGetName && buf != 0)
                 {
-                    bus.Write32(buf, 0);
-                    WriteUtf16(bus, buf + 4, ProfileName);
+                    uint outLen = size;
+                    if (outLen == 0)
+                    {
+                        try { outLen = bus.Read32(sp + 16); } catch { }
+                        if (outLen == 0 || outLen > 0x10000)
+                        {
+                            try { outLen = bus.Read32(sp + 20); } catch { }
+                        }
+                        if (outLen > 0x10000)
+                            outLen = 0;
+                    }
+                    // Attach: DWORD 0 + HDProfile at +4, size>=20.
+                    // Mount IOCTL2: size 0 and WCHAR buf 0x040CEC60.
+                    // After the FAT read, write Hard Disk at +0.
+                    if (!_fatSeen && outLen >= 20)
+                    {
+                        bus.Write32(buf, 0);
+                        WriteUtf16(bus, buf + 4, ProfileName);
+                        return 0;
+                    }
+                    WriteUtf16(bus, buf, FolderName);
                     return 0;
                 }
                 if (code == IoctlDiskGetStorageId)
