@@ -29,7 +29,12 @@ namespace ProcessorEmulator.Core
         public const uint KernelCreateFile = 0x8001D3A0;
         // mspart PD_OpenStore calls this FSDMGR export, not binfs IAT 0x03EA4140.
         public const uint FsdmgrIoImpl = 0x03E83C08;
+        // mspart GetDiskInfo / OpenStore uses these FSDMGR
+        // internals, not DiskIoctl 0x03E8BAE0.
+        public const uint FsdmgrGetDiskInfo = 0x03E8332C;
+        public const uint FsdmgrStoreIoctl2 = 0x03E8B618;
         public const uint IoctlDiskGetInfo = 0x00071C00;
+        public const uint IoctlDiskReadEx = 0x00075C08;
         public const uint IoctlDiskGetStorageId = 0x00071C24;
         public const uint SectorSize = 512;
 
@@ -112,6 +117,10 @@ namespace ProcessorEmulator.Core
                 return TryFsdmgrDiskIoctl(registers, bus, ref programCounter);
             if (pc == FsdmgrIoImpl)
                 return TryFsdmgrIoImpl(registers, bus, ref programCounter);
+            if (pc == FsdmgrStoreIoctl2)
+                return TryStoreIoctl2(registers, bus, ref programCounter);
+            if (pc == FsdmgrGetDiskInfo)
+                return TryGetDiskInfo(registers, bus, ref programCounter);
             return false;
         }
 
@@ -231,6 +240,84 @@ namespace ProcessorEmulator.Core
             return true;
         }
 
+        private static bool TryStoreIoctl2(uint[] registers, MipsBus bus, ref uint programCounter)
+        {
+            uint store = registers[4];
+            if (!_opened || store == 0)
+                return false;
+            bool ours = store == Handle || NameIsOurs(bus, store) || NameIsOurs(bus, store + 16);
+            uint a1 = registers[5];
+            uint a2 = registers[6];
+            uint a3 = registers[7];
+            if (!ours)
+            {
+                if (_logged.Add("i2:" + store.ToString("X")))
+                    System.Console.WriteLine($"[HardDisk] StoreIoctl2 miss a0=0x{store:X8} a1=0x{a1:X} a2=0x{a2:X} a3=0x{a3:X}");
+                return false;
+            }
+            uint code = a2;
+            uint buf = a3;
+            if (!IsIoctlCode(code) && IsIoctlCode(a1))
+            {
+                code = a1;
+                buf = a2;
+            }
+            uint size = 0;
+            try { size = bus.Read32(registers[29] + 16); }
+            catch { }
+            if (size == 0)
+            {
+                try { size = bus.Read32(registers[29] + 20); }
+                catch { }
+            }
+            uint err = ServeIoctl(bus, code, buf, size, registers[29]);
+            registers[2] = err;
+            programCounter = registers[31];
+            System.Console.WriteLine($"[HardDisk] IOCTL2 0x{code:X} err={err} buf=0x{buf:X8}");
+            return true;
+        }
+
+        private static bool TryGetDiskInfo(uint[] registers, MipsBus bus, ref uint programCounter)
+        {
+            if (!_opened)
+                return false;
+            uint a0 = registers[4];
+            uint a1 = registers[5];
+            uint info = 0;
+            if (OwnsHdsk(bus, a0) && LooksLikePtr(a1))
+                info = a1;
+            else if (OwnsHdsk(bus, a1) && LooksLikePtr(a0))
+                info = a0;
+            else if ((NameIsOurs(bus, a0) || NameIsOurs(bus, a0 + 16)) && LooksLikePtr(a1))
+                info = a1;
+            if (info == 0)
+            {
+                if (_logged.Add("gdi"))
+                    System.Console.WriteLine($"[HardDisk] GetDiskInfo miss a0=0x{a0:X8} a1=0x{a1:X8}");
+                return false;
+            }
+            uint err = ServeIoctl(bus, BinBlkMedia.DiskIoctlGetInfo, info, 24, registers[29]);
+            registers[2] = err == 0 ? 1u : 0u;
+            programCounter = registers[31];
+            System.Console.WriteLine($"[HardDisk] GetDiskInfo err={err} info=0x{info:X8}");
+            return true;
+        }
+
+        private static bool IsIoctlCode(uint c)
+        {
+            return c == 1 || c == 2 || c == 3
+                || c == BinBlkMedia.IoctlDiskGetName
+                || c == IoctlDiskGetInfo
+                || c == IoctlDiskGetStorageId
+                || c == IoctlDiskReadEx
+                || (c >= 0x71000 && c < 0x80000);
+        }
+
+        private static bool LooksLikePtr(uint p)
+        {
+            return p > 0x1000 && p < 0x80000000 && (p < 0x71000 || p >= 0x80000);
+        }
+
         private static bool TryFsdmgrIoImpl(uint[] registers, MipsBus bus, ref uint programCounter)
         {
             if (!_opened)
@@ -332,7 +419,7 @@ namespace ProcessorEmulator.Core
                     bus.Write32(outBuf + 12, 0);
                     return 0;
                 }
-                if (code == BinBlkMedia.DiskIoctlRead && buf != 0)
+                if ((code == BinBlkMedia.DiskIoctlRead || code == IoctlDiskReadEx) && buf != 0)
                     return TryReadSg(bus, buf);
                 if (code == BinBlkMedia.DiskIoctlWrite)
                     return 19;
