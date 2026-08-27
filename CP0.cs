@@ -215,6 +215,12 @@ namespace ProcessorEmulator.Emulation
             return interruptsEnabled && !inException && (interruptPending & interruptMask) != 0;
         }
 
+        private static bool AsidMatches(TLBEntry entry, uint asid)
+        {
+            bool global = (entry.EntryLo0 & 1) != 0 || (entry.EntryLo1 & 1) != 0;
+            return global || ((entry.EntryHi & 0xFF) == asid);
+        }
+
         public TlbTranslateStatus TryTranslate(uint vaddr, out uint paddr)
         {
             paddr = 0;
@@ -222,10 +228,13 @@ namespace ProcessorEmulator.Emulation
             bool odd = (vaddr & 0x1000) != 0;
             uint pageOffset = vaddr & 0x0FFF;
 
+            uint asid = _entryHi & 0xFF;
             for (int i = 0; i < TLB_ENTRIES; i++)
             {
                 uint tlbVpn2 = (_tlb[i].EntryHi >> 13) & 0x7FFFF;
                 if (tlbVpn2 != vpn2)
+                    continue;
+                if (!AsidMatches(_tlb[i], asid))
                     continue;
 
                 uint lo = odd ? _tlb[i].EntryLo1 : _tlb[i].EntryLo0;
@@ -333,11 +342,7 @@ namespace ProcessorEmulator.Emulation
             {
                 // Extract VPN2 and ASID from stored TLB entry
                 uint tlbVpn2 = (_tlb[i].EntryHi >> 13) & 0x7FFFF;
-                uint tlbAsid = _tlb[i].EntryHi & 0xFF;
-
-                // For simplicity, ignore ASID for now (assume all entries are global or ASID matches)
-                // A real implementation would check the G bit and ASID match
-                if (tlbVpn2 == vpn2) // && (tlbAsid == asid || (_tlb[i].EntryLo0 & 1) != 0 || (_tlb[i].EntryLo1 & 1) != 0)) // Check G bit
+                if (tlbVpn2 == vpn2 && AsidMatches(_tlb[i], asid))
                 {
                     registers[IndexReg] = (uint)i;
                     Console.WriteLine($"CP0 TLBP: Found match at index {i}");
