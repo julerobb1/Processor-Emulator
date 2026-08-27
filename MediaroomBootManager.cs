@@ -98,6 +98,11 @@ namespace ProcessorEmulator
             _mipsBus.AddDevice(new BcmStickyMmio(0x10080000, 0x1000, "MMIO1008"));
             _mipsBus.AddDevice(new BcmStickyMmio(0x10090000, 0x1000, "MMIO1009"));
             _mipsBus.AddDevice(new BcmStickyMmio(0x10480000, 0x1000, "MMIO1048"));
+            // OEMInit 0x800568AC: CreateStaticMapping(0x00F06000, 0x1000)
+            // is CE phys>>8, so PA 0xF0600000. Refill table [0] is
+            // VA 0xC4000000 / EntryLo 0x03C18016. device.exe mailbox
+            // at 0x80056BE4 then sw/lw 0xC4000004/8.
+            _mipsBus.AddDevice(new BcmStickyMmio(0xF0600000, 0x1000, "MMIOF060"));
             _mipsCpu = new MipsCpuEmulator(_mipsBus, _cp0);
             _mipsBus.AddDevice(new MipsUart(UART_BASE_ADDRESS, UART_SIZE));
             
