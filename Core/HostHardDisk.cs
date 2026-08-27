@@ -432,7 +432,8 @@ namespace ProcessorEmulator.Core
             if (colon > 0)
                 n = n.Substring(0, colon);
             return EqualsIgnore(n, DeviceName) || EqualsIgnore(n, ProfileName)
-                || EqualsIgnore(n, FolderName) || EqualsIgnore(n, "HDProfi");
+                || EqualsIgnore(n, FolderName) || EqualsIgnore(n, "HDProfi")
+                || EqualsIgnore(n, DeviceName + "1") || EqualsIgnore(n, DeviceName + "2");
         }
 
         private static bool StartsWithIgnore(string a, string b)
@@ -507,6 +508,21 @@ namespace ProcessorEmulator.Core
             private const int ClusterSize = Bps * Spc;
 
             public static byte[] Build(string root)
+            {
+                byte[] fat = BuildVolume(root);
+                const int pre = 63;
+                var img = new byte[pre * Bps + fat.Length];
+                Buffer.BlockCopy(fat, 0, img, pre * Bps, fat.Length);
+                img[0x1BE] = 0x80;
+                img[0x1C2] = 0x0E;
+                Write32(img, 0x1C6, (uint)pre);
+                Write32(img, 0x1CA, (uint)(fat.Length / Bps));
+                img[510] = 0x55;
+                img[511] = 0xAA;
+                return img;
+            }
+
+            private static byte[] BuildVolume(string root)
             {
                 Node tree = LoadTree(root);
                 int rootSlots = DirSlots(tree, true);
