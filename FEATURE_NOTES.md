@@ -66,8 +66,10 @@ Read `BOOT_STATUS.md`. That file is the evidenced boot map.
 Hard Disk FAT named Hard Disk is already mounted and hooked
 (sigcheckfilter HookVolume returned success). After that, firmware
 does not CreateFile `\\ETC.bin` or any Hard Disk path. `nk.bin`
-never Launchs `tv2clientce`. A host window, black pane, or OEMIdle
-is not the TV UI.
+never Launchs `tv2clientce`. Hive-init Flags=3; RunApps `HKLM\init`
+is `ERROR_BADKEY`. CreateProcess(`device.exe`) maps the TOC image
+then OOM on binfs inherit-list VALLOC (`0x8001B724`). A host
+window, black pane, or OEMIdle is not the TV UI.
 
 Do not implement an X1 / Comcast splash, explorer, or a host
 CreateProcess of the client. Do not invent ExtraROM map or SetEvent
