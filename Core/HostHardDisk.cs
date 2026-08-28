@@ -1434,8 +1434,14 @@ namespace ProcessorEmulator.Core
             {
                 uint slot = pc >> 25;
                 if (slot >= 1 && slot <= 16 && _logged.Add("hive:userslot"))
+                {
+                    uint off = pc & CeSlotMask;
                     System.Console.WriteLine("[Hive] first user-slot pc=0x" + pc.ToString("X8") +
-                        " slot=" + slot);
+                        " slot=" + slot +
+                        (off >= 0x00011000 && off < 0x000BB000
+                            ? " (gwes .text range)"
+                            : " (not gwes .text; coredll shared is 0x03F5xxxx)"));
+                }
             }
             // OEMIdle is hit during CreateProcess; only summarize
             // after RunApps is already stuck on Depend30.
