@@ -23,6 +23,12 @@ namespace ProcessorEmulator.Core
     // StorageManager\\Filters\\sigcheckfilter, then
     // StorageManager\\sigcheckfilter. Serve those
     // children; parent Filters stays ERROR_BADKEY.
+    // HookVolume 0x03DF22D0 jalrs 0x03DF2178, which
+    // FSDMGR_DiskIoControl 0x71C20s the Folder name and
+    // wcscmp against Hard Disk before walking \\ETC.bin.
+    // The filter object at volume+68 is not a PDSK, so
+    // firmware's +188 copy is empty. Same Folder already
+    // served on GETNAME / HDProfile.
     // No fake MountDisk. No SetEvent of store/BootPhase/pump.
     public static class HostHardDisk
     {
@@ -40,6 +46,8 @@ namespace ProcessorEmulator.Core
         public const uint FsdmgrIoImpl = 0x03E83C08;
         // mspart GetDiskInfo / OpenStore uses these FSDMGR
         // internals, not DiskIoctl 0x03E8BAE0.
+        // 0x03E8332C is FSDMGR_DiskIoControl (also the
+        // GetDiskInfo export mspart already hits).
         public const uint FsdmgrGetDiskInfo = 0x03E8332C;
         public const uint FsdmgrStoreIoctl2 = 0x03E8B618;
         // Kernel / filesys RegOpenKeyEx and RegQueryValueEx.
@@ -65,6 +73,7 @@ namespace ProcessorEmulator.Core
         public const string FilterDll = "sigcheckfilter.dll";
         public const string FilterName = "sigcheckfilter";
         public const uint IoctlDiskGetInfo = 0x00071C00;
+        public const uint IoctlDiskGetVolumeName = 0x00071C20;
         public const uint IoctlDiskReadEx = 0x00075C08;
         public const uint IoctlDiskGetStorageId = 0x00071C24;
         public const uint SectorSize = 512;
@@ -634,6 +643,42 @@ namespace ProcessorEmulator.Core
                 return false;
             uint a0 = registers[4];
             uint a1 = registers[5];
+            // HookVolume IsTargetVolume (0x03DF2178) calls
+            // FSDMGR_DiskIoControl(filter, 0x71C20, ...,
+            // name, 520). Firmware 0x03E9242C copies WCHAR
+            // from PDSK+188. a0 is the filter FSD at
+            // volume+68, so that name is empty and the
+            // Hard Disk compare skips \\ETC.bin.
+            if (a1 == IoctlDiskGetVolumeName && _fatSeen)
+            {
+                uint buf = 0;
+                uint size = 0;
+                try { buf = bus.Read32(registers[29] + 16); }
+                catch { }
+                try { size = bus.Read32(registers[29] + 20); }
+                catch { }
+                if (buf == 0 || !LooksLikePtr(buf))
+                    return false;
+                if (size > 0x10000)
+                    size = 0;
+                if (size == 0)
+                    size = 520;
+                WriteUtf16(bus, buf, FolderName);
+                try
+                {
+                    uint pret = bus.Read32(registers[29] + 24);
+                    if (LooksLikePtr(pret))
+                        bus.Write32(pret, (uint)((FolderName.Length + 1) * 2));
+                }
+                catch
+                {
+                }
+                registers[2] = 1;
+                programCounter = registers[31];
+                if (_logged.Add("volname"))
+                    System.Console.WriteLine("[HardDisk] DiskIoControl 0x71C20 \"" + FolderName + "\"");
+                return true;
+            }
             uint info = 0;
             if (OwnsHdsk(bus, a0) && LooksLikePtr(a1))
                 info = a1;
