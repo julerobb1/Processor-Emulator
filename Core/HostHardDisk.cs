@@ -35,6 +35,11 @@ namespace ProcessorEmulator.Core
     // boot.hv. Clear the Flags nibble at 0x0002A7F8 so that
     // same helper runs for \Windows\default.hv. Do not write
     // Launch keys. Do not SetEvent. Do not invent 0x81360000.
+    // RunApps enums Launch20/30/50/53/56/95 then CreateProcess
+    // only after Depend WORDs are ready. Depend56 is 20/30/53.
+    // Log each CreateProcess name/v0/last-error. Do not host
+    // CreateProcess(tv2clientce). ExtraROM FILE tv2clientce.exe
+    // is the 5120-byte stub, not the 90-byte root file.
     //
     // FSDMGR WFMO #2 (after BINBlk) is already waiting on the
     // BLOCK_DRIVER queue. Deliver HDProf there (7-char CE name).
@@ -86,8 +91,13 @@ namespace ProcessorEmulator.Core
         public const uint HiveDefaultOpenRet = 0x0002ACD8;
         public const uint RunAppsInitChk = 0x00017BAC;
         public const uint RunAppsLaunchCmp = 0x00017C58;
+        public const uint RunAppsDependMiss = 0x00017FB0;
+        public const uint RunAppsCprocRet = 0x00018080;
         public const uint FilesysCreateProcess = 0x0004BCA4;
+        public const uint KernelCreateProcess = 0x80034D2C;
         public const uint ErrorBadKey = 0x3F2;
+        public const uint ThreadPtr = 0xFFFFDAC0;
+        public const uint ThreadLastErr = 56;
         // mspart PD_OpenStore calls this FSDMGR export, not binfs IAT 0x03EA4140.
         public const uint FsdmgrIoImpl = 0x03E83C08;
         // mspart GetDiskInfo / OpenStore uses these FSDMGR
@@ -143,6 +153,8 @@ namespace ProcessorEmulator.Core
         private static readonly HashSet<uint> _vallocLogged = new HashSet<uint>();
         private static bool _extractLogged;
         private static bool _hiveFlagsLogged;
+        private static string _cprocName = "";
+        private static uint _cprocRa;
 
         public static bool IsPresent => _image != null && _image.Length > 0;
         public static bool IsOpen => _opened;
@@ -184,6 +196,8 @@ namespace ProcessorEmulator.Core
             _vallocLogged.Clear();
             _extractLogged = false;
             _hiveFlagsLogged = false;
+            _cprocName = "";
+            _cprocRa = 0;
             string dir = ResolveRoot();
             if (string.IsNullOrEmpty(dir))
             {
@@ -280,9 +294,20 @@ namespace ProcessorEmulator.Core
                 LogRunAppsLaunch(registers, bus);
                 return false;
             }
-            if (pc == FilesysCreateProcess)
+            if (pc == RunAppsDependMiss)
+            {
+                LogRunAppsDepend(registers, bus);
+                return false;
+            }
+            if (pc == FilesysCreateProcess
+                || (pc == KernelCreateProcess && _cprocRa == 0))
             {
                 LogHiveCreateProcess(registers, bus);
+                return false;
+            }
+            if (_cprocRa != 0 && (pc == _cprocRa || pc == RunAppsCprocRet))
+            {
+                LogHiveCreateProcessRet(registers, bus);
                 return false;
             }
             if (pc == KernelCreateFile)
@@ -1196,15 +1221,68 @@ namespace ProcessorEmulator.Core
                 System.Console.WriteLine("[Hive] RunApps \"" + name + "\"");
         }
 
+        // RunApps 0x00017FB0: Depend WORD in v0, ready flag at
+        // record+4. Zero means WaitForMultipleObjects INFINITE
+        // (0x000180A4) instead of CreateProcess. Depend56 is
+        // 20/30/53. Do not SetEvent.
+        private static void LogRunAppsDepend(uint[] registers, MipsBus bus)
+        {
+            if (registers == null || registers.Length <= 23 || bus == null)
+                return;
+            if (registers[13] != 0)
+                return;
+            uint need = registers[2];
+            string img = ReadUtf16(bus, registers[23]);
+            if (string.IsNullOrEmpty(img))
+                img = "(null)";
+            if (_logged.Add("hive:dep:" + img + ":" + need.ToString("X")))
+                System.Console.WriteLine("[Hive] Depend wait \"" + img + "\" need=" + need);
+        }
+
         private static void LogHiveCreateProcess(uint[] registers, MipsBus bus)
         {
-            if (registers == null || registers.Length <= 4 || bus == null)
+            if (registers == null || registers.Length <= 31 || bus == null)
                 return;
             string img = ReadUtf16(bus, registers[4]);
             if (string.IsNullOrEmpty(img))
                 return;
+            _cprocName = img;
+            _cprocRa = registers[31];
             if (_logged.Add("hive:cp:" + img))
                 System.Console.WriteLine("[Hive] CreateProcess \"" + img + "\"");
+        }
+
+        private static void LogHiveCreateProcessRet(uint[] registers, MipsBus bus)
+        {
+            if (registers == null || registers.Length <= 2)
+                return;
+            string img = _cprocName;
+            uint v0 = registers[2];
+            uint err = ReadLastError(bus);
+            _cprocName = "";
+            _cprocRa = 0;
+            if (string.IsNullOrEmpty(img))
+                img = "(null)";
+            if (_logged.Add("hive:cpret:" + img))
+                System.Console.WriteLine("[Hive] CreateProcess \"" + img +
+                    "\" v0=0x" + v0.ToString("X8") +
+                    " last-error=" + err);
+        }
+
+        private static uint ReadLastError(MipsBus bus)
+        {
+            if (bus == null)
+                return 0xFFFFFFFF;
+            try
+            {
+                uint thr = bus.Read32(ThreadPtr);
+                if (thr != 0 && thr != 0xDEADBEEFu)
+                    return bus.Read32(thr + ThreadLastErr);
+            }
+            catch
+            {
+            }
+            return 0xFFFFFFFF;
         }
 
         // Observe only after compact. Do not rewrite +14/+18.
