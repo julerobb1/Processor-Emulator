@@ -1395,13 +1395,12 @@ namespace ProcessorEmulator.Core
                         pc.ToString("X8"));
                 return;
             }
-            if (pc == CoredllExitThread)
+            if (pc == CoredllExitThread && _gwesWatch && (_gwesIn || _gwesLastPc != 0))
             {
                 _gwesSawExit = true;
                 if (_logged.Add("hive:exit"))
                     System.Console.WriteLine("[Hive] ExitThread pc=0x" + pc.ToString("X8") +
-                        " last-gwes=0x" + _gwesLastPc.ToString("X8") +
-                        " in-gwes=" + _gwesIn);
+                        " last-gwes=0x" + _gwesLastPc.ToString("X8"));
                 return;
             }
             if ((pc == CoredllWaitSo || pc == CoredllWaitMo) && _gwesIn)
@@ -1431,7 +1430,17 @@ namespace ProcessorEmulator.Core
                     System.Console.WriteLine("[Hive] gwes first-slot pc=0x" + pc.ToString("X8"));
                 return;
             }
-            if (_gwesWatch && (pc == OemIdle || pc == OemIdleLoop))
+            if (_gwesWatch)
+            {
+                uint slot = pc >> 25;
+                if (slot >= 1 && slot <= 16 && _logged.Add("hive:userslot"))
+                    System.Console.WriteLine("[Hive] first user-slot pc=0x" + pc.ToString("X8") +
+                        " slot=" + slot);
+            }
+            // OEMIdle is hit during CreateProcess; only summarize
+            // after RunApps is already stuck on Depend30.
+            if (_gwesWatch && _logged.Contains("hive:dep:RunOnce.exe:1E")
+                && (pc == OemIdle || pc == OemIdleLoop))
                 LogGwesSummary(pc);
         }
 
