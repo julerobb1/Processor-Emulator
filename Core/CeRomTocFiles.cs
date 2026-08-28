@@ -62,6 +62,19 @@ namespace ProcessorEmulator.Core
         // LocalAlloc call HeapAlloc(0) and RegOpen returns 14.
         public const uint HeapCreateStore = 0x03F7A964;
         public const uint ProcessHeapPtr = 0x01FFFFA0;
+        // FSDMGR 0x03E896D8 is GetProcAddress. After TOC-attach,
+        // 0x800196E4 copies e32_rom units to e32_lite+0x1C.
+        // Kernel GPA reads EXP at +0x20 (that dword is the
+        // size 0x303) so HookVolume / CreateFileW miss.
+        // FindFSD then prefixes sigcheckfilter_ and never
+        // stores HookVolume at FSD+24. 0x03E82654 jalrs
+        // fatfsd *(vtable+16) because LoadFilters left
+        // volume+8 on the original FSD. That jalr is the
+        // MountDisk slot. Serve TOC exports (bare or with
+        // FSD_ stripped) so FindFSD can attach the filter.
+        public const uint FsGetProc = 0x03E896D8;
+        public const uint FilterVbase = 0x03DF0000;
+        public const uint E32RomExpRva = 0x24;
 
         public static bool TryContinueRomModule(MipsBus bus, uint path, out uint attr, out uint tocEntry)
         {
@@ -382,6 +395,132 @@ namespace ProcessorEmulator.Core
                 uint src = addr + (uint)i;
                 uint word = bus.Read32(src & ~3u);
                 uint ch = (word >> (8 * (int)(src & 3))) & 0xFF;
+                if (ch == 0)
+                    break;
+                if (ch < 0x20 || ch > 0x7E)
+                    return "";
+                sb.Append((char)ch);
+            }
+            return sb.ToString();
+        }
+
+        public static bool TryResolveFilterExport(MipsBus bus, uint module, uint namePtr, uint[] regs, ref uint programCounter)
+        {
+            if (bus == null || module == 0 || namePtr == 0 || regs == null || regs.Length <= 31)
+                return false;
+            try
+            {
+                if (bus.Read32(module + ModuleStartip) != FilterStartip)
+                    return false;
+                string want = ReadUtf16Name(bus, namePtr);
+                if (string.IsNullOrEmpty(want))
+                    return false;
+                if (want.Length > 4
+                    && (want[0] == 'F' || want[0] == 'f')
+                    && (want[1] == 'S' || want[1] == 's')
+                    && (want[2] == 'D' || want[2] == 'd')
+                    && want[3] == '_')
+                    want = want.Substring(4);
+                if (string.IsNullOrEmpty(want))
+                    return false;
+                if (!TryFindTocExport(bus, FilterVbase, want, out uint va))
+                    return false;
+                if (va < FilterVbase || va >= FilterVbase + 0xA000u)
+                    return false;
+                regs[2] = va;
+                programCounter = regs[31];
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool TryFindTocExport(MipsBus bus, uint vbase, string want, out uint va)
+        {
+            va = 0;
+            uint toc = bus.Read32(EcecTocPtr);
+            uint nmods = bus.Read32(toc + RomHdrNumMods);
+            if (nmods == 0 || nmods > 64)
+                return false;
+            for (uint i = 0; i < nmods; i++)
+            {
+                uint entry = toc + TocFirst + i * TocEntrySize;
+                uint e32 = bus.Read32(entry + 0x14);
+                uint o32 = bus.Read32(entry + 0x18);
+                if (e32 == 0 || o32 == 0)
+                    continue;
+                if (bus.Read32(e32 + 8) != vbase)
+                    continue;
+                uint objcnt = bus.Read32(e32) & 0xFFFF;
+                uint expRva = bus.Read32(e32 + E32RomExpRva);
+                uint expSize = bus.Read32(e32 + E32RomExpRva + 4);
+                if (expRva == 0 || expSize < 0x28 || expSize > 0x800)
+                    return false;
+                if (!TryPackedFromRva(bus, o32, objcnt, expRva, out uint expPacked))
+                    return false;
+                uint nNames = bus.Read32(expPacked + 0x18);
+                uint addrFuncs = bus.Read32(expPacked + 0x1C);
+                uint addrNames = bus.Read32(expPacked + 0x20);
+                uint addrOrds = bus.Read32(expPacked + 0x24);
+                if (nNames == 0 || nNames > 64)
+                    return false;
+                if (!TryPackedFromRva(bus, o32, objcnt, addrNames, out uint namesPacked)
+                    || !TryPackedFromRva(bus, o32, objcnt, addrFuncs, out uint funcsPacked)
+                    || !TryPackedFromRva(bus, o32, objcnt, addrOrds, out uint ordsPacked))
+                    return false;
+                for (uint n = 0; n < nNames; n++)
+                {
+                    uint nameRva = bus.Read32(namesPacked + n * 4);
+                    if (!TryPackedFromRva(bus, o32, objcnt, nameRva, out uint namePacked))
+                        continue;
+                    if (!NamesEqual(ReadAscii(bus, namePacked), want))
+                        continue;
+                    uint ordWord = bus.Read32((ordsPacked + n * 2) & ~3u);
+                    uint ord = ((ordsPacked + n * 2) & 2) == 0 ? (ordWord & 0xFFFF) : (ordWord >> 16);
+                    if (ord >= nNames)
+                        return false;
+                    uint funcRva = bus.Read32(funcsPacked + ord * 4);
+                    if (funcRva == 0 || funcRva >= 0x10000)
+                        return false;
+                    va = vbase + funcRva;
+                    return true;
+                }
+                return false;
+            }
+            return false;
+        }
+
+        private static bool TryPackedFromRva(MipsBus bus, uint o32, uint objcnt, uint rva, out uint packed)
+        {
+            packed = 0;
+            if (objcnt == 0 || objcnt > 16 || rva == 0)
+                return false;
+            for (uint s = 0; s < objcnt; s++)
+            {
+                uint src = o32 + s * O32RomSize;
+                uint vsize = bus.Read32(src);
+                uint sectRva = bus.Read32(src + 4);
+                uint dataptr = bus.Read32(src + 0xC);
+                if (dataptr == 0 || vsize == 0)
+                    continue;
+                if (rva < sectRva || rva >= sectRva + vsize)
+                    continue;
+                packed = dataptr + (rva - sectRva);
+                return packed != 0;
+            }
+            return false;
+        }
+
+        private static string ReadUtf16Name(MipsBus bus, uint addr)
+        {
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < 80; i++)
+            {
+                uint p = addr + (uint)(i * 2);
+                uint word = bus.Read32(p & ~3u);
+                uint ch = ((p & 2) == 0) ? (word & 0xFFFF) : (word >> 16);
                 if (ch == 0)
                     break;
                 if (ch < 0x20 || ch > 0x7E)
