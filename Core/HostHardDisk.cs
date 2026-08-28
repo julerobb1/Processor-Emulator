@@ -15,10 +15,13 @@ namespace ProcessorEmulator.Core
     // Read-only: never write, delete, or rename dump files. Not a
     // BINBlk/BINFS object. Hunt every etc.bin plus any other B000FF
     // sitting next to nk.bin. NkBinLoader maps each file's records
-    // at THAT file's imageStart. Skip stubs and non-B000FF (sec.bin,
-    // raven_fw.bin). Firmware CreateFile of ETC.bin / BOOT.PRF /
-    // sec.bin is the Hard Disk path, not a second XIP. Do not invent
-    // a map for a chain base with no matching dump B000FF.
+    // at THAT file's imageStart so ExtraROM XIP (tv2clientce.exe
+    // and the rest) is in RAM. A Dumps\etc.bin\ extract folder is
+    // that same tree unpacked — log it, do not pack it into a fake
+    // B000FF. Firmware CreateFile of ETC.bin / BOOT.PRF / sec.bin
+    // is the Hard Disk path, not a second XIP. No peek-and-skip of
+    // an unmapped chain VA exists in nk.bin. Do not invent a map
+    // for 0x81360000. Do not CreateProcess(tv2clientce).
     //
     // FSDMGR WFMO #2 (after BINBlk) is already waiting on the
     // BLOCK_DRIVER queue. Deliver HDProf there (7-char CE name).
@@ -52,6 +55,10 @@ namespace ProcessorEmulator.Core
         public const string FolderName = "Hard Disk";
         public const uint Handle = 0xA15C0D15;
         public const uint KernelCreateFile = 0x8001D3A0;
+        // Inherit LIST path / VALLOC jal. Log only. Firmware skips
+        // a pair only when start==0 or start==end. No ExtraROM peek.
+        public const uint InheritListPath = 0x8001B6EC;
+        public const uint InheritVallocJal = 0x8001B724;
         // mspart PD_OpenStore calls this FSDMGR export, not binfs IAT 0x03EA4140.
         public const uint FsdmgrIoImpl = 0x03E83C08;
         // mspart GetDiskInfo / OpenStore uses these FSDMGR
@@ -103,6 +110,9 @@ namespace ProcessorEmulator.Core
         private static bool _opened;
         private static bool _fatSeen;
         private static readonly HashSet<string> _logged = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private static bool _inheritListLogged;
+        private static readonly HashSet<uint> _vallocLogged = new HashSet<uint>();
+        private static bool _extractLogged;
 
         public static bool IsPresent => _image != null && _image.Length > 0;
         public static bool IsOpen => _opened;
@@ -140,6 +150,9 @@ namespace ProcessorEmulator.Core
             _opened = false;
             _fatSeen = false;
             _logged.Clear();
+            _inheritListLogged = false;
+            _vallocLogged.Clear();
+            _extractLogged = false;
             string dir = ResolveRoot();
             if (string.IsNullOrEmpty(dir))
             {
@@ -171,6 +184,22 @@ namespace ProcessorEmulator.Core
                 return false;
 
             uint pc = programCounter;
+            if (pc == InheritListPath)
+            {
+                LogInheritList(bus, registers[2]);
+                return false;
+            }
+            if (pc == InheritVallocJal)
+            {
+                uint a0 = registers[4];
+                uint a1 = registers[5];
+                uint a2 = registers[6];
+                if (_vallocLogged.Add(a0))
+                    System.Console.WriteLine("[Inherit] VALLOC a0=0x" + a0.ToString("X8") +
+                        " a1=0x" + a1.ToString("X8") +
+                        " a2=0x" + a2.ToString("X8"));
+                return false;
+            }
             if (pc == KernelCreateFile)
             {
                 string kn = ReadUtf16(bus, registers[4]);
@@ -957,6 +986,34 @@ namespace ProcessorEmulator.Core
             }
         }
 
+        // Observe only. Walker skips start==0 or start==end.
+        // No ExtraROM VA peek exists. Do not rewrite +14/+18.
+        private static void LogInheritList(MipsBus bus, uint list)
+        {
+            if (_inheritListLogged || bus == null || list == 0)
+                return;
+            _inheritListLogged = true;
+            try
+            {
+                uint count = bus.Read32(list + 8);
+                System.Console.WriteLine("[Inherit] LIST @0x" + list.ToString("X8") + " count=" + count);
+                if (count > 8)
+                    count = 8;
+                for (uint i = 0; i < count; i++)
+                {
+                    uint pair = list + 12 + i * 8;
+                    uint start = bus.Read32(pair);
+                    uint end = bus.Read32(pair + 4);
+                    System.Console.WriteLine("[Inherit] pair" + i +
+                        " start=0x" + start.ToString("X8") +
+                        " end=0x" + end.ToString("X8"));
+                }
+            }
+            catch
+            {
+            }
+        }
+
         private const string LastUsedName = "last_dump_root.txt";
         private const int HuntMaxDepth = 3;
         private const int HuntMaxVisit = 400;
@@ -971,6 +1028,8 @@ namespace ProcessorEmulator.Core
             "nk.bin", "etc.bin", "sec.bin", "XASEC.BIN",
             "BOOT.PRF", "BOOTPRF.BAK",
             "tv2clientce", "tv2clientce.exe",
+            "tv2clientcorece.dll", "tv2engine.dll", "iptvdriver.dll",
+            "default.hv", "hashes.bin", "gwes.exe",
             "Application", "PlayReady",
             "raven_fw.bin", "WirelessFirmware.img", "ContentVersion.txt",
             "boot.sig", "runonce.sig", "Hard Disk"
@@ -1036,6 +1095,45 @@ namespace ProcessorEmulator.Core
                     if (name.Equals("etc.bin", StringComparison.OrdinalIgnoreCase) || PeekB000Ff(f))
                         AddExtraRom(f);
                 }
+                foreach (string d in Directory.GetDirectories(dir))
+                {
+                    string name = Path.GetFileName(d);
+                    if (name.Equals("etc.bin", StringComparison.OrdinalIgnoreCase))
+                        NoteExtractedExtraRom(d);
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        // Extracted ExtraROM tree (Dumps\etc.bin\). Not a B000FF.
+        // Firmware sees those XIP files after the raw etc.bin map.
+        private static void NoteExtractedExtraRom(string dir)
+        {
+            if (string.IsNullOrEmpty(dir) || _extractLogged || !Directory.Exists(dir))
+                return;
+            try
+            {
+                string marker = Path.Combine(dir, "tv2clientce.exe");
+                if (!File.Exists(marker))
+                    marker = Path.Combine(dir, "tv2clientcorece.dll");
+                if (!File.Exists(marker))
+                    return;
+                _extractLogged = true;
+                System.Console.WriteLine("[HardDisk] ExtraROM extract dir=" + dir +
+                    " (not B000FF; firmware sees XIP after map at imageStart)");
+                int n = 0;
+                foreach (string f in Directory.GetFiles(dir))
+                {
+                    string name = Path.GetFileName(f);
+                    if (n < 16)
+                        System.Console.WriteLine("[HardDisk] ExtraROM extract file " + name +
+                            " " + new FileInfo(f).Length);
+                    n++;
+                }
+                if (n > 16)
+                    System.Console.WriteLine("[HardDisk] ExtraROM extract files=" + n);
             }
             catch
             {
@@ -1173,10 +1271,15 @@ namespace ProcessorEmulator.Core
                 }
                 if (HuntNames.Contains(name) && seenNames.Add(name))
                     System.Console.WriteLine("[HardDisk] found " + name + " at " + p);
-                if (name.Equals("nk.bin", StringComparison.OrdinalIgnoreCase))
+                if (name.Equals("nk.bin", StringComparison.OrdinalIgnoreCase) && !isDir)
                     _nkDir = Path.GetDirectoryName(p) ?? "";
                 if (name.Equals("etc.bin", StringComparison.OrdinalIgnoreCase))
-                    AddExtraRom(p);
+                {
+                    if (isDir)
+                        NoteExtractedExtraRom(p);
+                    else
+                        AddExtraRom(p);
+                }
                 if (VolumeNames.Contains(name) || HuntNames.Contains(name))
                 {
                     VolumeScore s;
@@ -1232,6 +1335,7 @@ namespace ProcessorEmulator.Core
             // Shipped attach is the user feed + name hunt above.
             yield return "/workspace/UverseDriveE";
             yield return @"E:\EVO backup 2026 august 26\DVR Stuff\UVERSE STUFF\Uverse Drive E";
+            yield return @"E:\EVO backup 2026 august 26\DVR Stuff\UVERSE STUFF\Dumps";
         }
 
         private static IEnumerable<string> CommandLineFeeds()

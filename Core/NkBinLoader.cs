@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using ProcessorEmulator.Core.Emulation;
 using ProcessorEmulator.Core;
 
@@ -195,7 +196,73 @@ namespace ProcessorEmulator.Core.Loaders
             Console.WriteLine("[NkBinLoader] ExtraROM mapped records=" + records +
                 " imageStart=0x" + imageStart.ToString("X8") +
                 " path=" + path);
+            LogMappedRomHdr(memory, imageStart);
             return true;
+        }
+
+        // After a real map, ExtraROM XIP (tv2clientce.exe and the
+        // rest) lives in this ROMHDR/TOC. Firmware inherit does not
+        // peek that VA; +14/+18 stay leftovers unless the overlay
+        // compare matches. Log only.
+        private static void LogMappedRomHdr(IMemoryManager memory, uint imageStart)
+        {
+            if (memory == null || imageStart == 0)
+                return;
+            try
+            {
+                uint sig = memory.ReadMemory32(imageStart + 0x40);
+                uint romhdr = memory.ReadMemory32(imageStart + 0x44);
+                if (sig != 0x43454345 || romhdr == 0)
+                    romhdr = imageStart;
+                uint dllfirst = memory.ReadMemory32(romhdr);
+                uint dlllast = memory.ReadMemory32(romhdr + 4);
+                uint nummods = memory.ReadMemory32(romhdr + 0x10);
+                uint numfiles = memory.ReadMemory32(romhdr + 0x30);
+                Console.WriteLine("[NkBinLoader] ExtraROM ROMHDR imageStart=0x" + imageStart.ToString("X8") +
+                    " cece=0x" + sig.ToString("X8") +
+                    " dllfirst=0x" + dllfirst.ToString("X8") +
+                    " dlllast=0x" + dlllast.ToString("X8") +
+                    " nummods=" + nummods +
+                    " numfiles=" + numfiles);
+                if (nummods == 0 || nummods > 128)
+                    return;
+                int shown = 0;
+                for (uint i = 0; i < nummods && shown < 24; i++)
+                {
+                    uint entry = romhdr + 0x54 + i * 32;
+                    uint namePtr = memory.ReadMemory32(entry + 0x10);
+                    string name = ReadAscii(memory, namePtr);
+                    if (string.IsNullOrEmpty(name))
+                        continue;
+                    Console.WriteLine("[NkBinLoader] ExtraROM XIP " + name);
+                    shown++;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[NkBinLoader] ExtraROM ROMHDR log skipped: " + ex.Message);
+            }
+        }
+
+        private static string ReadAscii(IMemoryManager memory, uint addr)
+        {
+            if (memory == null || addr == 0)
+                return "";
+            var sb = new StringBuilder();
+            for (int i = 0; i < 64; i += 4)
+            {
+                uint w = memory.ReadMemory32(addr + (uint)i);
+                for (int b = 0; b < 4; b++)
+                {
+                    byte c = (byte)(w >> (8 * b));
+                    if (c == 0)
+                        return sb.ToString();
+                    if (c < 32 || c > 126)
+                        return sb.ToString();
+                    sb.Append((char)c);
+                }
+            }
+            return sb.ToString();
         }
 
         // Report only. Do not write bytes for a chain base the dump

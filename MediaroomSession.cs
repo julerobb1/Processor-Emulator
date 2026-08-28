@@ -8,9 +8,9 @@ using ProcessorEmulator.Emulation;
 namespace ProcessorEmulator
 {
     // Honest dump -> NkBinLoader -> MIPS/CE step. Every dump B000FF
-    // next to nk.bin (etc.bin and any other) is loaded at that
-    // file's imageStart. No invented 0x81360000 map, no
-    // CreateProcess, no SetEvent.
+    // next to nk.bin is loaded at that file's imageStart so ExtraROM
+    // XIP is in RAM. No invented 0x81360000 map, no host
+    // CreateProcess(tv2clientce), no SetEvent.
     public sealed class MediaroomSession
     {
         private const uint RamSize = 256u * 1024u * 1024u;
