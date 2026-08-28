@@ -46,10 +46,13 @@ namespace ProcessorEmulator.Core
     // WaitForMultipleObjects INFINITE at 0x000180A4 returns.
     // gwes calls SignalStarted(_wtol(cmd)) at slotted 0x0001634C
     // then OpenEvent + EventModify SYSTEM/GweApiSetReady (not
-    // GRAPHICS) at slotted 0x00016354. Do not SetEvent. Do not
-    // host CreateProcess(tv2clientce). ExtraROM FILE
-    // tv2clientce.exe is the 5120-byte stub, not the 90-byte
-    // root file.
+    // GRAPHICS) at slotted 0x00016354. TOC[7] XIP text is
+    // 0x80146000 (VA 0x00011000); entry 0x8014B3C8 / WinMain
+    // 0x8014B014. Display=ddi_nop.dll (default.hv; ExtraROM
+    // TOC[33] vbase 0x03980000). Do not SetEvent GweApi or
+    // Launch30. Do not host CreateProcess(tv2clientce).
+    // ExtraROM FILE tv2clientce.exe is the 5120-byte stub,
+    // not the 90-byte root file.
     //
     // FSDMGR WFMO #2 (after BINBlk) is already waiting on the
     // BLOCK_DRIVER queue. Deliver HDProf there (7-char CE name).
@@ -113,8 +116,31 @@ namespace ProcessorEmulator.Core
         // Slot 0 is filesys — do not treat 0x0001634C there as gwes.
         public const uint GwesSignalStarted = 0x0001634C;
         public const uint GwesGweApiReady = 0x00016354;
+        public const uint GwesVaEntry = 0x000163C8;
+        public const uint GwesVaWinMain = 0x00016014;
+        public const uint GwesVaDisplayDll = 0x00024CD4;
         public const uint CeSlotMask = 0x01FFFFFF;
         public const uint CeSlotBase = 0xFE000000;
+        // TOC[7] o32[0] dataptr; VA = ROM - GwesRomText + 0x00011000.
+        public const uint GwesRomText = 0x80146000;
+        public const uint GwesRomTextEnd = 0x801EADE0;
+        public const uint GwesRomEntry = 0x8014B3C8;
+        public const uint GwesRomWinMain = 0x8014B014;
+        public const uint GwesRomSignal = 0x8014B34C;
+        public const uint GwesRomGweApi = 0x8014B354;
+        public const uint GwesRomDisplayDll = 0x80159CD4;
+        public const uint DdiNopVbase = 0x03980000;
+        public const uint DdiNopVend = 0x039B0000;
+        public const uint DdiNopEntry = 0x03998014;
+        public const uint CoredllActivateDevice = 0x03F6AD08;
+        public const uint CoredllActivateDeviceEx = 0x03F6AD54;
+        public const uint CoredllExitThread = 0x03F74844;
+        public const uint CoredllLoadLibraryW = 0x03F6CB50;
+        public const uint CoredllLoadLibraryExW = 0x03F6C84C;
+        public const uint CoredllWaitSo = 0x03F6B9AC;
+        public const uint CoredllWaitMo = 0x03F6B914;
+        public const uint OemIdle = 0x80059E98;
+        public const uint OemIdleLoop = 0x80059D20;
         public const uint FilesysCreateProcess = 0x0004BCA4;
         public const uint KernelCreateProcess = 0x80034D2C;
         public const uint ErrorBadKey = 0x3F2;
@@ -177,6 +203,14 @@ namespace ProcessorEmulator.Core
         private static bool _hiveFlagsLogged;
         private static string _cprocName = "";
         private static uint _cprocRa;
+        private static bool _gwesWatch;
+        private static bool _gwesIn;
+        private static uint _gwesLastPc;
+        private static bool _gwesSummary;
+        private static bool _gwesSawExit;
+        private static bool _gwesSawWait;
+        private static bool _gwesSawDdi;
+        private static bool _gwesSawSignal;
 
         public static bool IsPresent => _image != null && _image.Length > 0;
         public static bool IsOpen => _opened;
@@ -220,6 +254,14 @@ namespace ProcessorEmulator.Core
             _hiveFlagsLogged = false;
             _cprocName = "";
             _cprocRa = 0;
+            _gwesWatch = false;
+            _gwesIn = false;
+            _gwesLastPc = 0;
+            _gwesSummary = false;
+            _gwesSawExit = false;
+            _gwesSawWait = false;
+            _gwesSawDdi = false;
+            _gwesSawSignal = false;
             string dir = ResolveRoot();
             if (string.IsNullOrEmpty(dir))
             {
@@ -338,6 +380,7 @@ namespace ProcessorEmulator.Core
                     return false;
                 }
             }
+            ObserveGwesPath(pc, registers, bus);
             if (pc == FilesysCreateProcess
                 || (pc == KernelCreateProcess && _cprocRa == 0))
             {
@@ -1296,6 +1339,160 @@ namespace ProcessorEmulator.Core
                 LogLaunchReadySlots(bus, a0);
         }
 
+        // Observe only. Do not SetEvent GweApi or Launch30.
+        private static void ObserveGwesPath(uint pc, uint[] registers, MipsBus bus)
+        {
+            if (pc == GwesRomEntry || IsSlottedVa(pc, GwesVaEntry))
+            {
+                NoteGwesPc(pc, "entry");
+                return;
+            }
+            if (pc == GwesRomWinMain || IsSlottedVa(pc, GwesVaWinMain))
+            {
+                NoteGwesPc(pc, "WinMain");
+                return;
+            }
+            if (pc == GwesRomDisplayDll || IsSlottedVa(pc, GwesVaDisplayDll))
+            {
+                NoteGwesPc(pc, "DisplayDll");
+                return;
+            }
+            if (pc == GwesRomSignal || pc == GwesRomGweApi)
+            {
+                NoteGwesPc(pc, pc == GwesRomSignal ? "SignalStarted-ROM" : "GweApi-ROM");
+                return;
+            }
+            if (pc == DdiNopEntry || (pc >= DdiNopVbase && pc < DdiNopVend))
+            {
+                _gwesSawDdi = true;
+                if (_logged.Add("hive:ddi:" + (pc == DdiNopEntry ? "entry" : "run")))
+                    System.Console.WriteLine("[Hive] ddi_nop pc=0x" + pc.ToString("X8") +
+                        (pc == DdiNopEntry ? " entry" : ""));
+                return;
+            }
+            if (pc == CoredllActivateDevice || pc == CoredllActivateDeviceEx)
+            {
+                string n = registers != null && registers.Length > 4 && bus != null
+                    ? ReadUtf16(bus, registers[4]) : "";
+                if (string.IsNullOrEmpty(n))
+                    n = "(null)";
+                if (_logged.Add("hive:act:" + n))
+                    System.Console.WriteLine("[Hive] ActivateDevice \"" + n + "\" pc=0x" +
+                        pc.ToString("X8"));
+                return;
+            }
+            if (pc == CoredllLoadLibraryW || pc == CoredllLoadLibraryExW)
+            {
+                string n = registers != null && registers.Length > 4 && bus != null
+                    ? ReadUtf16(bus, registers[4]) : "";
+                if (string.IsNullOrEmpty(n))
+                    return;
+                bool ddi = n.IndexOf("ddi", StringComparison.OrdinalIgnoreCase) >= 0
+                    || n.IndexOf("display", StringComparison.OrdinalIgnoreCase) >= 0
+                    || n.IndexOf("gwes", StringComparison.OrdinalIgnoreCase) >= 0;
+                if (ddi && _logged.Add("hive:ll:" + n))
+                    System.Console.WriteLine("[Hive] LoadLibrary \"" + n + "\" pc=0x" +
+                        pc.ToString("X8"));
+                return;
+            }
+            if (pc == CoredllExitThread)
+            {
+                _gwesSawExit = true;
+                if (_logged.Add("hive:exit"))
+                    System.Console.WriteLine("[Hive] ExitThread pc=0x" + pc.ToString("X8") +
+                        " last-gwes=0x" + _gwesLastPc.ToString("X8") +
+                        " in-gwes=" + _gwesIn);
+                return;
+            }
+            if ((pc == CoredllWaitSo || pc == CoredllWaitMo) && _gwesIn)
+            {
+                _gwesSawWait = true;
+                if (_logged.Add("hive:gwait"))
+                    System.Console.WriteLine("[Hive] gwes first-wait " +
+                        (pc == CoredllWaitSo ? "WaitForSingleObject" : "WaitForMultipleObjects") +
+                        " pc=0x" + pc.ToString("X8") +
+                        " last-gwes=0x" + _gwesLastPc.ToString("X8"));
+                _gwesIn = false;
+                return;
+            }
+            if (pc >= GwesRomText && pc < GwesRomTextEnd)
+            {
+                _gwesIn = true;
+                _gwesLastPc = pc;
+                if (_logged.Add("hive:gwesrun"))
+                    System.Console.WriteLine("[Hive] gwes first-ROM pc=0x" + pc.ToString("X8"));
+                return;
+            }
+            if (IsSlottedGwesText(pc))
+            {
+                _gwesIn = true;
+                _gwesLastPc = pc;
+                if (_logged.Add("hive:gwesslot"))
+                    System.Console.WriteLine("[Hive] gwes first-slot pc=0x" + pc.ToString("X8"));
+                return;
+            }
+            if (_gwesWatch && (pc == OemIdle || pc == OemIdleLoop))
+                LogGwesSummary(pc);
+        }
+
+        private static bool IsSlottedVa(uint pc, uint va)
+        {
+            uint slot = pc >> 25;
+            return slot >= 1 && slot <= 16 && (pc & CeSlotMask) == va;
+        }
+
+        private static bool IsSlottedGwesText(uint pc)
+        {
+            uint slot = pc >> 25;
+            if (slot < 1 || slot > 16)
+                return false;
+            uint off = pc & CeSlotMask;
+            return off >= 0x00011000 && off < 0x000BB000;
+        }
+
+        private static void NoteGwesPc(uint pc, string what)
+        {
+            _gwesIn = true;
+            _gwesLastPc = pc;
+            if (what.IndexOf("Signal", StringComparison.Ordinal) >= 0
+                || what.IndexOf("GweApi", StringComparison.Ordinal) >= 0)
+                _gwesSawSignal = true;
+            if (_logged.Add("hive:gpc:" + what))
+                System.Console.WriteLine("[Hive] gwes " + what + " pc=0x" + pc.ToString("X8"));
+        }
+
+        private static void LogDdiNopMapped(MipsBus bus)
+        {
+            if (bus == null || !_logged.Add("hive:ddimap"))
+                return;
+            try
+            {
+                uint w = bus.Read32(DdiNopEntry);
+                System.Console.WriteLine("[Hive] ddi_nop entry@0x03998014 word=0x" +
+                    w.ToString("X8") + (w == 0 || w == 0xDEADBEEFu ? " (not mapped)" : ""));
+            }
+            catch
+            {
+                System.Console.WriteLine("[Hive] ddi_nop entry@0x03998014 unmapped");
+            }
+        }
+
+        private static void LogGwesSummary(uint idlePc)
+        {
+            if (_gwesSummary)
+                return;
+            _gwesSummary = true;
+            System.Console.WriteLine("[Hive] gwes summary idle=0x" + idlePc.ToString("X8") +
+                " last=0x" + _gwesLastPc.ToString("X8") +
+                " entry=" + _logged.Contains("hive:gpc:entry") +
+                " WinMain=" + _logged.Contains("hive:gpc:WinMain") +
+                " DisplayDll=" + _logged.Contains("hive:gpc:DisplayDll") +
+                " SignalStarted=" + _gwesSawSignal +
+                " first-wait=" + _gwesSawWait +
+                " ddi_nop=" + _gwesSawDdi +
+                " ExitThread=" + _gwesSawExit);
+        }
+
         // gwes slotted PCs only. 0x0001634C is SignalStarted(_wtol).
         // 0x00016354 is OpenEvent(SYSTEM/GweApiSetReady) then
         // EventModify SET. There is no GRAPHICS event name.
@@ -1304,6 +1501,7 @@ namespace ProcessorEmulator.Core
             string key = "hive:gwes:" + off.ToString("X") + ":" + (pc & CeSlotBase).ToString("X");
             if (!_logged.Add(key))
                 return;
+            _gwesSawSignal = true;
             if (off == GwesSignalStarted)
             {
                 uint a0 = registers != null && registers.Length > 4 ? registers[4] : 0;
@@ -1426,7 +1624,13 @@ namespace ProcessorEmulator.Core
             _cprocName = img;
             _cprocRa = registers[31];
             if (_logged.Add("hive:cp:" + img))
-                System.Console.WriteLine("[Hive] CreateProcess \"" + img + "\"");
+            {
+                string cmd = "";
+                if (registers.Length > 5)
+                    cmd = ReadUtf16(bus, registers[5]);
+                System.Console.WriteLine("[Hive] CreateProcess \"" + img + "\"" +
+                    (string.IsNullOrEmpty(cmd) ? "" : " cmd=\"" + cmd + "\""));
+            }
         }
 
         private static void LogHiveCreateProcessRet(uint[] registers, MipsBus bus)
@@ -1444,6 +1648,13 @@ namespace ProcessorEmulator.Core
                 System.Console.WriteLine("[Hive] CreateProcess \"" + img +
                     "\" v0=0x" + v0.ToString("X8") +
                     " last-error=" + err);
+            if (v0 != 0 && img.IndexOf("gwes", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                _gwesWatch = true;
+                System.Console.WriteLine("[Hive] gwes watch entry VA 0x000163C8 ROM 0x8014B3C8 " +
+                    "WinMain 0x8014B014 Display=ddi_nop.dll (etc XIP vbase 0x03980000)");
+                LogDdiNopMapped(bus);
+            }
         }
 
         private static uint ReadLastError(MipsBus bus)
