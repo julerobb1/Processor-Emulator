@@ -1429,6 +1429,7 @@ namespace ProcessorEmulator.Core
             if (pc == GwesVaWinMainJal || IsSlottedVa(pc, GwesVaWinMainJal))
             {
                 NoteGwesPc(pc, "WinMain-jal", GwesRomWinMain + (GwesVaWinMainJal - GwesVaWinMain), bus);
+                LogGwesIat(bus);
                 return;
             }
             if (pc == GwesVaWinMainSkip || IsSlottedVa(pc, GwesVaWinMainSkip))
@@ -1567,6 +1568,28 @@ namespace ProcessorEmulator.Core
             catch
             {
                 return false;
+            }
+        }
+
+        private static void LogGwesIat(MipsBus bus)
+        {
+            if (bus == null || !_logged.Add("hive:iat"))
+                return;
+            uint[] addrs = { 0x000B607C, GwesSlot | 0x000B607C, 0x000B7A1C, GwesSlot | 0x000B7A1C };
+            for (int i = 0; i < addrs.Length; i++)
+            {
+                uint a = addrs[i];
+                try
+                {
+                    uint w = bus.Read32(a);
+                    System.Console.WriteLine("[Hive] gwes data 0x" + a.ToString("X8") +
+                        " =0x" + w.ToString("X8"));
+                }
+                catch
+                {
+                    System.Console.WriteLine("[Hive] gwes data 0x" + a.ToString("X8") +
+                        " unmapped");
+                }
             }
         }
 
@@ -1713,6 +1736,8 @@ namespace ProcessorEmulator.Core
                 " last=0x" + _gwesLastPc.ToString("X8") +
                 " entry=" + _logged.Contains("hive:gpc:entry") +
                 " WinMain=" + _logged.Contains("hive:gpc:WinMain") +
+                " WinMain-jal=" + _logged.Contains("hive:gpc:WinMain-jal") +
+                " WinMain-skip=" + _logged.Contains("hive:gpc:WinMain-skip") +
                 " DisplayFn=" + _logged.Contains("hive:gpc:DisplayFn") +
                 " DisplayDll=" + _logged.Contains("hive:gpc:DisplayDll") +
                 " SignalStarted=" + _gwesSawSignal +
