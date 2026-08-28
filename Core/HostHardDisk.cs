@@ -25,6 +25,17 @@ namespace ProcessorEmulator.Core
     // start==end, end<start, or size>=32MB). Keep the NK pair.
     // Do not CreateProcess(tv2clientce).
     //
+    // filesys hive-init opens \Windows\boot.hv first. boot.hv
+    // BootVars Flags=3 (real DWORD). Low nibble != 0 starts
+    // device.exe and waits; Start DevMgr is not in that hive.
+    // SystemHive is Documents and Settings\system.hv, which is
+    // not on this volume. The NK FILESentry default.hv is 266240
+    // uncompressed (compressed 65188 at 0x802FA8AC) and holds
+    // HKLM\init Launch20/30/56. Helper 0x0003EE14 already opens
+    // boot.hv. Clear the Flags nibble at 0x0002A7F8 so that
+    // same helper runs for \Windows\default.hv. Do not write
+    // Launch keys. Do not SetEvent. Do not invent 0x81360000.
+    //
     // FSDMGR WFMO #2 (after BINBlk) is already waiting on the
     // BLOCK_DRIVER queue. Deliver HDProf there (7-char CE name).
     // GETNAME is HDProfile so Profiles\HDProfile / Folder Hard Disk
@@ -67,6 +78,16 @@ namespace ProcessorEmulator.Core
         public const uint BinfsInheritFill = 0x03EA2B84;
         public const uint InheritRecordSize = 0x24;
         public const uint InheritSlotBytes = 0x02000000;
+        // hive-init 0x0002A5E8: Flags nibble gate, then the existing
+        // \Windows\default.hv helper. RunApps 0x00017BAC is the
+        // HKLM\init open that was ERROR_BADKEY on boot.hv alone.
+        public const uint HiveFlagsGate = 0x0002A7F8;
+        public const uint HiveDefaultOpen = 0x0002ACD0;
+        public const uint HiveDefaultOpenRet = 0x0002ACD8;
+        public const uint RunAppsInitChk = 0x00017BAC;
+        public const uint RunAppsLaunchCmp = 0x00017C58;
+        public const uint FilesysCreateProcess = 0x0004BCA4;
+        public const uint ErrorBadKey = 0x3F2;
         // mspart PD_OpenStore calls this FSDMGR export, not binfs IAT 0x03EA4140.
         public const uint FsdmgrIoImpl = 0x03E83C08;
         // mspart GetDiskInfo / OpenStore uses these FSDMGR
@@ -121,6 +142,7 @@ namespace ProcessorEmulator.Core
         private static bool _inheritListLogged;
         private static readonly HashSet<uint> _vallocLogged = new HashSet<uint>();
         private static bool _extractLogged;
+        private static bool _hiveFlagsLogged;
 
         public static bool IsPresent => _image != null && _image.Length > 0;
         public static bool IsOpen => _opened;
@@ -161,6 +183,7 @@ namespace ProcessorEmulator.Core
             _inheritListLogged = false;
             _vallocLogged.Clear();
             _extractLogged = false;
+            _hiveFlagsLogged = false;
             string dir = ResolveRoot();
             if (string.IsNullOrEmpty(dir))
             {
@@ -230,6 +253,36 @@ namespace ProcessorEmulator.Core
                     System.Console.WriteLine("[Inherit] VALLOC a0=0x" + a0.ToString("X8") +
                         " a1=0x" + a1.ToString("X8") +
                         " a2=0x" + a2.ToString("X8"));
+                return false;
+            }
+            if (pc == HiveFlagsGate)
+            {
+                TryRomDefaultHive(registers, bus);
+                return false;
+            }
+            if (pc == HiveDefaultOpen)
+            {
+                LogHiveHelper(registers, bus);
+                return false;
+            }
+            if (pc == HiveDefaultOpenRet)
+            {
+                LogHiveHelperRet(registers);
+                return false;
+            }
+            if (pc == RunAppsInitChk)
+            {
+                LogRunAppsInit(registers);
+                return false;
+            }
+            if (pc == RunAppsLaunchCmp)
+            {
+                LogRunAppsLaunch(registers, bus);
+                return false;
+            }
+            if (pc == FilesysCreateProcess)
+            {
+                LogHiveCreateProcess(registers, bus);
                 return false;
             }
             if (pc == KernelCreateFile)
@@ -1070,6 +1123,88 @@ namespace ProcessorEmulator.Core
             catch
             {
             }
+        }
+
+        // boot.hv Flags=3 takes Start DevMgr / device.exe and never
+        // calls the \Windows\default.hv helper. That hive is the NK
+        // FILESentry with Launch20/30/56. Clear the nibble so the
+        // existing beq at 0x0002A7F8 falls into 0x0002AB04.
+        private static void TryRomDefaultHive(uint[] registers, MipsBus bus)
+        {
+            if (registers == null || registers.Length <= 24 || bus == null)
+                return;
+            uint s3 = registers[19];
+            if (!LooksLikePtr(s3))
+                return;
+            uint flags;
+            try { flags = bus.Read32(s3); }
+            catch { return; }
+            if ((flags & 0xF) == 0)
+                return;
+            try { bus.Write32(s3, flags & ~0xFu); }
+            catch { return; }
+            registers[24] = 0;
+            if (!_hiveFlagsLogged)
+            {
+                _hiveFlagsLogged = true;
+                System.Console.WriteLine("[Hive] Flags 0x" + flags.ToString("X") +
+                    " would skip \\Windows\\default.hv; take ROM FILESentry");
+            }
+        }
+
+        private static void LogHiveHelper(uint[] registers, MipsBus bus)
+        {
+            if (registers == null || registers.Length <= 7 || bus == null)
+                return;
+            string path = ReadUtf16(bus, registers[5]);
+            if (string.IsNullOrEmpty(path))
+                path = "(null)";
+            if (_logged.Add("hive:open:" + path))
+                System.Console.WriteLine("[Hive] helper \"" + path + "\" a3=" + registers[7]);
+        }
+
+        private static void LogHiveHelperRet(uint[] registers)
+        {
+            if (registers == null || registers.Length <= 2)
+                return;
+            if (_logged.Add("hive:openret"))
+                System.Console.WriteLine("[Hive] helper v0=0x" + registers[2].ToString("X8"));
+        }
+
+        private static void LogRunAppsInit(uint[] registers)
+        {
+            if (registers == null || registers.Length <= 2)
+                return;
+            uint v0 = registers[2];
+            if (!_logged.Add("hive:init:" + v0.ToString("X")))
+                return;
+            string note = v0 == 0 ? "OK" : (v0 == ErrorBadKey ? "ERROR_BADKEY" : "");
+            System.Console.WriteLine("[Hive] RunApps HKLM\\init v0=0x" + v0.ToString("X8") +
+                (note.Length == 0 ? "" : " " + note));
+        }
+
+        private static void LogRunAppsLaunch(uint[] registers, MipsBus bus)
+        {
+            if (registers == null || registers.Length <= 29 || bus == null)
+                return;
+            if (registers[2] != 0)
+                return;
+            string name = ReadUtf16(bus, registers[29] + 96);
+            if (string.IsNullOrEmpty(name))
+                return;
+            if (_logged.Add("hive:launch:" + name))
+                System.Console.WriteLine("[Hive] RunApps \"" + name + "\"");
+        }
+
+        private static void LogHiveCreateProcess(uint[] registers, MipsBus bus)
+        {
+            if (registers == null || registers.Length <= 4 || bus == null)
+                return;
+            string img = ReadUtf16(bus, registers[4]);
+            if (string.IsNullOrEmpty(img))
+                return;
+            if (_logged.Add("hive:cp:" + img))
+                System.Console.WriteLine("[Hive] CreateProcess \"" + img + "\"");
         }
 
         // Observe only after compact. Do not rewrite +14/+18.
