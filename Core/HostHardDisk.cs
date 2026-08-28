@@ -132,6 +132,11 @@ namespace ProcessorEmulator.Core
         public const uint GwesVaWinMain = 0x00016014;
         public const uint GwesVaDisplayDll = 0x00024CD4;
         public const uint GwesVaDisplayFn = 0x00024BE8;
+        public const uint GwesVaWinMainJal = 0x00016088;
+        public const uint GwesVaWinMainSkip = 0x00016394;
+        public const uint GwesInitFlag = 0x000B7A1D;
+        public const uint GwesRomInitFlag = 0x801EAA1D;
+        public const uint FilesysRomText = 0x80105000;
         public const uint CeSlotMask = 0x01FFFFFF;
         public const uint CeSlotBase = 0xFE000000;
         // TOC[7] o32[0] dataptr; VA = ROM - GwesRomText + 0x00011000.
@@ -1418,6 +1423,17 @@ namespace ProcessorEmulator.Core
             if (pc == GwesRomWinMain || pc == GwesVaWinMain || IsSlottedVa(pc, GwesVaWinMain))
             {
                 NoteGwesPc(pc, "WinMain", GwesRomWinMain, bus);
+                LogGwesInitFlag(bus);
+                return;
+            }
+            if (pc == GwesVaWinMainJal || IsSlottedVa(pc, GwesVaWinMainJal))
+            {
+                NoteGwesPc(pc, "WinMain-jal", GwesRomWinMain + (GwesVaWinMainJal - GwesVaWinMain), bus);
+                return;
+            }
+            if (pc == GwesVaWinMainSkip || IsSlottedVa(pc, GwesVaWinMainSkip))
+            {
+                NoteGwesPc(pc, "WinMain-skip", GwesRomWinMain + (GwesVaWinMainSkip - GwesVaWinMain), bus);
                 return;
             }
             if (pc == GwesRomDisplayFn || pc == GwesVaDisplayFn || IsSlottedVa(pc, GwesVaDisplayFn))
@@ -1479,7 +1495,7 @@ namespace ProcessorEmulator.Core
                 return;
             }
             if ((pc == CoredllWaitSo || pc == CoredllWaitMo) && _gwesWatch
-                && (_gwesIn || IsGwesThread(registers, bus)))
+                && IsGwesThread(registers, bus))
             {
                 LogGwesWait(pc, registers, bus);
                 return;
@@ -1492,13 +1508,13 @@ namespace ProcessorEmulator.Core
                     System.Console.WriteLine("[Hive] gwes first-ROM pc=0x" + pc.ToString("X8"));
                 return;
             }
-            if (IsSlottedGwesText(pc) || IsUsegGwesText(pc))
+            if (IsSlottedGwesText(pc) || IsGwesUsegPc(pc, bus))
             {
                 _gwesIn = true;
                 _gwesLastPc = pc;
                 if (IsSlottedGwesText(pc) && _logged.Add("hive:gwesslot"))
                     System.Console.WriteLine("[Hive] gwes first-slot pc=0x" + pc.ToString("X8"));
-                else if (IsUsegGwesText(pc) && _logged.Add("hive:gwesva"))
+                else if (IsGwesUsegPc(pc, bus) && _logged.Add("hive:gwesva"))
                     System.Console.WriteLine("[Hive] gwes first-VA pc=0x" + pc.ToString("X8"));
                 return;
             }
@@ -1537,9 +1553,40 @@ namespace ProcessorEmulator.Core
             return off >= 0x00011000 && off < 0x000BB000;
         }
 
-        private static bool IsUsegGwesText(uint pc)
+        private static bool IsGwesUsegPc(uint pc, MipsBus bus)
         {
-            return _gwesWatch && pc >= 0x00011000 && pc < 0x000BB000;
+            if (!_gwesWatch || bus == null || pc < 0x00011000 || pc >= 0x000BB000)
+                return false;
+            try
+            {
+                uint got = bus.Read32(pc);
+                uint gwes = bus.Read32(GwesRomText + (pc - 0x00011000));
+                uint filesys = bus.Read32(FilesysRomText + (pc - 0x00011000));
+                return got != 0 && got == gwes && got != filesys;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static void LogGwesInitFlag(MipsBus bus)
+        {
+            if (bus == null || !_logged.Add("hive:initflag"))
+                return;
+            try
+            {
+                uint word = bus.Read32(GwesInitFlag & ~3u);
+                uint b = ((GwesInitFlag & 3) == 0)
+                    ? (word & 0xFF)
+                    : ((word >> (8 * (int)(GwesInitFlag & 3))) & 0xFF);
+                System.Console.WriteLine("[Hive] WinMain already-init *0x000B7A1D=" +
+                    b + " (nonzero skips to epilogue, no DisplayDll)");
+            }
+            catch
+            {
+                System.Console.WriteLine("[Hive] WinMain already-init *0x000B7A1D unmapped");
+            }
         }
 
         private static bool IsGwesThread(uint[] registers, MipsBus bus)
@@ -1563,8 +1610,7 @@ namespace ProcessorEmulator.Core
         // Observe only. Do not SetEvent the waited handle.
         private static void LogGwesWait(uint pc, uint[] registers, MipsBus bus)
         {
-            if (!IsGwesThread(registers, bus) && !IsUsegGwesText(_gwesLastPc)
-                && _gwesLastPc != GwesVaWinMain && _gwesLastPc != GwesRomWinMain)
+            if (!IsGwesThread(registers, bus))
                 return;
             _gwesSawWait = true;
             _gwesIn = false;
