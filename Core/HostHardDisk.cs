@@ -11,10 +11,11 @@ namespace ProcessorEmulator.Core
     // UVERSE_HARD_DISK / PROCESSOR_EMULATOR_HARD_DISK, last-used
     // path next to the exe, or a drop folder next to cwd/exe).
     // Hunt by name, recursively, case-insensitive. Take what is
-    // present. Read-only: never write, delete, or rename dump
-    // files. Not a BINBlk/BINFS/ExtraROM object. If etc.bin is
-    // found, log it as the ExtraROM/XIP file hashes.bin already
-    // names; firmware maps it.
+    // present. Local/dev also tries the in-tree fixture and the
+    // last-known Uverse Drive E path; those are skipped if absent.
+    // Read-only: never write, delete, or rename dump files. Not a
+    // BINBlk/BINFS/ExtraROM object. If etc.bin is found, log it as
+    // the ExtraROM/XIP file hashes.bin already names; firmware maps it.
     //
     // FSDMGR WFMO #2 (after BINBlk) is already waiting on the
     // BLOCK_DRIVER queue. Deliver HDProf there (7-char CE name).
@@ -1104,6 +1105,10 @@ namespace ProcessorEmulator.Core
             yield return Path.Combine(bas, "UverseDriveE");
             yield return Path.Combine(cwd, "Uverse Drive E");
             yield return Path.Combine(bas, "Uverse Drive E");
+            // Local/dev defaults only. Missing paths are skipped.
+            // Shipped attach is the user feed + name hunt above.
+            yield return "/workspace/UverseDriveE";
+            yield return @"E:\EVO backup 2026 august 26\DVR Stuff\UVERSE STUFF\Uverse Drive E";
         }
 
         private static IEnumerable<string> CommandLineFeeds()
