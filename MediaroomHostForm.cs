@@ -1,13 +1,12 @@
 using System;
 using System.Drawing;
-using System.IO;
 using System.Threading;
 using System.Windows.Forms;
 
 namespace ProcessorEmulator
 {
-    // Thin Win7/WinForms shell. Shows dump hunt + honest boot log.
-    // Not a TV UI. Not a product shell.
+    // Thin Win7 host. Framebuffer pane is the surface. Black until
+    // the guest writes video RAM. No boot-log theater.
     public sealed class MediaroomHostForm : Form
     {
         private readonly TextBox _dumpBox;
@@ -15,7 +14,8 @@ namespace ProcessorEmulator
         private readonly Button _boot;
         private readonly Button _stop;
         private readonly Label _status;
-        private readonly TextBox _log;
+        private readonly PictureBox _frame;
+        private readonly System.Windows.Forms.Timer _tick;
         private MediaroomSession _session;
         private Thread _worker;
 
@@ -28,131 +28,148 @@ namespace ProcessorEmulator
         public MediaroomHostForm()
         {
             Text = "Mediaroom";
-            Width = 900;
-            Height = 640;
+            Width = 960;
+            Height = 600;
             StartPosition = FormStartPosition.CenterScreen;
             Font = SystemFonts.MessageBoxFont;
             FormBorderStyle = FormBorderStyle.Sizable;
             MinimizeBox = true;
             MaximizeBox = true;
 
-            var top = new Panel { Dock = DockStyle.Top, Height = 64 };
-            var dumpLabel = new Label { Text = "Dump", Left = 8, Top = 10, Width = 44, AutoSize = false };
-            _dumpBox = new TextBox { Left = 56, Top = 8, Width = 620, Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top };
-            _browse = new Button { Text = "Browse", Left = 684, Top = 6, Width = 80, Anchor = AnchorStyles.Right | AnchorStyles.Top };
-            _boot = new Button { Text = "Boot", Left = 56, Top = 34, Width = 72 };
-            _stop = new Button { Text = "Stop", Left = 134, Top = 34, Width = 72, Enabled = false };
-            _status = new Label { Text = "idle", Left = 220, Top = 38, Width = 540, Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top };
+            var top = new Panel { Dock = DockStyle.Top, Height = 36 };
+            _dumpBox = new TextBox { Left = 8, Top = 6, Width = 520, Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top };
+            _browse = new Button { Text = "Dump", Left = 536, Top = 4, Width = 56, Anchor = AnchorStyles.Right | AnchorStyles.Top };
+            _boot = new Button { Text = "Boot", Left = 596, Top = 4, Width = 56, Anchor = AnchorStyles.Right | AnchorStyles.Top };
+            _stop = new Button { Text = "Stop", Left = 656, Top = 4, Width = 56, Enabled = false, Anchor = AnchorStyles.Right | AnchorStyles.Top };
             _browse.Click += BrowseClick;
             _boot.Click += BootClick;
             _stop.Click += StopClick;
-            top.Controls.Add(dumpLabel);
             top.Controls.Add(_dumpBox);
             top.Controls.Add(_browse);
             top.Controls.Add(_boot);
             top.Controls.Add(_stop);
-            top.Controls.Add(_status);
             top.Resize += (_, __) =>
             {
-                _dumpBox.Width = Math.Max(80, top.ClientSize.Width - 56 - 96);
-                _browse.Left = top.ClientSize.Width - 88;
+                _dumpBox.Width = Math.Max(80, top.ClientSize.Width - 200);
+                _browse.Left = top.ClientSize.Width - 184;
+                _boot.Left = top.ClientSize.Width - 124;
+                _stop.Left = top.ClientSize.Width - 64;
             };
 
-            _log = new TextBox
+            _status = new Label
+            {
+                Dock = DockStyle.Bottom,
+                Height = 22,
+                Text = "idle",
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+
+            _frame = new PictureBox
             {
                 Dock = DockStyle.Fill,
-                Multiline = true,
-                ReadOnly = true,
-                ScrollBars = ScrollBars.Both,
-                WordWrap = false,
-                Font = new Font(FontFamily.GenericMonospace, 9f),
-                BackColor = SystemColors.Window,
-                ForeColor = SystemColors.WindowText
+                BackColor = Color.Black,
+                SizeMode = PictureBoxSizeMode.Zoom
             };
 
-            Controls.Add(_log);
+            Controls.Add(_frame);
+            Controls.Add(_status);
             Controls.Add(top);
 
             string env = Environment.GetEnvironmentVariable(Core.HostHardDisk.EnvName);
             if (!string.IsNullOrEmpty(env))
                 DumpPath = env;
 
+            _tick = new System.Windows.Forms.Timer { Interval = 250 };
+            _tick.Tick += (_, __) => RefreshStatus();
+            _tick.Start();
+
             HandleCreated += (_, __) => Win7VisualStyle.ApplyToHwnd(Handle);
             FormClosing += (_, __) =>
             {
+                _tick.Stop();
                 _session?.RequestStop();
             };
+        }
+
+        private void RefreshStatus()
+        {
+            if (_session == null)
+                return;
+            string note = _session.MemsetNote;
+            _status.Text = "Hz=" + _session.Hertz
+                + " PC=0x" + _session.ProgramCounter.ToString("X8")
+                + " steps=" + _session.Steps
+                + (string.IsNullOrEmpty(note) ? "" : "  " + note);
         }
 
         private void BrowseClick(object sender, EventArgs e)
         {
             using var d = new FolderBrowserDialog { Description = "Mediaroom / WinCE dump folder" };
             if (d.ShowDialog(this) == DialogResult.OK)
-                _dumpBox.Text = d.SelectedPath;
+                DumpPath = d.SelectedPath;
         }
 
         private void StopClick(object sender, EventArgs e)
         {
             _session?.RequestStop();
-            _status.Text = "stopping";
         }
 
         private void BootClick(object sender, EventArgs e)
         {
             if (_worker != null && _worker.IsAlive)
                 return;
-            _log.Clear();
             _boot.Enabled = false;
             _stop.Enabled = true;
             _status.Text = "booting";
+            _frame.Image = null;
+            _frame.BackColor = Color.Black;
             string feed = _dumpBox.Text;
-            _session = new MediaroomSession(AppendLog);
-            _worker = new Thread(() =>
+            _session = new MediaroomSession(s =>
             {
-                TextWriter old = Console.Out;
-                Console.SetOut(new MediaroomSession.ConsoleTap(old, AppendLog));
+                if (IsDisposed || !IsHandleCreated)
+                    return;
                 try
                 {
-                    bool ok = _session.Run(feed, 90000000);
-                    BeginInvoke(new Action(() =>
-                    {
-                        _status.Text = ok
-                            ? ("done steps=" + _session.Steps + " PC=0x" + _session.ProgramCounter.ToString("X8"))
-                            : "failed";
-                        _boot.Enabled = true;
-                        _stop.Enabled = false;
-                    }));
+                    BeginInvoke(new Action(() => { _status.Text = s; }));
+                }
+                catch
+                {
+                }
+            });
+            _worker = new Thread(() =>
+            {
+                try
+                {
+                    _session.Run(feed, 90000000);
                 }
                 catch (Exception ex)
                 {
-                    AppendLog(ex.ToString());
-                    BeginInvoke(new Action(() =>
+                    try
                     {
-                        _status.Text = "failed";
-                        _boot.Enabled = true;
-                        _stop.Enabled = false;
-                    }));
+                        BeginInvoke(new Action(() => { _status.Text = ex.GetType().Name; }));
+                    }
+                    catch
+                    {
+                    }
                 }
                 finally
                 {
-                    try { Console.SetOut(old); } catch { }
+                    try
+                    {
+                        BeginInvoke(new Action(() =>
+                        {
+                            _boot.Enabled = true;
+                            _stop.Enabled = false;
+                            RefreshStatus();
+                        }));
+                    }
+                    catch
+                    {
+                    }
                 }
             });
             _worker.IsBackground = true;
             _worker.Start();
-        }
-
-        private void AppendLog(string line)
-        {
-            if (IsDisposed)
-                return;
-            if (InvokeRequired)
-            {
-                try { BeginInvoke(new Action<string>(AppendLog), line); }
-                catch { }
-                return;
-            }
-            _log.AppendText(line + Environment.NewLine);
         }
     }
 }

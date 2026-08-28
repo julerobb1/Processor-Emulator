@@ -290,8 +290,7 @@ namespace ProcessorEmulator.Emulation
         {
             if ((programCounter & 3) != 0)
                 throw new CpuAlignmentException($"Unaligned fetch PC=0x{programCounter:X8}");
-            uint instruction = ReadMemory32(programCounter); // Use new ReadMemory32
-            Console.WriteLine($"PC: 0x{programCounter:X8} -> PADDR: 0x{_bus.Translate(programCounter):X8}, INSTR: 0x{instruction:X8}");
+            uint instruction = ReadMemory32(programCounter);
             programCounter += 4;
             return instruction;
         }
@@ -1289,18 +1288,8 @@ namespace ProcessorEmulator.Emulation
             }
         }
 
-        private void LogBranch(uint oldPc, uint newPc, string branchType)
+        private static void LogBranch(uint oldPc, uint newPc, string branchType)
         {
-            try
-            {
-                string logEntry = $"[BRANCH] PC (Before): 0x{oldPc:X8}, PC (After): 0x{newPc:X8}, Type: {branchType}\n";
-                File.AppendAllText(_logFilePath, logEntry);
-                OnLogMessage?.Invoke(logEntry); // Invoke the event for UI
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Error writing to branch log: {ex.Message}");
-            }
         }
 
         // Public wrapper used by other components to dispatch a single instruction

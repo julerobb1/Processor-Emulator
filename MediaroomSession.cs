@@ -1,7 +1,5 @@
 using System;
 using System.IO;
-using System.Text;
-using System.Threading;
 using ProcessorEmulator.Core;
 using ProcessorEmulator.Core.Emulation;
 using ProcessorEmulator.Core.Loaders;
@@ -18,21 +16,31 @@ namespace ProcessorEmulator
         private const uint UartSize = 0x1000;
         private const int HuntDepth = 3;
 
-        private readonly Action<string> _log;
+        private const uint MemsetSw = 0x80014200;
+        private const uint MemsetDelay = 0x8001420C;
+        private const int T1 = 9;
+
+        private readonly Action<string> _status;
         private MipsBus _bus;
         private CP0 _cp0;
         private MipsCpuEmulator _cpu;
         private volatile bool _stop;
+        private volatile uint _lastPc;
+        private volatile int _hz;
+        private string _memsetNote = "";
 
-        public uint ProgramCounter => _cpu != null ? _cpu.ProgramCounter : 0;
+        public uint ProgramCounter => _lastPc;
         public long Steps { get; private set; }
+        public int Hertz => _hz;
+        public string MemsetNote => _memsetNote;
         public string DumpRoot { get; private set; } = "";
         public string NkPath { get; private set; } = "";
         public bool KernelLoaded { get; private set; }
+        public bool GuestVideoWrote { get; private set; }
 
-        public MediaroomSession(Action<string> log)
+        public MediaroomSession(Action<string> status)
         {
-            _log = log ?? (_ => { });
+            _status = status ?? (_ => { });
         }
 
         public void RequestStop()
@@ -60,7 +68,7 @@ namespace ProcessorEmulator
             string nk = FindNkBin(huntRoot);
             if (string.IsNullOrEmpty(nk))
             {
-                _log("No nk.bin under the dump root (hunt is by filename, not Uverse in the path).");
+                _status("no nk.bin");
                 return false;
             }
 
@@ -68,7 +76,7 @@ namespace ProcessorEmulator
             string nkDir = Path.GetDirectoryName(nk);
             if (!string.IsNullOrEmpty(nkDir))
                 HostHardDisk.OfferFeed(nkDir);
-            _log("nk.bin " + nk);
+            _status("loading");
 
             _cp0 = new CP0();
             _bus = new MipsBus(_cp0);
@@ -86,8 +94,6 @@ namespace ProcessorEmulator
             _bus.AddDevice(new BcmStickyMmio(0xF0600000, 0x1000, "MMIOF060"));
             _cpu = new MipsCpuEmulator(_bus, _cp0);
             _bus.AddDevice(new MipsUart(UartBase, UartSize));
-            _cpu.OnLogMessage += s => _log(s);
-            _cpu.OnConsoleOutput += s => _log(s);
 
             NkLoadResult loaded;
             try
@@ -96,21 +102,25 @@ namespace ProcessorEmulator
             }
             catch (Exception ex)
             {
-                _log("NkBinLoader failed: " + ex.Message);
+                _status("NkBinLoader: " + ex.Message);
                 return false;
             }
 
             KernelLoaded = true;
             DumpRoot = HostHardDisk.Root;
-            _log("Hard Disk root=" + (string.IsNullOrEmpty(DumpRoot) ? "(none)" : DumpRoot));
-            if (!string.IsNullOrEmpty(HostHardDisk.ExtraRomPath))
-                _log("etc.bin at " + HostHardDisk.ExtraRomPath + " (firmware names ETC.BIN; not mapped here)");
-            _log("entry=0x" + loaded.EntryPoint.ToString("X8") + " records=" + loaded.RecordsLoaded);
-
+            GuestVideoWrote = false;
             _cpu.SetRegister(MipsCpuEmulator.Register.PC, (uint)loaded.EntryPoint);
             _cpu.SetRegister(MipsCpuEmulator.Register.SP, 0x80000000u + RamSize - 0x1000u);
+            _lastPc = (uint)loaded.EntryPoint;
+            _status("running");
 
             const int batch = 50000;
+            long lastHzSteps = 0;
+            int lastHzMs = Environment.TickCount;
+            uint memsetT1First = 0;
+            long memsetFirstStep = -1;
+            long memsetSameT1 = 0;
+            uint memsetLastT1 = 0;
             try
             {
                 while (!_stop && Steps < maxSteps)
@@ -118,18 +128,55 @@ namespace ProcessorEmulator
                     int n = (int)Math.Min(batch, (long)maxSteps - Steps);
                     _cpu.Step(n);
                     Steps += n;
-                    if (Steps % 1000000L == 0 || Steps == n)
-                        _log("steps=" + Steps + " PC=0x" + _cpu.ProgramCounter.ToString("X8"));
+                    uint pc = _cpu.ProgramCounter;
+                    _lastPc = pc;
+
+                    int now = Environment.TickCount;
+                    int dt = now - lastHzMs;
+                    if (dt >= 250)
+                    {
+                        _hz = (int)((Steps - lastHzSteps) * 1000L / Math.Max(1, dt));
+                        lastHzSteps = Steps;
+                        lastHzMs = now;
+                    }
+
+                    if (pc >= MemsetSw && pc <= MemsetDelay)
+                    {
+                        uint t1 = _cpu.GetRegister(T1);
+                        if (memsetFirstStep < 0)
+                        {
+                            memsetFirstStep = Steps;
+                            memsetT1First = t1;
+                            memsetLastT1 = t1;
+                            memsetSameT1 = 0;
+                        }
+                        else if (t1 == memsetLastT1)
+                            memsetSameT1 += n;
+                        else
+                        {
+                            memsetSameT1 = 0;
+                            memsetLastT1 = t1;
+                        }
+
+                        if (memsetSameT1 >= 2000000 && t1 != 0)
+                            _memsetNote = "memset 0x80014200 stuck t1=0x" + t1.ToString("X8") + " (not skipped)";
+                        else if (memsetT1First > 0x01000000)
+                            _memsetNote = "memset 0x80014200 t1=0x" + t1.ToString("X8") + " from 0x" + memsetT1First.ToString("X8") + " (running)";
+                        else
+                            _memsetNote = "memset 0x80014200 t1=0x" + t1.ToString("X8");
+                    }
+                    else if (memsetFirstStep >= 0 && string.IsNullOrEmpty(_memsetNote))
+                        _memsetNote = "memset 0x80014200 left after " + (Steps - memsetFirstStep) + " steps";
                 }
             }
             catch (Exception ex)
             {
-                _log("CPU stop: " + ex.GetType().Name + ": " + ex.Message + " PC=0x" + _cpu.ProgramCounter.ToString("X8") + " steps=" + Steps);
+                _lastPc = _cpu != null ? _cpu.ProgramCounter : _lastPc;
+                _status("CPU " + ex.GetType().Name + " PC=0x" + _lastPc.ToString("X8"));
                 return KernelLoaded;
             }
 
-            _log((_stop ? "stopped" : "step limit") + " steps=" + Steps + " PC=0x" + _cpu.ProgramCounter.ToString("X8"));
-            _log("tv2clientce not started (firmware never CreateProcess).");
+            _status(_stop ? "stopped" : "step limit");
             return true;
         }
 
@@ -208,25 +255,6 @@ namespace ProcessorEmulator
             public uint ReadMemory32(ulong address) => _bus.Read32((uint)address);
             public void WriteMemory32(ulong address, uint value) => _bus.Write32((uint)address, value);
             public void WriteMemory(ulong address, byte[] data) => _bus.WriteBytes((uint)address, data);
-        }
-
-        internal sealed class ConsoleTap : TextWriter
-        {
-            private readonly TextWriter _inner;
-            private readonly Action<string> _log;
-            public ConsoleTap(TextWriter inner, Action<string> log)
-            {
-                _inner = inner;
-                _log = log;
-            }
-            public override Encoding Encoding => _inner != null ? _inner.Encoding : Encoding.UTF8;
-            public override void WriteLine(string value)
-            {
-                if (!string.IsNullOrEmpty(value))
-                    _log(value);
-                _inner?.WriteLine(value);
-            }
-            public override void Write(char value) => _inner?.Write(value);
         }
     }
 }
