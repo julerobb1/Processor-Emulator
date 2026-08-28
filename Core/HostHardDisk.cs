@@ -13,8 +13,9 @@ namespace ProcessorEmulator.Core
     // that root and its shallow children by name, case-insensitive.
     // Take what is present. The path need not contain Uverse.
     // Read-only: never write, delete, or rename dump files. Not a
-    // BINBlk/BINFS/ExtraROM object. If etc.bin is found, log it as
-    // the ExtraROM/XIP file hashes.bin already names; firmware maps it.
+    // BINBlk/BINFS object. If hunt finds etc.bin, NkBinLoader maps
+    // its B000FF records when imageStart is 0x80630000. Do not
+    // invent 0x81360000.
     //
     // FSDMGR WFMO #2 (after BINBlk) is already waiting on the
     // BLOCK_DRIVER queue. Deliver HDProf there (7-char CE name).
@@ -133,7 +134,7 @@ namespace ProcessorEmulator.Core
                 _root = dir;
                 System.Console.WriteLine($"[HardDisk] FAT {_image.Length} bytes root={dir} name={FolderName}");
                 if (!string.IsNullOrEmpty(_extraRom))
-                    System.Console.WriteLine("[HardDisk] ExtraROM etc.bin at " + _extraRom + " (firmware names ETC.BIN; not mapped here)");
+                    System.Console.WriteLine("[HardDisk] ExtraROM etc.bin at " + _extraRom);
                 RememberLastUsed(dir);
             }
             catch (Exception ex)
