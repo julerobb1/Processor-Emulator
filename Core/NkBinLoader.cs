@@ -33,7 +33,8 @@ namespace ProcessorEmulator.Core.Loaders
         // dump etc.bin is B000FF at 0x80630000. Load every dump
         // B000FF at THAT file's imageStart. Do not invent a map for
         // a chain base with no matching dump B000FF (0x81360000 in
-        // this dump). Do not zero-fill that span.
+        // this dump). Firmware has no skip for that missing image.
+        // Do not invent a map or a host skip. Do not zero-fill.
         public const uint ChainTable = 0x8006B9DC;
         public const int ChainRecords = 3;
 
@@ -284,7 +285,7 @@ namespace ProcessorEmulator.Core.Loaders
                         continue;
                     Console.WriteLine("[NkBinLoader] ExtraROM missing dump B000FF for chain base=0x" +
                         imageStart.ToString("X8") + " size=0x" + imageLength.ToString("X") +
-                        " (do not invent a map)");
+                        " (firmware has no skip; do not invent a map)");
                 }
             }
             catch (Exception ex)

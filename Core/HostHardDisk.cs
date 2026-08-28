@@ -19,9 +19,9 @@ namespace ProcessorEmulator.Core
     // and the rest) is in RAM. A Dumps\etc.bin\ extract folder is
     // that same tree unpacked — log it, do not pack it into a fake
     // B000FF. Firmware CreateFile of ETC.bin / BOOT.PRF / sec.bin
-    // is the Hard Disk path, not a second XIP. No peek-and-skip of
-    // an unmapped chain VA exists in nk.bin. Do not invent a map
-    // for 0x81360000. Do not CreateProcess(tv2clientce).
+    // is the Hard Disk path, not a second XIP. Firmware has no skip
+    // for the missing 0x81360000 image. Do not invent a map or a
+    // host skip. Do not CreateProcess(tv2clientce).
     //
     // FSDMGR WFMO #2 (after BINBlk) is already waiting on the
     // BLOCK_DRIVER queue. Deliver HDProf there (7-char CE name).
@@ -56,7 +56,8 @@ namespace ProcessorEmulator.Core
         public const uint Handle = 0xA15C0D15;
         public const uint KernelCreateFile = 0x8001D3A0;
         // Inherit LIST path / VALLOC jal. Log only. Firmware skips
-        // a pair only when start==0 or start==end. No ExtraROM peek.
+        // a pair only when start==0 or start==end. No skip for the
+        // missing 0x81360000 image.
         public const uint InheritListPath = 0x8001B6EC;
         public const uint InheritVallocJal = 0x8001B724;
         // mspart PD_OpenStore calls this FSDMGR export, not binfs IAT 0x03EA4140.
@@ -987,7 +988,8 @@ namespace ProcessorEmulator.Core
         }
 
         // Observe only. Walker skips start==0 or start==end.
-        // No ExtraROM VA peek exists. Do not rewrite +14/+18.
+        // Firmware has no skip for the missing 0x81360000 image.
+        // Do not rewrite +14/+18.
         private static void LogInheritList(MipsBus bus, uint list)
         {
             if (_inheritListLogged || bus == null || list == 0)
