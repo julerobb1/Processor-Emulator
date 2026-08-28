@@ -41,6 +41,10 @@ namespace ProcessorEmulator.Core
         public const uint ExeVbase = 0x00010000;
         public const uint ProcModule = 0x50;
         public const uint ProcSlot = 0x0C;
+        public const uint ProcTable = 0x80340040;
+        public const uint ProcSize = 0xD0;
+        public const uint ThreadPtr = 0xFFFFDAC0;
+        public const uint ThreadStack = 0x24;
         public const uint O32Compressed = 0x4000;
         // 0x8001F12C andi s4, 0x8000 / beq skip CallDLL a1=1.
         // User-mode LoadLibrary keeps s4=0 (same for CEDDK/HAL/
@@ -327,7 +331,7 @@ namespace ProcessorEmulator.Core
             try
             {
                 _aliasBusy = true;
-                uint proc = bus.Read32(CurProc);
+                uint proc = ProcessForXipAlias(bus);
                 if (proc != _aliasProc)
                     RebuildExeXipAlias(bus, proc);
             }
@@ -350,7 +354,7 @@ namespace ProcessorEmulator.Core
             try
             {
                 _aliasBusy = true;
-                uint proc = bus.Read32(CurProc);
+                uint proc = ProcessForXipAlias(bus);
                 if (proc != _aliasProc)
                     RebuildExeXipAlias(bus, proc);
             }
@@ -368,6 +372,45 @@ namespace ProcessorEmulator.Core
             if (region != 0 && region != _aliasSlot)
                 return va;
             return _aliasRom + (off - _aliasReal);
+        }
+
+        private static uint ProcessForXipAlias(MipsBus bus)
+        {
+            uint cur = bus.Read32(CurProc);
+            try
+            {
+                uint thr = bus.Read32(ThreadPtr);
+                if (thr != 0 && thr != 0xDEADBEEFu)
+                {
+                    uint sp = bus.Read32(thr + ThreadStack);
+                    uint slot = sp & 0xFE000000u;
+                    if (slot >= 0x04000000u && slot < 0x20000000u)
+                    {
+                        uint bySlot = FindProcBySlot(bus, slot);
+                        if (bySlot != 0)
+                            return bySlot;
+                        uint tproc = bus.Read32(thr + ProcSlot);
+                        if (tproc != 0 && tproc != 0xDEADBEEFu)
+                            return tproc;
+                    }
+                }
+            }
+            catch
+            {
+            }
+            return cur;
+        }
+
+        private static uint FindProcBySlot(MipsBus bus, uint slot)
+        {
+            for (uint i = 0; i < 16; i++)
+            {
+                uint p = ProcTable + i * ProcSize;
+                uint vm = bus.Read32(p + ProcSlot) & 0xFE000000u;
+                if (vm == slot)
+                    return p;
+            }
+            return 0;
         }
 
         private static void RebuildExeXipAlias(MipsBus bus, uint proc)

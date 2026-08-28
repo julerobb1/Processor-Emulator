@@ -1403,22 +1403,23 @@ namespace ProcessorEmulator.Core
         {
             if (pc == GwesRomEntry || pc == GwesVaEntry || IsSlottedVa(pc, GwesVaEntry))
             {
-                NoteGwesPc(pc, "entry");
+                NoteGwesPc(pc, "entry", GwesRomEntry, bus);
                 return;
             }
             if (pc == GwesRomWinMain || pc == GwesVaWinMain || IsSlottedVa(pc, GwesVaWinMain))
             {
-                NoteGwesPc(pc, "WinMain");
+                NoteGwesPc(pc, "WinMain", GwesRomWinMain, bus);
                 return;
             }
             if (pc == GwesRomDisplayDll || pc == GwesVaDisplayDll || IsSlottedVa(pc, GwesVaDisplayDll))
             {
-                NoteGwesPc(pc, "DisplayDll");
+                NoteGwesPc(pc, "DisplayDll", GwesRomDisplayDll, bus);
                 return;
             }
             if (pc == GwesRomSignal || pc == GwesRomGweApi)
             {
-                NoteGwesPc(pc, pc == GwesRomSignal ? "SignalStarted-ROM" : "GweApi-ROM");
+                NoteGwesPc(pc, pc == GwesRomSignal ? "SignalStarted-ROM" : "GweApi-ROM",
+                    pc, bus);
                 return;
             }
             if (pc == DdiNopEntry || (pc >= DdiNopVbase && pc < DdiNopVend))
@@ -1524,15 +1525,36 @@ namespace ProcessorEmulator.Core
             return off >= 0x00011000 && off < 0x000BB000;
         }
 
-        private static void NoteGwesPc(uint pc, string what)
+        private static void NoteGwesPc(uint pc, string what, uint rom, MipsBus bus)
         {
+            uint got = 0;
+            uint want = 0;
+            try
+            {
+                if (bus != null)
+                {
+                    got = bus.Read32(pc);
+                    want = bus.Read32(rom);
+                }
+            }
+            catch
+            {
+            }
+            if (want != 0 && got != want)
+            {
+                if (_logged.Add("hive:gpcmiss:" + what))
+                    System.Console.WriteLine("[Hive] " + what + " pc=0x" + pc.ToString("X8") +
+                        " word=0x" + got.ToString("X8") + " (not gwes 0x" + want.ToString("X8") + ")");
+                return;
+            }
             _gwesIn = true;
             _gwesLastPc = pc;
             if (what.IndexOf("Signal", StringComparison.Ordinal) >= 0
                 || what.IndexOf("GweApi", StringComparison.Ordinal) >= 0)
                 _gwesSawSignal = true;
             if (_logged.Add("hive:gpc:" + what))
-                System.Console.WriteLine("[Hive] gwes " + what + " pc=0x" + pc.ToString("X8"));
+                System.Console.WriteLine("[Hive] gwes " + what + " pc=0x" + pc.ToString("X8") +
+                    " word=0x" + got.ToString("X8"));
         }
 
         private static void LogDdiNopMapped(MipsBus bus)
