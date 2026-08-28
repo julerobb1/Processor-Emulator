@@ -1540,7 +1540,7 @@ namespace ProcessorEmulator.Core
             catch
             {
             }
-            if (want != 0 && got != want)
+            if (want == 0 || got != want)
             {
                 if (_logged.Add("hive:gpcmiss:" + what))
                     System.Console.WriteLine("[Hive] " + what + " pc=0x" + pc.ToString("X8") +
