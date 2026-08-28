@@ -20,8 +20,9 @@ namespace ProcessorEmulator.Core
     // FAT DISK_READ. Mount GETNAME (0x71800) size 0 writes Hard Disk.
     // Filters enum names ROM sigcheckfilter.dll for HookVolume.
     // After LoadLibrary, FSDMGR opens the global child
-    // StorageManager\\Filters\\sigcheckfilter. Serve that
-    // key; the parent Filters key stays ERROR_BADKEY.
+    // StorageManager\\Filters\\sigcheckfilter, then
+    // StorageManager\\sigcheckfilter. Serve those
+    // children; parent Filters stays ERROR_BADKEY.
     // No fake MountDisk. No SetEvent of store/BootPhase/pump.
     public static class HostHardDisk
     {
@@ -355,9 +356,12 @@ namespace ProcessorEmulator.Core
                 return HkFilters;
             if (IsFilterChild(n, "System\\StorageManager\\Profiles\\HDProfile\\FATFS\\Filters"))
                 return HkSigCheck;
-            // FSDMGR then opens this global child (not the
-            // parent) to resolve HookVolume on the filter.
+            // FSDMGR then opens these global children (not
+            // the parent Filters key) to resolve HookVolume.
             if (IsFilterChild(n, "System\\StorageManager\\Filters"))
+                return HkSigCheck;
+            if (EqualsIgnore(n, "System\\StorageManager\\sigcheckfilter")
+                || IsFilterChild(n, "System\\StorageManager"))
                 return HkSigCheck;
             return 0;
         }
