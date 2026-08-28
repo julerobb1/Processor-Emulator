@@ -7,9 +7,10 @@ using ProcessorEmulator.Emulation;
 
 namespace ProcessorEmulator
 {
-    // Honest dump -> NkBinLoader -> MIPS/CE step. etc.bin B000FF
-    // at 0x80630000 is loaded the same way as nk.bin. No invented
-    // 0x81360000 map, no CreateProcess, no SetEvent.
+    // Honest dump -> NkBinLoader -> MIPS/CE step. Every dump B000FF
+    // next to nk.bin (etc.bin and any other) is loaded at that
+    // file's imageStart. No invented 0x81360000 map, no
+    // CreateProcess, no SetEvent.
     public sealed class MediaroomSession
     {
         private const uint RamSize = 256u * 1024u * 1024u;

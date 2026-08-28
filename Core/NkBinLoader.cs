@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using ProcessorEmulator.Core.Emulation;
 using ProcessorEmulator.Core;
@@ -27,11 +28,13 @@ namespace ProcessorEmulator.Core.Loaders
 
     public static class NkBinLoader
     {
-        // Chain table 0x8006B9EC: ExtraROM base 0x80630000 / size 0xD30000.
-        // Julian's etc.bin B000FF imageStart matches that base. Do not
-        // invent a map for chain 0x81360000 — this dump has no B000FF
-        // for that slot.
-        public const uint ExtraRomImageStart = 0x80630000;
+        // nk.bin chain table 0x8006B9DC (16-byte records). Julian's
+        // dump etc.bin is B000FF at 0x80630000. Load every dump
+        // B000FF at THAT file's imageStart. Do not invent a map for
+        // a chain base with no matching dump B000FF (0x81360000 in
+        // this dump). Do not zero-fill that span.
+        public const uint ChainTable = 0x8006B9DC;
+        public const int ChainRecords = 3;
 
         public static bool IsB000Ff(byte[] data)
         {
@@ -86,18 +89,88 @@ namespace ProcessorEmulator.Core.Loaders
 
             BinBlkMedia.Attach(data);
             HostHardDisk.Attach();
-            TryLoadExtraRom(HostHardDisk.ExtraRomPath, memory);
+            var mapped = new HashSet<uint> { imageStart };
+            TryLoadDumpB000Ff(HostHardDisk.ExtraRomPaths, memory, mapped);
+            ReportMissingChainImages(memory, mapped);
             return new NkLoadResult(entryPoint, imageStart, imageLength, records, truncated, data);
         }
 
-        // Hunt path is HostHardDisk ExtraRomPath (filename etc.bin).
-        // Read-only. Reject hunt stubs and any B000FF whose imageStart
-        // is not the chain-1 base. Does not attach BINBlk. Does not
-        // invent 0x81360000.
+        // Hunt is HostHardDisk ExtraRomPaths: every etc.bin plus any
+        // other B000FF sitting next to nk.bin. Read-only. Load each
+        // file's records at THAT file's imageStart (same walk as nk).
+        // Skip stubs and non-B000FF (sec.bin, raven_fw.bin). Does not
+        // attach BINBlk. Does not invent a chain base with no dump
+        // B000FF. Firmware CreateFile of ETC.bin / BOOT.PRF / sec.bin
+        // stays the Hard Disk path, not a second XIP.
+        public static int TryLoadDumpB000Ff(IEnumerable<string> paths, IMemoryManager memory, HashSet<uint> mappedStarts)
+        {
+            int loaded = 0;
+            if (memory == null || paths == null)
+                return 0;
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string path in paths)
+            {
+                if (string.IsNullOrEmpty(path) || !seen.Add(Path.GetFullPath(path)))
+                    continue;
+                if (TryLoadOneDumpB000Ff(path, memory, mappedStarts))
+                    loaded++;
+            }
+            return loaded;
+        }
+
         public static bool TryLoadExtraRom(string path, IMemoryManager memory)
+        {
+            var mapped = new HashSet<uint>();
+            return TryLoadOneDumpB000Ff(path, memory, mapped);
+        }
+
+        private static bool TryLoadOneDumpB000Ff(string path, IMemoryManager memory, HashSet<uint> mappedStarts)
         {
             if (memory == null || string.IsNullOrEmpty(path) || !File.Exists(path))
                 return false;
+
+            long len;
+            try { len = new FileInfo(path).Length; }
+            catch { return false; }
+            if (len < 15)
+            {
+                Console.WriteLine("[NkBinLoader] ExtraROM skip " + path + " (" + len + " bytes, stub)");
+                return false;
+            }
+
+            byte[] header;
+            try
+            {
+                header = new byte[15];
+                using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                {
+                    if (fs.Read(header, 0, 15) < 15)
+                    {
+                        Console.WriteLine("[NkBinLoader] ExtraROM skip " + path + " (short read, stub)");
+                        return false;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[NkBinLoader] ExtraROM read failed " + path + ": " + ex.Message);
+                return false;
+            }
+
+            if (!IsB000Ff(header))
+            {
+                Console.WriteLine("[NkBinLoader] ExtraROM skip " + path + " (" + len + " bytes, not B000FF)");
+                return false;
+            }
+
+            uint imageStart = BitConverter.ToUInt32(header, 7);
+            uint imageLength = BitConverter.ToUInt32(header, 11);
+            if (mappedStarts != null && mappedStarts.Contains(imageStart))
+            {
+                Console.WriteLine("[NkBinLoader] ExtraROM skip " + path +
+                    " imageStart=0x" + imageStart.ToString("X8") + " (already mapped)");
+                return false;
+            }
 
             byte[] data;
             try
@@ -110,31 +183,47 @@ namespace ProcessorEmulator.Core.Loaders
                 return false;
             }
 
-            if (!IsB000Ff(data))
-            {
-                Console.WriteLine("[NkBinLoader] ExtraROM skip " + path + " (" + data.Length + " bytes, not B000FF)");
-                return false;
-            }
-
-            uint imageStart = BitConverter.ToUInt32(data, 7);
-            uint imageLength = BitConverter.ToUInt32(data, 11);
-            if (imageStart != ExtraRomImageStart)
-            {
-                Console.WriteLine("[NkBinLoader] ExtraROM skip " + path +
-                    " imageStart=0x" + imageStart.ToString("X") +
-                    " (want 0x" + ExtraRomImageStart.ToString("X") + "; do not invent 0x81360000)");
-                return false;
-            }
-
-            int records = WriteB000FfRecords(data, 15, imageLength, memory, "etc", out _, out _, out bool truncated);
+            string label = Path.GetFileName(path);
+            int records = WriteB000FfRecords(data, 15, imageLength, memory, label, out _, out _, out bool truncated);
             if (records <= 0)
             {
                 Console.WriteLine("[NkBinLoader] ExtraROM skip " + path + " (no records" + (truncated ? ", truncated" : "") + ")");
                 return false;
             }
+            if (mappedStarts != null)
+                mappedStarts.Add(imageStart);
             Console.WriteLine("[NkBinLoader] ExtraROM mapped records=" + records +
-                " imageStart=0x" + imageStart.ToString("X8"));
+                " imageStart=0x" + imageStart.ToString("X8") +
+                " path=" + path);
             return true;
+        }
+
+        // Report only. Do not write bytes for a chain base the dump
+        // did not name as B000FF.
+        private static void ReportMissingChainImages(IMemoryManager memory, HashSet<uint> mappedStarts)
+        {
+            if (memory == null || mappedStarts == null)
+                return;
+            try
+            {
+                for (int i = 0; i < ChainRecords; i++)
+                {
+                    uint rec = ChainTable + (uint)(i * 16);
+                    uint imageStart = memory.ReadMemory32(rec);
+                    uint imageLength = memory.ReadMemory32(rec + 4);
+                    if (imageStart == 0)
+                        continue;
+                    if (mappedStarts.Contains(imageStart))
+                        continue;
+                    Console.WriteLine("[NkBinLoader] ExtraROM missing dump B000FF for chain base=0x" +
+                        imageStart.ToString("X8") + " size=0x" + imageLength.ToString("X") +
+                        " (do not invent a map)");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[NkBinLoader] ExtraROM chain report skipped: " + ex.Message);
+            }
         }
 
         private static int WriteB000FfRecords(byte[] data, int pos, uint imageLength, IMemoryManager memory, string label, out uint firstRecord, out ulong entryPoint, out bool truncated)

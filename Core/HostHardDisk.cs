@@ -13,9 +13,12 @@ namespace ProcessorEmulator.Core
     // that root and its shallow children by name, case-insensitive.
     // Take what is present. The path need not contain Uverse.
     // Read-only: never write, delete, or rename dump files. Not a
-    // BINBlk/BINFS object. If hunt finds etc.bin, NkBinLoader maps
-    // its B000FF records when imageStart is 0x80630000. Do not
-    // invent 0x81360000.
+    // BINBlk/BINFS object. Hunt every etc.bin plus any other B000FF
+    // sitting next to nk.bin. NkBinLoader maps each file's records
+    // at THAT file's imageStart. Skip stubs and non-B000FF (sec.bin,
+    // raven_fw.bin). Firmware CreateFile of ETC.bin / BOOT.PRF /
+    // sec.bin is the Hard Disk path, not a second XIP. Do not invent
+    // a map for a chain base with no matching dump B000FF.
     //
     // FSDMGR WFMO #2 (after BINBlk) is already waiting on the
     // BLOCK_DRIVER queue. Deliver HDProf there (7-char CE name).
@@ -92,7 +95,8 @@ namespace ProcessorEmulator.Core
 
         private static string _root = "";
         private static string _offeredFeed = "";
-        private static string _extraRom = "";
+        private static string _nkDir = "";
+        private static readonly List<string> _extraRoms = new List<string>();
         private static byte[] _image = Array.Empty<byte>();
         private static bool _notified;
         private static bool _detailFilled;
@@ -104,7 +108,20 @@ namespace ProcessorEmulator.Core
         public static bool IsOpen => _opened;
         public static bool DetailFilled => _detailFilled;
         public static string Root => _root;
-        public static string ExtraRomPath => _extraRom;
+        public static string ExtraRomPath
+        {
+            get
+            {
+                foreach (string p in _extraRoms)
+                {
+                    if (Path.GetFileName(p).Equals("etc.bin", StringComparison.OrdinalIgnoreCase))
+                        return p;
+                }
+                return _extraRoms.Count > 0 ? _extraRoms[0] : "";
+            }
+        }
+
+        public static IReadOnlyList<string> ExtraRomPaths => _extraRoms;
 
         public static void OfferFeed(string path)
         {
@@ -115,7 +132,8 @@ namespace ProcessorEmulator.Core
         public static void Attach()
         {
             _root = "";
-            _extraRom = "";
+            _nkDir = "";
+            _extraRoms.Clear();
             _image = Array.Empty<byte>();
             _notified = false;
             _detailFilled = false;
@@ -133,8 +151,11 @@ namespace ProcessorEmulator.Core
                 _image = Fat16.Build(dir);
                 _root = dir;
                 System.Console.WriteLine($"[HardDisk] FAT {_image.Length} bytes root={dir} name={FolderName}");
-                if (!string.IsNullOrEmpty(_extraRom))
-                    System.Console.WriteLine("[HardDisk] ExtraROM etc.bin at " + _extraRom);
+                NoteDumpImages(dir);
+                if (!string.IsNullOrEmpty(_nkDir))
+                    NoteDumpImages(_nkDir);
+                foreach (string extra in _extraRoms)
+                    System.Console.WriteLine("[HardDisk] ExtraROM candidate " + extra);
                 RememberLastUsed(dir);
             }
             catch (Exception ex)
@@ -964,7 +985,7 @@ namespace ProcessorEmulator.Core
                     continue;
                 if (LooksLikeVolume(feed))
                 {
-                    NoteExtraRom(feed);
+                    NoteDumpImages(feed);
                     return feed;
                 }
                 System.Console.WriteLine("[HardDisk] hunt feed=" + feed);
@@ -995,21 +1016,68 @@ namespace ProcessorEmulator.Core
             return false;
         }
 
-        private static void NoteExtraRom(string dir)
+        // etc.bin by name (HD file + ExtraROM candidate). Other
+        // B000FF only when they sit next to nk.bin. sec.bin /
+        // raven_fw.bin / BOOT.PRF stay hunt names for FAT, not XIP.
+        private static void NoteDumpImages(string dir)
         {
+            if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir))
+                return;
             try
             {
                 foreach (string f in Directory.GetFiles(dir))
                 {
-                    if (Path.GetFileName(f).Equals("etc.bin", StringComparison.OrdinalIgnoreCase))
+                    string name = Path.GetFileName(f);
+                    if (name.Equals("nk.bin", StringComparison.OrdinalIgnoreCase))
                     {
-                        _extraRom = f;
-                        return;
+                        _nkDir = dir;
+                        continue;
                     }
+                    if (name.Equals("etc.bin", StringComparison.OrdinalIgnoreCase) || PeekB000Ff(f))
+                        AddExtraRom(f);
                 }
             }
             catch
             {
+            }
+        }
+
+        private static void AddExtraRom(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+                return;
+            try { path = Path.GetFullPath(path); }
+            catch { return; }
+            foreach (string existing in _extraRoms)
+            {
+                if (existing.Equals(path, StringComparison.OrdinalIgnoreCase))
+                    return;
+            }
+            _extraRoms.Add(path);
+        }
+
+        private static bool PeekB000Ff(string path)
+        {
+            try
+            {
+                using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                {
+                    if (fs.Length < 15)
+                        return false;
+                    byte[] h = new byte[7];
+                    return fs.Read(h, 0, 7) == 7
+                        && h[0] == (byte)'B'
+                        && h[1] == (byte)'0'
+                        && h[2] == (byte)'0'
+                        && h[3] == (byte)'0'
+                        && h[4] == (byte)'F'
+                        && h[5] == (byte)'F'
+                        && h[6] == (byte)'\n';
+                }
+            }
+            catch
+            {
+                return false;
             }
         }
 
@@ -1056,9 +1124,19 @@ namespace ProcessorEmulator.Core
                 }
             }
             if (!string.IsNullOrEmpty(bestVol))
+            {
+                NoteDumpImages(bestVol);
+                if (!string.IsNullOrEmpty(_nkDir))
+                    NoteDumpImages(_nkDir);
                 return bestVol;
+            }
             if (!string.IsNullOrEmpty(bestLoose))
+            {
+                NoteDumpImages(bestLoose);
+                if (!string.IsNullOrEmpty(_nkDir))
+                    NoteDumpImages(_nkDir);
                 return bestLoose;
+            }
             return "";
         }
 
@@ -1095,8 +1173,10 @@ namespace ProcessorEmulator.Core
                 }
                 if (HuntNames.Contains(name) && seenNames.Add(name))
                     System.Console.WriteLine("[HardDisk] found " + name + " at " + p);
-                if (name.Equals("etc.bin", StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(_extraRom))
-                    _extraRom = p;
+                if (name.Equals("nk.bin", StringComparison.OrdinalIgnoreCase))
+                    _nkDir = Path.GetDirectoryName(p) ?? "";
+                if (name.Equals("etc.bin", StringComparison.OrdinalIgnoreCase))
+                    AddExtraRom(p);
                 if (VolumeNames.Contains(name) || HuntNames.Contains(name))
                 {
                     VolumeScore s;
