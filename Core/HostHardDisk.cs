@@ -20,8 +20,10 @@ namespace ProcessorEmulator.Core
     // that same tree unpacked — log it, do not pack it into a fake
     // B000FF. Firmware CreateFile of ETC.bin / BOOT.PRF / sec.bin
     // is the Hard Disk path, not a second XIP. Firmware has no skip
-    // for the missing 0x81360000 image. Do not invent a map or a
-    // host skip. Do not CreateProcess(tv2clientce).
+    // for the missing 0x81360000 image. Do not invent that map.
+    // Host drops leftover inherit pairs at publish/copy (start==0,
+    // start==end, end<start, or size>=32MB). Keep the NK pair.
+    // Do not CreateProcess(tv2clientce).
     //
     // FSDMGR WFMO #2 (after BINBlk) is already waiting on the
     // BLOCK_DRIVER queue. Deliver HDProf there (7-char CE name).
@@ -55,11 +57,16 @@ namespace ProcessorEmulator.Core
         public const string FolderName = "Hard Disk";
         public const uint Handle = 0xA15C0D15;
         public const uint KernelCreateFile = 0x8001D3A0;
-        // Inherit LIST path / VALLOC jal. Log only. Firmware skips
-        // a pair only when start==0 or start==end. No skip for the
-        // missing 0x81360000 image.
+        // Inherit LIST path / VALLOC jal. Firmware skips a pair only
+        // when start==0 or start==end. Host filters leftovers at
+        // SaveList / memcpy of the 0x24 record.
         public const uint InheritListPath = 0x8001B6EC;
         public const uint InheritVallocJal = 0x8001B724;
+        public const uint InheritSaveList = 0x8001687C;
+        public const uint InheritMemcpy = 0x80016A44;
+        public const uint BinfsInheritFill = 0x03EA2B84;
+        public const uint InheritRecordSize = 0x24;
+        public const uint InheritSlotBytes = 0x02000000;
         // mspart PD_OpenStore calls this FSDMGR export, not binfs IAT 0x03EA4140.
         public const uint FsdmgrIoImpl = 0x03E83C08;
         // mspart GetDiskInfo / OpenStore uses these FSDMGR
@@ -185,6 +192,30 @@ namespace ProcessorEmulator.Core
                 return false;
 
             uint pc = programCounter;
+            if (pc == BinfsInheritFill)
+            {
+                uint plus14 = registers[12];
+                uint plus18 = registers[24];
+                uint start = plus14 << 16;
+                if (BadInheritPair(start, plus18))
+                    System.Console.WriteLine("[Inherit] skip +14=0x" + plus14.ToString("X8") +
+                        " +18=0x" + plus18.ToString("X8") +
+                        " start=0x" + start.ToString("X8") +
+                        " end=0x" + plus18.ToString("X8"));
+                return false;
+            }
+            if (pc == InheritSaveList)
+            {
+                if (registers[4] == InheritRecordSize)
+                    CompactInheritRecord(bus, registers[5]);
+                return false;
+            }
+            if (pc == InheritMemcpy)
+            {
+                if (registers[6] == InheritRecordSize)
+                    CompactInheritRecord(bus, registers[5]);
+                return false;
+            }
             if (pc == InheritListPath)
             {
                 LogInheritList(bus, registers[2]);
@@ -987,9 +1018,61 @@ namespace ProcessorEmulator.Core
             }
         }
 
-        // Observe only. Walker skips start==0 or start==end.
-        // Firmware has no skip for the missing 0x81360000 image.
-        // Do not rewrite +14/+18.
+        // Do not rewrite slot +14/+18 into packed offsets. Drop the
+        // published pair when start/end cannot be a 32MB slot region.
+        private static bool BadInheritPair(uint start, uint end)
+        {
+            if (start == 0 || start == end)
+                return true;
+            if (end < start)
+                return true;
+            return (end - start) >= InheritSlotBytes;
+        }
+
+        private static void CompactInheritRecord(MipsBus bus, uint rec)
+        {
+            if (bus == null || rec == 0)
+                return;
+            try
+            {
+                uint count = bus.Read32(rec + 8);
+                if (count == 0 || count > 8)
+                    return;
+                uint write = 0;
+                for (uint i = 0; i < count; i++)
+                {
+                    uint pair = rec + 12 + i * 8;
+                    uint start = bus.Read32(pair);
+                    uint end = bus.Read32(pair + 4);
+                    if (BadInheritPair(start, end))
+                    {
+                        System.Console.WriteLine("[Inherit] drop pair start=0x" + start.ToString("X8") +
+                            " end=0x" + end.ToString("X8"));
+                        continue;
+                    }
+                    if (write != i)
+                    {
+                        bus.Write32(rec + 12 + write * 8, start);
+                        bus.Write32(rec + 16 + write * 8, end);
+                    }
+                    write++;
+                }
+                if (write == count)
+                    return;
+                bus.Write32(rec + 8, write);
+                for (uint i = write; i < count; i++)
+                {
+                    bus.Write32(rec + 12 + i * 8, 0);
+                    bus.Write32(rec + 16 + i * 8, 0);
+                }
+                System.Console.WriteLine("[Inherit] compacted count=" + write + " (was " + count + ")");
+            }
+            catch
+            {
+            }
+        }
+
+        // Observe only after compact. Do not rewrite +14/+18.
         private static void LogInheritList(MipsBus bus, uint list)
         {
             if (_inheritListLogged || bus == null || list == 0)
