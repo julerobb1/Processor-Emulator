@@ -6,8 +6,12 @@ namespace ProcessorEmulator.Core
     // IClass={A4E7EDDA-E575-4252-9D6B-4195D48BB865}) is BootPhase=2,
     // so Autoload(0)/(1) skip it. The raw nk.bin B000FF bytes are the
     // BINBlk media. Advertise that existing hive name as BLOCK_DRIVER
-    // and serve DISK IOCTL from the image. No SetEvent of the filesys
-    // store gate, h2, or BootPhase; no invented volume name.
+    // and serve DISK IOCTL from the image. After HookVolume matches
+    // Hard Disk, IsTargetVolume FindFirsts \\StoreMgr and CreateFileWs
+    // \\StoreMgr\\BINBlk (access/share/disp 0) at 0x03DF482C. That is
+    // this store, not a new StoreMgr device. Return the same handle.
+    // No SetEvent of the filesys store gate, h2, or BootPhase; no
+    // invented volume name.
     public static class BinBlkMedia
     {
         public const uint WfmoJalr = 0x03E88DF8;
@@ -66,6 +70,8 @@ namespace ProcessorEmulator.Core
                 return TryFillDevDetail(registers, bus, ref programCounter);
             if (pc == CreateFile1 || pc == CreateFile2)
                 return TryCreateFile(registers, bus, pc, ref programCounter);
+            if (pc == CeRomTocFiles.Win32CreateFile)
+                return TryWin32OpenStore(registers, bus, ref programCounter);
             if (pc == DiskIoctl)
                 return TryIoctl(registers, bus, ref programCounter);
             if (pc == FsdmgrDiskIoctl)
@@ -134,6 +140,52 @@ namespace ProcessorEmulator.Core
             programCounter = pc + 8;
             _opened = true;
             System.Console.WriteLine("[BINBlk] CreateFile");
+            return true;
+        }
+
+        private static bool TryWin32OpenStore(uint[] registers, MipsBus bus, ref uint programCounter)
+        {
+            if (!_opened || registers == null || registers.Length <= 31)
+                return false;
+            string name;
+            try { name = ReadUtf16(bus, registers[4]); }
+            catch { return false; }
+            if (!IsStoreMgrHive(name))
+                return false;
+            registers[2] = Handle;
+            programCounter = registers[31];
+            System.Console.WriteLine("[BINBlk] CreateFile \\StoreMgr\\" + HiveName);
+            return true;
+        }
+
+        private static bool IsStoreMgrHive(string n)
+        {
+            if (string.IsNullOrEmpty(n))
+                return false;
+            string s = n.Replace('/', '\\');
+            while (s.Length > 0 && s[0] == '\\')
+                s = s.Substring(1);
+            const string prefix = "StoreMgr\\";
+            if (s.Length <= prefix.Length)
+                return false;
+            if (!StartsIgnore(s, prefix))
+                return false;
+            return NamesEqual(s.Substring(prefix.Length), HiveName);
+        }
+
+        private static bool StartsIgnore(string a, string b)
+        {
+            if (a == null || b == null || a.Length < b.Length)
+                return false;
+            for (int i = 0; i < b.Length; i++)
+            {
+                char ca = a[i];
+                char cb = b[i];
+                if (ca >= 'A' && ca <= 'Z') ca = (char)(ca + 32);
+                if (cb >= 'A' && cb <= 'Z') cb = (char)(cb + 32);
+                if (ca != cb)
+                    return false;
+            }
             return true;
         }
 
@@ -272,7 +324,7 @@ namespace ProcessorEmulator.Core
         private static string ReadUtf16(MipsBus bus, uint addr)
         {
             var sb = new System.Text.StringBuilder();
-            for (int i = 0; i < 32; i++)
+            for (int i = 0; i < 40; i++)
             {
                 uint p = addr + (uint)(i * 2);
                 uint word = bus.Read32(p & ~3u);
