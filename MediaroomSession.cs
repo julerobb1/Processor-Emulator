@@ -48,7 +48,7 @@ namespace ProcessorEmulator
             _stop = true;
         }
 
-        public bool Run(string feed, int maxSteps)
+        public bool Run(string feed)
         {
             _stop = false;
             Steps = 0;
@@ -123,11 +123,10 @@ namespace ProcessorEmulator
             uint memsetLastT1 = 0;
             try
             {
-                while (!_stop && Steps < maxSteps)
+                while (!_stop)
                 {
-                    int n = (int)Math.Min(batch, (long)maxSteps - Steps);
-                    _cpu.Step(n);
-                    Steps += n;
+                    _cpu.Step(batch);
+                    Steps += batch;
                     uint pc = _cpu.ProgramCounter;
                     _lastPc = pc;
 
@@ -151,7 +150,7 @@ namespace ProcessorEmulator
                             memsetSameT1 = 0;
                         }
                         else if (t1 == memsetLastT1)
-                            memsetSameT1 += n;
+                            memsetSameT1 += batch;
                         else
                         {
                             memsetSameT1 = 0;
@@ -167,6 +166,10 @@ namespace ProcessorEmulator
                     }
                     else if (memsetFirstStep >= 0 && string.IsNullOrEmpty(_memsetNote))
                         _memsetNote = "memset 0x80014200 left after " + (Steps - memsetFirstStep) + " steps";
+
+                    if (pc == 0x80059E98 && (_memsetNote == null || _memsetNote.IndexOf("OEMIdle", StringComparison.Ordinal) < 0))
+                        _memsetNote = (string.IsNullOrEmpty(_memsetNote) ? "" : _memsetNote + "; ")
+                            + "OEMIdle 0x80059E98 (running; not a halt)";
                 }
             }
             catch (Exception ex)
@@ -176,7 +179,7 @@ namespace ProcessorEmulator
                 return KernelLoaded;
             }
 
-            _status(_stop ? "stopped" : "step limit");
+            _status("stopped");
             return true;
         }
 

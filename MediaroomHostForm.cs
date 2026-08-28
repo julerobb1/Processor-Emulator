@@ -28,8 +28,9 @@ namespace ProcessorEmulator
         public MediaroomHostForm()
         {
             Text = "Mediaroom";
-            Width = 960;
-            Height = 600;
+            // Host chrome only. Not guest video and not a framebuffer size.
+            Width = 900;
+            Height = 640;
             StartPosition = FormStartPosition.CenterScreen;
             Font = SystemFonts.MessageBoxFont;
             FormBorderStyle = FormBorderStyle.Sizable;
@@ -140,7 +141,7 @@ namespace ProcessorEmulator
             {
                 try
                 {
-                    _session.Run(feed, 90000000);
+                    _session.Run(feed);
                 }
                 catch (Exception ex)
                 {
