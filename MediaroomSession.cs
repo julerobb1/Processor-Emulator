@@ -9,6 +9,7 @@ namespace ProcessorEmulator
 {
     // Honest dump -> NkBinLoader -> MIPS/CE step. No synthetic
     // firmware, no CreateProcess, no ExtraROM map, no SetEvent.
+    // Boot facts: BOOT_STATUS.md. OEMIdle is not the TV UI.
     public sealed class MediaroomSession
     {
         private const uint RamSize = 256u * 1024u * 1024u;

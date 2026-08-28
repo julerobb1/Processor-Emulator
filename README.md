@@ -12,7 +12,7 @@ Features real ARM/MIPS/x86 instruction execution, in house hypervisor, ~~complet
 - **Hardware Simulation**: Broadcom BCM7445/7449 SoC emulation with memory-mapped I/O
 
 ### Set-Top Box Platforms
-- **AT&T U-verse**: Complete MIPS/WinCE emulation with Microsoft Mediaroom boot manager
+- **AT&T U-verse**: MIPS/WinCE host + FAT Hard Disk. HookVolume succeeds; the Mediaroom client does not start yet. See `BOOT_STATUS.md`.
 - **RDK-V/RDK-B**: Cable industry reference platform emulation for research
 - **DirecTV**: MIPS-based satellite receiver analysis and SWM LNB simulation  WIP 
 - **Generic STB**: Universal firmware analysis for unknown set-top box platforms

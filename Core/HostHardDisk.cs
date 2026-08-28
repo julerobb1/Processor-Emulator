@@ -29,9 +29,15 @@ namespace ProcessorEmulator.Core
     // StorageManager\\Filters\\sigcheckfilter, then
     // StorageManager\\sigcheckfilter. Serve those
     // children; parent Filters stays ERROR_BADKEY.
-    // HookVolume 0x03DF22D0 jalrs 0x03DF2178, which
-    // FSDMGR_DiskIoControl 0x71C20s the Folder name and
-    // wcscmp against Hard Disk before walking \\ETC.bin.
+    // HookVolume 0x03DF22D0 jalrs IsTargetVolume 0x03DF2178,
+    // which FSDMGR_DiskIoControl 0x71C20s the Folder name and
+    // wcscmp against Hard Disk. On match it logs the target
+    // string and returns the filter object. It does not
+    // CreateFile \\ETC.bin. That string is used later inside
+    // filter CreateFileW (0x03DF1ADC) for a signature check,
+    // and this boot never called CreateFileW after the hook.
+    // 0x03DF20C8 is PARTINFO FindFirst/FindNext from
+    // IsTargetVolume, not a volume file walk.
     // The filter object at volume+68 is not a PDSK, so
     // firmware's +188 copy is empty. Same Folder already
     // served on GETNAME / HDProfile.
@@ -666,8 +672,10 @@ namespace ProcessorEmulator.Core
             // FSDMGR_DiskIoControl(filter, 0x71C20, ...,
             // name, 520). Firmware 0x03E9242C copies WCHAR
             // from PDSK+188. a0 is the filter FSD at
-            // volume+68, so that name is empty and the
-            // Hard Disk compare skips \\ETC.bin.
+            // volume+68, so that copy is empty; the 0x71C20
+            // hook still writes Folder Hard Disk and the
+            // compare matches. HookVolume then returns. It
+            // does not CreateFile \\ETC.bin.
             if (a1 == IoctlDiskGetVolumeName && _fatSeen)
             {
                 uint buf = 0;

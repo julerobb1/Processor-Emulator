@@ -59,26 +59,21 @@ public class ImageAssetReport
 
 ---
 
-## 🚀 Current Focus: Firmware Boot Implementation
+## Current Focus: U-verse / Mediaroom (MIPS / WinCE)
 
-### Immediate Priorities
-1. **Fix U-verse/Mediaroom boot failure** - "Unable to load UVERSE. UVERSE WONT BOOT"
-2. **Implement real X1 Platform bootscreen** display using extracted assets
-3. **Get VirtualMachineHypervisor** showing actual firmware boot sequence
-4. **Integrate real firmware assets** (dfb_splash.jpg, etc.) into emulator display
+Read `BOOT_STATUS.md`. That file is the evidenced boot map.
 
-### Boot Assets Available for Implementation
-- **Primary Boot Splash**: `dfb_splash.jpg` (DirectFB splash screen)
-- **X1 Intro**: `917_intro-image.png` (Device welcome screen)
-- **Comcast Branding**: `logo-comcast.gif` (X1 Platform logo)
-- **Startup Backgrounds**: Various PNG files for different boot stages
+Hard Disk FAT named Hard Disk is already mounted and hooked
+(sigcheckfilter HookVolume returned success). After that, firmware
+does not CreateFile `\\ETC.bin` or any Hard Disk path. `nk.bin`
+never Launchs `tv2clientce`. A host window, black pane, or OEMIdle
+is not the TV UI.
 
-### Next Steps for Boot Implementation
-1. Update VirtualMachineHypervisor to load real firmware assets
-2. Display actual dfb_splash.jpg during boot sequence
-3. Show proper X1 Platform branding and boot progression
-4. Integrate with MediaroomBootManager for complete boot experience
+Do not implement an X1 / Comcast splash, explorer, or a host
+CreateProcess of the client. Do not invent ExtraROM map or SetEvent
+of FSReady / the filesys pump. The real client is dump `etc.bin`
+content, not a picture pasted on the host.
 
 ---
 
-*Note: Image Asset Organizer feature will be implemented after core boot functionality is working correctly.*
+Image-asset organizer stays parked until a real guest UI exists.
