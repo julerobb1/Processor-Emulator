@@ -48,7 +48,12 @@ namespace ProcessorEmulator.Core
     // then OpenEvent + EventModify SYSTEM/GweApiSetReady (not
     // GRAPHICS) at slotted 0x00016354. TOC[7] XIP text is
     // 0x80146000 (VA 0x00011000); entry 0x8014B3C8 / WinMain
-    // 0x8014B014. Display=ddi_nop.dll (default.hv; ExtraROM
+    // 0x8014B014. CreateProcess sets the new thread PC to
+    // trampoline 0x8001FF38, which jalrs module+0x5C.
+    // 0x8001E960 skips that store when entryrva is 0, and
+    // vbase+entryrva 0x000163C8 is filesys on this map.
+    // Fill XIP EXE startip from o32 dataptr+(VA-real).
+    // Display=ddi_nop.dll (default.hv; ExtraROM
     // TOC[33] vbase 0x03980000). Do not SetEvent GweApi or
     // Launch30. Do not host CreateProcess(tv2clientce).
     // ExtraROM FILE tv2clientce.exe is the 5120-byte stub,
@@ -143,6 +148,14 @@ namespace ProcessorEmulator.Core
         public const uint OemIdleLoop = 0x80059D20;
         public const uint FilesysCreateProcess = 0x0004BCA4;
         public const uint KernelCreateProcess = 0x80034D2C;
+        public const uint KernelValloc = 0x800283FC;
+        public const uint ThreadStartTrampoline = 0x8001FF38;
+        public const uint ThreadContextSetup = 0x80020BE4;
+        public const uint ThreadCtxPc = 0xEC;
+        public const uint ThreadStartip = 0x5C;
+        public const uint ThreadStack = 0x24;
+        public const uint ThreadProc = 0x0C;
+        public const uint ProcModule = 0x50;
         public const uint ErrorBadKey = 0x3F2;
         public const uint ThreadPtr = 0xFFFFDAC0;
         public const uint ThreadLastErr = 56;
@@ -203,6 +216,7 @@ namespace ProcessorEmulator.Core
         private static bool _hiveFlagsLogged;
         private static string _cprocName = "";
         private static uint _cprocRa;
+        private static uint _cprocThread;
         private static bool _gwesWatch;
         private static bool _gwesIn;
         private static uint _gwesLastPc;
@@ -254,6 +268,7 @@ namespace ProcessorEmulator.Core
             _hiveFlagsLogged = false;
             _cprocName = "";
             _cprocRa = 0;
+            _cprocThread = 0;
             _gwesWatch = false;
             _gwesIn = false;
             _gwesLastPc = 0;
@@ -331,6 +346,35 @@ namespace ProcessorEmulator.Core
                     System.Console.WriteLine("[Inherit] VALLOC a0=0x" + a0.ToString("X8") +
                         " a1=0x" + a1.ToString("X8") +
                         " a2=0x" + a2.ToString("X8"));
+                return false;
+            }
+            if (pc == KernelValloc && !string.IsNullOrEmpty(_cprocName))
+            {
+                uint a0 = registers[4];
+                uint a1 = registers[5];
+                uint a2 = registers[6];
+                if (_logged.Add("hive:va:" + _cprocName + ":" + a0.ToString("X")))
+                    System.Console.WriteLine("[Hive] VALLOC \"" + _cprocName +
+                        "\" a0=0x" + a0.ToString("X8") +
+                        " a1=0x" + a1.ToString("X8") +
+                        " a2=0x" + a2.ToString("X8"));
+                return false;
+            }
+            if (pc == ThreadContextSetup && !string.IsNullOrEmpty(_cprocName))
+            {
+                LogCprocThreadCtx(registers, bus);
+                return false;
+            }
+            if (pc == ThreadStartTrampoline)
+            {
+                CeRomTocFiles.TryFillProcExeStartip(bus);
+                LogThreadTrampoline(registers, bus);
+                return false;
+            }
+            if (pc == CeRomTocFiles.LoadExeE32Ret)
+            {
+                CeRomTocFiles.TryFillProcExeStartip(bus);
+                LogLoadExeStartip(bus);
                 return false;
             }
             if (pc == HiveFlagsGate)
@@ -1670,6 +1714,123 @@ namespace ProcessorEmulator.Core
                     "WinMain 0x8014B014 Display=ddi_nop.dll (etc XIP vbase 0x03980000)");
                 LogDdiNopMapped(bus);
             }
+            if (v0 != 0)
+                LogCprocThreadAtRet(bus, img);
+            _cprocThread = 0;
+        }
+
+        private static void LogCprocThreadCtx(uint[] registers, MipsBus bus)
+        {
+            if (registers == null || registers.Length <= 4 || bus == null)
+                return;
+            uint thr = registers[4];
+            if (thr == 0)
+                return;
+            _cprocThread = thr;
+            if (!_logged.Add("hive:thr:" + _cprocName + ":" + thr.ToString("X")))
+                return;
+            DumpThreadStart(bus, _cprocName, thr);
+        }
+
+        private static void LogCprocThreadAtRet(MipsBus bus, string img)
+        {
+            if (bus == null || _cprocThread == 0)
+                return;
+            if (!_logged.Add("hive:thrret:" + img))
+                return;
+            DumpThreadStart(bus, img + "-ret", _cprocThread);
+        }
+
+        private static void LogThreadTrampoline(uint[] registers, MipsBus bus)
+        {
+            uint procKey = 0;
+            try
+            {
+                if (bus != null)
+                    procKey = bus.Read32(CeRomTocFiles.CurProc);
+            }
+            catch
+            {
+            }
+            if (!_logged.Add("hive:tramp:" + procKey.ToString("X")))
+                return;
+            uint a0 = registers != null && registers.Length > 4 ? registers[4] : 0;
+            uint a1 = registers != null && registers.Length > 5 ? registers[5] : 0;
+            uint proc = 0;
+            uint startip = 0;
+            try
+            {
+                proc = bus != null ? bus.Read32(CeRomTocFiles.CurProc) : 0;
+                if (proc != 0 && proc != 0xDEADBEEFu)
+                    startip = ReadModuleStartip(bus, proc);
+            }
+            catch
+            {
+            }
+            System.Console.WriteLine("[Hive] thread trampoline 0x8001FF38 a0=0x" +
+                a0.ToString("X8") + " a1=0x" + a1.ToString("X8") +
+                " CurProc=0x" + proc.ToString("X8") +
+                " startip=0x" + startip.ToString("X8"));
+        }
+
+        private static void DumpThreadStart(MipsBus bus, string tag, uint thr)
+        {
+            try
+            {
+                uint ip = bus.Read32(thr + ThreadStartip);
+                uint pc = bus.Read32(thr + ThreadCtxPc);
+                uint sp = bus.Read32(thr + ThreadStack);
+                uint proc = bus.Read32(thr + ThreadProc);
+                uint startip = ReadModuleStartip(bus, proc);
+                System.Console.WriteLine("[Hive] thread \"" + tag +
+                    "\" thr=0x" + thr.ToString("X8") +
+                    " +5C=0x" + ip.ToString("X8") +
+                    " ctxPC=0x" + pc.ToString("X8") +
+                    " sp=0x" + sp.ToString("X8") +
+                    " proc=0x" + proc.ToString("X8") +
+                    " startip=0x" + startip.ToString("X8"));
+            }
+            catch
+            {
+            }
+        }
+
+        private static void LogLoadExeStartip(MipsBus bus)
+        {
+            uint proc = 0;
+            uint startip = 0;
+            try
+            {
+                if (bus != null)
+                    proc = bus.Read32(CeRomTocFiles.CurProc);
+                startip = ReadModuleStartip(bus, proc);
+            }
+            catch
+            {
+            }
+            if (!_logged.Add("hive:ldxe:" + proc.ToString("X") + ":" + startip.ToString("X")))
+                return;
+            System.Console.WriteLine("[Hive] load-exe CurProc=0x" + proc.ToString("X8") +
+                " startip=0x" + startip.ToString("X8"));
+        }
+
+        private static uint ReadModuleStartip(MipsBus bus, uint proc)
+        {
+            if (bus == null || proc == 0 || proc == 0xDEADBEEFu)
+                return 0;
+            try
+            {
+                uint ip = bus.Read32(proc + ThreadStartip);
+                if (ip != 0)
+                    return ip;
+                uint mod = bus.Read32(proc + ProcModule);
+                if (mod != 0 && mod != 0xDEADBEEFu)
+                    return bus.Read32(mod + ThreadStartip);
+            }
+            catch
+            {
+            }
+            return 0;
         }
 
         private static uint ReadLastError(MipsBus bus)

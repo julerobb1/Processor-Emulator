@@ -149,6 +149,10 @@ namespace ProcessorEmulator.Emulation
                 if (programCounter == CeRomTocFiles.CallDllStartip)
                     CeRomTocFiles.TryFillTocStartip(_bus, registers[23]);
 
+                if (programCounter == CeRomTocFiles.ThreadStartTrampoline
+                    || programCounter == CeRomTocFiles.LoadExeE32Ret)
+                    CeRomTocFiles.TryFillProcExeStartip(_bus);
+
                 if (programCounter == CeRomTocFiles.ProcessAttachGate)
                     CeRomTocFiles.TryEnableFilterProcessAttach(_bus, registers);
 

@@ -21,9 +21,17 @@ namespace ProcessorEmulator.Core
         // 0x80018B34 CallDLLEntry jalrs module+0x5C with no
         // null check. TOC-attach writes object+0/4 so 0x800196E4
         // can read e32, but 0x8001E960 skips the startip store
-        // when 32($sp) entryrva is still 0. jalr 0 never returns
-        // to FSDMGR 0x03E8604C. Fill vbase+entryrva from TOC e32.
+        // when 32($sp) entryrva is still 0. jalr 0 never returns.
+        // DLL vbase is unique: store vbase+entryrva. EXE vbase
+        // 0x00010000 is shared (filesys/gwes/device); store the
+        // XIP ROM address dataptr+(VA-real) so the new thread
+        // does not execute filesys at 0x000163C8.
         public const uint CallDllStartip = 0x80018BAC;
+        public const uint ThreadStartTrampoline = 0x8001FF38;
+        public const uint LoadExeE32Ret = 0x8001F870;
+        public const uint ThreadContextSetup = 0x80020BE4;
+        public const uint ExeVbase = 0x00010000;
+        public const uint ProcModule = 0x50;
         // 0x8001F12C andi s4, 0x8000 / beq skip CallDLL a1=1.
         // User-mode LoadLibrary keeps s4=0 (same for CEDDK/HAL/
         // filter). coredll 0x03F73050 then walks 3 new modules
@@ -192,8 +200,6 @@ namespace ProcessorEmulator.Core
                 return;
             try
             {
-                if (bus.Read32(module + ModuleStartip) != 0)
-                    return;
                 uint obj = module + ModuleFileObj;
                 if (bus.Read8(obj + 4) != TocAttachType)
                     return;
@@ -205,9 +211,49 @@ namespace ProcessorEmulator.Core
                     return;
                 uint entryrva = bus.Read32(e32 + 4);
                 uint vbase = bus.Read32(e32 + 8);
-                if (entryrva == 0 || vbase < 0x03D00000u || vbase >= 0x04000000u)
+                if (entryrva == 0)
                     return;
-                bus.Write32(module + ModuleStartip, vbase + entryrva);
+                uint cur = bus.Read32(module + ModuleStartip);
+                if (vbase >= 0x03D00000u && vbase < 0x04000000u)
+                {
+                    if (cur == 0)
+                        bus.Write32(module + ModuleStartip, vbase + entryrva);
+                    return;
+                }
+                if (vbase != ExeVbase)
+                    return;
+                uint objcnt = bus.Read32(e32) & 0xFFFF;
+                if (!TryGetTocO32(bus, tocEntry, objcnt, out uint o32Rom))
+                    return;
+                uint dataptr = bus.Read32(o32Rom + 0xC);
+                uint real = bus.Read32(o32Rom + 0x10);
+                uint va = vbase + entryrva;
+                if (dataptr < 0x80000000u || dataptr >= 0xA0000000u || real == 0 || va < real)
+                    return;
+                uint rom = dataptr + (va - real);
+                if (cur != 0 && cur != va)
+                    return;
+                bus.Write32(module + ModuleStartip, rom);
+            }
+            catch
+            {
+            }
+        }
+
+        public static void TryFillProcExeStartip(MipsBus bus)
+        {
+            if (bus == null)
+                return;
+            try
+            {
+                uint proc = bus.Read32(CurProc);
+                if (proc == 0 || proc == 0xDEADBEEFu)
+                    return;
+                TryFillTocStartip(bus, proc);
+                TryFillTocStartip(bus, proc + ProcModule);
+                uint p50 = bus.Read32(proc + ProcModule);
+                if (p50 != 0 && p50 != proc && p50 != proc + ProcModule)
+                    TryFillTocStartip(bus, p50);
             }
             catch
             {
