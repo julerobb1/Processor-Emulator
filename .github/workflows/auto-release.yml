@@ -1,0 +1,100 @@
+# Publish a zip on push/merge to main (release) or dev (prerelease).
+# Does not run on pull_request — open PRs must not create a Release or tag.
+# Dump bins (nk.bin, etc.bin, UverseDriveE) are never attached.
+name: Auto Release
+
+on:
+  push:
+    branches: [main, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish zip
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore ProcessorEmulator.csproj
+
+      - name: Build
+        run: dotnet build ProcessorEmulator.csproj -c Release --no-restore
+
+      - name: Publish
+        run: dotnet publish ProcessorEmulator.csproj -c Release -f net8.0-windows -o publish
+
+      - name: Next version
+        id: version
+        shell: pwsh
+        run: |
+          git fetch --tags --force
+          $tags = git tag -l "v*" | Where-Object { $_ -match '^v\d+\.\d+\.\d+$' }
+          $latest = $null
+          $maxMajor = -1; $maxMinor = -1; $maxPatch = -1
+          foreach ($t in $tags) {
+            $p = $t.TrimStart('v').Split('.')
+            $maj = [int]$p[0]; $min = [int]$p[1]; $pat = [int]$p[2]
+            if ($maj -gt $maxMajor -or ($maj -eq $maxMajor -and $min -gt $maxMinor) -or ($maj -eq $maxMajor -and $min -eq $maxMinor -and $pat -gt $maxPatch)) {
+              $maxMajor = $maj; $maxMinor = $min; $maxPatch = $pat
+              $latest = $t
+            }
+          }
+          if (-not $latest) {
+            $next = "v1.0.0"
+          } else {
+            $next = "v$maxMajor.$maxMinor.$($maxPatch + 1)"
+          }
+          $isDev = '${{ github.ref }}' -eq 'refs/heads/dev'
+          if ($isDev) {
+            $stamp = Get-Date -Format "yyyyMMddHHmmss"
+            $tag = "$next-dev.$stamp"
+            $prerelease = "true"
+          } else {
+            $tag = $next
+            $prerelease = "false"
+          }
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "prerelease=$prerelease" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Latest release tag: $latest"
+          Write-Host "Publishing: $tag (prerelease=$prerelease)"
+
+      - name: Zip Windows build
+        shell: pwsh
+        run: |
+          $src = "publish"
+          $stage = "release-stage"
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          New-Item -ItemType Directory -Path $stage | Out-Null
+          Copy-Item "$src\*" $stage -Recurse -Force
+          $dumpNames = @('nk.bin','etc.bin','sec.bin','raven_fw.bin','UverseDriveE')
+          Get-ChildItem $stage -Recurse -Force | Where-Object {
+            $dumpNames -contains $_.Name
+          } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+          $zip = "ProcessorEmulator-${{ steps.version.outputs.tag }}.zip"
+          Compress-Archive -Path "$stage\*" -DestinationPath $zip -Force
+          "zip=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+        id: pack
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          generate_release_notes: true
+          prerelease: ${{ steps.version.outputs.prerelease == 'true' }}
+          files: ${{ steps.pack.outputs.zip }}
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

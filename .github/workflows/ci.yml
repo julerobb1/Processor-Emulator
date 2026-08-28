@@ -1,31 +1,48 @@
+# One Windows job on open PRs. Uploads a zip artifact. Does not create a Release or tag.
+# Dump bins (nk.bin, etc.bin, UverseDriveE) are never attached.
 name: CI
 
 on:
-  push:
-    # Only run CI on version tag pushes
-    tags: ['v*']
   pull_request:
-    # Run CI on PRs targeting dev
-    branches: [dev]
-  
+    branches: [main, dev]
+
+permissions:
+  contents: read
+
 jobs:
-  build:
-    name: Build on Windows
+  windows:
+    name: Windows build
     runs-on: windows-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v3
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
 
-      - name: Restore dependencies
-        run: dotnet restore Processor-Emulator.sln
+      - name: Restore
+        run: dotnet restore ProcessorEmulator.csproj
 
-      - name: Build solution
-        run: dotnet build Processor-Emulator.sln --configuration Release --no-restore
+      - name: Build
+        run: dotnet build ProcessorEmulator.csproj -c Release --no-restore
 
-      - name: Run tests (if any)
-        run: echo "Skipping tests: no test projects defined."
+      - name: Publish
+        run: dotnet publish ProcessorEmulator.csproj -c Release -f net8.0-windows -o publish
+
+      - name: Zip (no dump bins)
+        shell: pwsh
+        run: |
+          $dumpNames = @('nk.bin','etc.bin','sec.bin','raven_fw.bin','UverseDriveE')
+          Get-ChildItem publish -Recurse -Force -ErrorAction SilentlyContinue | Where-Object {
+            $dumpNames -contains $_.Name
+          } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+          Compress-Archive -Path publish\* -DestinationPath ProcessorEmulator-pr.zip -Force
+
+      - name: Upload zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ProcessorEmulator-windows
+          path: ProcessorEmulator-pr.zip
+          if-no-files-found: error

@@ -13,17 +13,17 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      - name: Setup .NET 6 SDK
-        uses: actions/setup-dotnet@v3
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '6.0.x'
+          dotnet-version: '8.0.x'
       - name: Build Dev (Debug)
         run: |
-          dotnet restore
+          dotnet restore ProcessorEmulator.csproj
           dotnet build ProcessorEmulator.csproj --configuration Debug
           dotnet publish ProcessorEmulator.csproj --configuration Debug --output dev-artifacts
       - name: Upload Dev Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: dev-build-${{ github.run_number }}
           path: dev-artifacts
@@ -36,13 +36,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup .NET 6 SDK
-        uses: actions/setup-dotnet@v3
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '6.0.x'
+          dotnet-version: '8.0.x'
 
       - name: Cache NuGet packages
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
           key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
@@ -51,28 +51,18 @@ jobs:
 
       - name: Build solution
         run: |
-          dotnet restore
+          dotnet restore ProcessorEmulator.csproj
           dotnet build ProcessorEmulator.csproj --configuration Release
 
       - name: Publish artifacts
         run: |
           dotnet publish ProcessorEmulator.csproj --configuration Release --output artifacts
 
-      - name: Create GitHub Release
-        id: create_release
-        uses: actions/create-release@v1
+      # Release publish lives in auto-release.yml. This workflow
+      # only builds and uploads the job artifact when a v* tag
+      # is pushed (including the tag auto-release.yml just made).
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ github.ref_name }}
-          release_name: Release ${{ github.ref_name }}
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: artifacts/ProcessorEmulator.exe
-          asset_name: ProcessorEmulator-${{ github.ref_name }}.exe
-          asset_content_type: application/octet-stream
+          name: ProcessorEmulator-${{ github.ref_name }}
+          path: artifacts
