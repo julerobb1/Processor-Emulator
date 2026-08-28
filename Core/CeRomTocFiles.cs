@@ -23,15 +23,25 @@ namespace ProcessorEmulator.Core
         // can read e32, but 0x8001E960 skips the startip store
         // when 32($sp) entryrva is still 0. jalr 0 never returns.
         // DLL vbase is unique: store vbase+entryrva. EXE vbase
-        // 0x00010000 is shared (filesys/gwes/device); store the
-        // XIP ROM address dataptr+(VA-real) so the new thread
-        // does not execute filesys at 0x000163C8.
+        // 0x00010000 is shared (filesys/gwes/device) and the
+        // image is linked there: jal/j stay in region 0. A ROM
+        // startip (0x8014B3C8) makes entry's jal go to
+        // 0x80016014, not WinMain. 0x800140A8 (ASID/slot
+        // attach after VALLOC) is jr $ra, so slot 0 still
+        // fetches filesys. Alias current-process uncompressed
+        // XIP o32[0] VA to dataptr, and store startip as VA.
+        // 0x8001DD6C skips CallDLL when module+0x50 is useg
+        // or 0xC2xxxxxx; that skip never jalrs EXE entry.
         public const uint CallDllStartip = 0x80018BAC;
+        public const uint XipExeCallDllSkip = 0x8001DDA4;
+        public const uint XipExeCallDllJal = 0x8001DD90;
         public const uint ThreadStartTrampoline = 0x8001FF38;
         public const uint LoadExeE32Ret = 0x8001F870;
         public const uint ThreadContextSetup = 0x80020BE4;
         public const uint ExeVbase = 0x00010000;
         public const uint ProcModule = 0x50;
+        public const uint ProcSlot = 0x0C;
+        public const uint O32Compressed = 0x4000;
         // 0x8001F12C andi s4, 0x8000 / beq skip CallDLL a1=1.
         // User-mode LoadLibrary keeps s4=0 (same for CEDDK/HAL/
         // filter). coredll 0x03F73050 then walks 3 new modules
@@ -196,6 +206,11 @@ namespace ProcessorEmulator.Core
 
         public static void TryFillTocStartip(MipsBus bus, uint module)
         {
+            TryFillTocStartip(bus, module, false);
+        }
+
+        public static void TryFillTocStartip(MipsBus bus, uint module, bool replaceWrong)
+        {
             if (bus == null || module == 0)
                 return;
             try
@@ -222,21 +237,44 @@ namespace ProcessorEmulator.Core
                 }
                 if (vbase != ExeVbase)
                     return;
-                uint objcnt = bus.Read32(e32) & 0xFFFF;
-                if (!TryGetTocO32(bus, tocEntry, objcnt, out uint o32Rom))
-                    return;
-                uint dataptr = bus.Read32(o32Rom + 0xC);
-                uint real = bus.Read32(o32Rom + 0x10);
                 uint va = vbase + entryrva;
-                if (dataptr < 0x80000000u || dataptr >= 0xA0000000u || real == 0 || va < real)
+                if (cur == va)
                     return;
-                uint rom = dataptr + (va - real);
-                if (cur != 0 && cur != va)
+                if (!replaceWrong && cur != 0)
                     return;
-                bus.Write32(module + ModuleStartip, rom);
+                bus.Write32(module + ModuleStartip, va);
             }
             catch
             {
+            }
+        }
+
+        public static bool TryForceXipExeCallDll(MipsBus bus, uint[] regs, ref uint programCounter)
+        {
+            if (bus == null || regs == null || regs.Length <= 30)
+                return false;
+            uint module = regs[30];
+            if (module == 0)
+                return false;
+            try
+            {
+                RefreshExeXipAlias(bus);
+                if (!_aliasOn)
+                    return false;
+                TryFillTocStartip(bus, module, true);
+                uint cur = bus.Read32(module + ModuleStartip);
+                if (cur == 0)
+                    return false;
+                regs[4] = module;
+                regs[5] = 0;
+                programCounter = XipExeCallDllJal;
+                System.Console.WriteLine("[Hive] force CallDLL module=0x" + module.ToString("X8") +
+                    " startip=0x" + cur.ToString("X8"));
+                return true;
+            }
+            catch
+            {
+                return false;
             }
         }
 
@@ -254,10 +292,180 @@ namespace ProcessorEmulator.Core
                 uint p50 = bus.Read32(proc + ProcModule);
                 if (p50 != 0 && p50 != proc && p50 != proc + ProcModule)
                     TryFillTocStartip(bus, p50);
+                RefreshExeXipAlias(bus);
             }
             catch
             {
             }
+        }
+
+        private static bool _aliasBusy;
+        private static uint _aliasProc;
+        private static uint _aliasReal;
+        private static uint _aliasEnd;
+        private static uint _aliasRom;
+        private static uint _aliasSlot;
+        private static bool _aliasOn;
+        private static uint _aliasLoggedRom;
+
+        public static void ResetExeXipAlias()
+        {
+            _aliasBusy = false;
+            _aliasProc = 0;
+            _aliasReal = 0;
+            _aliasEnd = 0;
+            _aliasRom = 0;
+            _aliasSlot = 0;
+            _aliasOn = false;
+            _aliasLoggedRom = 0;
+        }
+
+        public static void RefreshExeXipAlias(MipsBus bus)
+        {
+            if (bus == null || _aliasBusy)
+                return;
+            try
+            {
+                _aliasBusy = true;
+                uint proc = bus.Read32(CurProc);
+                if (proc != _aliasProc)
+                    RebuildExeXipAlias(bus, proc);
+            }
+            catch
+            {
+            }
+            finally
+            {
+                _aliasBusy = false;
+            }
+        }
+
+        public static uint MapExeXipVa(MipsBus bus, uint va)
+        {
+            uint off = va & 0x01FFFFFF;
+            if (off < 0x00010000u || off >= 0x00100000u)
+                return va;
+            if (bus == null || _aliasBusy)
+                return va;
+            try
+            {
+                _aliasBusy = true;
+                uint proc = bus.Read32(CurProc);
+                if (proc != _aliasProc)
+                    RebuildExeXipAlias(bus, proc);
+            }
+            catch
+            {
+                return va;
+            }
+            finally
+            {
+                _aliasBusy = false;
+            }
+            if (!_aliasOn || off < _aliasReal || off >= _aliasEnd)
+                return va;
+            uint region = va & 0xFE000000u;
+            if (region != 0 && region != _aliasSlot)
+                return va;
+            return _aliasRom + (off - _aliasReal);
+        }
+
+        private static void RebuildExeXipAlias(MipsBus bus, uint proc)
+        {
+            _aliasProc = proc;
+            _aliasOn = false;
+            _aliasSlot = 0;
+            _aliasReal = 0;
+            _aliasEnd = 0;
+            _aliasRom = 0;
+            if (proc == 0 || proc == 0xDEADBEEFu)
+                return;
+            if (!TryBuildExeXipAlias(bus, proc)
+                && !TryBuildExeXipAlias(bus, proc + ProcModule))
+            {
+                uint p50 = 0;
+                try
+                {
+                    p50 = bus.Read32(proc + ProcModule);
+                }
+                catch
+                {
+                    return;
+                }
+                if (p50 != 0 && p50 != proc && p50 != proc + ProcModule)
+                    TryBuildExeXipAlias(bus, p50);
+            }
+        }
+
+        private static bool TryBuildExeXipAlias(MipsBus bus, uint module)
+        {
+            if (module == 0)
+                return false;
+            if (bus.Read8(module + ModuleFileObj + 4) != TocAttachType)
+                return false;
+            uint tocEntry = bus.Read32(module + ModuleFileObj);
+            if (tocEntry == 0)
+                return false;
+            uint e32 = bus.Read32(tocEntry + 0x14);
+            if (e32 == 0)
+                return false;
+            uint vbase = bus.Read32(e32 + 8);
+            if (vbase != ExeVbase)
+                return false;
+            uint objcnt = bus.Read32(e32) & 0xFFFF;
+            if (!TryGetTocO32(bus, tocEntry, objcnt, out uint o32Rom))
+                return false;
+            uint vsize = bus.Read32(o32Rom);
+            uint dataptr = bus.Read32(o32Rom + 0xC);
+            uint real = bus.Read32(o32Rom + 0x10);
+            uint flags = bus.Read32(o32Rom + 0x14);
+            if (vsize == 0 || real == 0)
+                return false;
+            if (dataptr < 0x80000000u || dataptr >= 0xA0000000u)
+                return false;
+            if ((flags & O32Compressed) != 0)
+                return false;
+            uint vaWord = 0;
+            uint romWord = 0;
+            try
+            {
+                vaWord = bus.Read32(real);
+            }
+            catch
+            {
+            }
+            try
+            {
+                romWord = bus.Read32(dataptr);
+            }
+            catch
+            {
+                return false;
+            }
+            if (romWord == 0 || vaWord == romWord)
+                return false;
+            _aliasReal = real;
+            _aliasEnd = real + vsize;
+            _aliasRom = dataptr;
+            try
+            {
+                uint proc = bus.Read32(CurProc);
+                if (proc != 0 && proc != 0xDEADBEEFu)
+                    _aliasSlot = bus.Read32(proc + ProcSlot) & 0xFE000000u;
+            }
+            catch
+            {
+            }
+            _aliasOn = true;
+            if (_aliasLoggedRom != dataptr)
+            {
+                _aliasLoggedRom = dataptr;
+                System.Console.WriteLine("[Hive] XIP alias 0x" + real.ToString("X8") +
+                    "-0x" + (real + vsize).ToString("X8") +
+                    " -> 0x" + dataptr.ToString("X8") +
+                    " slot=0x" + _aliasSlot.ToString("X8"));
+            }
+            return true;
         }
 
         // 0x80018F9C walks o32_lite at 180($fp). device.exe PROCESS stores

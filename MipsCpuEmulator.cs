@@ -147,7 +147,17 @@ namespace ProcessorEmulator.Emulation
                 }
 
                 if (programCounter == CeRomTocFiles.CallDllStartip)
-                    CeRomTocFiles.TryFillTocStartip(_bus, registers[23]);
+                    CeRomTocFiles.TryFillTocStartip(_bus, registers[23], true);
+
+                if (programCounter == CeRomTocFiles.XipExeCallDllSkip)
+                {
+                    if (CeRomTocFiles.TryForceXipExeCallDll(_bus, registers, ref programCounter))
+                    {
+                        _cp0.UpdateTimer(1);
+                        _bus.Tick(1);
+                        continue;
+                    }
+                }
 
                 if (programCounter == CeRomTocFiles.ThreadStartTrampoline
                     || programCounter == CeRomTocFiles.LoadExeE32Ret)

@@ -50,9 +50,12 @@ namespace ProcessorEmulator.Core
     // 0x80146000 (VA 0x00011000); entry 0x8014B3C8 / WinMain
     // 0x8014B014. CreateProcess sets the new thread PC to
     // trampoline 0x8001FF38, which jalrs module+0x5C.
-    // 0x8001E960 skips that store when entryrva is 0, and
-    // vbase+entryrva 0x000163C8 is filesys on this map.
-    // Fill XIP EXE startip from o32 dataptr+(VA-real).
+    // 0x8001E960 skips that store when entryrva is 0.
+    // EXE jal/j are linked at VA 0x00010000; 0x800140A8
+    // (ASID/slot attach) is jr $ra, so slot 0 still
+    // fetches filesys at 0x000163C8. Alias current-process
+    // XIP o32[0] to dataptr and keep startip as the VA.
+    // 0x8001DD6C skips CallDLL when +0x50 is useg/C2.
     // Display=ddi_nop.dll (default.hv; ExtraROM
     // TOC[33] vbase 0x03980000). Do not SetEvent GweApi or
     // Launch30. Do not host CreateProcess(tv2clientce).
@@ -277,6 +280,7 @@ namespace ProcessorEmulator.Core
             _gwesSawWait = false;
             _gwesSawDdi = false;
             _gwesSawSignal = false;
+            CeRomTocFiles.ResetExeXipAlias();
             string dir = ResolveRoot();
             if (string.IsNullOrEmpty(dir))
             {
@@ -375,6 +379,17 @@ namespace ProcessorEmulator.Core
             {
                 CeRomTocFiles.TryFillProcExeStartip(bus);
                 LogLoadExeStartip(bus);
+                return false;
+            }
+            if (pc == CeRomTocFiles.CallDllStartip)
+            {
+                CeRomTocFiles.TryFillTocStartip(bus, registers[23], true);
+                LogCallDllStartip(registers, bus);
+                return false;
+            }
+            if (pc == CeRomTocFiles.XipExeCallDllSkip)
+            {
+                LogXipExeCallDllSkip(registers, bus);
                 return false;
             }
             if (pc == HiveFlagsGate)
@@ -1386,17 +1401,17 @@ namespace ProcessorEmulator.Core
         // Observe only. Do not SetEvent GweApi or Launch30.
         private static void ObserveGwesPath(uint pc, uint[] registers, MipsBus bus)
         {
-            if (pc == GwesRomEntry || IsSlottedVa(pc, GwesVaEntry))
+            if (pc == GwesRomEntry || pc == GwesVaEntry || IsSlottedVa(pc, GwesVaEntry))
             {
                 NoteGwesPc(pc, "entry");
                 return;
             }
-            if (pc == GwesRomWinMain || IsSlottedVa(pc, GwesVaWinMain))
+            if (pc == GwesRomWinMain || pc == GwesVaWinMain || IsSlottedVa(pc, GwesVaWinMain))
             {
                 NoteGwesPc(pc, "WinMain");
                 return;
             }
-            if (pc == GwesRomDisplayDll || IsSlottedVa(pc, GwesVaDisplayDll))
+            if (pc == GwesRomDisplayDll || pc == GwesVaDisplayDll || IsSlottedVa(pc, GwesVaDisplayDll))
             {
                 NoteGwesPc(pc, "DisplayDll");
                 return;
@@ -1726,7 +1741,8 @@ namespace ProcessorEmulator.Core
             uint thr = registers[4];
             if (thr == 0)
                 return;
-            _cprocThread = thr;
+            if (_cprocThread == 0)
+                _cprocThread = thr;
             if (!_logged.Add("hive:thr:" + _cprocName + ":" + thr.ToString("X")))
                 return;
             DumpThreadStart(bus, _cprocName, thr);
@@ -1793,6 +1809,53 @@ namespace ProcessorEmulator.Core
             catch
             {
             }
+        }
+
+        private static void LogCallDllStartip(uint[] registers, MipsBus bus)
+        {
+            if (registers == null || registers.Length <= 23 || bus == null)
+                return;
+            uint module = registers[23];
+            if (module == 0)
+                return;
+            uint ip = 0;
+            try
+            {
+                ip = bus.Read32(module + ThreadStartip);
+            }
+            catch
+            {
+                return;
+            }
+            if (!_logged.Add("hive:calldll:" + module.ToString("X") + ":" + ip.ToString("X")))
+                return;
+            System.Console.WriteLine("[Hive] CallDLL module=0x" + module.ToString("X8") +
+                " startip=0x" + ip.ToString("X8"));
+        }
+
+        private static void LogXipExeCallDllSkip(uint[] registers, MipsBus bus)
+        {
+            if (registers == null || registers.Length <= 30 || bus == null)
+                return;
+            uint module = registers[30];
+            if (module == 0)
+                return;
+            uint p50 = 0;
+            uint ip = 0;
+            try
+            {
+                p50 = bus.Read32(module + ProcModule);
+                ip = bus.Read32(module + ThreadStartip);
+            }
+            catch
+            {
+                return;
+            }
+            if (!_logged.Add("hive:exeskip:" + module.ToString("X") + ":" + p50.ToString("X")))
+                return;
+            System.Console.WriteLine("[Hive] EXE CallDLL-skip module=0x" + module.ToString("X8") +
+                " +50=0x" + p50.ToString("X8") +
+                " +5C=0x" + ip.ToString("X8"));
         }
 
         private static void LogLoadExeStartip(MipsBus bus)
