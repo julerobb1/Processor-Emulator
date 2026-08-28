@@ -37,9 +37,19 @@ namespace ProcessorEmulator.Core
     // Launch keys. Do not SetEvent. Do not invent 0x81360000.
     // RunApps enums Launch20/30/50/53/56/95 then CreateProcess
     // only after Depend WORDs are ready. Depend56 is 20/30/53.
-    // Log each CreateProcess name/v0/last-error. Do not host
-    // CreateProcess(tv2clientce). ExtraROM FILE tv2clientce.exe
-    // is the 5120-byte stub, not the 90-byte root file.
+    // Launch record +4 is the ready slot. RunApps writes +4=1
+    // only on CreateProcess fail or the device.exe / BootPhase2
+    // miss. Success leaves +4=0. filesys 0x000177EC (coredll
+    // SignalStarted ordinal 639 → FILESYS API table 0x000111A8)
+    // matches a0 to record+0, writes +4=1, then EventModify
+    // (a1=3 SET) the unnamed event at 0x00059468 so the Depend
+    // WaitForMultipleObjects INFINITE at 0x000180A4 returns.
+    // gwes calls SignalStarted(_wtol(cmd)) at slotted 0x0001634C
+    // then OpenEvent + EventModify SYSTEM/GweApiSetReady (not
+    // GRAPHICS) at slotted 0x00016354. Do not SetEvent. Do not
+    // host CreateProcess(tv2clientce). ExtraROM FILE
+    // tv2clientce.exe is the 5120-byte stub, not the 90-byte
+    // root file.
     //
     // FSDMGR WFMO #2 (after BINBlk) is already waiting on the
     // BLOCK_DRIVER queue. Deliver HDProf there (7-char CE name).
@@ -93,6 +103,18 @@ namespace ProcessorEmulator.Core
         public const uint RunAppsLaunchCmp = 0x00017C58;
         public const uint RunAppsDependMiss = 0x00017FB0;
         public const uint RunAppsCprocRet = 0x00018080;
+        // FILESYS API: coredll SignalStarted. Writes launch +4.
+        public const uint FilesysSignalStarted = 0x000177EC;
+        public const uint LaunchCountPtr = 0x00059460;
+        public const uint LaunchReadyEvent = 0x00059468;
+        public const uint LaunchTablePtr = 0x0005946C;
+        public const uint LaunchRecordSize = 0x250;
+        // gwes preferred 0x00010000; lives in a CE 32MB slot.
+        // Slot 0 is filesys — do not treat 0x0001634C there as gwes.
+        public const uint GwesSignalStarted = 0x0001634C;
+        public const uint GwesGweApiReady = 0x00016354;
+        public const uint CeSlotMask = 0x01FFFFFF;
+        public const uint CeSlotBase = 0xFE000000;
         public const uint FilesysCreateProcess = 0x0004BCA4;
         public const uint KernelCreateProcess = 0x80034D2C;
         public const uint ErrorBadKey = 0x3F2;
@@ -298,6 +320,20 @@ namespace ProcessorEmulator.Core
             {
                 LogRunAppsDepend(registers, bus);
                 return false;
+            }
+            if (pc == FilesysSignalStarted)
+            {
+                LogSignalStarted(registers, bus);
+                return false;
+            }
+            if ((pc & CeSlotBase) != 0)
+            {
+                uint gwesOff = pc & CeSlotMask;
+                if (gwesOff == GwesSignalStarted || gwesOff == GwesGweApiReady)
+                {
+                    LogGwesReadySite(pc, gwesOff, registers, bus);
+                    return false;
+                }
             }
             if (pc == FilesysCreateProcess
                 || (pc == KernelCreateProcess && _cprocRa == 0))
@@ -1235,8 +1271,115 @@ namespace ProcessorEmulator.Core
             string img = ReadUtf16(bus, registers[23]);
             if (string.IsNullOrEmpty(img))
                 img = "(null)";
-            if (_logged.Add("hive:dep:" + img + ":" + need.ToString("X")))
-                System.Console.WriteLine("[Hive] Depend wait \"" + img + "\" need=" + need);
+            if (!_logged.Add("hive:dep:" + img + ":" + need.ToString("X")))
+                return;
+            System.Console.WriteLine("[Hive] Depend wait \"" + img + "\" need=" + need);
+            LogLaunchReadySlots(bus, need);
+        }
+
+        // filesys 0x000177EC: the only success-path writer of
+        // launch record+4. a0 is the Launch number (20, 30, …).
+        // a0==0 pulses 0x00059468 and does not set any +4.
+        private static void LogSignalStarted(uint[] registers, MipsBus bus)
+        {
+            if (registers == null || registers.Length <= 4)
+                return;
+            uint a0 = registers[4];
+            if (!_logged.Add("hive:sig:" + a0.ToString("X")))
+                return;
+            System.Console.WriteLine("[Hive] SignalStarted a0=" + a0 +
+                " (filesys 0x000177EC writes record+4, EventModify SET 0x00059468)");
+            if (bus != null)
+                LogLaunchReadySlots(bus, a0);
+        }
+
+        // gwes slotted PCs only. 0x0001634C is SignalStarted(_wtol).
+        // 0x00016354 is OpenEvent(SYSTEM/GweApiSetReady) then
+        // EventModify SET. There is no GRAPHICS event name.
+        private static void LogGwesReadySite(uint pc, uint off, uint[] registers, MipsBus bus)
+        {
+            string key = "hive:gwes:" + off.ToString("X") + ":" + (pc & CeSlotBase).ToString("X");
+            if (!_logged.Add(key))
+                return;
+            if (off == GwesSignalStarted)
+            {
+                uint a0 = registers != null && registers.Length > 4 ? registers[4] : 0;
+                System.Console.WriteLine("[Hive] gwes SignalStarted site pc=0x" +
+                    pc.ToString("X8") + " a0=" + a0);
+            }
+            else
+            {
+                string name = "";
+                if (registers != null && registers.Length > 6 && bus != null)
+                    name = ReadUtf16(bus, registers[6]);
+                if (string.IsNullOrEmpty(name))
+                    name = "SYSTEM/GweApiSetReady";
+                System.Console.WriteLine("[Hive] gwes OpenEvent \"" + name +
+                    "\" pc=0x" + pc.ToString("X8"));
+            }
+        }
+
+        private static void LogLaunchReadySlots(MipsBus bus, uint need)
+        {
+            if (bus == null || !_logged.Add("hive:slots:" + need.ToString("X")))
+                return;
+            try
+            {
+                uint table = bus.Read32(LaunchTablePtr);
+                uint count = bus.Read32(LaunchCountPtr);
+                uint ev = bus.Read32(LaunchReadyEvent);
+                System.Console.WriteLine("[Hive] ready-slot table=0x" + table.ToString("X8") +
+                    " count=" + count + " event=0x" + ev.ToString("X8") +
+                    " (WFMO waits this unnamed handle)");
+                if (!LooksLikePtr(table) || count == 0 || count > 32)
+                    return;
+                for (uint i = 0; i < count; i++)
+                {
+                    uint rec = table + i * LaunchRecordSize;
+                    uint id = bus.Read32(rec);
+                    uint ready = bus.Read32(rec + 4);
+                    string img = ReadUtf16(bus, rec + 72);
+                    if (string.IsNullOrEmpty(img))
+                        img = "?";
+                    System.Console.WriteLine("[Hive] ready-slot Launch" + id +
+                        " +4=" + ready + " \"" + img + "\"");
+                }
+                LogGwesMappedSlots(bus);
+            }
+            catch
+            {
+            }
+        }
+
+        // gwes image_base 0x00010000; SYSTEM/GweApiSetReady at +0x11020.
+        private static void LogGwesMappedSlots(MipsBus bus)
+        {
+            if (bus == null)
+                return;
+            int found = 0;
+            for (uint slot = 1; slot <= 16; slot++)
+            {
+                uint va = (slot * 0x02000000u) + 0x00011020u;
+                try
+                {
+                    uint w0 = bus.Read32(va);
+                    uint w1 = bus.Read32(va + 4);
+                    // 'S' 0x0053, 'Y' 0x0059, 'S' 0x0053, 'T' 0x0054
+                    if ((w0 & 0xFFFF) != 0x0053 || (w0 >> 16) != 0x0059)
+                        continue;
+                    if ((w1 & 0xFFFF) != 0x0053)
+                        continue;
+                    string s = ReadUtf16(bus, va);
+                    System.Console.WriteLine("[Hive] gwes mapped slot=" + slot +
+                        " GweApi@0x" + va.ToString("X8") + " \"" + s + "\"");
+                    found++;
+                }
+                catch
+                {
+                }
+            }
+            if (found == 0)
+                System.Console.WriteLine("[Hive] gwes SYSTEM/GweApiSetReady not mapped in slots 1-16");
         }
 
         private static void LogHiveCreateProcess(uint[] registers, MipsBus bus)
