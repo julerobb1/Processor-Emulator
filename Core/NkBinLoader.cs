@@ -47,6 +47,9 @@ namespace ProcessorEmulator.Core.Loaders
                 throw new FileNotFoundException("nk.bin file not found.", filePath);
             }
 
+            string feed = Path.GetDirectoryName(Path.GetFullPath(filePath));
+            if (!string.IsNullOrEmpty(feed))
+                HostHardDisk.OfferFeed(feed);
             NkLoadResult result = Load(File.ReadAllBytes(filePath), memory);
             return result.EntryPoint;
         }

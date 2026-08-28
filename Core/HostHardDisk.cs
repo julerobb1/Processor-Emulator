@@ -6,9 +6,15 @@ using ProcessorEmulator.Emulation;
 
 namespace ProcessorEmulator.Core
 {
-    // Existing Uverse Drive E tree as the Hard Disk FAT volume.
-    // Read-only host directory. Never writes, deletes, or renames
-    // dump files. Not a BINBlk/BINFS/ExtraROM object.
+    // User-supplied dump as the Hard Disk FAT volume. The host
+    // folder is whatever the user feeds (CLI, FirmwarePath,
+    // UVERSE_HARD_DISK / PROCESSOR_EMULATOR_HARD_DISK, last-used
+    // path next to the exe, or a drop folder next to cwd/exe).
+    // Hunt by name, recursively, case-insensitive. Take what is
+    // present. Read-only: never write, delete, or rename dump
+    // files. Not a BINBlk/BINFS/ExtraROM object. If etc.bin is
+    // found, log it as the ExtraROM/XIP file hashes.bin already
+    // names; firmware maps it.
     //
     // FSDMGR WFMO #2 (after BINBlk) is already waiting on the
     // BLOCK_DRIVER queue. Deliver HDProf there (7-char CE name).
@@ -84,6 +90,8 @@ namespace ProcessorEmulator.Core
         };
 
         private static string _root = "";
+        private static string _offeredFeed = "";
+        private static string _extraRom = "";
         private static byte[] _image = Array.Empty<byte>();
         private static bool _notified;
         private static bool _detailFilled;
@@ -95,10 +103,18 @@ namespace ProcessorEmulator.Core
         public static bool IsOpen => _opened;
         public static bool DetailFilled => _detailFilled;
         public static string Root => _root;
+        public static string ExtraRomPath => _extraRom;
+
+        public static void OfferFeed(string path)
+        {
+            if (!string.IsNullOrWhiteSpace(path))
+                _offeredFeed = path.Trim();
+        }
 
         public static void Attach()
         {
             _root = "";
+            _extraRom = "";
             _image = Array.Empty<byte>();
             _notified = false;
             _detailFilled = false;
@@ -108,7 +124,7 @@ namespace ProcessorEmulator.Core
             string dir = ResolveRoot();
             if (string.IsNullOrEmpty(dir))
             {
-                System.Console.WriteLine("[HardDisk] no host dir (set " + EnvName + " to Uverse Drive E)");
+                System.Console.WriteLine("[HardDisk] no dump root (pass a folder, set " + EnvName + ", or FirmwarePath)");
                 return;
             }
             try
@@ -116,6 +132,9 @@ namespace ProcessorEmulator.Core
                 _image = Fat16.Build(dir);
                 _root = dir;
                 System.Console.WriteLine($"[HardDisk] FAT {_image.Length} bytes root={dir} name={FolderName}");
+                if (!string.IsNullOrEmpty(_extraRom))
+                    System.Console.WriteLine("[HardDisk] ExtraROM etc.bin at " + _extraRom + " (firmware names ETC.BIN; not mapped here)");
+                RememberLastUsed(dir);
             }
             catch (Exception ex)
             {
@@ -916,57 +935,270 @@ namespace ProcessorEmulator.Core
             }
         }
 
+        private const string LastUsedName = "last_dump_root.txt";
+        private const int HuntMaxDepth = 10;
+        private const int HuntMaxVisit = 2500;
+
+        private static readonly HashSet<string> VolumeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "etc.bin", "BOOT.PRF", "tv2clientce", "tv2clientce.exe", "Application"
+        };
+
+        private static readonly HashSet<string> HuntNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "nk.bin", "etc.bin", "sec.bin", "XASEC.BIN",
+            "BOOT.PRF", "BOOTPRF.BAK",
+            "tv2clientce", "tv2clientce.exe",
+            "Application", "PlayReady",
+            "raven_fw.bin", "WirelessFirmware.img", "ContentVersion.txt",
+            "boot.sig", "runonce.sig", "Hard Disk"
+        };
+
         internal static string ResolveRoot()
         {
-            foreach (string raw in CandidateRoots())
+            foreach (string raw in CandidateFeeds())
             {
-                if (string.IsNullOrWhiteSpace(raw))
+                string feed = NormalizeFeed(raw);
+                if (string.IsNullOrEmpty(feed))
                     continue;
-                string dir = raw.Trim();
-                try
-                {
-                    if (Directory.Exists(dir) && LooksLikeVolume(dir))
-                        return Path.GetFullPath(dir);
-                }
-                catch
-                {
-                }
+                System.Console.WriteLine("[HardDisk] hunt feed=" + feed);
+                string attach = HuntAttach(feed);
+                if (!string.IsNullOrEmpty(attach))
+                    return attach;
             }
             return "";
         }
 
-        private static IEnumerable<string> CandidateRoots()
+        public static string HuntAttach(string feed)
         {
-            yield return Environment.GetEnvironmentVariable(EnvName);
-            yield return Environment.GetEnvironmentVariable(EnvNameAlt);
-            string cwd = Environment.CurrentDirectory;
-            string bas = AppDomain.CurrentDomain.BaseDirectory;
-            yield return Path.Combine(cwd, "UverseDriveE");
-            yield return Path.Combine(bas ?? "", "UverseDriveE");
-            yield return "/workspace/UverseDriveE";
-            yield return Path.Combine(cwd, "Uverse Drive E");
-            yield return Path.Combine(bas ?? "", "Uverse Drive E");
-            yield return @"E:\EVO backup 2026 august 26\DVR Stuff\UVERSE STUFF\Uverse Drive E";
+            if (string.IsNullOrEmpty(feed) || !Directory.Exists(feed))
+                return "";
+            var scores = new Dictionary<string, VolumeScore>(StringComparer.OrdinalIgnoreCase);
+            var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            WalkHunt(feed, 0, 0, scores, seenNames);
+            string bestVol = "";
+            string bestLoose = "";
+            int bestVolMark = 0;
+            int bestLooseMark = 0;
+            bool bestHasEtc = false;
+            foreach (var kv in scores)
+            {
+                VolumeScore s = kv.Value;
+                if (s.Markers > 0)
+                {
+                    bool take = s.Markers > bestVolMark;
+                    if (!take && s.Markers == bestVolMark)
+                    {
+                        if (s.HasEtc && !bestHasEtc)
+                            take = true;
+                        else if (s.HasEtc == bestHasEtc
+                            && (bestVol.Length == 0 || kv.Key.Length < bestVol.Length))
+                            take = true;
+                    }
+                    if (take)
+                    {
+                        bestVolMark = s.Markers;
+                        bestHasEtc = s.HasEtc;
+                        bestVol = kv.Key;
+                    }
+                }
+                else if (s.Extra > 0
+                    && (s.Extra > bestLooseMark
+                        || (s.Extra == bestLooseMark
+                            && (bestLoose.Length == 0 || kv.Key.Length < bestLoose.Length))))
+                {
+                    bestLooseMark = s.Extra;
+                    bestLoose = kv.Key;
+                }
+            }
+            if (!string.IsNullOrEmpty(bestVol))
+                return bestVol;
+            if (!string.IsNullOrEmpty(bestLoose))
+                return bestLoose;
+            return "";
         }
 
-        private static bool LooksLikeVolume(string dir)
+        private static int WalkHunt(string dir, int depth, int visited,
+            Dictionary<string, VolumeScore> scores, HashSet<string> seenNames)
+        {
+            if (depth > HuntMaxDepth || visited >= HuntMaxVisit)
+                return visited;
+            visited++;
+            string[] ents;
+            try { ents = Directory.GetFileSystemEntries(dir); }
+            catch { return visited; }
+            foreach (string p in ents)
+            {
+                if (visited >= HuntMaxVisit)
+                    break;
+                string name = Path.GetFileName(p);
+                if (SkipHuntName(name))
+                    continue;
+                bool isDir = false;
+                try { isDir = Directory.Exists(p); }
+                catch { continue; }
+                if (isDir)
+                {
+                    try
+                    {
+                        if ((File.GetAttributes(p) & FileAttributes.ReparsePoint) != 0)
+                            continue;
+                    }
+                    catch
+                    {
+                        continue;
+                    }
+                }
+                if (HuntNames.Contains(name) && seenNames.Add(name))
+                    System.Console.WriteLine("[HardDisk] found " + name + " at " + p);
+                if (name.Equals("etc.bin", StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(_extraRom))
+                    _extraRom = p;
+                if (VolumeNames.Contains(name) || HuntNames.Contains(name))
+                {
+                    VolumeScore s;
+                    if (!scores.TryGetValue(dir, out s))
+                    {
+                        s = new VolumeScore();
+                        scores[dir] = s;
+                    }
+                    if (VolumeNames.Contains(name))
+                    {
+                        s.Markers++;
+                        if (name.Equals("etc.bin", StringComparison.OrdinalIgnoreCase))
+                            s.HasEtc = true;
+                    }
+                    else
+                        s.Extra++;
+                }
+                if (isDir)
+                    visited = WalkHunt(p, depth + 1, visited, scores, seenNames);
+            }
+            return visited;
+        }
+
+        private static bool SkipHuntName(string name)
+        {
+            if (string.IsNullOrEmpty(name) || name[0] == '.')
+                return true;
+            if (name.Equals("$RECYCLE.BIN", StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (name.Equals("System Volume Information", StringComparison.OrdinalIgnoreCase))
+                return true;
+            return false;
+        }
+
+        private static IEnumerable<string> CandidateFeeds()
+        {
+            if (!string.IsNullOrWhiteSpace(_offeredFeed))
+                yield return _offeredFeed;
+            foreach (string a in CommandLineFeeds())
+                yield return a;
+            yield return Environment.GetEnvironmentVariable(EnvName);
+            yield return Environment.GetEnvironmentVariable(EnvNameAlt);
+            yield return SettingsFirmwarePath();
+            yield return ReadLastUsed(AppDomain.CurrentDomain.BaseDirectory);
+            string cwd = Environment.CurrentDirectory;
+            yield return ReadLastUsed(cwd);
+            yield return Path.Combine(cwd, "UverseDriveE");
+            string bas = AppDomain.CurrentDomain.BaseDirectory ?? "";
+            yield return Path.Combine(bas, "UverseDriveE");
+            yield return Path.Combine(cwd, "Uverse Drive E");
+            yield return Path.Combine(bas, "Uverse Drive E");
+        }
+
+        private static IEnumerable<string> CommandLineFeeds()
+        {
+            string[] args;
+            try { args = Environment.GetCommandLineArgs(); }
+            catch { yield break; }
+            if (args == null)
+                yield break;
+            for (int i = 1; i < args.Length; i++)
+            {
+                string a = args[i];
+                if (string.IsNullOrWhiteSpace(a) || a[0] == '-')
+                    continue;
+                yield return a;
+            }
+        }
+
+        private static string SettingsFirmwarePath()
         {
             try
             {
-                foreach (string f in Directory.GetFiles(dir))
-                {
-                    string n = Path.GetFileName(f);
-                    if (n.Equals("nk.bin", StringComparison.OrdinalIgnoreCase)
-                        || n.Equals("etc.bin", StringComparison.OrdinalIgnoreCase)
-                        || n.Equals("BOOT.PRF", StringComparison.OrdinalIgnoreCase)
-                        || n.Equals("sec.bin", StringComparison.OrdinalIgnoreCase))
-                        return true;
-                }
+                string p = global::ProcessorEmulator.ConfigManager.Config.FirmwarePath;
+                if (!string.IsNullOrWhiteSpace(p))
+                    return p;
             }
             catch
             {
             }
-            return false;
+            return "";
+        }
+
+        private static string NormalizeFeed(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+                return "";
+            string path = raw.Trim().Trim('"');
+            try
+            {
+                if (File.Exists(path))
+                    return Path.GetFullPath(Path.GetDirectoryName(path) ?? "");
+                if (Directory.Exists(path))
+                    return Path.GetFullPath(path);
+            }
+            catch
+            {
+            }
+            return "";
+        }
+
+        private static string ReadLastUsed(string dir)
+        {
+            if (string.IsNullOrEmpty(dir))
+                return "";
+            try
+            {
+                string file = Path.Combine(dir, LastUsedName);
+                if (!File.Exists(file))
+                    return "";
+                string text = File.ReadAllText(file).Trim();
+                if (text.Length == 0)
+                    return "";
+                return text;
+            }
+            catch
+            {
+            }
+            return "";
+        }
+
+        private static void RememberLastUsed(string attach)
+        {
+            if (string.IsNullOrEmpty(attach))
+                return;
+            string destDir = AppDomain.CurrentDomain.BaseDirectory;
+            if (string.IsNullOrEmpty(destDir))
+                return;
+            try
+            {
+                string destFull = Path.GetFullPath(destDir);
+                string attachFull = Path.GetFullPath(attach);
+                if (destFull.StartsWith(attachFull, StringComparison.OrdinalIgnoreCase))
+                    return;
+                File.WriteAllText(Path.Combine(destFull, LastUsedName), attachFull);
+            }
+            catch
+            {
+            }
+        }
+
+        private sealed class VolumeScore
+        {
+            public int Markers;
+            public int Extra;
+            public bool HasEtc;
         }
 
         internal static bool IsHardDiskPath(string name)
