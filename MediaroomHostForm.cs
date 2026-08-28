@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.IO;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -105,9 +106,22 @@ namespace ProcessorEmulator
 
         private void BrowseClick(object sender, EventArgs e)
         {
-            using var d = new FolderBrowserDialog { Description = "Mediaroom / WinCE dump folder" };
+            using var d = new OpenFileDialog
+            {
+                Title = "Mediaroom / WinCE dump",
+                Filter = "nk.bin / etc.bin|nk.bin;etc.bin|BIN files (*.bin)|*.bin|All files (*.*)|*.*",
+                CheckFileExists = true,
+                Multiselect = false
+            };
+            string current = DumpPath?.Trim();
+            if (!string.IsNullOrEmpty(current) && Directory.Exists(current))
+                d.InitialDirectory = current;
             if (d.ShowDialog(this) == DialogResult.OK)
-                DumpPath = d.SelectedPath;
+            {
+                string dir = Path.GetDirectoryName(d.FileName);
+                if (!string.IsNullOrEmpty(dir))
+                    DumpPath = dir;
+            }
         }
 
         private void StopClick(object sender, EventArgs e)
