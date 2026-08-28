@@ -9,6 +9,7 @@ namespace ProcessorEmulator
     {
         protected override void OnStartup(StartupEventArgs e)
         {
+            Win7VisualStyle.EnableHost();
             base.OnStartup(e);
 
             // global exception handlers for debugging
@@ -35,6 +36,17 @@ namespace ProcessorEmulator
             {
                 Debug.WriteLine($"Could not load ClassicStyle.xaml: {ex.Message}");
             }
+            try
+            {
+                var w7 = new ResourceDictionary { Source = new Uri("Win7Styles.xaml", UriKind.Relative) };
+                Resources.MergedDictionaries.Add(w7);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Could not load Win7Styles.xaml: {ex.Message}");
+            }
+            try { Windows7ThemeManager.Apply(this); }
+            catch (Exception ex) { Debug.WriteLine($"Win7 theme: {ex.Message}"); }
 
             // handle command-line test mode before showing GUI
             if (e.Args != null && e.Args.Length > 0 && e.Args[0] == "--test-uverse")

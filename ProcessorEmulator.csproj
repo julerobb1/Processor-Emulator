@@ -6,6 +6,7 @@
     <RuntimeFrameworkVersion>8.0.25</RuntimeFrameworkVersion>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>

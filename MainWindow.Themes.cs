@@ -81,7 +81,6 @@ namespace ProcessorEmulator
             runtimeThemeCombo.Items.Add(new ComboBoxItem { Content = "iGuide (Legacy)" });
             runtimeThemeCombo.Items.Add(new ComboBoxItem { Content = "Mediaroom (U-verse)" });
             runtimeThemeCombo.Items.Add(new ComboBoxItem { Content = "X1 (Modern)" });
-            runtimeThemeCombo.SelectedIndex = 0;
             runtimeThemeCombo.SelectionChanged += ThemeCombo_SelectionChanged;
 
             // insert into statusbar

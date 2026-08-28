@@ -21,6 +21,7 @@ namespace ProcessorEmulator
         public MainWindow()
         {
             InitializeComponent();
+            SourceInitialized += (_, __) => Win7VisualStyle.ApplyToWindow(this);
             SetupClassicUI();
 
             _ceExecutor = new WindowsCEExecutor();
