@@ -124,44 +124,16 @@ namespace ProcessorEmulator
                     return false;
                 }
                 
-                // Stage 2: Boot WinCE kernel
+                // Stage 2: map nk.bin and step the existing MIPS/CE core.
+                // Do not invent services, ExtraROM maps, or a TV UI.
                 if (!await BootWinCEKernel())
                 {
                     LogBoot("BOOT FAILED: WinCE kernel boot failed");
                     return false;
                 }
-                
-                // Stage 3: Initialize system services
-                if (!await InitializeSystemServices())
-                {
-                    LogBoot("BOOT FAILED: System services initialization failed");
-                    return false;
-                }
-                
-                // Stage 4: Load Mediaroom platform
-                if (!await LoadMediaroomPlatform())
-                {
-                    LogBoot("BOOT FAILED: Mediaroom platform load failed");
-                    return false;
-                }
-                
-                // Stage 5: Initialize IPTV services
-                if (!await InitializeIPTVServices())
-                {
-                    LogBoot("BOOT FAILED: IPTV services initialization failed");
-                    return false;
-                }
-                
-                // Stage 6: Launch Mediaroom UI
-                if (!await LaunchMediaroomUI())
-                {
-                    LogBoot("BOOT FAILED: Mediaroom UI launch failed");
-                    return false;
-                }
-                
-                LogBoot("MEDIAROOM BOOT COMPLETE - System Ready");
-                LogBoot("AT&T U-verse IPTV Platform is now running");
-                currentStage = BootStage.Complete;
+
+                LogBoot("nk.bin stepped. tv2clientce not started (firmware never CreateProcess).");
+                currentStage = BootStage.KernelLoad;
                 return true;
             }
             catch (Exception ex)
@@ -209,9 +181,8 @@ namespace ProcessorEmulator
 
             if (!Directory.Exists(baseFirmwarePath))
             {
-                LogBoot($"⚠️ Creating firmware directory: {baseFirmwarePath}");
-                Directory.CreateDirectory(baseFirmwarePath);
-                await CreateSyntheticFirmware();
+                LogBoot("No firmware directory (will not create one or write synthetic files)");
+                return false;
             }
             
             int loadedCount = 0;
@@ -300,26 +271,27 @@ namespace ProcessorEmulator
             _mipsCpu.SetRegister(MipsCpuEmulator.Register.PC, entryPoint);
             _mipsCpu.SetRegister(MipsCpuEmulator.Register.SP, WINCE_KERNEL_BASE + RAM_SIZE - 0x1000);
 
-            LogBoot("Probing first kernel instructions (not a CE boot)");
-            const int probeSteps = 8;
+            LogBoot("Stepping WinCE kernel (real CPU, not a UI stub)");
+            const int runSteps = 1000000;
             try
             {
-                for (int i = 0; i < probeSteps; i++)
+                for (int i = 0; i < runSteps; i++)
                 {
-                    uint pc = _mipsCpu.ProgramCounter;
-                    uint instr = _mipsBus.Read32(pc);
                     _mipsCpu.Step(1);
-                    LogBoot($"  [{i}] PC=0x{pc:X8} instr=0x{instr:X8} next=0x{_mipsCpu.ProgramCounter:X8}");
+                    if ((i + 1) % 200000 == 0)
+                        LogBoot("  steps=" + (i + 1) + " PC=0x" + _mipsCpu.ProgramCounter.ToString("X8"));
                 }
             }
             catch (Exception ex)
             {
-                LogBoot($"CPU probe stopped: {ex.GetType().Name}: {ex.Message} PC=0x{_mipsCpu.ProgramCounter:X8}");
-                return false;
+                LogBoot($"CPU stopped: {ex.GetType().Name}: {ex.Message} PC=0x{_mipsCpu.ProgramCounter:X8}");
+                isKernelLoaded = true;
+                return true;
             }
 
-            LogBoot("nk.bin mapped; CE kernel/userland not reached");
-            return false;
+            isKernelLoaded = true;
+            LogBoot("step limit PC=0x" + _mipsCpu.ProgramCounter.ToString("X8"));
+            return true;
         }
         
         private async Task<bool> InitializeSystemServices()

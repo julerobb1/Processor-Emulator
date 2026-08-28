@@ -32,20 +32,30 @@ namespace ProcessorEmulator
             catch { }
         }
 
+        public static void ApplyToHwnd(IntPtr hwnd)
+        {
+            if (hwnd == IntPtr.Zero)
+                return;
+            try
+            {
+                int off = 0;
+                int square = DwmwcpDoNotRound;
+                DwmSetWindowAttribute(hwnd, DwmwaUseImmersiveDarkMode, ref off, sizeof(int));
+                DwmSetWindowAttribute(hwnd, DwmwaUseImmersiveDarkModeOld, ref off, sizeof(int));
+                DwmSetWindowAttribute(hwnd, DwmwaWindowCornerPreference, ref square, sizeof(int));
+            }
+            catch
+            {
+            }
+        }
+
         public static void ApplyToWindow(Window window)
         {
             if (window == null)
                 return;
             try
             {
-                IntPtr hwnd = new WindowInteropHelper(window).Handle;
-                if (hwnd == IntPtr.Zero)
-                    return;
-                int off = 0;
-                int square = DwmwcpDoNotRound;
-                DwmSetWindowAttribute(hwnd, DwmwaUseImmersiveDarkMode, ref off, sizeof(int));
-                DwmSetWindowAttribute(hwnd, DwmwaUseImmersiveDarkModeOld, ref off, sizeof(int));
-                DwmSetWindowAttribute(hwnd, DwmwaWindowCornerPreference, ref square, sizeof(int));
+                ApplyToHwnd(new WindowInteropHelper(window).Handle);
             }
             catch
             {

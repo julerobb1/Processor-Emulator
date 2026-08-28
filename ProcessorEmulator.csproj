@@ -38,7 +38,15 @@
     <Compile Remove="Emulation\*Clean.cs" />
     <Page Remove="FolderAnalysisWindow.xaml" />
     <Compile Remove="FolderAnalysisWindow.xaml.cs" />
-    <!-- MainWindow.cs restored so the GUI can be constructed -->
+    <Page Remove="MainWindow.xaml" />
+    <Compile Remove="MainWindow.xaml.cs" />
+    <Compile Remove="MainWindow.Themes.cs" />
+    <Page Remove="HypervisorWindow.xaml" />
+    <Compile Remove="HypervisorWindow.xaml.cs" />
+    <Compile Remove="HypervisorWindow.cs" />
+    <Page Remove="Emulation\EmulatorWindow.xaml" />
+    <Compile Remove="Emulation\EmulatorWindow.xaml.cs" />
+    <Page Remove="CarlMode.xaml" />
   </ItemGroup>
 
 </Project>
