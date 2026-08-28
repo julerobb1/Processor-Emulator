@@ -106,22 +106,15 @@ namespace ProcessorEmulator
 
         private void BrowseClick(object sender, EventArgs e)
         {
-            using var d = new OpenFileDialog
+            using var d = new FolderBrowserDialog
             {
-                Title = "Mediaroom / WinCE dump",
-                Filter = "nk.bin / etc.bin|nk.bin;etc.bin|BIN files (*.bin)|*.bin|All files (*.*)|*.*",
-                CheckFileExists = true,
-                Multiselect = false
+                Description = "Mediaroom / WinCE dump folder"
             };
             string current = DumpPath?.Trim();
             if (!string.IsNullOrEmpty(current) && Directory.Exists(current))
-                d.InitialDirectory = current;
+                d.SelectedPath = current;
             if (d.ShowDialog(this) == DialogResult.OK)
-            {
-                string dir = Path.GetDirectoryName(d.FileName);
-                if (!string.IsNullOrEmpty(dir))
-                    DumpPath = dir;
-            }
+                DumpPath = d.SelectedPath;
         }
 
         private void StopClick(object sender, EventArgs e)
