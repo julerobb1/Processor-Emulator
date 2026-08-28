@@ -11,7 +11,8 @@ namespace ProcessorEmulator.Core
     // UVERSE_HARD_DISK / PROCESSOR_EMULATOR_HARD_DISK, last-used
     // path next to the exe, or a drop folder next to cwd/exe).
     // Hunt by name, recursively, case-insensitive. Take what is
-    // present. Local/dev also tries the in-tree fixture and the
+    // present. The path or volume label need not contain Uverse
+    // or AT&T. Local/dev also tries the in-tree fixture and the
     // last-known Uverse Drive E path; those are skipped if absent.
     // Read-only: never write, delete, or rename dump files. Not a
     // BINBlk/BINFS/ExtraROM object. If etc.bin is found, log it as
