@@ -73,7 +73,8 @@ Launch50–20. `initobj.dat` Launch is `device.exe` only. RunApps:
 a filesys `CreateEvent` during FILESentry, not a second XIP map.
 Hunt may log `etc.bin`; the host does not map it.
 
-After that, the CPU sits in OEMIdle `0x80059E98`.
+CreateProcess(`device.exe`) then returns OOM (below). After that
+fail the CPU sits in OEMIdle `0x80059E98`.
 
 ## After initdb.ini (same `1ca8383` boot)
 
