@@ -137,6 +137,64 @@ here (hunt placeholders only). Do not invent ExtraROM to back
 those VAs. Firmware does not LoadRom them for this inherit
 publish; it walks the in-memory chain.
 
+## ExtraROM leftovers are honest (no dropped peek)
+
+The question was whether firmware already tried to
+validate/skip those ExtraROM slots (ROMHDR magic peek at
+`0x80630000` / `0x81360000`, a zeroing store, a taken skip
+branch) and we dropped that path, versus firmware honestly
+publishing leftovers with ExtraROM simply not in this dump.
+
+Static chain at `0x8006B9DC` is three 16-byte records, not
+120-byte ROMHDR blocks:
+
+| rec | +0 base | +4 size | +8 flags |
+|---|---|---|---|
+| 0 | `0x80010000` | `0x00310000` | `0x00010000` |
+| 1 | `0x80630000` | `0x00D30000` | `0x00010001` |
+| 2 | `0x81360000` | `0x00050000` | `0x00010002` |
+
+Those two ExtraROM bases exist only as data words there.
+`lui 0x8063` / `0x8136` / KSEG1 `0xA063` / `0xA136` count is 0.
+The other `0x80630000` hits (`0x800E3B84`, `0x800E3FB0`) are
+`lb $v1, 0($v1)`, not table copies.
+
+binfs `0x03EA1F28` builds the 120-byte slots:
+
+1. Count = `(table_bytes >> 4) - 1`. Walk `table+16` with a
+   16-byte stride (header then the three records).
+2. `memcpy` 16 bytes of one record onto `sp+56`.
+3. `memcpy` **120** bytes from that stack slot into the heap
+   record. Immediate `addiu $a2, $0, 120` is in ROM. +14/+18
+   are the 104 bytes past the 16-byte record (`sp+76` /
+   `sp+80` and on). Those are frame leftovers, including
+   `0x03E833FC` / `0x00005800`.
+4. Compare `*(kernel_obj+8)` to the record base. Match
+   (`0x80010000`): `memcpy` 84 bytes onto dest+20 (ROMHDR
+   overlay at +14) and set +16 = 1. Miss (both ExtraROM
+   bases): set +16 = 2, leave +14/+18, zero only +108/+112/+116.
+   No peek of the ExtraROM VA. No store that clears +14.
+
+The CECE check in the same publish function (`0x03EA2A2C`)
+is a BINFS disk scan, not a VA peek. `jal 0x03EA38B0` →
+`0x03EA363C` IOCTL `0x71FC4` reads 4 bytes at file offset
+`s6+64` and compares to `0x43454345`. Mismatch advances
+`s6` by the stride at `0x01FED0C4` and keeps scanning.
+Match reads +68 (pTOC) and can overlay that XIP. After
+the scan, `0x03EA2B18` publishes **every** 120-byte slot.
+The only other `ori 0x4345` in the image (`0x03EA16FC`)
+*writes* CECE into a header; it does not compare. Kernel
+has no CECE immediate.
+
+`0x80630000` / `0x81360000` are KSEG0 → phys `0x00630000` /
+`0x01360000`, inside the 256MB `RamDevice`. A peek would
+return zeros, not `AddressError` / TLB. Firmware never
+issues that peek. Nothing to restore.
+
+Stop on this path. ExtraROM is not in this dump. Do not
+invent ExtraROM bytes, a host map of `etc.bin`, or a fake
+VirtualAlloc / CreateProcess success.
+
 ## What not to invent
 
 Do not `CreateProcess(tv2clientce)`. Do not `SetEvent` the filesys
@@ -152,11 +210,14 @@ workflow. Leave it unless a real compile job fails.
 
 ## Next real question
 
-CreateProcess(`device.exe`) returns OOM because binfs published
-two unsatisfiable inherit pairs from ROM-chain ExtraROM slots
-that this dump’s loaded `nk.bin` does not back. A dump B000FF
-that already names those bases/sizes would be a host load of
-existing records (same as `nk.bin`), not an invented XIP and
-not a host `CreateProcess` of the client. This environment has
-no such file. Do not invent ExtraROM. Do not fake VirtualAlloc
-or CreateProcess success. Do not write `HKLM\init` Launch.
+Stopped: leftovers are honest; ExtraROM is not in this dump.
+No dropped peek/store/skip to restore. CreateProcess(`device.exe`)
+still OOMs on those two unsatisfiable inherit pairs. A dump
+B000FF that already names `0x80630000`/`0xD30000` or
+`0x81360000`/`0x50000` would be a host load of existing
+records (same as `nk.bin`), not an invented XIP and not a
+host `CreateProcess` of the client. This environment has no
+such file. Opening dump `etc.bin` as Hard Disk content is a
+later firmware path. Do not invent ExtraROM. Do not fake
+VirtualAlloc or CreateProcess success. Do not write
+`HKLM\init` Launch.

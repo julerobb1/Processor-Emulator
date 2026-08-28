@@ -68,8 +68,10 @@ Hard Disk FAT named Hard Disk is already mounted and hooked
 does not CreateFile `\\ETC.bin` or any Hard Disk path. `nk.bin`
 never Launchs `tv2clientce`. Hive-init Flags=3; RunApps `HKLM\init`
 is `ERROR_BADKEY`. CreateProcess(`device.exe`) maps the TOC image
-then OOM on binfs inherit-list VALLOC (`0x8001B724`). A host
-window, black pane, or OEMIdle is not the TV UI.
+then OOM on binfs inherit-list VALLOC (`0x8001B724`). ExtraROM
+slots `0x80630000` / `0x81360000` are honest leftovers (no
+dropped ROMHDR peek). A host window, black pane, or OEMIdle
+is not the TV UI.
 
 Do not implement an X1 / Comcast splash, explorer, or a host
 CreateProcess of the client. Do not invent ExtraROM map or SetEvent
