@@ -34,7 +34,7 @@ namespace ProcessorEmulator
 
             var host = new MediaroomHostForm();
             if (!string.IsNullOrEmpty(feed))
-                host.DumpPath = feed;
+                host.DiskFolder = feed;
             System.Windows.Forms.Application.Run(host);
             Shutdown();
         }
