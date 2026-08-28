@@ -72,7 +72,7 @@ namespace ProcessorEmulator
                         }
                     }
                     
-                    logger($"✅ Successfully streamed {totalRead:N0} bytes");
+                    logger("Successfully streamed {totalRead:N0} bytes");
                     logger($"🔓 NO 2GB ARRAY LIMIT HIT - streaming bypass worked!");
                     
                     return true;
@@ -80,7 +80,7 @@ namespace ProcessorEmulator
             }
             catch (Exception ex)
             {
-                logger($"❌ Streaming failed: {ex.Message}");
+                logger($"Streaming failed: {ex.Message}");
                 return false;
             }
         }

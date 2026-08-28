@@ -77,15 +77,15 @@ namespace ProcessorEmulator.Emulation
                 logBuilder.AppendLine("🔐 Step 2: Mutual Message Authentication");
                 logBuilder.AppendLine("CM -> CMTS: Authorization Request (ECDSA Signed)");
                 logBuilder.AppendLine("CMTS -> CM: Authorization Reply (ECDSA Signed)");
-                logBuilder.AppendLine("✅ Both parties authenticated successfully");
+                logBuilder.AppendLine("Both parties authenticated successfully");
                 logBuilder.AppendLine("");
                 
                 // Step 3: ECDHE Key Exchange for Perfect Forward Secrecy
                 logBuilder.AppendLine("🔑 Step 3: ECDHE Key Exchange (Perfect Forward Secrecy)");
                 var authKey = GenerateEcdheAuthorizationKey();
-                logBuilder.AppendLine("✅ Ephemeral key pair generated");
-                logBuilder.AppendLine("✅ Shared secret derived via ECDHE");
-                logBuilder.AppendLine("✅ Perfect Forward Secrecy established");
+                logBuilder.AppendLine("Ephemeral key pair generated");
+                logBuilder.AppendLine("Shared secret derived via ECDHE");
+                logBuilder.AppendLine("Perfect Forward Secrecy established");
                 logBuilder.AppendLine("");
                 
                 // Step 4: Algorithm Agility Demonstration
@@ -100,19 +100,19 @@ namespace ProcessorEmulator.Emulation
                 logBuilder.AppendLine("🛡️ Step 5: TOFU Downgrade Attack Protection");
                 logBuilder.AppendLine("Trust On First Use (TOFU) mechanism activated");
                 logBuilder.AppendLine("Minimum protocol version: BPI+ V2");
-                logBuilder.AppendLine("✅ Downgrade attacks prevented");
+                logBuilder.AppendLine("Downgrade attacks prevented");
                 logBuilder.AppendLine("");
                 
                 // Step 6: 10G Platform Security Properties
                 logBuilder.AppendLine("🚀 Step 6: 10G Platform Security Properties");
-                logBuilder.AppendLine("Integrity: ✅ Message authentication enabled");
-                logBuilder.AppendLine("Confidentiality: ✅ AES-256-GCM encryption");
-                logBuilder.AppendLine("Availability: ✅ Robust key management");
-                logBuilder.AppendLine("Simplicity: ✅ Standard CMS format usage");
+                logBuilder.AppendLine("Integrity: Message authentication enabled");
+                logBuilder.AppendLine("Confidentiality: AES-256-GCM encryption");
+                logBuilder.AppendLine("Availability: Robust key management");
+                logBuilder.AppendLine("Simplicity: Standard CMS format usage");
                 logBuilder.AppendLine("");
                 
                 logBuilder.AppendLine("🎯 BPI+ V2 Authentication Completed Successfully");
-                logBuilder.AppendLine("📺 Educational DOCSIS 4.0 implementation for X1 Platform");
+                logBuilder.AppendLine("Educational DOCSIS 4.0 implementation for X1 Platform");
                 
                 result.Success = true;
                 result.AuthorizationKey = authKey;
@@ -121,15 +121,15 @@ namespace ProcessorEmulator.Emulation
                 result.SecurityProperties = "BPI+ V2: Full Security Properties Enabled";
                 result.LogOutput = logBuilder.ToString();
                 
-                Debug.WriteLine("✅ BPI+ V2 Educational authentication completed");
+                Debug.WriteLine("BPI+ V2 Educational authentication completed");
                 
             }
             catch (Exception ex)
             {
-                logBuilder.AppendLine($"❌ BPI+ V2 Authentication Error: {ex.Message}");
+                logBuilder.AppendLine($"BPI+ V2 Authentication Error: {ex.Message}");
                 result.Success = false;
                 result.LogOutput = logBuilder.ToString();
-                Debug.WriteLine($"❌ BPI+ V2 authentication failed: {ex.Message}");
+                Debug.WriteLine($"BPI+ V2 authentication failed: {ex.Message}");
             }
             
             return result;
@@ -140,7 +140,7 @@ namespace ProcessorEmulator.Emulation
             // Educational certificate validation based on CableLabs PKI specs
             if (deviceModel.Contains("XG1V4") || deviceModel.Contains("X1"))
             {
-                return "✅ Valid DOCSIS 4.0 Device Certificate (Educational)";
+                return "Valid DOCSIS 4.0 Device Certificate (Educational)";
             }
             return "⚠️ Educational certificate - real PKI validation needed for production";
         }
@@ -190,14 +190,14 @@ namespace ProcessorEmulator.Emulation
                 ImplementationPurpose = "Broadcast Technology Preservation and Education",
                 SecurityFeatures = new List<string>
                 {
-                    "✅ Baseline Privacy Plus Version 2 (BPI+ V2)",
-                    "✅ Perfect Forward Secrecy via ECDHE",
-                    "✅ Mutual Message Authentication (MMA)",
-                    "✅ Full Algorithm Agility Support",
-                    "✅ TOFU Downgrade Attack Protection",
-                    "✅ ECC P-256 Cryptography",
-                    "✅ CMS Standard Message Format",
-                    "✅ 10G Platform Security Properties"
+                    "Baseline Privacy Plus Version 2 (BPI+ V2)",
+                    "Perfect Forward Secrecy via ECDHE",
+                    "Mutual Message Authentication (MMA)",
+                    "Full Algorithm Agility Support",
+                    "TOFU Downgrade Attack Protection",
+                    "ECC P-256 Cryptography",
+                    "CMS Standard Message Format",
+                    "10G Platform Security Properties"
                 },
                 ComplianceNote = "Educational implementation based on CableLabs DOCSIS 4.0 specifications. " +
                                "Not for production use - designed for broadcast technology preservation and learning."

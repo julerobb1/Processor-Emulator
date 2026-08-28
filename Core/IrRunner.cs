@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using System.Text;
 using ProcessorEmulator.Core.Emulation;
 using ProcessorEmulator.Core.Decoders;
@@ -23,7 +22,7 @@ namespace ProcessorEmulator.Core
         {
             _state = state;
             _memory = memory;
-            _decoder = new MipsDecoder();
+            _decoder = new MipsIrDecoder();
             _executor = new BaseIrExecutor();
         }
 
@@ -106,12 +105,12 @@ namespace ProcessorEmulator.Core
                     _state.PC += 4;
                 }
             }
-            catch (CpuAlignmentException ex)
+            catch (CpuAlignmentException)
             {
                 TriggerException(pcBefore, EXCEPTION_ALIGNMENT, "Alignment Error");
                 return;
             }
-            catch (IllegalInstructionException ex)
+            catch (IllegalInstructionException)
             {
                 TriggerException(pcBefore, EXCEPTION_ILLEGAL_INSTRUCTION, "Illegal Instruction");
                 return;

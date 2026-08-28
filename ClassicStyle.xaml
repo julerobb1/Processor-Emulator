@@ -19,16 +19,16 @@
 
     <!-- Menu style: will switch to semi-transparent if GlassMenuBackgroundBrush present -->
     <Style TargetType="Menu">
-        <Setter Property="Background" Value="{StaticResource AeroHeaderBrush}"/>
-        <Setter Property="BorderBrush" Value="{StaticResource AeroBorderBrush}"/>
+        <Setter Property="Background" Value="{DynamicResource AeroHeaderBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource AeroBorderBrush}"/>
         <Setter Property="BorderThickness" Value="0,0,0,1"/>
     <!-- Triggers removed - dynamic resources handle replacement -->
     </Style>
 
     <!-- StatusBar: use override brush if available -->
     <Style TargetType="StatusBar">
-        <Setter Property="Background" Value="{StaticResource AeroHeaderBrush}"/>
-        <Setter Property="BorderBrush" Value="{StaticResource AeroBorderBrush}"/>
+        <Setter Property="Background" Value="{DynamicResource AeroHeaderBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource AeroBorderBrush}"/>
         <Setter Property="BorderThickness" Value="1,0,0,0"/>
     </Style>
 

@@ -26,7 +26,7 @@ namespace ProcessorEmulator
             loadedFirmware = firmware;
             memory = new MemoryMap(firmware);
             
-            Console.WriteLine($"✅ Firmware loaded: {firmware.Length:N0} bytes");
+            Console.WriteLine($"Firmware loaded: {firmware.Length:N0} bytes");
             Console.WriteLine($"🧠 Memory map initialized: {memory.RAM.Length / 1024:N0}KB RAM");
             OnBoot?.Invoke($"Firmware loaded: {firmware.Length:N0} bytes");
         }
@@ -102,7 +102,7 @@ namespace ProcessorEmulator
                 await Task.Delay(100);
             }
             
-            Console.WriteLine("✅ Main execution loop complete");
+            Console.WriteLine("Main execution loop complete");
         }
         
         public void Stop()

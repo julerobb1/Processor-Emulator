@@ -1,31 +1,29 @@
 using System;
 using System.Drawing;
-using System.Windows.Forms;
-
+using WinForms = System.Windows.Forms;
 using System.Linq;
 
 namespace ProcessorEmulator
 {
-    public partial class EmulatorConsole : Form
+    public partial class EmulatorConsole : WinForms.Form
     {
-        private RichTextBox _terminal;
+        private WinForms.RichTextBox _terminal;
 
         public EmulatorConsole()
         {
-            // Set the classic Win32 look
             this.Text = "MIPS System Console";
-            this.BackColor = SystemColors.Control; // Classic Gray
-            this.Size = new Size(800, 600);
+            this.BackColor = System.Drawing.SystemColors.Control;
+            this.Size = new System.Drawing.Size(800, 600);
 
-            _terminal = new RichTextBox
+            _terminal = new WinForms.RichTextBox
             {
-                Dock = DockStyle.Fill,
+                Dock = WinForms.DockStyle.Fill,
                 BackColor = Color.Black,
                 ForeColor = Color.Lime,
-                Font = new Font("Lucida Console", 10, FontStyle.Regular),
+                Font = new System.Drawing.Font("Lucida Console", 10, System.Drawing.FontStyle.Regular),
                 ReadOnly = true,
                 Multiline = true,
-                ScrollBars = RichTextBoxScrollBars.Vertical
+                ScrollBars = WinForms.RichTextBoxScrollBars.Vertical
             };
 
             this.Controls.Add(_terminal);
@@ -42,42 +40,37 @@ namespace ProcessorEmulator
             _terminal.SelectionStart = _terminal.Text.Length;
             _terminal.ScrollToCaret();
         }
-        
+
+        // Append a single character (used as a callback from UART/OnCharReceived)
         public void AppendChar(char c)
         {
             AppendText(c.ToString());
         }
 
-        protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+        // Intercepts key presses to send to the emulated UART.
+        protected override bool ProcessCmdKey(ref WinForms.Message msg, WinForms.Keys keyData)
         {
-            // Convert the key to an ASCII character
             char c = (char)0;
 
-            if (keyData == Keys.Enter) c = '\r';
-            else if (keyData == Keys.Back) c = '\b';
-            else if (keyData >= Keys.A && keyData <= Keys.Z)
+            if (keyData == WinForms.Keys.Enter) c = '\r';
+            else if (keyData == WinForms.Keys.Back) c = '\b';
+            else if (keyData >= WinForms.Keys.A && keyData <= WinForms.Keys.Z)
             {
-                // Handle Shift for uppercase/lowercase
-                bool shift = (ModifierKeys & Keys.Shift) != 0;
+                bool shift = (ModifierKeys & WinForms.Keys.Shift) != 0;
                 c = (char)(keyData.ToString()[0]);
                 if (!shift) c = char.ToLower(c);
             }
-            else if (keyData >= Keys.D0 && keyData <= Keys.D9)
+            else if (keyData >= WinForms.Keys.D0 && keyData <= WinForms.Keys.D9)
             {
                 c = keyData.ToString().Last();
             }
-            // Add more cases for symbols/space as needed...
-            else if (keyData == Keys.Space) c = ' ';
+            else if (keyData == WinForms.Keys.Space) c = ' ';
 
-            if (c != 0)
+            // Send the character to the UART if it's a valid one.
+            if (c != 0 && Program.CurrentUart != null)
             {
-                // Access your UART instance and send the key
-                // Assuming you have a reference to the active UART
-                if (Program.CurrentUart != null)
-                {
-                    Program.CurrentUart.SendKey(c);
-                    return true; // Mark as handled
-                }
+                Program.CurrentUart.SendKey(c);
+                return true;
             }
 
             return base.ProcessCmdKey(ref msg, keyData);

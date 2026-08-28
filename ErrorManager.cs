@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Windows;
+using MessageBox = System.Windows.MessageBox;
 
 namespace ProcessorEmulator
 {
@@ -298,9 +299,9 @@ namespace ProcessorEmulator
         {
             var successMessages = new Dictionary<int, string>
             {
-                { 6001, "✅ Hypervisor running smoothly" },
-                { 6002, "✅ Boot sequence completed" },
-                { 6003, "✅ Emulation successful" }
+                { 6001, "Hypervisor running smoothly" },
+                { 6002, "Boot sequence completed" },
+                { 6003, "Emulation successful" }
             };
             return successMessages.ContainsKey(successCode) ? successMessages[successCode] : "Success!";
         }

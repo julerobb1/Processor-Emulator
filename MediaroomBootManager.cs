@@ -1,10 +1,13 @@
 using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Threading.Tasks;
 using System.Windows;
-using System.Text;
+using System.IO;
 using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Collections.Generic;
+using ProcessorEmulator.Emulation;
+using ProcessorEmulator.Core.Emulation;
+using ProcessorEmulator.Core.Loaders;
 
 namespace ProcessorEmulator
 {
@@ -19,7 +22,10 @@ namespace ProcessorEmulator
         
         private const uint WINCE_KERNEL_BASE = 0x80000000;
         private const uint MEDIAROOM_BASE = 0x90000000;
-        private const uint RAM_SIZE = 128 * 1024 * 1024; // 128MB typical for U-verse STB
+        private const uint RAM_SIZE = 256 * 1024 * 1024; // covers firmware TLBWI PFN 0x0D140000
+        
+        private const uint UART_BASE_ADDRESS = 0xB0000000;
+        private const uint UART_SIZE = 0x1000;
         
         // Mediaroom-specific file paths
         private readonly Dictionary<string, string> RequiredFiles = new Dictionary<string, string>
@@ -46,6 +52,10 @@ namespace ProcessorEmulator
         private bool isMediaroomReady = false;
         private string baseFirmwarePath;
         
+        private MipsBus _mipsBus;
+        private CP0 _cp0;
+        private MipsCpuEmulator _mipsCpu;
+
         // Boot sequence stages
         private enum BootStage
         {
@@ -73,6 +83,29 @@ namespace ProcessorEmulator
             LogBoot($"Target Platform: AT&T U-verse IPTV");
             LogBoot($"Architecture: MIPS + WinCE + Mediaroom");
             LogBoot($"Firmware Path: {baseFirmwarePath}");
+
+            // Initialize MIPS emulation components
+            _cp0 = new CP0();
+            _mipsBus = new MipsBus(_cp0);
+            _mipsBus.IsBigEndian = false;
+            _mipsBus.AddDevice(new RamDevice(0x00000000, RAM_SIZE));
+            var pic1000 = new BcmStickyMmio(0x10001000, 0x1000, "MMIO1000");
+            _mipsBus.AddDevice(new BcmSysControlRegs(_cp0, pic1000));
+            _mipsBus.AddDevice(new BcmStickyMmio(0x11F00000, 0x1000, "MMIO11F"));
+            _mipsBus.AddDevice(new BcmStickyMmio(0x10500000, 0x1000, "MMIO1050"));
+            _mipsBus.AddDevice(pic1000);
+            _mipsBus.AddDevice(new BcmStickyMmio(0x10104000, 0x1000, "MMIO1010"));
+            _mipsBus.AddDevice(new BcmStickyMmio(0x10080000, 0x1000, "MMIO1008"));
+            _mipsBus.AddDevice(new BcmStickyMmio(0x10090000, 0x1000, "MMIO1009"));
+            _mipsBus.AddDevice(new BcmStickyMmio(0x10480000, 0x1000, "MMIO1048"));
+            // OEMInit 0x800568AC: CreateStaticMapping(0x00F06000, 0x1000)
+            // is CE phys>>8, so PA 0xF0600000. Refill table [0] is
+            // VA 0xC4000000 / EntryLo 0x03C18016. device.exe mailbox
+            // at 0x80056BE4 then sw/lw 0xC4000004/8.
+            _mipsBus.AddDevice(new BcmStickyMmio(0xF0600000, 0x1000, "MMIOF060"));
+            _mipsCpu = new MipsCpuEmulator(_mipsBus, _cp0);
+            _mipsBus.AddDevice(new MipsUart(UART_BASE_ADDRESS, UART_SIZE));
+            
         }
         
         /// <summary>
@@ -87,48 +120,20 @@ namespace ProcessorEmulator
                 // Stage 1: Load and validate firmware components
                 if (!await LoadFirmwareComponents())
                 {
-                    LogBoot("❌ BOOT FAILED: Missing critical firmware components");
+                    LogBoot("BOOT FAILED: Missing critical firmware components");
                     return false;
                 }
                 
-                // Stage 2: Boot WinCE kernel
+                // Stage 2: map nk.bin and step the existing MIPS/CE core.
+                // Do not invent services, ExtraROM maps, or a TV UI.
                 if (!await BootWinCEKernel())
                 {
-                    LogBoot("❌ BOOT FAILED: WinCE kernel boot failed");
+                    LogBoot("BOOT FAILED: WinCE kernel boot failed");
                     return false;
                 }
-                
-                // Stage 3: Initialize system services
-                if (!await InitializeSystemServices())
-                {
-                    LogBoot("❌ BOOT FAILED: System services initialization failed");
-                    return false;
-                }
-                
-                // Stage 4: Load Mediaroom platform
-                if (!await LoadMediaroomPlatform())
-                {
-                    LogBoot("❌ BOOT FAILED: Mediaroom platform load failed");
-                    return false;
-                }
-                
-                // Stage 5: Initialize IPTV services
-                if (!await InitializeIPTVServices())
-                {
-                    LogBoot("❌ BOOT FAILED: IPTV services initialization failed");
-                    return false;
-                }
-                
-                // Stage 6: Launch Mediaroom UI
-                if (!await LaunchMediaroomUI())
-                {
-                    LogBoot("❌ BOOT FAILED: Mediaroom UI launch failed");
-                    return false;
-                }
-                
-                LogBoot("✅ MEDIAROOM BOOT COMPLETE - System Ready");
-                LogBoot("📺 AT&T U-verse IPTV Platform is now running");
-                currentStage = BootStage.Complete;
+
+                LogBoot("nk.bin stepped. tv2clientce not started (firmware never CreateProcess).");
+                currentStage = BootStage.KernelLoad;
                 return true;
             }
             catch (Exception ex)
@@ -164,11 +169,20 @@ namespace ProcessorEmulator
             LogBoot("📦 Stage 1: Loading Mediaroom firmware components...");
             currentStage = BootStage.Initial;
             
+            if (!File.Exists(Path.Combine(baseFirmwarePath, "nk.bin")))
+            {
+                string located = FindExistingNkBinDirectory();
+                if (located != null)
+                {
+                    baseFirmwarePath = located;
+                    LogBoot($"Using existing firmware directory: {baseFirmwarePath}");
+                }
+            }
+
             if (!Directory.Exists(baseFirmwarePath))
             {
-                LogBoot($"⚠️ Creating firmware directory: {baseFirmwarePath}");
-                Directory.CreateDirectory(baseFirmwarePath);
-                await CreateSyntheticFirmware();
+                LogBoot("No firmware directory (will not create one or write synthetic files)");
+                return false;
             }
             
             int loadedCount = 0;
@@ -189,7 +203,7 @@ namespace ProcessorEmulator
                     }
                     catch (Exception ex)
                     {
-                        LogBoot($"❌ Failed to load {component.Key}: {ex.Message}");
+                        LogBoot($"Failed to load {component.Key}: {ex.Message}");
                     }
                 }
                 else
@@ -206,7 +220,7 @@ namespace ProcessorEmulator
             
             if (!hasKernel)
             {
-                LogBoot("❌ Critical: WinCE kernel (nk.bin) not found");
+                LogBoot("Critical: WinCE kernel (nk.bin) not found");
                 return false;
             }
             
@@ -215,49 +229,68 @@ namespace ProcessorEmulator
         
         private async Task<bool> BootWinCEKernel()
         {
+            await Task.CompletedTask;
             LogBoot("🔧 Stage 2: Booting WinCE kernel...");
             currentStage = BootStage.KernelLoad;
             
             byte[] kernelData = firmwareComponents["nk.bin"];
             LogBoot($"Kernel size: {kernelData.Length:N0} bytes");
-            
-            // Parse WinCE NK.bin header
-            var kernelInfo = ParseNKBinHeader(kernelData);
-            LogBoot($"Entry point: 0x{kernelInfo.EntryPoint:X8}");
-            LogBoot($"Image base: 0x{kernelInfo.ImageBase:X8}");
-            LogBoot($"Image size: 0x{kernelInfo.ImageSize:X8}");
-            
-            // Simulate kernel loading
-            await Task.Delay(1000);
-            LogBoot("🔄 Loading kernel modules...");
-            
-            var modules = new[]
+
+            uint entryPoint;
+            uint imageBase;
+            uint imageSize;
+            try
             {
-                "KERNEL.DLL - Core kernel",
-                "NK.EXE - System executive", 
-                "FILESYS.DLL - File system",
-                "GWES.DLL - Graphics subsystem",
-                "COREDLL.DLL - Core API library",
-                "NETAPI32.DLL - Network API",
-                "WINSOCK.DLL - Socket interface"
-            };
-            
-            foreach (var module in modules)
-            {
-                await Task.Delay(200);
-                LogBoot($"  ↳ {module}");
+                if (NkBinLoader.IsB000Ff(kernelData))
+                {
+                    NkLoadResult loaded = NkBinLoader.Load(kernelData, new BusMemoryAdapter(_mipsBus));
+                    entryPoint = (uint)loaded.EntryPoint;
+                    imageBase = loaded.ImageStart;
+                    imageSize = loaded.ImageLength;
+                    LogBoot($"B000FF image: {loaded.RecordsLoaded} records, start=0x{imageBase:X8}, size=0x{imageSize:X8}{(loaded.Truncated ? " (truncated)" : "")}");
+                }
+                else
+                {
+                    var kernelInfo = ParseNKBinHeader(kernelData);
+                    entryPoint = kernelInfo.EntryPoint;
+                    imageBase = kernelInfo.ImageBase;
+                    imageSize = kernelInfo.ImageSize;
+                    _mipsBus.WriteBytes(imageBase, kernelData);
+                }
             }
-            
-            // Mount registry hive
-            if (firmwareComponents.ContainsKey("default.hv"))
+            catch (Exception ex)
             {
-                await Task.Delay(500);
-                LogBoot("📋 Mounting registry hive...");
-                await ParseRegistryHive();
+                LogBoot($"Failed to map nk.bin into RAM: {ex.Message}");
+                return false;
             }
-            
-            LogBoot("✅ WinCE kernel boot complete");
+
+            LogBoot($"Entry point: 0x{entryPoint:X8}");
+            LogBoot($"Image base: 0x{imageBase:X8}");
+            LogBoot($"Image size: 0x{imageSize:X8}");
+
+            _mipsCpu.SetRegister(MipsCpuEmulator.Register.PC, entryPoint);
+            _mipsCpu.SetRegister(MipsCpuEmulator.Register.SP, WINCE_KERNEL_BASE + RAM_SIZE - 0x1000);
+
+            LogBoot("Stepping WinCE kernel (real CPU, not a UI stub)");
+            const int runSteps = 1000000;
+            try
+            {
+                for (int i = 0; i < runSteps; i++)
+                {
+                    _mipsCpu.Step(1);
+                    if ((i + 1) % 200000 == 0)
+                        LogBoot("  steps=" + (i + 1) + " PC=0x" + _mipsCpu.ProgramCounter.ToString("X8"));
+                }
+            }
+            catch (Exception ex)
+            {
+                LogBoot($"CPU stopped: {ex.GetType().Name}: {ex.Message} PC=0x{_mipsCpu.ProgramCounter:X8}");
+                isKernelLoaded = true;
+                return true;
+            }
+
             isKernelLoaded = true;
+            LogBoot("step limit PC=0x" + _mipsCpu.ProgramCounter.ToString("X8"));
             return true;
         }
         
@@ -282,13 +315,13 @@ namespace ProcessorEmulator
                 LogBoot($"🔧 Starting {service}: {description}");
             }
             
-            LogBoot("✅ System services initialized");
+            LogBoot("System services initialized");
             return true;
         }
         
         private async Task<bool> LoadMediaroomPlatform()
         {
-            LogBoot("📺 Stage 4: Loading Microsoft Mediaroom platform...");
+            LogBoot("Stage 4: Loading Microsoft Mediaroom platform...");
             currentStage = BootStage.MediaroomLoad;
             
             // Load Mediaroom core components
@@ -317,7 +350,7 @@ namespace ProcessorEmulator
                 }
             }
             
-            LogBoot("✅ Mediaroom platform loaded");
+            LogBoot("Mediaroom platform loaded");
             return true;
         }
         
@@ -348,10 +381,10 @@ namespace ProcessorEmulator
             foreach (var service in iptvServices)
             {
                 await Task.Delay(300);
-                LogBoot($"📺 Initializing {service}...");
+                LogBoot($"Initializing {service}...");
             }
             
-            LogBoot("✅ IPTV services ready");
+            LogBoot("IPTV services ready");
             return true;
         }
         
@@ -361,7 +394,7 @@ namespace ProcessorEmulator
             currentStage = BootStage.UILaunch;
             
             await Task.Delay(1000);
-            LogBoot("🎨 Loading UI framework...");
+            LogBoot("Loading UI framework...");
             
             await Task.Delay(800);
             LogBoot("📋 Building electronic program guide...");
@@ -370,9 +403,9 @@ namespace ProcessorEmulator
             LogBoot("🏠 Loading home screen...");
             
             await Task.Delay(500);
-            LogBoot("📺 Initializing live TV...");
+            LogBoot("Initializing live TV...");
             
-            LogBoot("✅ Mediaroom UI launched successfully");
+            LogBoot("Mediaroom UI launched successfully");
             LogBoot("🎉 AT&T U-verse IPTV is ready for use!");
             
             isMediaroomReady = true;
@@ -383,6 +416,42 @@ namespace ProcessorEmulator
         
         #region Helper Methods
         
+        private static string FindExistingNkBinDirectory()
+        {
+            string[] candidates =
+            {
+                Path.Combine(Environment.CurrentDirectory, "UverseDriveE"),
+                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "UverseDriveE"),
+                Path.Combine(Environment.CurrentDirectory, "UverseFirmware")
+            };
+
+            foreach (string dir in candidates)
+            {
+                if (File.Exists(Path.Combine(dir, "nk.bin")))
+                    return dir;
+            }
+
+            return null;
+        }
+
+        private sealed class BusMemoryAdapter : IMemoryManager
+        {
+            private readonly MipsBus _bus;
+
+            public BusMemoryAdapter(MipsBus bus)
+            {
+                _bus = bus;
+            }
+
+            public bool IsLittleEndian => !_bus.IsBigEndian;
+
+            public uint ReadMemory32(ulong address) => _bus.Read32((uint)address);
+
+            public void WriteMemory32(ulong address, uint value) => _bus.Write32((uint)address, value);
+
+            public void WriteMemory(ulong address, byte[] data) => _bus.WriteBytes((uint)address, data);
+        }
+
         private (uint EntryPoint, uint ImageBase, uint ImageSize) ParseNKBinHeader(byte[] kernelData)
         {
             // Simplified NK.bin header parsing
@@ -457,7 +526,7 @@ namespace ProcessorEmulator
                 }
                 
                 await File.WriteAllBytesAsync(filePath, syntheticData);
-                LogBoot($"✅ Created {component.Key} ({syntheticData.Length} bytes)");
+                LogBoot($"Created {component.Key} ({syntheticData.Length} bytes)");
             }
         }
         

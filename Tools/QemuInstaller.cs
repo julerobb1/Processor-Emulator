@@ -85,7 +85,7 @@ namespace ProcessorEmulator.Tools
 
         public static void ShowInstallationInstructions()
         {
-            var message = @"🔧 QEMU Required for Real Firmware Emulation
+            var message = @"QEMU Required for Real Firmware Emulation
 
 To boot real ARM/MIPS firmware, you need QEMU installed:
 
@@ -103,11 +103,11 @@ To boot real ARM/MIPS firmware, you need QEMU installed:
    • Install MSYS2 from https://msys2.org/
    • Run: pacman -S mingw-w64-x86_64-qemu
 
-🎯 WHAT THIS ENABLES:
-✅ Boot real ARM firmware (U-verse, DirectTV)
-✅ Boot real MIPS firmware (Set-top boxes)
-✅ Graphics display of actual boot process
-✅ Real hardware emulation, not simulation
+WHAT THIS ENABLES:
+Boot real ARM firmware (U-verse, DirectTV)
+Boot real MIPS firmware (Set-top boxes)
+Graphics display of actual boot process
+Real hardware emulation, not simulation
 
 ⚡ AFTER INSTALLATION:
 • Restart this application
@@ -167,11 +167,11 @@ To boot real ARM/MIPS firmware, you need QEMU installed:
             if (IsQemuInstalled())
             {
                 var path = FindQemuPath();
-                return $"✅ QEMU Installed: {path}";
+                return $"QEMU Installed: {path}";
             }
             else
             {
-                return "❌ QEMU Not Found - Real firmware emulation disabled";
+                return "QEMU Not Found - Real firmware emulation disabled";
             }
         }
     }

@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.IO;
 using System.Windows;
-using ProcessorEmulator.Tools;
+using ProcessorEmulator; // Added for IChipsetEmulator
 
-namespace ProcessorEmulator
+namespace ProcessorEmulator.Emulation
 {
     /// <summary>
     /// AT&T U-verse Content and Mediaroom emulator
@@ -81,12 +81,12 @@ namespace ProcessorEmulator
                 await AnalyzeMediaroomImage(bootImage);
                 
                 isInitialized = true;
-                Console.WriteLine("✅ U-verse + Mediaroom emulator initialized successfully");
+                Console.WriteLine("U-verse + Mediaroom emulator initialized successfully");
                 return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Failed to load U-verse boot image: {ex.Message}");
+                Console.WriteLine($"Failed to load U-verse boot image: {ex.Message}");
                 ErrorManager.ShowError(ErrorManager.Codes.EMULATION_FAILED, "U-verse boot image load failed", ex);
                 return false;
             }
@@ -96,30 +96,30 @@ namespace ProcessorEmulator
         {
             if (!isInitialized)
             {
-                Console.WriteLine("❌ Emulator not initialized");
+                Console.WriteLine("Emulator not initialized");
                 ErrorManager.ShowError(ErrorManager.Codes.EMULATION_FAILED, "U-verse emulator not initialized");
                 return false;
             }
             
             try
             {
-                Console.WriteLine("🎯 Starting complete AT&T U-verse + Mediaroom emulation...");
+                Console.WriteLine("Starting complete AT&T U-verse + Mediaroom emulation...");
                 
                 // Start comprehensive Mediaroom boot sequence
-                Console.WriteLine("📺 Initiating Microsoft Mediaroom boot sequence...");
+                Console.WriteLine("Initiating Microsoft Mediaroom boot sequence...");
                 bool bootSuccess = await bootManager.StartMediaroomBoot();
                 
                 if (!bootSuccess)
                 {
-                    Console.WriteLine("❌ MEDIAROOM BOOT FAILED - Cannot start U-verse");
+                    Console.WriteLine("MEDIAROOM BOOT FAILED - Cannot start U-verse");
                     ShowBootFailureDialog();
                     return false;
                 }
                 
                 // Boot sequence completed successfully
                 isBootSequenceComplete = true;
-                Console.WriteLine("🎉 U-verse + Mediaroom emulation started successfully!");
-                Console.WriteLine("📺 AT&T IPTV platform is now fully operational");
+                Console.WriteLine("U-verse + Mediaroom emulation started successfully!");
+                Console.WriteLine("AT&T IPTV platform is now fully operational");
                 
                 // Show boot completion status
                 ShowBootSuccessDialog();
@@ -128,7 +128,7 @@ namespace ProcessorEmulator
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"💥 CRITICAL: Failed to start U-verse emulation: {ex.Message}");
+                Console.WriteLine($"CRITICAL: Failed to start U-verse emulation: {ex.Message}");
                 ErrorManager.ShowError(ErrorManager.Codes.EMULATION_FAILED, "U-verse emulation startup failed", ex);
                 return false;
             }
@@ -136,7 +136,7 @@ namespace ProcessorEmulator
         
         public void StopEmulation()
         {
-            Console.WriteLine("⏹️ Stopping AT&T U-verse + Mediaroom emulation...");
+            Console.WriteLine("Stopping AT&T U-verse + Mediaroom emulation...");
             isInitialized = false;
             isBootSequenceComplete = false;
             bootManager = null;
@@ -191,7 +191,7 @@ namespace ProcessorEmulator
         
         private async Task AnalyzeMediaroomImage(byte[] bootImage)
         {
-            Console.WriteLine($"🔍 Analyzing Mediaroom boot image ({bootImage.Length:N0} bytes)...");
+            Console.WriteLine($"Analyzing Mediaroom boot image ({bootImage.Length:N0} bytes)...");
             
             // Look for Mediaroom-specific components
             string imageData = System.Text.Encoding.ASCII.GetString(bootImage, 0, Math.Min(bootImage.Length, 4096));
@@ -213,15 +213,15 @@ namespace ProcessorEmulator
             if (imageData.Contains("mediaroomui") || imageData.Contains("MEDIAROOMUI"))
                 detectedComponents.Add("Mediaroom UI Framework");
             
-            Console.WriteLine($"📦 Detected Mediaroom components:");
+            Console.WriteLine($"Detected Mediaroom components:");
             foreach (var component in detectedComponents)
             {
-                Console.WriteLine($"  ✓ {component}");
+                Console.WriteLine($"  {component}");
             }
             
             if (detectedComponents.Count == 0)
             {
-                Console.WriteLine("❌ No specific Mediaroom components detected - boot will fail.");
+                Console.WriteLine("No specific Mediaroom components detected - boot will fail.");
                 throw new InvalidOperationException("No valid Mediaroom/U-verse components found in boot image.");
             }
             
@@ -253,20 +253,20 @@ namespace ProcessorEmulator
                     var bootStatus = bootManager.GetBootStatus();
                     var bootLogs = bootManager.GetBootLog();
                     
-                    string statusText = $@"🎉 AT&T U-verse + Microsoft Mediaroom Boot Complete!
+string statusText = $@"AT&T U-verse + Microsoft Mediaroom Boot Complete!
 
-📺 System Status:
+System Status:
   • Boot Stage: {bootStatus["Stage"]}
   • Kernel Loaded: {bootStatus["KernelLoaded"]}
   • Mediaroom Ready: {bootStatus["MediaroomReady"]}
   • Components Loaded: {bootStatus["ComponentsLoaded"]}
 
-📋 Recent Boot Log:
-{string.Join("\n", (List<string>)bootStatus["RecentLogs"])}
+Recent Boot Log:
+{string.Join("\n", (List<string>)bootStatus["RecentLogs"]) }
 
-✅ AT&T U-verse IPTV Platform is now fully operational!
-📺 Microsoft Mediaroom services are running
-🌐 IPTV infrastructure is connected and ready";
+AT&T U-verse IPTV Platform is now fully operational!
+Microsoft Mediaroom services are running
+IPTV infrastructure is connected and ready";
                     
                     // Show message box instead of Tools.ShowTextWindow
                     MessageBox.Show(statusText, "U-verse + Mediaroom Boot Success", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -287,24 +287,24 @@ namespace ProcessorEmulator
                     var bootStatus = bootManager?.GetBootStatus();
                     var bootLogs = bootManager?.GetBootLog();
                     
-                                        string failureText = $@"❌ AT&T U-verse + Microsoft Mediaroom Boot Failed!
+                                        string failureText = $@"AT&T U-verse + Microsoft Mediaroom Boot Failed!
 
-🔍 Diagnostic Information:
+Diagnostic Information:
     • Last Boot Stage: {bootStatus?["Stage"] ?? "Unknown"}
     • Kernel Status: {bootStatus?["KernelLoaded"] ?? false}
     • Mediaroom Status: {bootStatus?["MediaroomReady"] ?? false}
     • Components: {bootStatus?["ComponentsLoaded"] ?? 0}
 
-📋 Boot Log (Last 10 entries):
+Boot Log (Last 10 entries):
 {string.Join("\n", (List<string>)bootStatus?["RecentLogs"] ?? new List<string> { "No logs available" })}
 
-💡 Troubleshooting Tips:
+Troubleshooting Tips:
     • Ensure nk.bin (WinCE kernel) is available
     • Check firmware components in UverseFirmware folder
     • Verify Mediaroom platform components
     • Review boot log for specific error details
 
-🔧 No synthetic firmware will be created. Only real dumps are accepted. If boot fails, check the above details and logs for the root cause.";
+No synthetic firmware will be created. Only real dumps are accepted. If boot fails, check the above details and logs for the root cause.";
                     
                     // Show message box instead of Tools.ShowTextWindow
                     MessageBox.Show(failureText, "U-verse + Mediaroom Boot Failure", MessageBoxButton.OK, MessageBoxImage.Warning);

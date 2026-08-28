@@ -2,17 +2,18 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using MessageBox = System.Windows.MessageBox;
 
 namespace ProcessorEmulator
 {
     public partial class MainWindow
     {
-        private ComboBox runtimeThemeCombo;
+        private System.Windows.Controls.ComboBox runtimeThemeCombo;
         private TextBlock runtimeGlassText;
 
         private void ThemeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (sender is ComboBox cb && cb.SelectedItem is ComboBoxItem item)
+            if (sender is System.Windows.Controls.ComboBox cb && cb.SelectedItem is ComboBoxItem item)
             {
                 string name = item.Content?.ToString() ?? "Win95";
                 SwitchTheme(name);
@@ -80,7 +81,6 @@ namespace ProcessorEmulator
             runtimeThemeCombo.Items.Add(new ComboBoxItem { Content = "iGuide (Legacy)" });
             runtimeThemeCombo.Items.Add(new ComboBoxItem { Content = "Mediaroom (U-verse)" });
             runtimeThemeCombo.Items.Add(new ComboBoxItem { Content = "X1 (Modern)" });
-            runtimeThemeCombo.SelectedIndex = 0;
             runtimeThemeCombo.SelectionChanged += ThemeCombo_SelectionChanged;
 
             // insert into statusbar

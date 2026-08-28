@@ -110,12 +110,12 @@ namespace ProcessorEmulator
                 await Task.Delay(500); // Realistic initialization timing
                 
                 isInitialized = true;
-                Console.WriteLine("✅ Universal Hypervisor initialization complete");
+                Console.WriteLine("Universal Hypervisor initialization complete");
                 return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Hypervisor Initialization Error: {ex.Message}");
+                Console.WriteLine($"Hypervisor Initialization Error: {ex.Message}");
                 return false;
             }
         }
@@ -124,7 +124,7 @@ namespace ProcessorEmulator
         {
             if (!isInitialized)
             {
-                Console.WriteLine("❌ Error: Hypervisor not initialized");
+                Console.WriteLine("Error: Hypervisor not initialized");
                 return false;
             }
 
@@ -136,7 +136,7 @@ namespace ProcessorEmulator
                 var firmwareInfo = FirmwareLoader.Load(firmwarePath);
                 if (!firmwareInfo.IsValid)
                 {
-                    Console.WriteLine("❌ Invalid firmware file");
+                    Console.WriteLine("Invalid firmware file");
                     return false;
                 }
                 
@@ -166,7 +166,7 @@ namespace ProcessorEmulator
                 // Configure universal hardware emulation
                 await ConfigureUniversalHardware();
                 
-                Console.WriteLine("✅ Virtual Machine Created Successfully");
+                Console.WriteLine("Virtual Machine Created Successfully");
                 Console.WriteLine($"📊 Architecture: {currentVM.Architecture}");
                 Console.WriteLine($"🔒 Security Bypass: {currentVM.SecurityLevel}");
                 Console.WriteLine($"💾 Memory: {currentVM.MemorySize / (1024 * 1024):N0} MB");
@@ -176,7 +176,7 @@ namespace ProcessorEmulator
                 // Verify firmware compatibility with real validation
                 if (!await VerifyFirmwareCompatibility(firmwarePath))
                 {
-                    Console.WriteLine("❌ Firmware is not compatible");
+                    Console.WriteLine("Firmware is not compatible");
                     return false;
                 }
                 
@@ -191,7 +191,7 @@ namespace ProcessorEmulator
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Firmware Loading Error: {ex.Message}");
+                Console.WriteLine($"Firmware Loading Error: {ex.Message}");
                 return false;
             }
         }
@@ -242,7 +242,7 @@ namespace ProcessorEmulator
                 }
 
                 currentVM.IsRunning = true;
-                Console.WriteLine("✅ Universal hypervisor started successfully!");
+                Console.WriteLine("Universal hypervisor started successfully!");
                 Console.WriteLine($"📊 Architecture: {currentVM.Architecture}");
                 Console.WriteLine($"💾 Memory: {currentVM.MemorySize / (1024 * 1024):N0}MB");
                 Console.WriteLine($"🎯 Entry Point: 0x{firmwareInfo?.EstimatedEntryPoint:X8}");
@@ -252,7 +252,7 @@ namespace ProcessorEmulator
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ VM Start Error: {ex.Message}");
+                Console.WriteLine($"VM Start Error: {ex.Message}");
                 throw; // Re-throw so calling code can handle properly
             }
         }
@@ -415,7 +415,7 @@ namespace ProcessorEmulator
                     try
                     {
                         qemuPath = GetQemuForArchitecture(currentVM.Architecture);
-                        Console.WriteLine("✅ QEMU found after auto-installation");
+                        Console.WriteLine("QEMU found after auto-installation");
                     }
                     catch (FileNotFoundException)
                     {
@@ -751,18 +751,18 @@ namespace ProcessorEmulator
                 
                 if (process.ExitCode == 0)
                 {
-                    Console.WriteLine("✅ QEMU installed successfully via winget");
+                    Console.WriteLine("QEMU installed successfully via winget");
                     return true;
                 }
                 else
                 {
-                    Console.WriteLine($"❌ Winget installation failed: {error}");
+                    Console.WriteLine($"Winget installation failed: {error}");
                     return await TryAlternativeInstallation();
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Auto-installation failed: {ex.Message}");
+                Console.WriteLine($"Auto-installation failed: {ex.Message}");
                 return false;
             }
         }
@@ -795,18 +795,18 @@ namespace ProcessorEmulator
                 
                 if (process.ExitCode == 0)
                 {
-                    Console.WriteLine("✅ QEMU installed successfully via chocolatey");
+                    Console.WriteLine("QEMU installed successfully via chocolatey");
                     return true;
                 }
                 else
                 {
-                    Console.WriteLine("❌ Chocolatey installation also failed");
+                    Console.WriteLine("Chocolatey installation also failed");
                     return false;
                 }
             }
             catch
             {
-                Console.WriteLine("❌ Alternative installation methods failed");
+                Console.WriteLine("Alternative installation methods failed");
                 return false;
             }
         }
@@ -882,16 +882,16 @@ namespace ProcessorEmulator
 
                 if (buffer[0] == 0x7F && buffer[1] == (byte)'E' && buffer[2] == (byte)'L' && buffer[3] == (byte)'F')
                 {
-                    Console.WriteLine("✅ Firmware is ELF format");
+                    Console.WriteLine("Firmware is ELF format");
                     return true;
                 }
 
-                Console.WriteLine("❌ Firmware is not ELF format");
+                Console.WriteLine("Firmware is not ELF format");
                 return false;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Firmware verification failed: {ex.Message}");
+                Console.WriteLine($"Firmware verification failed: {ex.Message}");
                 return false;
             }
         }
@@ -908,17 +908,17 @@ namespace ProcessorEmulator
                 {
                     if (line.Contains("Boot successful") || line.Contains("Kernel loaded"))
                     {
-                        Console.WriteLine("✅ Firmware boot confirmed");
+                        Console.WriteLine("Firmware boot confirmed");
                         return true;
                     }
                 }
 
-                Console.WriteLine("❌ Firmware boot not confirmed");
+                Console.WriteLine("Firmware boot not confirmed");
                 return false;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Boot confirmation failed: {ex.Message}");
+                Console.WriteLine($"Boot confirmation failed: {ex.Message}");
                 return false;
             }
         }
@@ -977,18 +977,18 @@ namespace ProcessorEmulator
                     $"Format: Auto-detected and parsed",
                     "",
                     "=== Boot Sequence Status ===",
-                    "✅ BOLT bootloader executed",
-                    "✅ ARM Cortex-A15 CPU booted",
-                    "✅ Linux kernel loaded and started",
-                    "✅ RDK-V stack initialized",
-                    "✅ Comcast services registered",
-                    "✅ UI framework ready",
+                    "BOLT bootloader executed",
+                    "ARM Cortex-A15 CPU booted",
+                    "Linux kernel loaded and started",
+                    "RDK-V stack initialized",
+                    "Comcast services registered",
+                    "UI framework ready",
                     "",
                     "=== Network Services ===",
-                    "✅ xcal.tv endpoint emulation active",
-                    "✅ xconf.comcast.net configuration server",
-                    "✅ Channel map and guide data loaded",
-                    "✅ Device bootstrap completed",
+                    "xcal.tv endpoint emulation active",
+                    "xconf.comcast.net configuration server",
+                    "Channel map and guide data loaded",
+                    "Device bootstrap completed",
                     "",
                     "=== Available Features ===",
                     "• Real ARM instruction execution",
@@ -1014,7 +1014,7 @@ namespace ProcessorEmulator
             {
                 var errorLines = new[]
                 {
-                    "❌ XG1v4 emulation failed:",
+                    "XG1v4 emulation failed:",
                     "",
                     $"Error: {ex.Message}",
                     $"File: {Path.GetFileName(firmwarePath)}",
@@ -1069,11 +1069,11 @@ namespace ProcessorEmulator
                     
                     if (success)
                     {
-                        Console.WriteLine("✅ Quick test PASSED - Boot simulation working!");
+                        Console.WriteLine("Quick test PASSED - Boot simulation working!");
                     }
                     else
                     {
-                        Console.WriteLine("❌ Quick test FAILED - Check implementation");
+                        Console.WriteLine("Quick test FAILED - Check implementation");
                     }
                 }
                 finally
@@ -1084,7 +1084,7 @@ namespace ProcessorEmulator
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Quick test ERROR: {ex.Message}");
+                Console.WriteLine($"Quick test ERROR: {ex.Message}");
             }
         }
 

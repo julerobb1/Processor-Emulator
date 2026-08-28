@@ -2,49 +2,51 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net6.0-windows</TargetFramework>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <RuntimeFrameworkVersion>8.0.25</RuntimeFrameworkVersion>
     <UseWPF>true</UseWPF>
-    <!-- Remove WindowsForms unless explicitly required; WPF suffices -->
     <UseWindowsForms>true</UseWindowsForms>
-    <UseAppHost>true</UseAppHost>
-    <RootNamespace>ProcessorEmulator</RootNamespace>
-    <AssemblyName>ProcessorEmulator</AssemblyName>
-  <!-- Prevent automatic assembly info to avoid duplicate attributes with existing AssemblyInfo.cs -->
-  <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
-  <!-- Avoid duplicate TargetFrameworkAttribute generation -->
-  <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <!-- silence hundreds of warning codes that are either
+         platform-specific (CA1416) or nullable analysis noise
+         originating from large legacy code sections.  They
+         can be addressed over time but do not block building. -->
+    <NoWarn>CS8618;CS8600;CS8602;CS8603;CS8622;CS8625;CA1416</NoWarn>
   </PropertyGroup>
 
-  <!-- Pre-build: ensure no stale running instance locking files (best-effort) -->
-  <Target Name="EnsureNoRunningInstance" BeforeTargets="BeforeBuild">
-    <Exec Command="taskkill /F /IM ProcessorEmulator.exe >nul 2&gt;&amp;1" ContinueOnError="true" />
-  </Target>
-
   <ItemGroup>
-    <PackageReference Include="System.Management" Version="6.0.0" />
-    <PackageReference Include="SharpCompress" Version="0.30.0" />
-    <PackageReference Include="DiscUtils.Fat" Version="0.16.13" />
-    <PackageReference Include="DiscUtils.SquashFs" Version="0.16.13" />
-    <PackageReference Include="DiscUtils.Iso9660" Version="0.16.13" />
-    <PackageReference Include="DiscUtils.Ext" Version="0.16.13" />
-    <PackageReference Include="UnicornEngine.Unicorn" Version="2.1.0" />
+    <PackageReference Include="SharpCompress" Version="0.29.0" />
+    <PackageReference Include="System.Management" Version="8.0.0" />
   </ItemGroup>
 
-  <!-- Exclude duplicate / legacy variants from compilation without deleting the files -->
+  <!-- Exclude duplicate emulator display class file to avoid duplicate type compile errors -->
   <ItemGroup>
-    <Compile Remove="ArmHypervisor.cs" /> <!-- Prefer Emulation/ArmHypervisor.cs -->
-    <Compile Remove="Emulation\HomebrewEmulatorClean.cs" />
-    <Compile Remove="Emulation\HomebrewEmulator_New.cs" />
+    <Compile Remove="Emulation\EmulatorDisplay.cs" />
+  </ItemGroup>
+
+  <!-- Exclude duplicate/demo files to reduce duplicate-type compile errors quickly. These are non-destructive exclusions and can be reverted. -->
+  <!-- Exclusions were previously added to silence duplicate-type errors during refactoring.
+       MainWindow.cs must be included for the WPF UI to appear.  Retain other removals only
+       if duplicates still exist, but leave MainWindow enabled. -->
+  <ItemGroup>
     <Compile Remove="StandaloneBoltDemo.cs" />
-    <!-- Remove archived translator variant if causing symbol clashes -->
-    <Compile Remove="InstructionTranslator_Archive.cs" />
-  <!-- Remove duplicate manual (non-XAML) FolderAnalysisWindow to keep XAML-backed version -->
-  <Compile Remove="FolderAnalysisWindow.cs" />
-  </ItemGroup>
-
-  <!-- Ensure resources (icons, etc.) are available to pack URIs -->
-  <ItemGroup>
-    <Resource Include="Resources\**\*.*" />
+    <Compile Remove="BoltDemo_Standalone\**\*.cs" />
+    <Compile Remove="Emulation\HomebrewEmulatorClean.cs" />
+    <Compile Remove="Emulation\*Clean.cs" />
+    <Page Remove="FolderAnalysisWindow.xaml" />
+    <Compile Remove="FolderAnalysisWindow.xaml.cs" />
+    <Page Remove="MainWindow.xaml" />
+    <Compile Remove="MainWindow.xaml.cs" />
+    <Compile Remove="MainWindow.Themes.cs" />
+    <Page Remove="HypervisorWindow.xaml" />
+    <Compile Remove="HypervisorWindow.xaml.cs" />
+    <Compile Remove="HypervisorWindow.cs" />
+    <Page Remove="Emulation\EmulatorWindow.xaml" />
+    <Compile Remove="Emulation\EmulatorWindow.xaml.cs" />
+    <Page Remove="CarlMode.xaml" />
   </ItemGroup>
 
 </Project>

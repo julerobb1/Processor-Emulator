@@ -147,14 +147,14 @@ namespace ProcessorEmulator
 
             try
             {
-                log.Add($"🔧 Loading Windows CE executable: {Path.GetFileName(exePath)}");
+                log.Add($"Loading Windows CE executable: {Path.GetFileName(exePath)}");
                 
                 // Step 1: Load and analyze PE file
                 var peImage = await peLoader.LoadPEImageAsync(exePath);
                 if (peImage == null)
                 {
                     result.Error = "Failed to load PE image";
-                    log.Add("❌ Failed to load PE image");
+                    log.Add("Failed to load PE image");
                     return result;
                 }
 
@@ -163,13 +163,13 @@ namespace ProcessorEmulator
 
                 // Step 2: Detect architecture and validate
                 log.Add($"📊 Architecture: {peImage.Architecture}");
-                log.Add($"🎯 Entry Point: 0x{peImage.EntryPoint:X8}");
+                log.Add($"Entry Point: 0x{peImage.EntryPoint:X8}");
                 log.Add($"💾 Image Base: 0x{peImage.ImageBase:X8}");
-                log.Add($"📦 Subsystem: {peImage.Subsystem}");
+                log.Add($"Subsystem: {peImage.Subsystem}");
 
                 if (peImage.Subsystem != PESubsystem.WindowsCE)
                 {
-                    log.Add("⚠️ Not a Windows CE executable, attempting generic PE execution...");
+                    log.Add("Not a Windows CE executable, attempting generic PE execution...");
                 }
 
                 // Step 3: Create process context with thread-safe ID generation
@@ -196,7 +196,7 @@ namespace ProcessorEmulator
                 log.Add($"🆔 Process ID: {processId}");
 
                 // Step 4: Set up virtual memory space
-                log.Add("🗺️ Setting up virtual memory space...");
+                log.Add("Setting up virtual memory space...");
                 await SetupVirtualMemoryAsync(context);
 
                 // Step 5: Load import table and resolve APIs
@@ -221,7 +221,7 @@ namespace ProcessorEmulator
                 result.ExitCode = exitCode;
                 result.Success = exitCode == 0;
                 result.ExecutionTime = DateTime.Now - startTime;
-                log.Add($"✅ Process completed with exit code: {exitCode} in {result.ExecutionTime.TotalMilliseconds:F0}ms");
+                log.Add($"Process completed with exit code: {exitCode} in {result.ExecutionTime.TotalMilliseconds:F0}ms");
                 
                 return result;
             }
@@ -230,7 +230,7 @@ namespace ProcessorEmulator
                 result.Error = ex.Message;
                 result.Success = false;
                 result.ExecutionTime = DateTime.Now - startTime;
-                log.Add($"❌ Execution failed: {ex.Message}");
+                log.Add($"Execution failed: {ex.Message}");
                 
                 // Clean up failed process
                 if (!string.IsNullOrEmpty(result.ProcessId))
@@ -303,11 +303,11 @@ namespace ProcessorEmulator
                     {
                         // Write function address to IAT
                         vm.WriteUInt32(function.IATAddress, funcAddress);
-                        Console.WriteLine($"    ✅ {function.Name} -> 0x{funcAddress:X8}");
+                        Console.WriteLine($"    {function.Name} -> 0x{funcAddress:X8}");
                     }
                     else
                     {
-                        Console.WriteLine($"    ⚠️ {function.Name} -> Unresolved");
+                        Console.WriteLine($"    {function.Name} -> Unresolved");
                         // Write stub address for unsupported functions
                         vm.WriteUInt32(function.IATAddress, apiEmulator.GetStubAddress());
                     }
@@ -347,7 +347,7 @@ namespace ProcessorEmulator
                     cpuState.Registers[31] = 0; // $ra = return address
                 }
 
-                Console.WriteLine($"🎯 Starting execution at 0x{cpuState.PC:X8}");
+                Console.WriteLine($"Starting execution at 0x{cpuState.PC:X8}");
 
                 // Main execution loop
                 var executedInstructions = 0;
@@ -391,12 +391,12 @@ namespace ProcessorEmulator
                     }
                     catch (MemoryAccessException ex)
                     {
-                        Console.WriteLine($"💥 Memory access violation at 0x{ex.Address:X8}: {ex.Message}");
+                        Console.WriteLine($"Memory access violation at 0x{ex.Address:X8}: {ex.Message}");
                         return -1;
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"💥 Execution error at PC 0x{cpuState.PC:X8}: {ex.Message}");
+                        Console.WriteLine($"Execution error at PC 0x{cpuState.PC:X8}: {ex.Message}");
                         return -1;
                     }
                 }
@@ -407,7 +407,7 @@ namespace ProcessorEmulator
                     return -2;
                 }
 
-                Console.WriteLine($"✅ Program completed normally after {executedInstructions} instructions");
+                Console.WriteLine($"Program completed normally after {executedInstructions} instructions");
                 return 0;
             }
             finally
@@ -419,7 +419,7 @@ namespace ProcessorEmulator
 
         public void ListRunningProcesses()
         {
-            Console.WriteLine("\n📋 Running Windows CE Processes:");
+            Console.WriteLine("\nRunning Windows CE Processes:");
             if (runningProcesses.Count == 0)
             {
                 Console.WriteLine("  (none)");
@@ -430,7 +430,7 @@ namespace ProcessorEmulator
             {
                 var context = kvp.Value;
                 var runtime = DateTime.Now - context.StartTime;
-                Console.WriteLine($"  🔧 {Path.GetFileName(context.ExePath)} (PID: {kvp.Key})");
+                Console.WriteLine($"  {Path.GetFileName(context.ExePath)} (PID: {kvp.Key})");
                 Console.WriteLine($"     Runtime: {runtime.TotalSeconds:F1}s, Arch: {context.PEImage.Architecture}");
             }
         }

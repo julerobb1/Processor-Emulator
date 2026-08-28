@@ -5,19 +5,19 @@ Features real ARM/MIPS/x86 instruction execution, in house hypervisor, ~~complet
 
 ## Key Features
 
-### ✅ Real Firmware Execution
+### Real Firmware Execution
 - **Custom ARM Hypervisor**: VMware/VirtualBox-style virtualization with real ARM Cortex-A15 instruction execution
 - **ARM Instruction Emulation**: Authentic ARM opcode processing (MOV, ADD, BRANCH, LDR/STR, SWI)
 - **Multi-Architecture Support**: ARM, MIPS, x86, PowerPC, SPARC with both custom and QEMU backends
 - **Hardware Simulation**: Broadcom BCM7445/7449 SoC emulation with memory-mapped I/O
 
-### ✅ Set-Top Box Platforms
+### Set-Top Box Platforms
 - **AT&T U-verse**: Complete MIPS/WinCE emulation with Microsoft Mediaroom boot manager
 - **RDK-V/RDK-B**: Cable industry reference platform emulation for research
 - **DirecTV**: MIPS-based satellite receiver analysis and SWM LNB simulation  WIP 
 - **Generic STB**: Universal firmware analysis for unknown set-top box platforms
 
-### ✅ Filesystem & Analysis
+### Filesystem & Analysis
 - **Filesystem Probing**: Automatic detection and analysis of ext2/3/4, JFFS2, UBIFS, YAFFS, SquashFS
 - **Firmware Unpacking**: ARRIS PACK1 containers, U-Boot images, WinCE nk.bin kernels
 - **Security Analysis**: DOCSIS BPI+ V2 framework, CableLabs signature bypass research
@@ -63,8 +63,8 @@ This project can extract YAFFS filesystem images using the external `unyaffs` to
 ## Installation & Quick Start
 
 ### Prerequisites
-- **Windows**: .NET 6 or later
-- **Visual Studio**: 2022 or VS Code with C# extension
+- **Windows**: .NET 5 or later
+- **Visual Studio**: 2022 or later, or VS Code with C# extension
 - **Optional**: UnicornEngine for enhanced ARM emulation
 - **Optional**: RetDec decompiler for cross-architecture binary analysis
 
@@ -113,7 +113,7 @@ We welcome contributions to enhance the Processor-Emulator project!
 1. **Target `dev` branch** for all pull requests
 2. **Follow IChipsetEmulator pattern** for new platform emulators
 3. **Implement real execution** - avoid synthetic/fake boot sequences
-4. **Test thoroughly** - verify firmware loading and execution on Windows/.NET 6
+- **Test thoroughly** - verify firmware loading and execution on Windows/.NET 5
 5. **Document changes** - update README and include screenshots for UI changes
 
 ### Code Standards
@@ -202,7 +202,7 @@ This project emphasizes **authentic firmware execution** over simulation:
 - Memory-mapped I/O simulation is **PARTIALLY WORKING** 
 - Large firmware file handling (>100MB) uses **chunked streaming** to avoid .NET limits
 - Some advanced features are **WORK IN PROGRESS** - see status indicators above
-- Windows/.NET 6 focused - Linux support not currently implemented
+- Windows/.NET 5 focused - Linux support not currently implemented
 
 ## License
 

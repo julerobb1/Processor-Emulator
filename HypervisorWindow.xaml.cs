@@ -2,6 +2,9 @@ using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
+using System.Windows.Media;
+using TextBox = System.Windows.Controls.TextBox;
+using Button = System.Windows.Controls.Button;
 
 namespace ProcessorEmulator
 {
@@ -9,13 +12,25 @@ namespace ProcessorEmulator
     {
         private readonly RealMipsHypervisor hypervisor;
         private TextBox logBox;
-        private TextBlock statusText;
+        private TextBox statusText;
         private Button startButton;
         private Button stopButton;
 
+        // Parameterless constructor for XAML designer and tooling
+        public HypervisorWindow()
+        {
+            InitializeComponent();
+            this.hypervisor = new RealMipsHypervisor();
+            this.Title = "Real MIPS Hypervisor";
+
+            CreateUI();
+            this.hypervisor.OnRealExecution += AppendLog;
+        }
+
         public HypervisorWindow(RealMipsHypervisor hypervisor, string platformName)
         {
-            this.hypervisor = hypervisor;
+            InitializeComponent();
+            this.hypervisor = hypervisor ?? new RealMipsHypervisor();
             this.Title = $"Real MIPS Hypervisor - {platformName}";
             
             CreateUI();
@@ -45,35 +60,44 @@ namespace ProcessorEmulator
             Content = mainStack;
 
             // Title
-            var titleText = new TextBlock
+            var titleText = new TextBox
             {
                 Text = "REAL MIPS EMULATOR",
                 FontSize = 36,
                 FontWeight = FontWeights.Bold,
                 Foreground = System.Windows.Media.Brushes.White,
                 HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 20, 0, 0)
+                Margin = new Thickness(0, 20, 0, 0),
+                Background = System.Windows.Media.Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                IsReadOnly = true
             };
             mainStack.Children.Add(titleText);
 
             // Subtitle
-            var subtitleText = new TextBlock
+            var subtitleText = new TextBox
             {
                 Text = "AT&T U-verse / Microsoft Mediaroom",
                 FontSize = 16,
                 Foreground = System.Windows.Media.Brushes.Gray,
-                HorizontalAlignment = HorizontalAlignment.Center
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Background = System.Windows.Media.Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                IsReadOnly = true
             };
             mainStack.Children.Add(subtitleText);
 
             // Status
-            statusText = new TextBlock
+            statusText = new TextBox
             {
                 Text = "Initializing...",
                 FontSize = 14,
                 Foreground = System.Windows.Media.Brushes.Yellow,
                 HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 10, 0, 0)
+                Margin = new Thickness(0, 10, 0, 0),
+                Background = System.Windows.Media.Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                IsReadOnly = true
             };
             mainStack.Children.Add(statusText);
 
@@ -156,7 +180,7 @@ namespace ProcessorEmulator
             bool success = await hypervisor.StartEmulation();
             if (!success)
             {
-                AppendLog("❌ Failed to start U-verse emulation");
+                AppendLog("Failed to start U-verse emulation");
                 startButton.IsEnabled = true;
                 stopButton.IsEnabled = false;
             }

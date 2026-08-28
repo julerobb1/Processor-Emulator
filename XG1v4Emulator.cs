@@ -10,7 +10,6 @@ using System.Text;
 using System.Security.Cryptography.X509Certificates;
 using System.Linq;
 using ProcessorEmulator.Emulation;
-using ProcessorEmulator.Tools;
 
 namespace ProcessorEmulator
 {
@@ -125,7 +124,7 @@ namespace ProcessorEmulator
                 Console.WriteLine($"CPU: {chipConfig.CpuCores} cores @ {chipConfig.CpuFrequency}MHz");
                 
                 // 1. Initialize BOLT bootloader
-                Console.WriteLine("\n📋 Stage 1: BOLT Bootloader Initialization");
+                Console.WriteLine("\nStage 1: BOLT Bootloader Initialization");
                 bootloader.InitializeSoC();
                 
                 // 2. Initialize ARM Cortex-A15 CPU core
@@ -133,24 +132,28 @@ namespace ProcessorEmulator
                 await cpuCore.Initialize();
                 
                 // 3. Setup Comcast service emulation
-                Console.WriteLine("\n🌐 Stage 3: Comcast Service Emulation Setup");
+                Console.WriteLine("\nStage 3: service emulation setup");
                 await serviceEmulator.Initialize();
                 
                 // 4. Configure network redirection
-                Console.WriteLine("\n🔀 Stage 4: Network Redirection Setup");
+                Console.WriteLine("\nStage 4: Network redirection setup");
+                if (ConfigManager.Config.UseLiveNetwork)
+                {
+                    Console.WriteLine("Configuration requests a live network – traffic will not be intercepted or redirected.");
+                }
                 await networkRedirector.Setup();
                 
                 // 5. Initialize RDK-V stack
-                Console.WriteLine("\n📺 Stage 5: RDK-V Stack Initialization");
+                Console.WriteLine("\nStage 5: RDK-V Stack Initialization");
                 await rdkStack.Initialize();
                 
                 isInitialized = true;
-                Console.WriteLine("\n✅ XG1v4 Emulator initialization complete");
+                Console.WriteLine("XG1v4 Emulator initialization complete");
                 return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"\n❌ XG1v4 initialization failed: {ex.Message}");
+                Console.WriteLine($"\nXG1v4 initialization failed: {ex.Message}");
                 Console.WriteLine($"Stack trace: {ex.StackTrace}");
                 return false;
             }
@@ -164,7 +167,7 @@ namespace ProcessorEmulator
         {
             if (!isInitialized)
             {
-                Console.WriteLine("❌ Emulator not initialized");
+                Console.WriteLine("Emulator not initialized");
                 return false;
             }
             
@@ -172,41 +175,41 @@ namespace ProcessorEmulator
             
             try
             {
-                Console.WriteLine($"\n📦 Loading XG1v4 Firmware: {Path.GetFileName(firmwarePath)}");
+                Console.WriteLine("Loading XG1v4 Firmware: {Path.GetFileName(firmwarePath)}");
                 
                 // 1. Analyze firmware format and extract components
                 var firmwareAnalysis = await AnalyzeFirmware(firmwarePath);
                 if (!firmwareAnalysis.IsValid)
                 {
-                    Console.WriteLine("❌ Invalid firmware format");
+                    Console.WriteLine("Invalid firmware format");
                     return false;
                 }
                 
                 // 2. Load bootloader components
                 if (!await LoadBootloaderComponents(firmwareAnalysis))
                 {
-                    Console.WriteLine("❌ Failed to load bootloader");
+                    Console.WriteLine("Failed to load bootloader");
                     return false;
                 }
                 
                 // 3. Load Linux kernel
                 if (!await LoadLinuxKernel(firmwareAnalysis))
                 {
-                    Console.WriteLine("❌ Failed to load kernel");
+                    Console.WriteLine("Failed to load kernel");
                     return false;
                 }
                 
                 // 4. Mount rootfs and configure RDK-V
                 if (!await MountRootfsAndConfigureRdk(firmwareAnalysis))
                 {
-                    Console.WriteLine("❌ Failed to configure RDK-V");
+                    Console.WriteLine("Failed to configure RDK-V");
                     return false;
                 }
                 
                 // 5. Prepare CPU for execution
                 await cpuCore.LoadFirmware(firmwareAnalysis.KernelImage, firmwareAnalysis.EntryPoint);
                 
-                Console.WriteLine("✅ Firmware loaded successfully");
+                Console.WriteLine("Firmware loaded successfully");
                 Console.WriteLine($"Entry Point: 0x{firmwareAnalysis.EntryPoint:X8}");
                 Console.WriteLine($"Kernel Size: {firmwareAnalysis.KernelImage.Length:N0} bytes");
                 Console.WriteLine($"Rootfs Size: {firmwareAnalysis.RootfsImage?.Length ?? 0:N0} bytes");
@@ -215,14 +218,14 @@ namespace ProcessorEmulator
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Firmware loading failed: {ex.Message}");
+                Console.WriteLine($"Firmware loading failed: {ex.Message}");
                 return false;
             }
         }
         
         private async Task<FirmwareAnalysis> AnalyzeFirmware(string firmwarePath)
         {
-            Console.WriteLine("🔍 Analyzing firmware structure...");
+Console.WriteLine("Analyzing firmware structure...");
             
             var analysis = new FirmwareAnalysis();
             var firmwareData = await File.ReadAllBytesAsync(firmwarePath);
@@ -231,7 +234,7 @@ namespace ProcessorEmulator
             if (firmwareData.Length > 16 && 
                 Encoding.ASCII.GetString(firmwareData, 0, 5) == "PACK1")
             {
-                Console.WriteLine("📦 Detected ARRIS PACK1 container format");
+                Console.WriteLine("Detected ARRIS PACK1 container format");
                 analysis = await ExtractArrisPack1(firmwareData);
             }
             // Check for standard ELF kernel
@@ -245,7 +248,7 @@ namespace ProcessorEmulator
             // Check for U-Boot image
             else if (firmwareData.Length > 64)
             {
-                Console.WriteLine("🔧 Attempting U-Boot image detection");
+                Console.WriteLine("Attempting U-Boot image detection");
                 analysis = await ExtractUBootImage(firmwareData);
             }
             else
@@ -282,7 +285,7 @@ namespace ProcessorEmulator
                         switch (sectionType)
                         {
                             case "KERN":
-                                Console.WriteLine($"📋 Found kernel section ({sectionSize:N0} bytes)");
+                                Console.WriteLine($"Found kernel section ({sectionSize:N0} bytes)");
                                 analysis.KernelImage = sectionData;
                                 analysis.EntryPoint = ExtractKernelEntryPoint(sectionData);
                                 break;
@@ -291,7 +294,7 @@ namespace ProcessorEmulator
                                 analysis.RootfsImage = sectionData;
                                 break;
                             case "BOOT":
-                                Console.WriteLine($"🔧 Found bootloader section ({sectionSize:N0} bytes)");
+                                Console.WriteLine($"Found bootloader section ({sectionSize:N0} bytes)");
                                 analysis.BootloaderImage = sectionData;
                                 break;
                             case "DTBL":
@@ -306,13 +309,13 @@ namespace ProcessorEmulator
                 
                 if (analysis.KernelImage == null)
                 {
-                    Console.WriteLine("❌ No kernel found in ARRIS PACK1");
+                    Console.WriteLine("No kernel found in ARRIS PACK1");
                     analysis.IsValid = false;
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ ARRIS PACK1 extraction failed: {ex.Message}");
+                Console.WriteLine($"ARRIS PACK1 extraction failed: {ex.Message}");
                 analysis.IsValid = false;
             }
             
@@ -378,7 +381,7 @@ namespace ProcessorEmulator
         {
             if (!isInitialized || string.IsNullOrEmpty(firmwarePath))
             {
-                Console.WriteLine("❌ Emulator not ready. Call Initialize() and LoadFirmware() first.");
+                Console.WriteLine("Emulator not ready. Call Initialize() and LoadFirmware() first.");
                 return false;
             }
             
@@ -387,10 +390,10 @@ namespace ProcessorEmulator
                 Console.WriteLine("\n🚀 Starting XG1v4 Boot Sequence");
                 
                 // Stage 1: BOLT Bootloader execution
-                Console.WriteLine("\n📋 Stage 1: BOLT Bootloader");
+                Console.WriteLine("\nStage 1: BOLT Bootloader");
                 if (!await ExecuteBoltBootloader())
                 {
-                    Console.WriteLine("❌ BOLT bootloader failed");
+                    Console.WriteLine("BOLT bootloader failed");
                     return false;
                 }
                 
@@ -398,42 +401,42 @@ namespace ProcessorEmulator
                 Console.WriteLine("\n🐧 Stage 2: Linux Kernel Boot");
                 if (!await BootLinuxKernel())
                 {
-                    Console.WriteLine("❌ Kernel boot failed");
+                    Console.WriteLine("Kernel boot failed");
                     return false;
                 }
                 
                 // Stage 3: RDK-V initialization
-                Console.WriteLine("\n📺 Stage 3: RDK-V Stack Initialization");
+                Console.WriteLine("\nStage 3: RDK-V Stack Initialization");
                 if (!await InitializeRdkVStack())
                 {
-                    Console.WriteLine("❌ RDK-V initialization failed");
+                    Console.WriteLine("RDK-V initialization failed");
                     return false;
                 }
                 
                 // Stage 4: Comcast service registration
-                Console.WriteLine("\n🌐 Stage 4: Comcast Service Registration");
+                Console.WriteLine("\nStage 4: service registration");
                 if (!await RegisterWithComcastServices())
                 {
-                    Console.WriteLine("❌ Service registration failed");
+                    Console.WriteLine("Service registration failed");
                     return false;
                 }
                 
                 // Stage 5: UI stack launch
-                Console.WriteLine("\n🎨 Stage 5: UI Stack Launch");
+                Console.WriteLine("\nStage 5: UI Stack Launch");
                 if (!await LaunchUserInterface())
                 {
-                    Console.WriteLine("❌ UI launch failed");
+                    Console.WriteLine("UI launch failed");
                     return false;
                 }
                 
-                Console.WriteLine("\n✅ XG1v4 boot sequence complete!");
-                Console.WriteLine("🎯 System is ready for operation");
+                Console.WriteLine("\nXG1v4 boot sequence complete!");
+                Console.WriteLine("System is ready for operation");
                 
                 return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"\n❌ Boot sequence failed: {ex.Message}");
+                Console.WriteLine($"\nBoot sequence failed: {ex.Message}");
                 Console.WriteLine($"Stack trace: {ex.StackTrace}");
                 return false;
             }
@@ -531,11 +534,11 @@ namespace ProcessorEmulator
             // Validate kernel architecture
             if (!IsArmKernel(analysis.KernelImage))
             {
-                Console.WriteLine("❌ Kernel is not ARM architecture");
+                Console.WriteLine("Kernel is not ARM architecture");
                 return false;
             }
             
-            Console.WriteLine("✅ ARM kernel validated");
+            Console.WriteLine("ARM kernel validated");
             await Task.CompletedTask;
             return true;
         }
@@ -622,7 +625,7 @@ namespace ProcessorEmulator
             {
                 Console.WriteLine($"Starting {component}...");
                 await Task.Delay(100); // Simulate startup time
-                Console.WriteLine($"✅ {component} started");
+                Console.WriteLine($"{component} started");
             }
             
             await rdkStack.ConfigureForComcast();
@@ -642,24 +645,24 @@ namespace ProcessorEmulator
             var bootstrapResult = await serviceEmulator.HandleBootstrap();
             if (!bootstrapResult.Success)
             {
-                Console.WriteLine($"❌ Bootstrap failed: {bootstrapResult.Error}");
+                Console.WriteLine($"Bootstrap failed: {bootstrapResult.Error}");
                 return false;
             }
             
-                Console.WriteLine($"✅ Bootstrap successful: {bootstrapResult.Data.DeviceId}");
+                Console.WriteLine($"Bootstrap successful: {bootstrapResult.Data.DeviceId}");
                 
                 // Load channel map
                 var channelMapResult = await serviceEmulator.GetChannelMap();
                 if (channelMapResult.Success)
                 {
-                    Console.WriteLine($"✅ Channel map loaded: {channelMapResult.Data.ChannelCount} channels");
+                    Console.WriteLine($"Channel map loaded: {channelMapResult.Data.ChannelCount} channels");
                 }
                 
                 // Load guide data
                 var guideResult = await serviceEmulator.GetGuideData();
                 if (guideResult.Success)
                 {
-                    Console.WriteLine($"✅ Guide data loaded: {guideResult.Data.ProgramCount} programs");
+                    Console.WriteLine($"Guide data loaded: {guideResult.Data.ProgramCount} programs");
                 }            return true;
         }
         
@@ -679,7 +682,7 @@ namespace ProcessorEmulator
             Console.WriteLine("Initializing guide and settings UI...");
             await Task.Delay(200);
             
-            Console.WriteLine("✅ User interface ready");
+            Console.WriteLine("User interface ready");
             return true;
         }
         

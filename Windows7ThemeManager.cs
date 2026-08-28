@@ -19,7 +19,7 @@ namespace ProcessorEmulator
 
         public static bool IsApplied => applied;
 
-        public static void Apply(Application app)
+        public static void Apply(System.Windows.Application app)
         {
             if (app == null || applied) return;
             // Snapshot original relevant resources
@@ -65,7 +65,7 @@ namespace ProcessorEmulator
             applied = true;
         }
 
-        public static void Restore(Application app)
+        public static void Restore(System.Windows.Application app)
         {
             if (!applied || app == null || backup == null) return;
             foreach (var key in backup.Keys)
@@ -75,7 +75,7 @@ namespace ProcessorEmulator
             applied = false;
         }
 
-        private static Color? GetColorizationColor()
+        private static System.Windows.Media.Color? GetColorizationColor()
         {
             try
             {

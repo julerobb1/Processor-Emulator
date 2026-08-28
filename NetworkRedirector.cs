@@ -8,8 +8,8 @@ using System.Threading.Tasks;
 namespace ProcessorEmulator
 {
     /// <summary>
-    /// Network redirector for spoofing Comcast DNS endpoints
-    /// Redirects xcal.tv and xconf.comcast.net to local service emulator
+    /// DNS redirector used by firmware tests (U-verse/Mediaroom).
+    /// Allows redirection of expected hostnames to local service emulators.
     /// </summary>
     public class NetworkRedirector
     {
@@ -42,14 +42,32 @@ namespace ProcessorEmulator
         
         public async Task<bool> Setup()
         {
-            Console.WriteLine("🔀 Setting up network redirection...");
+            Console.WriteLine("Setting up network redirection...");
+            
+            // allow configuration to disable interception when the user wants a "real" network connection
+            if (ConfigManager.Config.UseLiveNetwork)
+            {
+                Console.WriteLine("🌐 Live network mode is enabled via configuration; skipping all DNS redirection.");
+                return true;
+            }
+            
+            // allow DNS overrides to be provided in config.json (useful for custom content servers)
+            if (ConfigManager.Config.DnsRedirects != null && ConfigManager.Config.DnsRedirects.Count > 0)
+            {
+                dnsRedirects.Clear();
+                foreach (var kv in ConfigManager.Config.DnsRedirects)
+                {
+                    dnsRedirects[kv.Key] = kv.Value;
+                }
+                Console.WriteLine("Loaded custom DNS redirects from configuration");
+            }
             
             try
             {
                 // Method 1: Try Windows hosts file modification
                 if (await SetupHostsFileRedirection())
                 {
-                    Console.WriteLine("✅ DNS redirection via hosts file successful");
+                    Console.WriteLine("DNS redirection via hosts file successful");
                     redirectsActive = true;
                     return true;
                 }
@@ -57,7 +75,7 @@ namespace ProcessorEmulator
                 // Method 2: Try dnsmasq installation (if available)
                 if (await SetupDnsmasqRedirection())
                 {
-                    Console.WriteLine("✅ DNS redirection via dnsmasq successful");
+                    Console.WriteLine("DNS redirection via dnsmasq successful");
                     redirectsActive = true;
                     return true;
                 }
@@ -69,7 +87,7 @@ namespace ProcessorEmulator
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Network redirection setup failed: {ex.Message}");
+                Console.WriteLine($"Network redirection setup failed: {ex.Message}");
                 await ProvideManualInstructions();
                 return false;
             }
@@ -79,12 +97,12 @@ namespace ProcessorEmulator
         {
             try
             {
-                Console.WriteLine("🔧 Configuring Windows hosts file...");
+                Console.WriteLine("Configuring Windows hosts file...");
                 
                 // Check if we have admin privileges
                 if (!IsRunningAsAdmin())
                 {
-                    Console.WriteLine("⚠️ Administrator privileges required for hosts file modification");
+                    Console.WriteLine("Administrator privileges required for hosts file modification");
                     return false;
                 }
                 
@@ -117,12 +135,12 @@ namespace ProcessorEmulator
                 // Flush DNS cache
                 await FlushDnsCache();
                 
-                Console.WriteLine("✅ Hosts file redirection configured");
+                Console.WriteLine("Hosts file redirection configured");
                 return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Hosts file setup failed: {ex.Message}");
+                Console.WriteLine($"Hosts file setup failed: {ex.Message}");
                 return false;
             }
         }
@@ -131,13 +149,13 @@ namespace ProcessorEmulator
         {
             try
             {
-                Console.WriteLine("🔧 Setting up dnsmasq redirection...");
+                Console.WriteLine("Setting up dnsmasq redirection...");
                 
                 // Check if dnsmasq is available
                 var dnsmasqPath = await FindDnsmasq();
                 if (string.IsNullOrEmpty(dnsmasqPath))
                 {
-                    Console.WriteLine("❌ dnsmasq not found, skipping");
+                    Console.WriteLine("dnsmasq not found, skipping");
                     return false;
                 }
                 
@@ -174,7 +192,7 @@ namespace ProcessorEmulator
                 
                 if (dnsmasqProcess != null && !dnsmasqProcess.HasExited)
                 {
-                    Console.WriteLine($"✅ dnsmasq started (PID: {dnsmasqProcess.Id})");
+                    Console.WriteLine("dnsmasq started (PID: {dnsmasqProcess.Id})");
                     return true;
                 }
                 
@@ -182,14 +200,14 @@ namespace ProcessorEmulator
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ dnsmasq setup failed: {ex.Message}");
+                Console.WriteLine($"dnsmasq setup failed: {ex.Message}");
                 return false;
             }
         }
         
         private async Task ProvideManualInstructions()
         {
-            Console.WriteLine("\n📋 Manual DNS Setup Instructions:");
+            Console.WriteLine("\nManual DNS Setup Instructions:");
             Console.WriteLine("Since automatic DNS redirection failed, please manually configure DNS:");
             Console.WriteLine();
             Console.WriteLine("Option 1 - Edit hosts file as Administrator:");
@@ -317,11 +335,11 @@ namespace ProcessorEmulator
                 process.Start();
                 await process.WaitForExitAsync();
                 
-                Console.WriteLine("🔄 DNS cache flushed");
+                Console.WriteLine("DNS cache flushed");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"⚠️ DNS cache flush failed: {ex.Message}");
+                Console.WriteLine($"DNS cache flush failed: {ex.Message}");
             }
         }
         
@@ -340,7 +358,7 @@ namespace ProcessorEmulator
                 {
                     dnsmasqProcess.Kill();
                     await dnsmasqProcess.WaitForExitAsync();
-                    Console.WriteLine("✅ dnsmasq stopped");
+                    Console.WriteLine("dnsmasq stopped");
                 }
                 
                 // Restore hosts file if we modified it
@@ -354,7 +372,7 @@ namespace ProcessorEmulator
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Cleanup failed: {ex.Message}");
+                Console.WriteLine($"Cleanup failed: {ex.Message}");
                 return false;
             }
         }
@@ -369,7 +387,7 @@ namespace ProcessorEmulator
                 {
                     File.Copy(backupPath, HOSTS_FILE_PATH, true);
                     File.Delete(backupPath);
-                    Console.WriteLine("✅ Hosts file restored from backup");
+                    Console.WriteLine("Hosts file restored from backup");
                     
                     await FlushDnsCache();
                 }
@@ -381,7 +399,7 @@ namespace ProcessorEmulator
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Hosts file restoration failed: {ex.Message}");
+                Console.WriteLine($"Hosts file restoration failed: {ex.Message}");
                 Console.WriteLine("Please manually remove Processor Emulator entries from hosts file");
             }
         }
@@ -416,7 +434,7 @@ namespace ProcessorEmulator
             }
             
             await File.WriteAllLinesAsync(HOSTS_FILE_PATH, cleanedLines);
-            Console.WriteLine("✅ Removed Processor Emulator entries from hosts file");
+            Console.WriteLine("Removed Processor Emulator entries from hosts file");
         }
         
         #endregion
@@ -440,17 +458,17 @@ namespace ProcessorEmulator
                     
                     if (resolved == dnsRedirects[domain] || resolved == "127.0.0.1")
                     {
-                        Console.WriteLine($"✅ {domain} -> {resolved}");
+                        Console.WriteLine($"{domain} -> {resolved}");
                     }
                     else
                     {
-                        Console.WriteLine($"❌ {domain} -> {resolved} (expected {dnsRedirects[domain]})");
+                        Console.WriteLine($"{domain} -> {resolved} (expected {dnsRedirects[domain]})");
                         allWorking = false;
                     }
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"❌ {domain} -> DNS resolution failed: {ex.Message}");
+                    Console.WriteLine($"{domain} -> DNS resolution failed: {ex.Message}");
                     allWorking = false;
                 }
             }

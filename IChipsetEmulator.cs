@@ -1,4 +1,4 @@
-namespace ProcessorEmulator.Tools
+namespace ProcessorEmulator
 {
     public interface IChipsetEmulator
     {

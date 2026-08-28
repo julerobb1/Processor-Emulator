@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 namespace ProcessorEmulator.Tools
 {
 	public class ComcastX1Emulator_Universal : IChipsetEmulator

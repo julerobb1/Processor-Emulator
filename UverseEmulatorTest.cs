@@ -11,28 +11,33 @@ namespace ProcessorEmulator
     {
         public static async Task RunTest()
         {
-            Console.WriteLine("=== U-verse MIPS Emulator Test ===");
+            Console.WriteLine("=== U-verse TV2CE MIPS Emulator Test ===");
             Console.WriteLine();
 
             try
             {
                 // Create the MIPS U-verse emulator
                 var mipsEmulator = new MipsUverseEmulator();
-                Console.WriteLine($"Created emulator: {mipsEmulator.ChipsetName}");
+                Console.WriteLine($"Created emulator: {mipsEmulator.ChipsetName} -- {mipsEmulator.Architecture}");
 
                 // Initialize the emulator
                 Console.WriteLine("Initializing emulator...");
-                if (!mipsEmulator.Initialize(""))
+                if (!await mipsEmulator.Initialize())
                 {
-                    Console.WriteLine("❌ Failed to initialize MIPS emulator");
+                    Console.WriteLine("Failed to initialize MIPS emulator");
                     return;
                 }
-                Console.WriteLine("✅ Emulator initialized successfully");
+                Console.WriteLine("Emulator initialized successfully");
+
+                // Ensure we have at least a dummy kernel image loaded so BootKernel can run
+                Console.WriteLine("Injecting dummy kernel data");
+                byte[] dummyKernel = new byte[256]; // mostly zeros (NOP)
+                mipsEmulator.LoadFirmware(dummyKernel);
 
                 // Start emulation
                 Console.WriteLine("Starting emulation...");
                 await mipsEmulator.StartEmulation();
-                Console.WriteLine("✅ Emulation started");
+                Console.WriteLine("Emulation started");
 
                 // Get status
                 Console.WriteLine("\n=== Emulator Status ===");
@@ -47,7 +52,7 @@ namespace ProcessorEmulator
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Error during test: {ex.Message}");
+                Console.WriteLine($"Error during test: {ex.Message}");
                 Console.WriteLine($"Stack trace: {ex.StackTrace}");
             }
         }

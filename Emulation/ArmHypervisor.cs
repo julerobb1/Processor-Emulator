@@ -126,7 +126,7 @@ namespace ProcessorEmulator.Emulation
                 
                 Debug.WriteLine($"[ArmHypervisor] Execution completed: {instructionCount} instructions");
             }
-            catch (Exception ex)
+            catch (System.Exception ex)
             {
                 Debug.WriteLine($"[ArmHypervisor] Execution error: {ex.Message}");
                 throw;

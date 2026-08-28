@@ -175,7 +175,7 @@ namespace ProcessorEmulator
                 // Load the firmware into HomebrewEmulator
                 emulator.LoadBinary(firmwareMemory);
                 
-                ShowTextWindow("✅ Firmware transfer complete - emulator ready!", "BOLT Handoff");
+                ShowTextWindow("Firmware transfer complete - emulator ready!", "BOLT Handoff");
             }
             catch (Exception ex)
             {

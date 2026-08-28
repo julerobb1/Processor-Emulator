@@ -32,6 +32,27 @@ namespace ProcessorEmulator
             if (string.IsNullOrEmpty(path))
                 throw new ArgumentException("Firmware path cannot be null or empty", nameof(path));
                 
+            // allow the user to supply a folder containing an extracted OS image
+            if (Directory.Exists(path))
+            {
+                Console.WriteLine($"📂 Path '{path}' is a directory; searching for kernel executables...");
+                var candidate = Directory.EnumerateFiles(path, "nk.exe", SearchOption.AllDirectories).FirstOrDefault();
+                if (candidate == null)
+                {
+                    // as a fallback include any .exe
+                    candidate = Directory.EnumerateFiles(path, "*.exe", SearchOption.AllDirectories).FirstOrDefault();
+                }
+                if (candidate != null)
+                {
+                    Console.WriteLine($"   → using file {candidate}");
+                    path = candidate;
+                }
+                else
+                {
+                    throw new FileNotFoundException("No suitable firmware file found in directory", path);
+                }
+            }
+
             if (!File.Exists(path))
                 throw new FileNotFoundException($"Firmware file not found: {path}");
             
@@ -49,7 +70,7 @@ namespace ProcessorEmulator
             // Analyze firmware format and architecture
             AnalyzeFirmware(info);
             
-            Console.WriteLine($"✅ Firmware loaded successfully:");
+            Console.WriteLine("Firmware loaded successfully:");
             Console.WriteLine($"   File: {info.Filename}");
             Console.WriteLine($"   Size: {info.Size:N0} bytes");
             Console.WriteLine($"   Format: {info.Format}");
@@ -284,14 +305,14 @@ namespace ProcessorEmulator
             if (info.Size == 0)
             {
                 info.IsValid = false;
-                Console.WriteLine("❌ Invalid firmware: Empty file");
+                Console.WriteLine("Invalid firmware: Empty file");
                 return;
             }
             
             if (info.Size > 1024 * 1024 * 1024) // 1GB limit
             {
                 info.IsValid = false;
-                Console.WriteLine("❌ Invalid firmware: File too large (>1GB)");
+                Console.WriteLine("Invalid firmware: File too large (>1GB)");
                 return;
             }
             
@@ -300,7 +321,7 @@ namespace ProcessorEmulator
                 Console.WriteLine("⚠️ Warning: Could not determine firmware format or architecture");
             }
             
-            Console.WriteLine($"✅ Firmware validation passed");
+            Console.WriteLine($"Firmware validation passed");
         }
     }
 }

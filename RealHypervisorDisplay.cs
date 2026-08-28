@@ -52,7 +52,7 @@ namespace ProcessorEmulator
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Auto
             };
             
-            var logTextBlock = new TextBox()
+            var logTextBlock = new System.Windows.Controls.TextBox()
             {
                 IsReadOnly = true,
                 FontFamily = new System.Windows.Media.FontFamily("Consolas"),
@@ -142,7 +142,7 @@ namespace ProcessorEmulator
             window.Show();
         }
         
-        private void ExecuteHypervisor(TextBox logTextBlock, CancellationToken cancellationToken)
+        private void ExecuteHypervisor(System.Windows.Controls.TextBox logTextBlock, CancellationToken cancellationToken)
         {
             try
             {
@@ -182,7 +182,7 @@ namespace ProcessorEmulator
                 }
                 
                 LogMessage(logTextBlock, "");
-                LogMessage(logTextBlock, "✅ ARM HYPERVISOR EXECUTION COMPLETED");
+                LogMessage(logTextBlock, "ARM HYPERVISOR EXECUTION COMPLETED");
                 LogMessage(logTextBlock, $"📊 Instructions executed: {instructionCount:N0}");
                 LogMessage(logTextBlock, $"⏱️ Execution time: {(DateTime.Now - startTime).TotalSeconds:F2}s");
                 LogMessage(logTextBlock, $"🚀 Speed: {instructionCount / (DateTime.Now - startTime).TotalSeconds:F0} ops/sec");
@@ -194,7 +194,7 @@ namespace ProcessorEmulator
             }
             catch (Exception ex)
             {
-                LogMessage(logTextBlock, $"❌ Execution error: {ex.Message}");
+                LogMessage(logTextBlock, $"Execution error: {ex.Message}");
             }
         }
         
@@ -237,7 +237,7 @@ namespace ProcessorEmulator
             return "ARM_INST";
         }
         
-        private void ShowBootProgress(TextBox logTextBlock, int cycle)
+        private void ShowBootProgress(System.Windows.Controls.TextBox logTextBlock, int cycle)
         {
             switch (cycle)
             {
@@ -251,7 +251,7 @@ namespace ProcessorEmulator
                     LogMessage(logTextBlock, "🎮 Loading RDK-V platform components...");
                     break;
                 case 150:
-                    LogMessage(logTextBlock, "📺 Initializing video subsystem (BCM7445)");
+                    LogMessage(logTextBlock, "Initializing video subsystem (BCM7445)");
                     break;
                 case 200:
                     LogMessage(logTextBlock, "🌐 Network stack initialization");
@@ -263,12 +263,12 @@ namespace ProcessorEmulator
                     LogMessage(logTextBlock, "🚀 RDK-V services starting...");
                     break;
                 case 400:
-                    LogMessage(logTextBlock, "✅ Platform boot sequence completed!");
+                    LogMessage(logTextBlock, "Platform boot sequence completed!");
                     break;
             }
         }
         
-        private void LogMessage(TextBox textBox, string message)
+        private void LogMessage(System.Windows.Controls.TextBox textBox, string message)
         {
             Application.Current.Dispatcher.Invoke(() => {
                 textBox.AppendText($"[{DateTime.Now:HH:mm:ss.fff}] {message}\n");

@@ -234,7 +234,7 @@ namespace ProcessorEmulator
         {
             try
             {
-                Console.WriteLine("🎯 Initializing U-verse DVR Emulator...");
+                Console.WriteLine("Initializing U-verse DVR Emulator...");
                 
                 // Create working directory
                 workingDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "UverseDVR");
@@ -252,12 +252,12 @@ namespace ProcessorEmulator
                 await Task.Delay(500); // Realistic initialization timing
                 
                 isInitialized = true;
-                Console.WriteLine("✅ U-verse DVR Emulator initialized successfully");
+                Console.WriteLine("U-verse DVR Emulator initialized successfully");
                 return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Initialization Error: {ex.Message}");
+                Console.WriteLine($"Initialization Error: {ex.Message}");
                 return false;
             }
         }
@@ -282,7 +282,7 @@ namespace ProcessorEmulator
 
             try
             {
-                Console.WriteLine($"🔍 Analyzing U-verse firmware: {Path.GetFileName(firmwarePath)}");
+                Console.WriteLine($"Analyzing U-verse firmware: {Path.GetFileName(firmwarePath)}");
                 
                 if (!File.Exists(firmwarePath))
                 {
@@ -291,14 +291,14 @@ namespace ProcessorEmulator
                 }
 
                 var fileSize = new FileInfo(firmwarePath).Length;
-                Console.WriteLine($"📦 Firmware size: {fileSize:N0} bytes ({fileSize / (1024 * 1024):F1} MB)");
+                Console.WriteLine($"Firmware size: {fileSize:N0} bytes ({fileSize / (1024 * 1024):F1} MB)");
 
                 // Read firmware header for analysis
                 byte[] header = await ReadFirmwareHeader(firmwarePath, 4096);
                 
                 // Detect platform based on firmware signatures
                 analysis.DetectedPlatform = DetectPlatformFromFirmware(header, firmwarePath);
-                Console.WriteLine($"🎯 Detected platform: {analysis.DetectedPlatform}");
+                Console.WriteLine($"Detected platform: {analysis.DetectedPlatform}");
 
                 // Analyze bootloader
                 analysis.Bootloader = DetectBootloader(header);
@@ -314,7 +314,7 @@ namespace ProcessorEmulator
 
                 // Analyze Mediaroom middleware
                 analysis.Mediaroom = await AnalyzeMediaroom(firmwarePath, analysis.Partitions);
-                Console.WriteLine($"📺 Mediaroom: {analysis.Mediaroom.Version} (Present: {analysis.Mediaroom.IsPresent})");
+                Console.WriteLine($"Mediaroom: {analysis.Mediaroom.Version} (Present: {analysis.Mediaroom.IsPresent})");
 
                 analysis.IsValid = analysis.DetectedPlatform != UversePlatform.Unknown && 
                                  analysis.WindowsCE.IsValid;
@@ -330,7 +330,7 @@ namespace ProcessorEmulator
             catch (Exception ex)
             {
                 analysis.AnalysisNotes = $"Analysis error: {ex.Message}";
-                Console.WriteLine($"❌ Firmware analysis failed: {ex.Message}");
+                Console.WriteLine($"Firmware analysis failed: {ex.Message}");
                 return analysis;
             }
         }
@@ -553,34 +553,34 @@ namespace ProcessorEmulator
         {
             if (!isInitialized)
             {
-                Console.WriteLine("❌ Error: Emulator not initialized");
+                Console.WriteLine("Error: Emulator not initialized");
                 return false;
             }
 
             try
             {
-                Console.WriteLine($"📦 Loading U-verse DVR firmware: {Path.GetFileName(firmwarePath)}");
+                Console.WriteLine($"Loading U-verse DVR firmware: {Path.GetFileName(firmwarePath)}");
 
                 // Analyze firmware
                 var analysis = await AnalyzeFirmware(firmwarePath);
                 if (!analysis.IsValid)
                 {
-                    Console.WriteLine("❌ Invalid or unsupported firmware");
+                    Console.WriteLine("Invalid or unsupported firmware");
                     return false;
                 }
 
-                Console.WriteLine("✅ Firmware loaded and analyzed successfully");
+                Console.WriteLine("Firmware loaded and analyzed successfully");
                 Console.WriteLine($"📊 Platform: {analysis.DetectedPlatform}");
                 Console.WriteLine($"🚀 Bootloader: {analysis.Bootloader}");
                 Console.WriteLine($"🖥️ OS: Windows CE {analysis.WindowsCE.Version}");
-                Console.WriteLine($"📺 Middleware: Mediaroom {analysis.Mediaroom.Version}");
+                Console.WriteLine($"Middleware: Mediaroom {analysis.Mediaroom.Version}");
                 Console.WriteLine($"💾 Partitions: {analysis.Partitions.Count}");
 
                 return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Firmware loading error: {ex.Message}");
+                Console.WriteLine($"Firmware loading error: {ex.Message}");
                 return false;
             }
         }
@@ -589,7 +589,7 @@ namespace ProcessorEmulator
         {
             if (!isInitialized || !firmwareAnalysis.IsValid)
             {
-                Console.WriteLine("❌ Error: Firmware not loaded or invalid");
+                Console.WriteLine("Error: Firmware not loaded or invalid");
                 return false;
             }
 
@@ -600,42 +600,42 @@ namespace ProcessorEmulator
                 // Step 1: Initialize bootloader (CFE/U-Boot)
                 if (!await StartBootloader())
                 {
-                    Console.WriteLine("❌ Bootloader initialization failed");
+                    Console.WriteLine("Bootloader initialization failed");
                     return false;
                 }
 
                 // Step 2: Boot Windows CE kernel
                 if (!await BootWindowsCE())
                 {
-                    Console.WriteLine("❌ Windows CE boot failed");
+                    Console.WriteLine("Windows CE boot failed");
                     return false;
                 }
 
                 // Step 3: Start Mediaroom middleware
                 if (!await StartMediaroom())
                 {
-                    Console.WriteLine("❌ Mediaroom startup failed");
+                    Console.WriteLine("Mediaroom startup failed");
                     return false;
                 }
 
                 // Step 4: Initialize DVR services
                 if (!await StartDvrServices())
                 {
-                    Console.WriteLine("❌ DVR services startup failed");
+                    Console.WriteLine("DVR services startup failed");
                     return false;
                 }
 
-                Console.WriteLine("✅ U-verse DVR emulation started successfully!");
+                Console.WriteLine("U-verse DVR emulation started successfully!");
                 Console.WriteLine($"📊 Platform: {currentPlatform.Platform}");
                 Console.WriteLine($"💾 RAM: {currentPlatform.RamMB} MB");
-                Console.WriteLine($"🔧 Chipset: {currentPlatform.Chipset}");
-                Console.WriteLine($"📺 Ready for AT&T U-verse service");
+                Console.WriteLine($"Chipset: {currentPlatform.Chipset}");
+                Console.WriteLine($"Ready for AT&T U-verse service");
 
                 return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Emulation start error: {ex.Message}");
+                Console.WriteLine($"Emulation start error: {ex.Message}");
                 return false;
             }
         }
@@ -668,12 +668,12 @@ namespace ProcessorEmulator
                 }
 
                 await Task.Delay(1000); // Simulate bootloader timing
-                Console.WriteLine("✅ Bootloader ready");
+                Console.WriteLine("Bootloader ready");
                 return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Bootloader error: {ex.Message}");
+                Console.WriteLine($"Bootloader error: {ex.Message}");
                 return false;
             }
         }
@@ -702,19 +702,19 @@ namespace ProcessorEmulator
                     await Task.Delay(100); // Simulate service startup
                 }
 
-                Console.WriteLine("✅ Windows CE boot complete");
+                Console.WriteLine("Windows CE boot complete");
                 return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Windows CE boot error: {ex.Message}");
+                Console.WriteLine($"Windows CE boot error: {ex.Message}");
                 return false;
             }
         }
 
         private async Task<bool> StartMediaroom()
         {
-            Console.WriteLine("📺 Starting Microsoft Mediaroom middleware...");
+            Console.WriteLine("Starting Microsoft Mediaroom middleware...");
 
             try
             {
@@ -730,12 +730,12 @@ namespace ProcessorEmulator
                 Console.WriteLine("- Connecting to AT&T services");
                 Console.WriteLine("- Loading channel lineup");
                 Console.WriteLine("- Initializing program guide");
-                Console.WriteLine("✅ Mediaroom ready");
+                Console.WriteLine("Mediaroom ready");
                 return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Mediaroom startup error: {ex.Message}");
+                Console.WriteLine($"Mediaroom startup error: {ex.Message}");
                 return false;
             }
         }
@@ -753,12 +753,12 @@ namespace ProcessorEmulator
                 Console.WriteLine("- Configuring timeshift buffer");
 
                 await Task.Delay(500); // Simulate DVR initialization
-                Console.WriteLine("✅ DVR services ready");
+                Console.WriteLine("DVR services ready");
                 return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ DVR startup error: {ex.Message}");
+                Console.WriteLine($"DVR startup error: {ex.Message}");
                 return false;
             }
         }
@@ -781,12 +781,12 @@ namespace ProcessorEmulator
                     await cfeProcess.WaitForExitAsync();
                 }
 
-                Console.WriteLine("✅ Emulation stopped");
+                Console.WriteLine("Emulation stopped");
                 return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Stop error: {ex.Message}");
+                Console.WriteLine($"Stop error: {ex.Message}");
                 return false;
             }
         }
@@ -857,16 +857,16 @@ namespace ProcessorEmulator
                 
                 // Test initialization
                 var initResult = emulator.Initialize().Result;
-                Console.WriteLine($"Initialization: {(initResult ? "✅ PASS" : "❌ FAIL")}");
+                Console.WriteLine($"Initialization: {(initResult ? "PASS" : "FAIL")}");
 
                 // Test platform detection
                 emulator.DisplayPlatformInfo();
                 
-                Console.WriteLine("✅ U-verse DVR Emulator test completed");
+                Console.WriteLine("U-verse DVR Emulator test completed");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Test failed: {ex.Message}");
+                Console.WriteLine($"Test failed: {ex.Message}");
             }
         }
 

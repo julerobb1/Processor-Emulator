@@ -5,10 +5,16 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Media;
+using MessageBox = System.Windows.MessageBox;
+using Brushes = System.Windows.Media.Brushes;
 using System.Diagnostics;
 using System.Threading;
 using System.Linq;
 using System.Text;
+using UserControl = System.Windows.Controls.UserControl;
+using ListView = System.Windows.Controls.ListView;
+using Timer = System.Threading.Timer;
+using Brush = System.Windows.Media.Brush;
 
 namespace ProcessorEmulator
 {
@@ -24,7 +30,7 @@ namespace ProcessorEmulator
         private volatile bool isEnabled = true;
         private int maxLogEntries = 1000;
         
-        public event PropertyChangedEventHandler PropertyChanged;
+        public event PropertyChangedEventHandler? PropertyChanged;
         
         public ObservableCollection<LogEntry> LogEntries => logEntries;
         

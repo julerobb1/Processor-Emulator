@@ -52,10 +52,10 @@ namespace ProcessorEmulator.Tools
                 // Uncomment the following lines to enable live network probing:
                 // Console.WriteLine("\n🔍 Probing for live endpoints...");
                 // var liveEndpoints = await ComcastDomainParser.ProbeForLiveFirmwareEndpoints(analysis.PotentialFirmwareUrls);
-                // Console.WriteLine($"✅ Found {liveEndpoints.Count} potentially live endpoints");
+                // Console.WriteLine($"Found {liveEndpoints.Count} potentially live endpoints");
 
                 Console.WriteLine();
-                Console.WriteLine("✅ DEMO COMPLETE!");
+                Console.WriteLine("DEMO COMPLETE!");
                 Console.WriteLine($"📄 Results saved to: {jsonFile} and {urlsFile}");
                 Console.WriteLine();
                 Console.WriteLine("🎯 NEXT STEPS:");
@@ -66,7 +66,7 @@ namespace ProcessorEmulator.Tools
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Demo failed: {ex.Message}");
+                Console.WriteLine($"Demo failed: {ex.Message}");
                 Console.WriteLine($"Stack trace: {ex.StackTrace}");
             }
         }

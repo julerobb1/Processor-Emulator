@@ -73,7 +73,7 @@ namespace ProcessorEmulator
                 InitializeMmu();
                 InitializeCache();
                 
-                Console.WriteLine($"✅ ARM Cortex-A15 initialized with {config.CpuCores} cores @ {config.CpuFrequency}MHz");
+                Console.WriteLine($"ARM Cortex-A15 initialized with {config.CpuCores} cores @ {config.CpuFrequency}MHz");
                 Console.WriteLine($"   RAM: {config.RamSize / (1024 * 1024)}MB, L2 Cache: {config.L2CacheSize / 1024}KB");
                 
                 await Task.CompletedTask;
@@ -81,7 +81,7 @@ namespace ProcessorEmulator
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ ARM CPU initialization failed: {ex.Message}");
+                Console.WriteLine($"ARM CPU initialization failed: {ex.Message}");
                 return false;
             }
         }
@@ -99,14 +99,14 @@ namespace ProcessorEmulator
                 // Set entry point
                 registers.PC = entryPoint;
                 
-                Console.WriteLine($"✅ Firmware loaded, entry point: 0x{entryPoint:X8}");
+                Console.WriteLine($"Firmware loaded, entry point: 0x{entryPoint:X8}");
                 
                 await Task.CompletedTask;
                 return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Firmware loading failed: {ex.Message}");
+                Console.WriteLine($"Firmware loading failed: {ex.Message}");
                 return false;
             }
         }
@@ -176,7 +176,7 @@ namespace ProcessorEmulator
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ ARM execution failed: {ex.Message}");
+                Console.WriteLine($"ARM execution failed: {ex.Message}");
                 return false;
             }
         }
@@ -209,7 +209,7 @@ namespace ProcessorEmulator
             registers.PC = 0x00001000; // BOLT entry point
             await Task.Delay(100);
             
-            Console.WriteLine("✅ ARM boot sequence complete, CPU ready for operation");
+            Console.WriteLine("ARM boot sequence complete, CPU ready for operation");
         }
         
         private async Task ExecutionLoop()
