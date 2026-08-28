@@ -126,12 +126,15 @@ namespace ProcessorEmulator.Core.Loaders
                 return false;
             }
 
-            Console.WriteLine("[NkBinLoader] ExtraROM etc.bin at " + path +
-                " imageStart=0x" + imageStart.ToString("X") +
-                " imageLength=0x" + imageLength.ToString("X"));
             int records = WriteB000FfRecords(data, 15, imageLength, memory, "etc", out _, out _, out bool truncated);
-            Console.WriteLine("[NkBinLoader] ExtraROM records=" + records + (truncated ? " truncated" : ""));
-            return records > 0;
+            if (records <= 0)
+            {
+                Console.WriteLine("[NkBinLoader] ExtraROM skip " + path + " (no records" + (truncated ? ", truncated" : "") + ")");
+                return false;
+            }
+            Console.WriteLine("[NkBinLoader] ExtraROM mapped records=" + records +
+                " imageStart=0x" + imageStart.ToString("X8"));
+            return true;
         }
 
         private static int WriteB000FfRecords(byte[] data, int pos, uint imageLength, IMemoryManager memory, string label, out uint firstRecord, out ulong entryPoint, out bool truncated)
