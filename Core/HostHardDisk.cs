@@ -326,7 +326,10 @@ namespace ProcessorEmulator.Core
                 LogSignalStarted(registers, bus);
                 return false;
             }
-            if ((pc & CeSlotBase) != 0)
+            // CE user slots are 0x02000000..0x20000000. 0x8001634C is
+            // KSEG0 filesys, not gwes (slot 0 / filesys owns 0x0001634C).
+            uint slot = pc >> 25;
+            if (slot >= 1 && slot <= 16)
             {
                 uint gwesOff = pc & CeSlotMask;
                 if (gwesOff == GwesSignalStarted || gwesOff == GwesGweApiReady)
@@ -1312,16 +1315,16 @@ namespace ProcessorEmulator.Core
                 string name = "";
                 if (registers != null && registers.Length > 6 && bus != null)
                     name = ReadUtf16(bus, registers[6]);
-                if (string.IsNullOrEmpty(name))
-                    name = "SYSTEM/GweApiSetReady";
-                System.Console.WriteLine("[Hive] gwes OpenEvent \"" + name +
-                    "\" pc=0x" + pc.ToString("X8"));
+                System.Console.WriteLine("[Hive] gwes OpenEvent \"" +
+                    (string.IsNullOrEmpty(name) ? "(null)" : name) +
+                    "\" pc=0x" + pc.ToString("X8") +
+                    " (SYSTEM/GweApiSetReady, not GRAPHICS)");
             }
         }
 
         private static void LogLaunchReadySlots(MipsBus bus, uint need)
         {
-            if (bus == null || !_logged.Add("hive:slots:" + need.ToString("X")))
+            if (bus == null || !_logged.Add("hive:slots:" + need))
                 return;
             try
             {
@@ -1352,6 +1355,8 @@ namespace ProcessorEmulator.Core
         }
 
         // gwes image_base 0x00010000; SYSTEM/GweApiSetReady at +0x11020.
+        // Also walk 4KB pages in low RAM — CreateProcess v0=1 does not
+        // mean the PE was placed in a CE slot.
         private static void LogGwesMappedSlots(MipsBus bus)
         {
             if (bus == null)
@@ -1359,27 +1364,56 @@ namespace ProcessorEmulator.Core
             int found = 0;
             for (uint slot = 1; slot <= 16; slot++)
             {
-                uint va = (slot * 0x02000000u) + 0x00011020u;
-                try
+                uint va32 = (slot * 0x02000000u) + 0x00011020u;
+                if (LooksLikeGweApi(bus, va32))
                 {
-                    uint w0 = bus.Read32(va);
-                    uint w1 = bus.Read32(va + 4);
-                    // 'S' 0x0053, 'Y' 0x0059, 'S' 0x0053, 'T' 0x0054
-                    if ((w0 & 0xFFFF) != 0x0053 || (w0 >> 16) != 0x0059)
-                        continue;
-                    if ((w1 & 0xFFFF) != 0x0053)
-                        continue;
-                    string s = ReadUtf16(bus, va);
-                    System.Console.WriteLine("[Hive] gwes mapped slot=" + slot +
-                        " GweApi@0x" + va.ToString("X8") + " \"" + s + "\"");
+                    System.Console.WriteLine("[Hive] gwes mapped 32MB slot=" + slot +
+                        " GweApi@0x" + va32.ToString("X8") +
+                        " \"" + ReadUtf16(bus, va32) + "\"");
                     found++;
                 }
-                catch
+                if (slot <= 8)
                 {
+                    uint va64 = (slot * 0x04000000u) + 0x00011020u;
+                    if (va64 != va32 && LooksLikeGweApi(bus, va64))
+                    {
+                        System.Console.WriteLine("[Hive] gwes mapped 64MB slot=" + slot +
+                            " GweApi@0x" + va64.ToString("X8") +
+                            " \"" + ReadUtf16(bus, va64) + "\"");
+                        found++;
+                    }
                 }
             }
             if (found == 0)
-                System.Console.WriteLine("[Hive] gwes SYSTEM/GweApiSetReady not mapped in slots 1-16");
+            {
+                for (uint a = 0x00010000; a < 0x02000000; a += 0x1000)
+                {
+                    if (!LooksLikeGweApi(bus, a))
+                        continue;
+                    System.Console.WriteLine("[Hive] gwes GweApi@0x" + a.ToString("X8") +
+                        " \"" + ReadUtf16(bus, a) + "\"");
+                    found++;
+                    break;
+                }
+            }
+            if (found == 0)
+                System.Console.WriteLine("[Hive] gwes SYSTEM/GweApiSetReady not in slots 1-16 or 0x00010000-0x02000000");
+        }
+
+        private static bool LooksLikeGweApi(MipsBus bus, uint va)
+        {
+            try
+            {
+                uint w0 = bus.Read32(va);
+                if ((w0 & 0xFFFF) != 0x0053 || (w0 >> 16) != 0x0059)
+                    return false;
+                uint w1 = bus.Read32(va + 4);
+                return (w1 & 0xFFFF) == 0x0053 && (w1 >> 16) == 0x0054;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static void LogHiveCreateProcess(uint[] registers, MipsBus bus)
