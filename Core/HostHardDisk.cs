@@ -6,14 +6,12 @@ using ProcessorEmulator.Emulation;
 
 namespace ProcessorEmulator.Core
 {
-    // User-supplied dump as the Hard Disk FAT volume. The host
-    // folder is whatever the user feeds (CLI, FirmwarePath,
-    // UVERSE_HARD_DISK / PROCESSOR_EMULATOR_HARD_DISK, last-used
-    // path next to the exe, or a drop folder next to cwd/exe).
-    // Hunt by name, recursively, case-insensitive. Take what is
-    // present. The path or volume label need not contain Uverse
-    // or AT&T. Local/dev also tries the in-tree fixture and the
-    // last-known Uverse Drive E path; those are skipped if absent.
+    // Existing Uverse Drive E / UverseDriveE / UVERSE_HARD_DISK
+    // attach is unchanged: if that folder is present and already
+    // looks like the volume, use it. A user may also point at a
+    // drive or dump folder (CLI, FirmwarePath, drop, env). Hunt
+    // that root and its shallow children by name, case-insensitive.
+    // Take what is present. The path need not contain Uverse.
     // Read-only: never write, delete, or rename dump files. Not a
     // BINBlk/BINFS/ExtraROM object. If etc.bin is found, log it as
     // the ExtraROM/XIP file hashes.bin already names; firmware maps it.
@@ -938,8 +936,8 @@ namespace ProcessorEmulator.Core
         }
 
         private const string LastUsedName = "last_dump_root.txt";
-        private const int HuntMaxDepth = 10;
-        private const int HuntMaxVisit = 2500;
+        private const int HuntMaxDepth = 3;
+        private const int HuntMaxVisit = 400;
 
         private static readonly HashSet<string> VolumeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -963,12 +961,55 @@ namespace ProcessorEmulator.Core
                 string feed = NormalizeFeed(raw);
                 if (string.IsNullOrEmpty(feed))
                     continue;
+                if (LooksLikeVolume(feed))
+                {
+                    NoteExtraRom(feed);
+                    return feed;
+                }
                 System.Console.WriteLine("[HardDisk] hunt feed=" + feed);
                 string attach = HuntAttach(feed);
                 if (!string.IsNullOrEmpty(attach))
                     return attach;
             }
             return "";
+        }
+
+        private static bool LooksLikeVolume(string dir)
+        {
+            try
+            {
+                foreach (string f in Directory.GetFiles(dir))
+                {
+                    string n = Path.GetFileName(f);
+                    if (n.Equals("nk.bin", StringComparison.OrdinalIgnoreCase)
+                        || n.Equals("etc.bin", StringComparison.OrdinalIgnoreCase)
+                        || n.Equals("BOOT.PRF", StringComparison.OrdinalIgnoreCase)
+                        || n.Equals("sec.bin", StringComparison.OrdinalIgnoreCase))
+                        return true;
+                }
+            }
+            catch
+            {
+            }
+            return false;
+        }
+
+        private static void NoteExtraRom(string dir)
+        {
+            try
+            {
+                foreach (string f in Directory.GetFiles(dir))
+                {
+                    if (Path.GetFileName(f).Equals("etc.bin", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _extraRom = f;
+                        return;
+                    }
+                }
+            }
+            catch
+            {
+            }
         }
 
         public static string HuntAttach(string feed)
