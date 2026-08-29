@@ -38,9 +38,7 @@ namespace ProcessorEmulator.Core
         public const uint MapO32Rom = 0x8001AC30;
         public const uint MapO32Decompress = 0x80028844;
         public const uint MapO32VirtualCopy = 0x80043298;
-        public const uint MapO32VallocJal = 0x8001AE00;
         public const uint MapO32VallocRet = 0x8001AE08;
-        public const uint MapO32AfterValloc = 0x8001AE10;
         public const uint MemReserve = 0x2000;
         public const uint SlotMask = 0x01FFFFFF;
         public const uint LoadLibSyscallRet = 0x03F6C8F4;
@@ -367,21 +365,21 @@ namespace ProcessorEmulator.Core
         // leaves those pages owned; the later walk returns 0 and
         // last-error 87, so startip stays zeros. Skip the jal and
         // let firmware decompress onto dest it maps.
-        public static bool TrySkipExtraRomMapO32Valloc(uint[] regs, ref uint programCounter)
+        public static bool TryReserveExtraRomValloc(uint[] regs)
         {
-            if (regs == null || regs.Length <= 20)
+            if (regs == null || regs.Length <= 6)
                 return false;
-            uint dest = regs[20];
-            if (dest == 0)
-                dest = regs.Length > 4 ? regs[4] : 0;
+            uint dest = regs[4];
             if (!IsExtraRomDdiNopDest(dest))
                 return false;
-            regs[2] = dest;
-            programCounter = MapO32AfterValloc;
-            _ddiNopDestOn = true;
-            _ddiNopSlot0 = DdiNopVbase & SlotMask;
-            System.Console.WriteLine("[Hive] ExtraROM skip VALLOC dest=0x" +
-                dest.ToString("X8") + " (0x80028844 commits dest; do not invent 0x81360000)");
+            uint type = regs[6];
+            if ((type & MemReserve) != 0)
+                return false;
+            regs[6] = type | MemReserve;
+            System.Console.WriteLine("[Hive] ExtraROM VALLOC a0=0x" +
+                dest.ToString("X8") + " type 0x" + type.ToString("X") +
+                " -> 0x" + regs[6].ToString("X") +
+                " (MEM_RESERVE|COMMIT; do not invent 0x81360000)");
             return true;
         }
 
