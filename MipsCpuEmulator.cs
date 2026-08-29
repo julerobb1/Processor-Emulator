@@ -129,20 +129,29 @@ namespace ProcessorEmulator.Emulation
                     try
                     {
                         uint path = registers[23];
-                        if (!CeRomTocFiles.TryContinueRomModule(_bus, path, out uint attr, out uint tocEntry))
-                            CeRomTocFiles.TryContinueRomModule(_bus, registers[4], out attr, out tocEntry);
+                        if (!CeRomTocFiles.TryContinueRomModule(_bus, path, out uint attr, out uint tocEntry, out byte attachType))
+                            CeRomTocFiles.TryContinueRomModule(_bus, registers[4], out attr, out tocEntry, out attachType);
                         if (tocEntry != 0)
                         {
-                            // Same object layout as 0x80016AFC: +0 = TOC entry,
-                            // +4 = 7. 0x800196E4 then uses e32 at TOC+0x14
-                            // instead of CreateFileMapping(INVALID_HANDLE).
-                            // 40($sp) still needs FILE_ATTRIBUTE_ROMMODULE so
-                            // 0x8001D4B8 takes the existing 0x2000 return.
+                            // Type 7: TOC module, e32 at entry+0x14.
+                            // Type 8: ExtraROM FILE (wait55). object+5=1
+                            // skips name copy (s7 may be unmapped).
+                            // Do not set ROMMODULE. Do not invent e32.
                             uint obj = registers[30];
                             _bus.Write32(obj, tocEntry);
-                            _bus.Write8(obj + 4, CeRomTocFiles.TocAttachType);
+                            _bus.Write8(obj + 4, attachType);
+                            if (attachType == CeRomTocFiles.FileAttachType)
+                                _bus.Write8(obj + 5, 1);
                             _bus.Write32(registers[29] + 40, attr);
                             registers[3] = attr;
+                            if (attachType == CeRomTocFiles.FileAttachType
+                                && CeRomTocFiles.TryStartTv2FileDecompress(
+                                    _bus, registers, ref programCounter))
+                            {
+                                _cp0.UpdateTimer(1);
+                                _bus.Tick(1);
+                                continue;
+                            }
                             programCounter = CeRomTocFiles.NameCopyContinue;
                             _cp0.UpdateTimer(1);
                             _bus.Tick(1);
@@ -1174,6 +1183,37 @@ namespace ProcessorEmulator.Emulation
             uint target = registers[rs];
             if (rd != 0)
                 registers[rd] = programCounter + 4;
+            if (target == CeRomTocFiles.Win32SetFilePointer
+                && CeRomTocFiles.IsTv2FileHandle(registers[4]))
+            {
+                if (_inDelaySlot)
+                {
+                    programCounter = target;
+                    return;
+                }
+                _inDelaySlot = true;
+                try
+                {
+                    uint delayInstr = FetchInstruction();
+                    DecodeAndExecute(delayInstr);
+                    if (CeRomTocFiles.TryServeTv2SetFilePointer(registers, target, ref target))
+                    {
+                        programCounter = target;
+                        return;
+                    }
+                    programCounter = target;
+                }
+                catch (TlbMissException ex)
+                {
+                    TriggerTlbException(ex);
+                }
+                finally
+                {
+                    _inDelaySlot = false;
+                }
+                LogBranch(oldPc, programCounter, "JALR");
+                return;
+            }
             ExecuteDelaySlotThenJump(target);
             LogBranch(oldPc, programCounter, "JALR");
         }

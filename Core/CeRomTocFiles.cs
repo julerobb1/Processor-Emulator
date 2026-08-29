@@ -146,6 +146,18 @@ namespace ProcessorEmulator.Core
         public const uint FilesNameOff = 0x14;
         public const uint FilesLoadOff = 0x18;
         public const byte TocAttachType = 7;
+        // CreateFile success stores 8 (file handle). LoadE32
+        // (type&2)==0 then SetFilePointer/ReadFile and checks
+        // PE 0x4550. Type 7 reads entry+0x14 as e32 (wait55 193).
+        public const byte FileAttachType = 8;
+        public const uint KernelReadFile = 0x8003D7E0;
+        public const uint KernelCreateFileMapping = 0x8003DA64;
+        // jalr -8210 is SetFilePointer (a1=dist, a3=method).
+        public const uint Win32SetFilePointer = 0xFFFFDFEE;
+        // Scratch for FILE[25] CEDecompressROM. Not ExtraROM
+        // tail and not a dump 0x81360000 map.
+        public const uint Tv2FileDest = 0x8F140000;
+        public const uint Tv2FileSrcAlign = 0x8F030000;
         public const uint O32RomSize = 0x18;
         public const uint O32LiteSize = 0x1C;
         // coredll 0x03F7A960 bne v0,0 / delay sw v0, (0x01FFFFA0).
@@ -200,6 +212,11 @@ namespace ProcessorEmulator.Core
         private static uint _tv2FileComp;
         private static uint _tv2FileLoad;
         private static uint[] _tv2FileData;
+        private static uint _tv2FileDecompRa;
+        private static uint _tv2FileSavedSp;
+        private static uint _tv2FilePos;
+        private static bool _tv2FileDestOn;
+        private static bool _tv2FileIoLogged;
 
         public static void NotePendingRomFile(string path)
         {
@@ -213,8 +230,14 @@ namespace ProcessorEmulator.Core
 
         public static bool TryContinueRomModule(MipsBus bus, uint path, out uint attr, out uint tocEntry)
         {
+            return TryContinueRomModule(bus, path, out attr, out tocEntry, out _);
+        }
+
+        public static bool TryContinueRomModule(MipsBus bus, uint path, out uint attr, out uint tocEntry, out byte attachType)
+        {
             attr = 0;
             tocEntry = 0;
+            attachType = TocAttachType;
             if (bus == null || path == 0)
                 return false;
 
@@ -268,7 +291,10 @@ namespace ProcessorEmulator.Core
                 if (_tv2FileEntry != 0 && _tv2FileWords != null)
                 {
                     tocEntry = _tv2FileEntry;
-                    attr = (_tv2FileWords[0] & 0xFFFFEFFFu) | 0x2040u;
+                    // Real FILE attr 0x807 (COMPRESSED). Do not set
+                    // 0x2000: that is ROMMODULE and LoadE32 reads
+                    // entry+0x14 as e32 (wait55 193).
+                    attr = _tv2FileWords[0];
                     real = _tv2FileReal;
                     comp = _tv2FileComp;
                     load = _tv2FileLoad;
@@ -278,12 +304,14 @@ namespace ProcessorEmulator.Core
                 {
                     return false;
                 }
+                attachType = FileAttachType;
                 System.Console.WriteLine("[Hive] FILE-attach ExtraROM tv2clientce.exe entry=0x" +
                     tocEntry.ToString("X8") +
+                    " type=8 attr=0x" + attr.ToString("X8") +
                     " real=" + real +
                     " comp=" + comp +
                     " load=0x" + load.ToString("X8") +
-                    " (FILESentry; not a dump 0x81360000 map)");
+                    " (FILESentry; firmware SetFilePointer/ReadFile; not a dump 0x81360000 map)");
                 _pendingRomFile = null;
                 return true;
             }
@@ -657,7 +685,8 @@ namespace ProcessorEmulator.Core
 
         public static bool TryNoteExtraRomInnerDest(MipsBus bus, uint[] regs)
         {
-            if (_ddiNopDecompRa == 0 || bus == null || regs == null || regs.Length <= 7)
+            if ((_ddiNopDecompRa == 0 && _tv2FileDecompRa == 0)
+                || bus == null || regs == null || regs.Length <= 7)
                 return false;
             try
             {
@@ -690,7 +719,8 @@ namespace ProcessorEmulator.Core
 
         public static bool TryNoteExtraRomInnerRet(uint[] regs)
         {
-            if (_ddiNopDecompRa == 0 || regs == null || regs.Length <= 2)
+            if ((_ddiNopDecompRa == 0 && _tv2FileDecompRa == 0)
+                || regs == null || regs.Length <= 2)
                 return false;
             if (_ddiNopInnerPages >= 8)
                 return false;
@@ -1093,6 +1123,11 @@ namespace ProcessorEmulator.Core
             _tv2FileComp = 0;
             _tv2FileLoad = 0;
             _tv2FileData = null;
+            _tv2FileDecompRa = 0;
+            _tv2FileSavedSp = 0;
+            _tv2FilePos = 0;
+            _tv2FileDestOn = false;
+            _tv2FileIoLogged = false;
         }
 
         public static void NoteExtraRomModule(uint romhdr, uint tocEntry, uint attr)
@@ -1336,6 +1371,212 @@ namespace ProcessorEmulator.Core
             }
         }
 
+        // wait55: type 7 made LoadE32 read FILE+0x14 (name). Firmware
+        // loads a compressed FILE like runonce.exe via CreateFile
+        // type 8, then CEDecompressROM of the dump record, then
+        // SetFilePointer/ReadFile. Do not invent e32/o32.
+        public static bool TryStartTv2FileDecompress(MipsBus bus, uint[] regs, ref uint programCounter)
+        {
+            if (bus == null || regs == null || regs.Length <= 31)
+                return false;
+            if (_tv2FileEntry == 0 || _tv2FileReal == 0 || _tv2FileComp == 0)
+                return false;
+            uint src = Tv2FileSrcAlign;
+            uint dest = Tv2FileDest;
+            try
+            {
+                uint n = (_tv2FileComp + 3) / 4;
+                uint[] blob = _tv2FileData;
+                for (uint w = 0; w < n; w++)
+                {
+                    uint word = blob != null && w < blob.Length
+                        ? blob[w]
+                        : bus.Read32(_tv2FileLoad + w * 4);
+                    bus.Write32(src + w * 4, word);
+                }
+                uint pages = (_tv2FileReal + 0x1FFFu) & ~0xFFFu;
+                for (uint i = 0; i < pages; i += 4)
+                    bus.Write32(dest + i, 0);
+            }
+            catch (System.Exception ex)
+            {
+                System.Console.WriteLine("[Hive] FILE[25] dest-prep fail " + ex.Message +
+                    " (do not invent 0x81360000)");
+                return false;
+            }
+            regs[4] = src;
+            regs[5] = _tv2FileComp;
+            regs[6] = dest;
+            regs[7] = _tv2FileReal;
+            _tv2FileSavedSp = regs[29];
+            regs[29] = _tv2FileSavedSp - 32;
+            try
+            {
+                bus.Write32(regs[29] + 16, 0);
+                bus.Write32(regs[29] + 20, 1);
+                bus.Write32(regs[29] + 24, 0x1000);
+            }
+            catch
+            {
+            }
+            _tv2FileDecompRa = NameCopyContinue;
+            _tv2FilePos = 0;
+            _tv2FileDestOn = true;
+            regs[31] = NameCopyContinue;
+            programCounter = BinaryDecompressRom;
+            uint src0 = 0;
+            try
+            {
+                src0 = bus.Read32(src);
+            }
+            catch
+            {
+            }
+            System.Console.WriteLine("[Hive] FILE[25] CEDecompressROM dest=0x" +
+                dest.ToString("X8") + " src=0x" + src.ToString("X8") +
+                " real=" + _tv2FileReal +
+                " comp=" + _tv2FileComp +
+                " src0=0x" + src0.ToString("X8") +
+                " (firmware 0x8004DBF8; dump FILE record; do not invent e32)");
+            return true;
+        }
+
+        public static bool TryFinishTv2FileDecompress(MipsBus bus, uint[] regs, uint pc)
+        {
+            if (_tv2FileDecompRa == 0 || pc != _tv2FileDecompRa)
+                return false;
+            _tv2FileDecompRa = 0;
+            if (regs != null && regs.Length > 29 && _tv2FileSavedSp != 0)
+                regs[29] = _tv2FileSavedSp;
+            _tv2FileSavedSp = 0;
+            uint v0 = regs != null && regs.Length > 2 ? regs[2] : 0;
+            uint word = 0;
+            uint pe = 0;
+            uint lfanew = 0;
+            bool mz = false;
+            try
+            {
+                if (bus != null)
+                {
+                    word = bus.Read32(Tv2FileDest);
+                    mz = (word & 0xFFFF) == 0x5A4D;
+                    if (mz)
+                    {
+                        lfanew = bus.Read32(Tv2FileDest + 0x3C);
+                        if (lfanew + 4 <= _tv2FileReal)
+                            pe = bus.Read32(Tv2FileDest + lfanew);
+                    }
+                }
+            }
+            catch
+            {
+            }
+            System.Console.WriteLine("[Hive] FILE[25] CEDecompressROM ret v0=0x" +
+                v0.ToString("X8") + " dest=0x" + Tv2FileDest.ToString("X8") +
+                " word=0x" + word.ToString("X8") +
+                (mz ? " MZ e_lfanew=0x" + lfanew.ToString("X") +
+                    " pe=0x" + pe.ToString("X8") : " (not MZ)") +
+                (v0 == _tv2FileReal ? " (firmware expanded FILE real)" : "") +
+                " (do not invent e32; FILE[26] tv2clientcorece.dll is 6398464)");
+            return false;
+        }
+
+        public static bool IsTv2FileHandle(uint handle)
+        {
+            return _tv2FileDestOn && _tv2FileEntry != 0 && handle == _tv2FileEntry;
+        }
+
+        public static bool TryServeTv2SetFilePointer(uint[] regs, uint jalrTarget, ref uint target)
+        {
+            if (jalrTarget != Win32SetFilePointer || regs == null || regs.Length <= 7)
+                return false;
+            if (!IsTv2FileHandle(regs[4]))
+                return false;
+            uint dist = regs[5];
+            uint method = regs[7];
+            uint pos = _tv2FilePos;
+            if (method == 0)
+                pos = dist;
+            else if (method == 1)
+                pos = _tv2FilePos + dist;
+            else if (method == 2)
+                pos = _tv2FileReal + dist;
+            if (pos > _tv2FileReal)
+                pos = _tv2FileReal;
+            _tv2FilePos = pos;
+            regs[2] = pos;
+            target = regs.Length > 31 ? regs[31] : target;
+            if (!_tv2FileIoLogged)
+            {
+                _tv2FileIoLogged = true;
+                System.Console.WriteLine("[Hive] FILE[25] SetFilePointer pos=0x" +
+                    pos.ToString("X") + " method=" + method +
+                    " (dump FILE bytes; do not invent e32)");
+            }
+            return true;
+        }
+
+        public static bool TryServeTv2FileRead(MipsBus bus, uint[] regs, ref uint programCounter)
+        {
+            if (bus == null || regs == null || regs.Length <= 31)
+                return false;
+            if (!IsTv2FileHandle(regs[4]))
+                return false;
+            uint dest = regs[5];
+            uint count = regs[6];
+            uint outN = regs[7];
+            if (dest == 0 || count == 0 || count > 0x10000)
+                return false;
+            uint left = _tv2FileReal > _tv2FilePos ? _tv2FileReal - _tv2FilePos : 0;
+            if (count > left)
+                count = left;
+            try
+            {
+                for (uint i = 0; i < count; i += 4)
+                {
+                    uint word = bus.Read32(Tv2FileDest + _tv2FilePos + i);
+                    if (i + 4 <= count)
+                        bus.Write32((dest + i) & ~3u, word);
+                    else
+                    {
+                        for (uint b = 0; b < count - i; b++)
+                        {
+                            uint src = Tv2FileDest + _tv2FilePos + i + b;
+                            uint w = bus.Read32(src & ~3u);
+                            uint ch = (w >> (8 * (int)(src & 3))) & 0xFF;
+                            uint d = dest + i + b;
+                            uint dw = bus.Read32(d & ~3u);
+                            int sh = 8 * (int)(d & 3);
+                            dw = (dw & ~(0xFFu << sh)) | (ch << sh);
+                            bus.Write32(d & ~3u, dw);
+                        }
+                    }
+                }
+                if (outN != 0)
+                    bus.Write32(outN, count);
+            }
+            catch (System.Exception ex)
+            {
+                System.Console.WriteLine("[Hive] FILE[25] ReadFile fail " + ex.Message);
+                return false;
+            }
+            _tv2FilePos += count;
+            regs[2] = 1;
+            programCounter = regs[31];
+            return true;
+        }
+
+        public static bool TryServeTv2FileMap(uint[] regs, ref uint programCounter)
+        {
+            if (regs == null || regs.Length <= 31)
+                return false;
+            if (!IsTv2FileHandle(regs[4]))
+                return false;
+            regs[2] = Tv2FileDest;
+            programCounter = regs[31];
+            return true;
+        }
+
         private static bool TryFindTocModule(MipsBus bus, uint tocOrZero, uint maxMods,
             string baseName, out uint tocEntry, out uint attr)
         {
@@ -1404,10 +1645,9 @@ namespace ProcessorEmulator.Core
                     real = bus.Read32(entry + FilesRealSize);
                     comp = bus.Read32(entry + FilesCompSize);
                     load = bus.Read32(entry + FilesLoadOff);
-                    // Same ROMMODULE bit the TOC helper sets so
-                    // 0x8001D4B8 takes NameCopyContinue. FILE bytes
-                    // stay at load in ExtraROM RAM.
-                    attr = (fileAttr & 0xFFFFEFFFu) | 0x2040u;
+                    // Keep the dump FILE attr (0x807). Do not set
+                    // ROMMODULE 0x2000: LoadE32 then reads +0x14 as e32.
+                    attr = fileAttr;
                     filesEntry = entry;
                     return true;
                 }

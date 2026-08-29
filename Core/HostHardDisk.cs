@@ -570,14 +570,20 @@ namespace ProcessorEmulator.Core
                     return false;
                 }
             }
-            if (pc == CeRomTocFiles.BinaryDecompressInner
-                && _logged.Contains("hive:ldde32"))
+            if (pc == CeRomTocFiles.BinaryDecompressInner)
                 CeRomTocFiles.TryNoteExtraRomInnerDest(bus, registers);
-            if (pc == CeRomTocFiles.BinaryDecompressAfterInner
-                && _logged.Contains("hive:ldde32"))
+            if (pc == CeRomTocFiles.BinaryDecompressAfterInner)
                 CeRomTocFiles.TryNoteExtraRomInnerRet(registers);
+            if (CeRomTocFiles.TryFinishTv2FileDecompress(bus, registers, pc))
+                return false;
             if (CeRomTocFiles.TryNoteExtraRomDecompressRet(bus, registers, pc))
                 return false;
+            if (pc == CeRomTocFiles.KernelReadFile
+                && CeRomTocFiles.TryServeTv2FileRead(bus, registers, ref programCounter))
+                return true;
+            if (pc == CeRomTocFiles.KernelCreateFileMapping
+                && CeRomTocFiles.TryServeTv2FileMap(registers, ref programCounter))
+                return true;
             if (_logged.Contains("hive:ldde32"))
                 CeRomTocFiles.TryNoteExtraRomBindImp(bus, registers, pc);
             if (pc == CeRomTocFiles.MapO32VirtualCopy
