@@ -58,9 +58,16 @@ namespace ProcessorEmulator.Core
         // XIP o32[0] VA to dataptr, and store startip as VA.
         // 0x8001DD6C skips CallDLL when module+0x50 is useg
         // or 0xC2xxxxxx; that skip never jalrs EXE entry.
+        // 0x8001DD90 is addiu a1,0,0 / jal 0x80018B34. EXE
+        // wants reason 0. ExtraROM ddi_nop DllMain needs
+        // a1=1 (PROCESS_ATTACH); landing on 0x8001DD90
+        // wipes that and CallDLL returns 0 (last-error 1114).
+        // 0x8001DD94 is the jal; delay or $a0, $fp, $0.
         public const uint CallDllStartip = 0x80018BAC;
+        public const uint CallDllAfterJalr = 0x80018BB8;
         public const uint XipExeCallDllSkip = 0x8001DDA4;
         public const uint XipExeCallDllJal = 0x8001DD90;
+        public const uint XipDllCallDllJal = 0x8001DD94;
         public const uint ThreadStartTrampoline = 0x8001FF38;
         public const uint LoadExeE32Ret = 0x8001F870;
         public const uint ThreadContextSetup = 0x80020BE4;
@@ -777,10 +784,10 @@ namespace ProcessorEmulator.Core
                     return false;
                 regs[4] = module;
                 regs[5] = 1;
-                programCounter = XipExeCallDllJal;
+                programCounter = XipDllCallDllJal;
                 System.Console.WriteLine("[Hive] force CallDLL ExtraROM ddi_nop module=0x" +
                     module.ToString("X8") + " startip=0x" + ip.ToString("X8") +
-                    " a1=1 (do not skip; do not invent 0x81360000)");
+                    " a1=1 (jal 0x80018B34; do not land on addiu a1,0,0)");
                 return true;
             }
             catch

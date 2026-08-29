@@ -273,6 +273,7 @@ namespace ProcessorEmulator.Core
         private static bool _gwesSawCreateThr;
         private static bool _gwesSawWorker;
         private static int _gwesExnLogged;
+        private static int _ddiPcLogged;
         private static uint _gwesThr;
 
         public static bool IsPresent => _image != null && _image.Length > 0;
@@ -330,6 +331,7 @@ namespace ProcessorEmulator.Core
             _gwesSawCreateThr = false;
             _gwesSawWorker = false;
             _gwesExnLogged = 0;
+            _ddiPcLogged = 0;
             _gwesThr = 0;
             CeRomTocFiles.ResetExeXipAlias();
             string dir = ResolveRoot();
@@ -450,6 +452,12 @@ namespace ProcessorEmulator.Core
             {
                 CeRomTocFiles.TryFillTocStartip(bus, registers[23], true);
                 LogCallDllStartip(registers, bus);
+                return false;
+            }
+            if (pc == CeRomTocFiles.CallDllAfterJalr
+                && _logged.Contains("hive:ldde32"))
+            {
+                LogCallDllAfterJalr(registers, bus);
                 return false;
             }
             if (pc == CeRomTocFiles.XipExeCallDllSkip)
@@ -1563,9 +1571,24 @@ namespace ProcessorEmulator.Core
             {
                 _gwesSawDdi = true;
                 bool entry = pc == DdiNopEntry || pc == DdiNopSlot0Entry;
-                if (_logged.Add("hive:ddi:" + (entry ? "entry" : "run")))
+                if (entry && _logged.Add("hive:ddi:words"))
+                    DumpDdiNopEntry(bus, pc, registers);
+                if (_ddiPcLogged >= 24 && !entry)
+                    return;
+                if (_logged.Add("hive:ddi:" + pc.ToString("X")))
+                {
+                    _ddiPcLogged++;
+                    uint a0 = registers != null && registers.Length > 4 ? registers[4] : 0;
+                    uint a1 = registers != null && registers.Length > 5 ? registers[5] : 0;
+                    uint v0 = registers != null && registers.Length > 2 ? registers[2] : 0;
+                    uint ra = registers != null && registers.Length > 31 ? registers[31] : 0;
                     System.Console.WriteLine("[Hive] ddi_nop pc=0x" + pc.ToString("X8") +
-                        (entry ? " entry" : ""));
+                        (entry ? " entry" : "") +
+                        " a0=0x" + a0.ToString("X8") +
+                        " a1=0x" + a1.ToString("X8") +
+                        " v0=0x" + v0.ToString("X8") +
+                        " ra=0x" + ra.ToString("X8"));
+                }
                 return;
             }
             if (pc == CoredllActivateDevice || pc == CoredllActivateDeviceEx)
@@ -1995,17 +2018,33 @@ namespace ProcessorEmulator.Core
         // ThreadExceptionExit. Do not SetEvent that handle.
         public static void NoteCpuException(uint code, uint epc, uint vaddr, uint vector)
         {
+            bool ddi = _logged.Contains("hive:ldde32")
+                && ((epc >= DdiNopVbase && epc < DdiNopVend)
+                    || (epc >= DdiNopSlot0 && epc < DdiNopSlot0Vend)
+                    || (vaddr >= DdiNopVbase && vaddr < DdiNopVend)
+                    || (vaddr >= DdiNopSlot0 && vaddr < DdiNopSlot0Vend)
+                    || (vaddr >= 0x01F57000u && vaddr < 0x01F66000u));
             bool loader = _logged.Contains("hive:ldde32")
                 && ((epc >= 0x80016000u && epc < 0x8001C000u)
                     || (vaddr >= 0x03980000u && vaddr < 0x039B0000u)
                     || (vaddr >= 0x80764CE0u && vaddr < 0x80776000u)
-                    || (vaddr >= 0x01F57000u && vaddr < 0x01F66000u));
+                    || (vaddr >= 0x01F57000u && vaddr < 0x01F66000u)
+                    || ddi);
+            if (ddi && code != 0)
+            {
+                string ddiKey = "hive:ddiexn:" + epc.ToString("X") + ":" + code.ToString("X") + ":" + vaddr.ToString("X");
+                if (_logged.Add(ddiKey))
+                    System.Console.WriteLine("[Hive] ddi_nop exception code=" + code +
+                        " epc=0x" + epc.ToString("X8") +
+                        " vaddr=0x" + vaddr.ToString("X8") +
+                        " vec=0x" + vector.ToString("X8"));
+            }
             if (!_gwesWatch || !_logged.Contains("hive:gpc:WinMain"))
                 return;
             // 0 is a timer interrupt. Those ate the cap and hid the AV.
             if (code == 0)
                 return;
-            if (vector != ExceptionVector && vector != 0xBFC00380u)
+            if (!ddi && vector != ExceptionVector && vector != 0xBFC00380u)
                 return;
             if (!loader && _gwesExnLogged >= 8)
                 return;
@@ -2447,8 +2486,65 @@ namespace ProcessorEmulator.Core
             }
             if (!_logged.Add("hive:calldll:" + module.ToString("X") + ":" + ip.ToString("X")))
                 return;
+            uint a1 = registers.Length > 5 ? registers[5] : 0;
             System.Console.WriteLine("[Hive] CallDLL module=0x" + module.ToString("X8") +
+                " startip=0x" + ip.ToString("X8") +
+                " a1=" + a1);
+        }
+
+        private static void LogCallDllAfterJalr(uint[] registers, MipsBus bus)
+        {
+            if (registers == null || registers.Length <= 23)
+                return;
+            uint module = registers[23];
+            uint v0 = registers.Length > 2 ? registers[2] : 0;
+            uint reason = registers.Length > 22 ? registers[22] : 0;
+            uint ip = 0;
+            try
+            {
+                if (bus != null && module != 0)
+                    ip = bus.Read32(module + ThreadStartip);
+            }
+            catch
+            {
+            }
+            bool ddi = ip == DdiNopEntry || ip == DdiNopSlot0Entry
+                || (ip >= DdiNopSlot0 && ip < DdiNopSlot0Vend);
+            if (!ddi && !_logged.Contains("hive:ll:ddi_nop.dll"))
+                return;
+            if (!_logged.Add("hive:calldllret:" + module.ToString("X") + ":" + reason.ToString("X")))
+                return;
+            System.Console.WriteLine("[Hive] CallDLL DllMain ret v0=0x" + v0.ToString("X8") +
+                " reason=" + reason +
+                " module=0x" + module.ToString("X8") +
                 " startip=0x" + ip.ToString("X8"));
+        }
+
+        private static void DumpDdiNopEntry(MipsBus bus, uint pc, uint[] registers)
+        {
+            uint a0 = registers != null && registers.Length > 4 ? registers[4] : 0;
+            uint a1 = registers != null && registers.Length > 5 ? registers[5] : 0;
+            System.Console.WriteLine("[Hive] ddi_nop entry words pc=0x" + pc.ToString("X8") +
+                " a0=0x" + a0.ToString("X8") +
+                " a1=0x" + a1.ToString("X8"));
+            if (bus == null)
+                return;
+            for (uint i = 0; i < 8; i++)
+            {
+                uint va = pc + i * 4;
+                try
+                {
+                    uint w = bus.Read32(va);
+                    System.Console.WriteLine("[Hive] ddi_nop +" + (i * 4).ToString("X") +
+                        " @0x" + va.ToString("X8") + " word=0x" + w.ToString("X8"));
+                }
+                catch
+                {
+                    System.Console.WriteLine("[Hive] ddi_nop +" + (i * 4).ToString("X") +
+                        " @0x" + va.ToString("X8") + " unmapped");
+                    break;
+                }
+            }
         }
 
         private static void LogXipExeCallDllSkip(uint[] registers, MipsBus bus)
