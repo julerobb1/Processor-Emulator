@@ -197,8 +197,8 @@ namespace ProcessorEmulator.Core.Loaders
             Console.WriteLine("[NkBinLoader] ExtraROM mapped records=" + records +
                 " imageStart=0x" + imageStart.ToString("X8") +
                 " path=" + path);
-            LogMappedRomHdr(memory, imageStart);
             CeRomTocFiles.NoteExtraRom(imageStart);
+            LogMappedRomHdr(memory, imageStart);
             return true;
         }
 
@@ -229,21 +229,48 @@ namespace ProcessorEmulator.Core.Loaders
                 if (nummods == 0 || nummods > 128)
                     return;
                 int shown = 0;
-                for (uint i = 0; i < nummods && shown < 24; i++)
+                for (uint i = 0; i < nummods; i++)
                 {
                     uint entry = romhdr + 0x54 + i * 32;
                     uint namePtr = memory.ReadMemory32(entry + 0x10);
                     string name = ReadAscii(memory, namePtr);
                     if (string.IsNullOrEmpty(name))
                         continue;
-                    Console.WriteLine("[NkBinLoader] ExtraROM XIP " + name);
-                    shown++;
+                    if (IsDdiNop(name))
+                    {
+                        uint tocAttr = memory.ReadMemory32(entry);
+                        CeRomTocFiles.NoteExtraRomModule(romhdr, entry, tocAttr);
+                        Console.WriteLine("[NkBinLoader] ExtraROM TOC[" + i + "] ddi_nop.dll entry=0x" +
+                            entry.ToString("X8") + " (LoadDriver; do not invent 0x81360000)");
+                    }
+                    if (shown < 24)
+                    {
+                        Console.WriteLine("[NkBinLoader] ExtraROM XIP " + name);
+                        shown++;
+                    }
                 }
             }
             catch (Exception ex)
             {
                 Console.WriteLine("[NkBinLoader] ExtraROM ROMHDR log skipped: " + ex.Message);
             }
+        }
+
+        private static bool IsDdiNop(string name)
+        {
+            if (string.IsNullOrEmpty(name) || name.Length != 11)
+                return false;
+            return (name[0] == 'd' || name[0] == 'D')
+                && (name[1] == 'd' || name[1] == 'D')
+                && (name[2] == 'i' || name[2] == 'I')
+                && name[3] == '_'
+                && (name[4] == 'n' || name[4] == 'N')
+                && (name[5] == 'o' || name[5] == 'O')
+                && (name[6] == 'p' || name[6] == 'P')
+                && name[7] == '.'
+                && (name[8] == 'd' || name[8] == 'D')
+                && (name[9] == 'l' || name[9] == 'L')
+                && (name[10] == 'l' || name[10] == 'L');
         }
 
         private static string ReadAscii(IMemoryManager memory, uint addr)

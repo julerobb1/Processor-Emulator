@@ -108,6 +108,9 @@ namespace ProcessorEmulator.Core
         public const uint ExtraRomCece = 0x43454345;
         public const uint DdiNopVbase = 0x03980000;
         private static uint _extraRomStart;
+        private static uint _extraRomHdr;
+        private static uint _ddiNopTocEntry;
+        private static uint _ddiNopAttr;
 
         public static bool TryContinueRomModule(MipsBus bus, uint path, out uint attr, out uint tocEntry)
         {
@@ -159,9 +162,24 @@ namespace ProcessorEmulator.Core
             string baseName = Basename(bus, path);
             if (!NamesEqual(baseName, "ddi_nop.dll"))
                 return false;
-            if (!TryFindTocModule(bus, ExtraRomToc(bus), 128, baseName, out uint tocEntry, out _))
+            uint tocEntry = _ddiNopTocEntry;
+            if (tocEntry == 0
+                && !TryFindTocModule(bus, ExtraRomToc(bus), 128, baseName, out tocEntry, out _))
             {
-                System.Console.WriteLine("[Hive] TOC-walk ExtraROM ddi_nop.dll miss (mapped ExtraROM has no TOC[33])");
+                uint toc = ExtraRomToc(bus);
+                uint nmods = 0;
+                try
+                {
+                    if (toc != 0)
+                        nmods = bus.Read32(toc + RomHdrNumMods);
+                }
+                catch
+                {
+                }
+                System.Console.WriteLine("[Hive] TOC-walk ExtraROM ddi_nop.dll miss toc=0x" +
+                    toc.ToString("X8") + " nmods=" + nmods +
+                    " cached-hdr=0x" + _extraRomHdr.ToString("X8") +
+                    " (do not invent 0x81360000)");
                 return false;
             }
             try
@@ -181,6 +199,20 @@ namespace ProcessorEmulator.Core
         public static void NoteExtraRom(uint imageStart)
         {
             _extraRomStart = imageStart;
+            _extraRomHdr = 0;
+            _ddiNopTocEntry = 0;
+            _ddiNopAttr = 0;
+        }
+
+        public static void NoteExtraRomModule(uint romhdr, uint tocEntry, uint attr)
+        {
+            if (romhdr != 0)
+                _extraRomHdr = romhdr;
+            if (tocEntry != 0)
+            {
+                _ddiNopTocEntry = tocEntry;
+                _ddiNopAttr = attr;
+            }
         }
 
         private static bool TryFindTocModule(MipsBus bus, uint tocOrZero, uint maxMods,
@@ -220,6 +252,8 @@ namespace ProcessorEmulator.Core
 
         private static uint ExtraRomToc(MipsBus bus)
         {
+            if (_extraRomHdr != 0)
+                return _extraRomHdr;
             if (bus == null || _extraRomStart == 0)
                 return 0;
             try
@@ -228,6 +262,7 @@ namespace ProcessorEmulator.Core
                 uint romhdr = bus.Read32(_extraRomStart + 0x44);
                 if (sig != ExtraRomCece || romhdr == 0)
                     return _extraRomStart;
+                _extraRomHdr = romhdr;
                 return romhdr;
             }
             catch
