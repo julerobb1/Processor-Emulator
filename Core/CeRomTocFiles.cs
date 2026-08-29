@@ -231,12 +231,14 @@ namespace ProcessorEmulator.Core
         }
 
         // ExtraROM o32[0] first word B501743A / psize<vsize is CE
-        // compressed, but flags 0x60002020 lack 0x4000 and have
-        // 0x2000. MapO32 0x8001AC30 then VirtualCopys dataptr
-        // 0x80764CE0 as XIP. Clear 0x2000 (and WRITE on .data)
-        // and set 0x4000 so firmware 0x80028844 decompresses
-        // onto the existing o32.real. Do not host-alias XIP.
-        // Do not invent 0x81360000.
+        // compressed, but flags 0x60002020 lack 0x4000.
+        // CopyO32 0x8001B0F8 ands flags with 0x80002002 and, if
+        // that is 0, requires dataptr page-aligned. 0x80764CE0
+        // is not (off 0xCE0), so clearing 0x2000 on the ROM o32
+        // makes CopyO32 return 193 before MapO32. Keep 0x2000 on
+        // the ROM copy; clear it on o32_lite at MapO32 so
+        // 0x80028844 decompresses onto the existing o32.real.
+        // Do not host-alias XIP. Do not invent 0x81360000.
         public static void TryMarkExtraRomO32Compressed(MipsBus bus, uint tocEntry)
         {
             if (bus == null || tocEntry == 0)
@@ -284,9 +286,6 @@ namespace ProcessorEmulator.Core
                     if (!LooksCompressed(bus, dataptr, vsize, psize))
                         continue;
                     uint next = flags | O32Compressed;
-                    next &= ~O32RomXip;
-                    if ((next & O32Writable) != 0)
-                        next &= ~O32Writable;
                     if (next == flags)
                         continue;
                     bus.Write32(src + 0x14, next);
@@ -295,7 +294,7 @@ namespace ProcessorEmulator.Core
                         " -> 0x" + next.ToString("X8") +
                         " dataptr=0x" + dataptr.ToString("X8") +
                         " real=0x" + real.ToString("X8") +
-                        " (firmware 0x80028844; do not XIP-alias)");
+                        " (keep 0x2000 for CopyO32 align; MapO32 clears it)");
                 }
             }
             catch
@@ -319,6 +318,51 @@ namespace ProcessorEmulator.Core
             {
                 return psize < vsize;
             }
+        }
+
+        // CopyO32 already copied ROM o32 (0x2000 still set so the
+        // unaligned ExtraROM dataptr passed). Clear 0x2000 / WRITE
+        // on this lite so MapO32 0x8001AC30 jal 0x80028844.
+        public static void TrySteerExtraRomMapO32(MipsBus bus, uint o32Lite)
+        {
+            if (bus == null || o32Lite == 0)
+                return;
+            try
+            {
+                uint dest = bus.Read32(o32Lite + 8);
+                uint flags = bus.Read32(o32Lite + 0x10);
+                uint psize = bus.Read32(o32Lite + 0x14);
+                uint dataptr = bus.Read32(o32Lite + 0x18);
+                if (!IsExtraRomDdiNopDest(dest) && !IsExtraRomDdiNopData(dataptr))
+                    return;
+                uint next = flags | O32Compressed;
+                next &= ~O32RomXip;
+                if ((next & O32Writable) != 0)
+                    next &= ~O32Writable;
+                if (next == flags)
+                    return;
+                bus.Write32(o32Lite + 0x10, next);
+                System.Console.WriteLine("[Hive] ExtraROM MapO32 lite flags 0x" +
+                    flags.ToString("X8") + " -> 0x" + next.ToString("X8") +
+                    " dest=0x" + dest.ToString("X8") +
+                    " dataptr=0x" + dataptr.ToString("X8") +
+                    " psize=0x" + psize.ToString("X") +
+                    " (firmware 0x80028844; do not XIP-alias)");
+            }
+            catch
+            {
+            }
+        }
+
+        private static bool IsExtraRomDdiNopDest(uint dest)
+        {
+            return (dest >= DdiNopVbase && dest < 0x039B0000u)
+                || (dest >= 0x01F57000u && dest < 0x01F66000u);
+        }
+
+        private static bool IsExtraRomDdiNopData(uint dataptr)
+        {
+            return dataptr >= 0x80764CE0u && dataptr < 0x80776000u;
         }
 
         public static bool IsDdiNopTocObject(MipsBus bus, uint obj)
