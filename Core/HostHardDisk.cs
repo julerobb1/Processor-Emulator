@@ -62,8 +62,9 @@ namespace ProcessorEmulator.Core
     // signals it: that worker's ExitThread, not SetEvent.
     // Log the exception that entered that path. Do not
     // SetEvent. DisplayDll is inside 0x00024BE8 (Reg
-    // DisplayDll / Class). Do not map ddi_nop unless
-    // LoadLibrary/ActivateDevice of it.
+    // DisplayDll / Class). LoadDriver(ddi_nop.dll) is
+    // proven; TOC-attach ExtraROM TOC[33] on that miss.
+    // Do not invent 0x81360000. Do not SetEvent.
     // Display=ddi_nop.dll (default.hv; ExtraROM
     // TOC[33] vbase 0x03980000). Do not SetEvent GweApi or
     // Launch30. Do not host CreateProcess(tv2clientce).

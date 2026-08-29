@@ -198,6 +198,7 @@ namespace ProcessorEmulator.Core.Loaders
                 " imageStart=0x" + imageStart.ToString("X8") +
                 " path=" + path);
             LogMappedRomHdr(memory, imageStart);
+            CeRomTocFiles.NoteExtraRom(imageStart);
             return true;
         }
 

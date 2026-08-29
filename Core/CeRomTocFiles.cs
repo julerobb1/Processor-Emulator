@@ -97,6 +97,9 @@ namespace ProcessorEmulator.Core
         public const uint FsGetProc = 0x03E896D8;
         public const uint FilterVbase = 0x03DF0000;
         public const uint E32RomExpRva = 0x24;
+        public const uint ExtraRomCece = 0x43454345;
+        public const uint DdiNopVbase = 0x03980000;
+        private static uint _extraRomStart;
 
         public static bool TryContinueRomModule(MipsBus bus, uint path, out uint attr, out uint tocEntry)
         {
@@ -117,28 +120,47 @@ namespace ProcessorEmulator.Core
             if (!NamesEqual(baseName, "devmgr.dll")
                 && !NamesEqual(baseName, "iptvcryptohal.dll")
                 && !NamesEqual(baseName, "ceddk.dll")
-                && !NamesEqual(baseName, "sigcheckfilter.dll"))
+                && !NamesEqual(baseName, "sigcheckfilter.dll")
+                && !NamesEqual(baseName, "ddi_nop.dll"))
                 return false;
 
-            uint toc;
-            uint nmods;
+            if (TryFindTocModule(bus, 0, 64, baseName, out tocEntry, out attr))
+                return true;
+            // ExtraROM TOC[33] ddi_nop.dll. LoadDriver of it is
+            // proven; NK TOC does not list it. Do not invent
+            // 0x81360000. Do not map until firmware asks.
+            if (NamesEqual(baseName, "ddi_nop.dll")
+                && TryFindTocModule(bus, ExtraRomToc(bus), 128, baseName, out tocEntry, out attr))
+            {
+                System.Console.WriteLine("[Hive] TOC-attach ExtraROM ddi_nop.dll entry=0x" +
+                    tocEntry.ToString("X8") + " (LoadDriver asked; do not invent 0x81360000)");
+                return true;
+            }
+            return false;
+        }
+
+        public static void NoteExtraRom(uint imageStart)
+        {
+            _extraRomStart = imageStart;
+        }
+
+        private static bool TryFindTocModule(MipsBus bus, uint tocOrZero, uint maxMods,
+            string baseName, out uint tocEntry, out uint attr)
+        {
+            tocEntry = 0;
+            attr = 0;
+            if (bus == null || string.IsNullOrEmpty(baseName))
+                return false;
             try
             {
-                toc = bus.Read32(EcecTocPtr);
+                uint toc = tocOrZero;
+                if (toc == 0)
+                    toc = bus.Read32(EcecTocPtr);
                 if (toc == 0)
                     return false;
-                nmods = bus.Read32(toc + RomHdrNumMods);
-            }
-            catch
-            {
-                return false;
-            }
-
-            if (nmods == 0 || nmods > 64)
-                return false;
-
-            try
-            {
+                uint nmods = bus.Read32(toc + RomHdrNumMods);
+                if (nmods == 0 || nmods > maxMods)
+                    return false;
                 for (uint i = 0; i < nmods; i++)
                 {
                     uint entry = toc + TocFirst + i * TocEntrySize;
@@ -153,10 +175,26 @@ namespace ProcessorEmulator.Core
             }
             catch
             {
-                return false;
             }
-
             return false;
+        }
+
+        private static uint ExtraRomToc(MipsBus bus)
+        {
+            if (bus == null || _extraRomStart == 0)
+                return 0;
+            try
+            {
+                uint sig = bus.Read32(_extraRomStart + 0x40);
+                uint romhdr = bus.Read32(_extraRomStart + 0x44);
+                if (sig != ExtraRomCece || romhdr == 0)
+                    return _extraRomStart;
+                return romhdr;
+            }
+            catch
+            {
+                return 0;
+            }
         }
 
         public static bool TryMissMissingDevice(MipsBus bus, uint path, uint[] regs, ref uint programCounter)
@@ -233,7 +271,7 @@ namespace ProcessorEmulator.Core
                 if (entryrva == 0)
                     return;
                 uint cur = bus.Read32(module + ModuleStartip);
-                if (vbase >= 0x03D00000u && vbase < 0x04000000u)
+                if (vbase >= DdiNopVbase && vbase < 0x04000000u)
                 {
                     if (cur == 0)
                         bus.Write32(module + ModuleStartip, vbase + entryrva);
@@ -589,32 +627,9 @@ namespace ProcessorEmulator.Core
             o32Rom = 0;
             if (tocEntry == 0)
                 return false;
-            try
-            {
-                uint toc = bus.Read32(EcecTocPtr);
-                uint nmods = bus.Read32(toc + RomHdrNumMods);
-                if (nmods == 0 || nmods > 64)
-                    return false;
-                for (uint i = 0; i < nmods; i++)
-                {
-                    uint entry = toc + TocFirst + i * TocEntrySize;
-                    if (entry != tocEntry)
-                        continue;
-                    uint e32 = bus.Read32(entry + 0x14);
-                    uint o32 = bus.Read32(entry + 0x18);
-                    if (e32 == 0 || o32 == 0)
-                        return false;
-                    if ((bus.Read32(e32) & 0xFFFF) != objcnt)
-                        return false;
-                    o32Rom = o32;
-                    return true;
-                }
-            }
-            catch
-            {
-                return false;
-            }
-            return false;
+            if (TryGetTocO32In(bus, 0, 64, tocEntry, objcnt, 0, out o32Rom))
+                return true;
+            return TryGetTocO32In(bus, ExtraRomToc(bus), 128, tocEntry, objcnt, 0, out o32Rom);
         }
 
         // ROM DLL vbases in this image are unique (HAL 0x03D90000,
@@ -623,26 +638,48 @@ namespace ProcessorEmulator.Core
         private static bool TryGetTocO32ByVbase(MipsBus bus, uint vbase, uint objcnt, out uint o32Rom)
         {
             o32Rom = 0;
-            if (vbase < 0x03D00000u || vbase >= 0x04000000u)
+            if (vbase < DdiNopVbase || vbase >= 0x04000000u)
+                return false;
+            if (TryGetTocO32In(bus, 0, 64, 0, objcnt, vbase, out o32Rom))
+                return true;
+            return TryGetTocO32In(bus, ExtraRomToc(bus), 128, 0, objcnt, vbase, out o32Rom);
+        }
+
+        private static bool TryGetTocO32In(MipsBus bus, uint tocOrZero, uint maxMods,
+            uint wantEntry, uint objcnt, uint wantVbase, out uint o32Rom)
+        {
+            o32Rom = 0;
+            if (bus == null)
                 return false;
             try
             {
-                uint toc = bus.Read32(EcecTocPtr);
+                uint toc = tocOrZero;
+                if (toc == 0)
+                    toc = bus.Read32(EcecTocPtr);
+                if (toc == 0)
+                    return false;
                 uint nmods = bus.Read32(toc + RomHdrNumMods);
-                if (nmods == 0 || nmods > 64)
+                if (nmods == 0 || nmods > maxMods)
                     return false;
                 uint found = 0;
                 for (uint i = 0; i < nmods; i++)
                 {
                     uint entry = toc + TocFirst + i * TocEntrySize;
+                    if (wantEntry != 0 && entry != wantEntry)
+                        continue;
                     uint e32 = bus.Read32(entry + 0x14);
                     uint o32 = bus.Read32(entry + 0x18);
                     if (e32 == 0 || o32 == 0)
                         continue;
                     if ((bus.Read32(e32) & 0xFFFF) != objcnt)
                         continue;
-                    if (bus.Read32(e32 + 8) != vbase)
+                    if (wantVbase != 0 && bus.Read32(e32 + 8) != wantVbase)
                         continue;
+                    if (wantEntry != 0)
+                    {
+                        o32Rom = o32;
+                        return true;
+                    }
                     if (found != 0)
                         return false;
                     found = o32;
