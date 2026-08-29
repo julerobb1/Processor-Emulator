@@ -46,10 +46,14 @@ namespace ProcessorEmulator.Core
         // 0x80028844 remaps dest PTEs onto src (XIP alias). Its
         // kseg0 src path (0x80028A60) sets 32($sp)=1 and never
         // writes dest bytes, so startip stays VALLOC zeros.
-        // coredll BinaryDecompress (kseg0 XIP of TOC[5]) jalrs
-        // 0xFFFFFB36: (src, psize, dest, vsize, skip). MapO32
-        // VirtualCopy already passes that layout and 16($sp)=0.
-        public const uint BinaryDecompressRom = 0x800938A8;
+        // Kernel BinaryDecompress 0x80050974 is CEDecompress:
+        // (src, psize, dest, vsize, skip, convert, stepsize).
+        // convert 1 or 2; stepsize 0x1000 selects type 0x0C.
+        // coredll 0x800938A8 only forwards skip, so a junk
+        // convert/step made it return 0xFFFFFFFF and walk past
+        // section-2 dest (ThreadExceptionExit). Call the kernel
+        // entry with skip=0, convert=1, stepsize=0x1000.
+        public const uint BinaryDecompressRom = 0x80050974;
         public const uint MemReserve = 0x2000;
         public const uint SlotMask = 0x01FFFFFF;
         public const uint LoadLibSyscallRet = 0x03F6C8F4;
@@ -468,7 +472,10 @@ namespace ProcessorEmulator.Core
             {
                 try
                 {
-                    bus.Write32(regs[29] + 16, 0);
+                    uint sp = regs[29];
+                    bus.Write32(sp + 16, 0);
+                    bus.Write32(sp + 20, 1);
+                    bus.Write32(sp + 24, 0x1000);
                 }
                 catch
                 {
@@ -478,12 +485,21 @@ namespace ProcessorEmulator.Core
             _ddiNopDecompRa = regs.Length > 31 ? regs[31] : 0;
             _ddiNopDecompDest = dest;
             _ddiNopDecompVsize = vsize;
+            uint first = 0;
+            try
+            {
+                first = bus.Read32(src);
+            }
+            catch
+            {
+            }
             System.Console.WriteLine("[Hive] ExtraROM VALLOC dest then BinaryDecompress dest=0x" +
                 dest.ToString("X8") + " src=0x" + src.ToString("X8") +
                 " vsize=0x" + vsize.ToString("X") +
                 " psize=0x" + psize.ToString("X") +
+                " src0=0x" + first.ToString("X8") +
                 " dest-" + (DestReadable(bus, dest) ? "mapped" : "unmapped") +
-                " (firmware 0x800938A8; do not host-alias XIP)");
+                " (firmware 0x80050974 skip=0 convert=1 step=0x1000)");
             return true;
         }
 
