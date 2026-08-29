@@ -1528,9 +1528,9 @@ namespace ProcessorEmulator.Core
         // 0x080E0000. Firmware HEAP is the next 64K (*heap=HeaP).
         // Host-back that handle 64K only. Not a dump ExtraROM page.
         // Not a static 0x000E0000 map.
-        public static void TryHostBackProcessHeap(uint heap)
+        public static void TryHostBackProcessHeap(MipsBus bus, uint heap)
         {
-            if (heap < 0x04000000u || heap >= 0x20000000u)
+            if (bus == null || heap < 0x04000000u || heap >= 0x20000000u)
                 return;
             uint slot = heap & 0xFE000000u;
             uint heapOff = heap & 0x01FFFFFF;
@@ -1551,15 +1551,41 @@ namespace ProcessorEmulator.Core
             uint kseg = _vallocHostPool;
             if (kseg < VallocHostKseg || kseg + span > VallocHostKsegLim)
                 return;
+            // wait43: host-back without a copy replaced a live
+            // HEAP (firmware TLB) with zeros; gwes C0000005
+            // before LocalAlloc. Copy mapped pages first.
+            uint[] words = new uint[span / 4];
+            uint copied = 0;
+            for (uint i = 0; i < span; i += 4)
+            {
+                try
+                {
+                    words[i / 4] = bus.Read32(lo + i);
+                    copied++;
+                }
+                catch
+                {
+                    words[i / 4] = 0;
+                }
+            }
             _vallocHostLo[_vallocHostN] = lo;
             _vallocHostHi[_vallocHostN] = hi;
             _vallocHostKseg[_vallocHostN] = kseg;
             _vallocHostN++;
             _vallocHostPool += span;
+            try
+            {
+                for (uint i = 0; i < span; i += 4)
+                    bus.Write32(kseg + i, words[i / 4]);
+            }
+            catch
+            {
+            }
             System.Console.WriteLine("[Hive] process-heap host-back 0x" +
                 lo.ToString("X8") + "-0x" + hi.ToString("X8") +
                 " -> 0x" + kseg.ToString("X8") +
                 " heap=0x" + heap.ToString("X8") +
+                " copied=" + copied +
                 " (firmware HEAP 64K; not a dump 0x000E0000 page)");
         }
 

@@ -1576,7 +1576,7 @@ namespace ProcessorEmulator.Core
                     v0.ToString("X8") +
                     (heapOk ? " *0x01FFFFA0=0x" + heap.ToString("X8") : " *0x01FFFFA0 unmapped"));
                 if (heapOk)
-                    CeRomTocFiles.TryHostBackProcessHeap(heap);
+                    CeRomTocFiles.TryHostBackProcessHeap(bus, heap);
                 return;
             }
             if (pc == GwesVaDisplayParent || IsSlottedVa(pc, GwesVaDisplayParent))
