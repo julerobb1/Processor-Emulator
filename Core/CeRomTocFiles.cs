@@ -127,6 +127,15 @@ namespace ProcessorEmulator.Core
         public const uint LoadExeStartipArg = 0x8001FD74;
         public const uint LoadExeStartipRet = 0x8001FD80;
         public const uint ThreadContextSetup = 0x80020BE4;
+        // 0x80015404 / 0x8001566C lw k0, 236(s0) then ERET.
+        // wait68: tv2 thread+5C is firmware 0x014B9D98 but
+        // +0xEC is 0x800517B8 (mid CEDecompressROM). Resume
+        // that leftover never I-fetches _CorExeMain.
+        public const uint ThreadCtxRestore = 0x80015404;
+        public const uint ThreadCtxRestore2 = 0x8001566C;
+        public const uint ThreadCtxPc = 0xEC;
+        public const uint ThreadStartip = 0x5C;
+        public const uint ThreadCtxSr = 0xF0;
         public const uint ExeVbase = 0x00010000;
         public const uint ProcModule = 0x50;
         public const uint ProcSlot = 0x0C;
@@ -301,8 +310,10 @@ namespace ProcessorEmulator.Core
         // dump AddressOfEntryPoint 0x7F54 (that invents
         // 0x00017F54; filesys already I-fetches there).
         private static uint _tv2Startip;
+        private static uint _tv2Thread;
         private static bool _tv2FetchLogged;
         private static bool _tv2ProcSwitchLogged;
+        private static bool _tv2CurThreadLogged;
 
         public static void NotePendingRomFile(string path)
         {
@@ -1714,8 +1725,10 @@ namespace ProcessorEmulator.Core
             _tv2PeComRva = 0;
             _tv2Proc = 0;
             _tv2Startip = 0;
+            _tv2Thread = 0;
             _tv2FetchLogged = false;
             _tv2ProcSwitchLogged = false;
+            _tv2CurThreadLogged = false;
             _mscoreeTocEntry = 0;
             _mscoreeAttr = 0;
             _mscoreeTocWords = null;
@@ -3056,6 +3069,13 @@ namespace ProcessorEmulator.Core
             }
         }
 
+        public static void NoteTv2Thread(uint thr)
+        {
+            if (!_tv2FileDestOn || thr < 0x80000000u)
+                return;
+            _tv2Thread = thr;
+        }
+
         public static void TryKeepTv2ThreadStartip(MipsBus bus, uint threadStartip)
         {
             if (!_tv2FileDestOn || bus == null)
@@ -3073,14 +3093,134 @@ namespace ProcessorEmulator.Core
                 uint m5c = 0;
                 if (p50 != 0 && p50 != 0xDEADBEEFu && p50 != proc)
                     m5c = bus.Read32(p50 + ModuleStartip);
+                uint ctxPc = 0;
+                uint ctxSr = 0;
+                if (_tv2Thread != 0)
+                {
+                    ctxPc = bus.Read32(_tv2Thread + ThreadCtxPc);
+                    ctxSr = bus.Read32(_tv2Thread + ThreadCtxSr);
+                }
                 System.Console.WriteLine("[Hive] FILE[25] CreateProcess-ret proc=0x" +
                     proc.ToString("X8") +
                     " +50=0x" + p50.ToString("X8") +
                     " +5C=0x" + p5c.ToString("X8") +
                     " module+5C=0x" + m5c.ToString("X8") +
+                    " thread=0x" + _tv2Thread.ToString("X8") +
                     " thread+5C=0x" + threadStartip.ToString("X8") +
+                    " ctxPC=0x" + ctxPc.ToString("X8") +
+                    " +F0=0x" + ctxSr.ToString("X8") +
                     " kept=0x" + _tv2Startip.ToString("X8") +
                     " (tv2 proc, not CurProc/filesys)");
+                TryKeepTv2ThreadCtx(bus, "CreateProcess-ret");
+            }
+            catch
+            {
+            }
+        }
+
+        public static bool IsDecompressLeftoverPc(uint pc)
+        {
+            return pc >= BinaryDecompressInner && pc < 0x80053000u;
+        }
+
+        public static void TryKeepTv2ThreadCtx(MipsBus bus, string tag)
+        {
+            if (!_tv2FileDestOn || bus == null || _tv2Thread == 0)
+                return;
+            uint startip = _tv2Startip;
+            if (startip == 0)
+            {
+                try
+                {
+                    startip = bus.Read32(_tv2Thread + ThreadStartip);
+                }
+                catch
+                {
+                    return;
+                }
+            }
+            if (!IsAllowedTv2Startip(startip))
+                return;
+            _tv2Startip = startip;
+            uint ctxPc;
+            try
+            {
+                ctxPc = bus.Read32(_tv2Thread + ThreadCtxPc);
+            }
+            catch
+            {
+                return;
+            }
+            if (ctxPc == startip)
+                return;
+            if (!IsDecompressLeftoverPc(ctxPc) && ctxPc != 0)
+                return;
+            try
+            {
+                bus.Write32(_tv2Thread + ThreadCtxPc, startip);
+                uint sr = bus.Read32(_tv2Thread + ThreadCtxSr);
+                if (sr == 0)
+                    bus.Write32(_tv2Thread + ThreadCtxSr, 3);
+                System.Console.WriteLine("[Hive] FILE[25] thread ctxPC: " + tag +
+                    " thr=0x" + _tv2Thread.ToString("X8") +
+                    " was=0x" + ctxPc.ToString("X8") +
+                    " now=0x" + startip.ToString("X8") +
+                    " (firmware +5C; CEDecompressROM leftover; not invented 0x00017F54)");
+            }
+            catch
+            {
+            }
+        }
+
+        public static void TryNoteTv2ThreadRestore(MipsBus bus, uint[] regs, uint pc)
+        {
+            if (!_tv2FileDestOn || _tv2Thread == 0 || bus == null || regs == null)
+                return;
+            if (pc != ThreadCtxRestore && pc != ThreadCtxRestore2)
+                return;
+            if (regs.Length <= 16)
+                return;
+            uint s0 = regs[16];
+            if (s0 != _tv2Thread)
+                return;
+            TryKeepTv2ThreadCtx(bus, pc == ThreadCtxRestore ? "ERET" : "ERET2");
+            try
+            {
+                uint ctxPc = bus.Read32(_tv2Thread + ThreadCtxPc);
+                uint startip = bus.Read32(_tv2Thread + ThreadStartip);
+                uint cur = bus.Read32(CurProc);
+                System.Console.WriteLine("[Hive] FILE[25] thread restore pc=0x" +
+                    pc.ToString("X8") +
+                    " thr=0x" + s0.ToString("X8") +
+                    " ctxPC=0x" + ctxPc.ToString("X8") +
+                    " +5C=0x" + startip.ToString("X8") +
+                    " CurProc=0x" + cur.ToString("X8"));
+            }
+            catch
+            {
+            }
+            TryNoteTv2ProcSwitch(bus);
+        }
+
+        public static void TryNoteTv2CurThread(MipsBus bus)
+        {
+            if (_tv2CurThreadLogged || _tv2Thread == 0 || bus == null)
+                return;
+            try
+            {
+                uint curThr = bus.Read32(ThreadPtr);
+                if (curThr != _tv2Thread)
+                    return;
+                _tv2CurThreadLogged = true;
+                uint cur = bus.Read32(CurProc);
+                uint ctxPc = bus.Read32(_tv2Thread + ThreadCtxPc);
+                System.Console.WriteLine("[Hive] FILE[25] CurThread=0x" +
+                    curThr.ToString("X8") +
+                    " CurProc=0x" + cur.ToString("X8") +
+                    " ctxPC=0x" + ctxPc.ToString("X8") +
+                    " startip=0x" + _tv2Startip.ToString("X8") +
+                    " (scheduler switched onto tv2 thread)");
+                TryNoteTv2ProcSwitch(bus);
             }
             catch
             {

@@ -501,6 +501,12 @@ namespace ProcessorEmulator.Core
                 LogCprocThreadCtx(registers, bus);
                 return false;
             }
+            if (pc == CeRomTocFiles.ThreadCtxRestore
+                || pc == CeRomTocFiles.ThreadCtxRestore2)
+            {
+                CeRomTocFiles.TryNoteTv2ThreadRestore(bus, registers, pc);
+                return false;
+            }
             if (pc == ThreadStartTrampoline)
             {
                 CeRomTocFiles.TryFillProcExeStartip(bus);
@@ -623,6 +629,7 @@ namespace ProcessorEmulator.Core
                     bus, registers, ref programCounter))
                 return false;
             CeRomTocFiles.TryNoteTv2StartipFetch(bus, pc);
+            CeRomTocFiles.TryNoteTv2CurThread(bus);
             ObserveGwesPath(pc, registers, bus);
             if (pc == FilesysCreateProcess
                 || (pc == KernelCreateProcess && _cprocRa == 0))
@@ -3128,6 +3135,7 @@ namespace ProcessorEmulator.Core
                 catch
                 {
                 }
+                CeRomTocFiles.NoteTv2Thread(_cprocThread);
                 CeRomTocFiles.TryKeepTv2ThreadStartip(bus, threadIp);
                 CeRomTocFiles.TryNoteTv2ProcSwitch(bus);
             }
@@ -3143,6 +3151,9 @@ namespace ProcessorEmulator.Core
                 return;
             if (_cprocThread == 0)
                 _cprocThread = thr;
+            if (!string.IsNullOrEmpty(_cprocName)
+                && _cprocName.IndexOf("tv2clientce", StringComparison.OrdinalIgnoreCase) >= 0)
+                CeRomTocFiles.NoteTv2Thread(thr);
             if (_gwesThr == 0 && !string.IsNullOrEmpty(_cprocName)
                 && _cprocName.IndexOf("gwes", StringComparison.OrdinalIgnoreCase) >= 0)
                 _gwesThr = thr;
