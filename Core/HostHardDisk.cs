@@ -1681,6 +1681,12 @@ namespace ProcessorEmulator.Core
                         ? registers[18].ToString("X8") : "0"));
                 return;
             }
+            if (pc == CeRomTocFiles.MapO32DecompressCommitChk
+                && _logged.Contains("hive:ldde32"))
+            {
+                CeRomTocFiles.TryAcceptExtraRomDestCommit(registers);
+                return;
+            }
             if (pc == CeRomTocFiles.MapO32DecompressFail
                 && _logged.Contains("hive:ldde32")
                 && _logged.Add("hive:decompfail"))

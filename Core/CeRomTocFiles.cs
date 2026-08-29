@@ -39,6 +39,7 @@ namespace ProcessorEmulator.Core
         public const uint MapO32Decompress = 0x80028844;
         public const uint MapO32DecompressSrcChk = 0x80028A48;
         public const uint MapO32DecompressFail = 0x80028A90;
+        public const uint MapO32DecompressCommitChk = 0x800289F8;
         public const uint MapO32CommitDest = 0x80026F50;
         public const uint MapO32VirtualCopy = 0x80043298;
         public const uint MapO32VallocRet = 0x8001AE08;
@@ -386,6 +387,28 @@ namespace ProcessorEmulator.Core
                 dest.ToString("X8") + " type 0x" + type.ToString("X") +
                 " -> 0x" + regs[6].ToString("X") +
                 " (MEM_RESERVE|COMMIT; do not invent 0x81360000)");
+            return true;
+        }
+
+        // 0x80026F50 returns how many NEW pages it committed.
+        // VALLOC already committed ExtraROM dest, so that is 0.
+        // 0x800289F8 bne v0, s4 then last-error 87. s4 is the
+        // page count (dest+vsize). Keep the VALLOC pages.
+        public static bool TryAcceptExtraRomDestCommit(uint[] regs)
+        {
+            if (regs == null || regs.Length <= 30)
+                return false;
+            uint dest = regs[30];
+            if (!IsExtraRomDdiNopDest(dest))
+                return false;
+            uint v0 = regs[2];
+            uint pages = regs[20];
+            if (v0 != 0 || pages == 0 || pages > 0x100)
+                return false;
+            regs[2] = pages;
+            System.Console.WriteLine("[Hive] ExtraROM 0x80026F50 v0=0 pages=" +
+                pages + " dest=0x" + dest.ToString("X8") +
+                " (VALLOC already committed; do not invent 0x81360000)");
             return true;
         }
 
