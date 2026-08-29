@@ -2142,40 +2142,36 @@ namespace ProcessorEmulator.Core
                 " (firmware sw v0,0xC8(v1); do not poke +0xC8)");
         }
 
-        // wait49: +0xC8 goes 0x000E8370 -> 0 before compare.
-        // Log the actual Write32. Do not poke +0xC8.
+        // wait50: no Write32 of 0 after 0x000631D4. Watch sb/sh
+        // and slot-0 0x000E17C8 vs slot-4 0x080E17C8. Do not poke.
         public static void NoteDispC8Write(uint va, uint value, MipsBus bus)
         {
             if (_c8WriteBusy || !_gwesWatch)
                 return;
             uint off = va & 0x01FFFFFF;
-            bool hit = off == 0x000E17C8u;
-            if (!hit && bus != null)
-            {
-                _c8WriteBusy = true;
-                try
-                {
-                    uint obj = 0;
-                    if (TryReadWord(bus, GwesDispObj, out obj) && obj != 0
-                        && (va == obj + GwesDispC8Off
-                            || (va & 0x01FFFFFF) == ((obj + GwesDispC8Off) & 0x01FFFFFF)))
-                        hit = true;
-                }
-                finally
-                {
-                    _c8WriteBusy = false;
-                }
-            }
-            if (!hit)
+            uint word = off & ~3u;
+            if (word != 0x000E17C8u)
                 return;
+            uint slot = va;
+            uint host = va;
+            try
+            {
+                slot = CeRomTocFiles.MapProcessHeapSlotVa(bus, va);
+                host = CeRomTocFiles.MapVallocHostVa(slot);
+            }
+            catch
+            {
+            }
             string key = "hive:c8wr:" + _stepPc.ToString("X") + ":" + value.ToString("X") + ":" + va.ToString("X");
             if (!_logged.Add(key))
                 return;
             System.Console.WriteLine("[Hive] GDI +0xC8 write pc=0x" + _stepPc.ToString("X8") +
                 " va=0x" + va.ToString("X8") +
+                " slot=0x" + slot.ToString("X8") +
+                " host=0x" + host.ToString("X8") +
                 " value=0x" + value.ToString("X8") +
                 " last-gwes=0x" + _gwesLastPc.ToString("X8") +
-                " (do not poke +0xC8)");
+                " (sb/sh/sw; do not poke +0xC8)");
         }
 
         private static void LogGwesDispAlloc(uint pc, uint[] registers, MipsBus bus, bool ret)
@@ -2322,8 +2318,22 @@ namespace ProcessorEmulator.Core
                     {
                     }
                 }
+                uint raw = obj + GwesDispC8Off;
+                uint slot = raw;
+                uint host = raw;
+                try
+                {
+                    slot = CeRomTocFiles.MapProcessHeapSlotVa(bus, raw);
+                    host = CeRomTocFiles.MapVallocHostVa(slot);
+                }
+                catch
+                {
+                }
                 System.Console.WriteLine("[Hive] gwes *0x000BA954=0x" + obj.ToString("X8") +
                     " +0xC8=" + (have ? "0x" + field.ToString("X8") : "unmapped") +
+                    " va=0x" + raw.ToString("X8") +
+                    " slot=0x" + slot.ToString("X8") +
+                    " host=0x" + host.ToString("X8") +
                     " (" + when + ")");
             }
             catch
