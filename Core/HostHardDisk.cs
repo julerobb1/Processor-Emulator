@@ -1670,6 +1670,45 @@ namespace ProcessorEmulator.Core
                 LogMapO32(registers, bus);
                 return;
             }
+            if (pc == CeRomTocFiles.MapO32DecompressSrcChk
+                && _logged.Contains("hive:ldde32")
+                && _logged.Add("hive:decompsrc"))
+            {
+                System.Console.WriteLine("[Hive] 0x80028844 dest-walk passed; src-check fp=0x" +
+                    (registers != null && registers.Length > 30
+                        ? registers[30].ToString("X8") : "0") +
+                    " s2=0x" + (registers != null && registers.Length > 18
+                        ? registers[18].ToString("X8") : "0"));
+                return;
+            }
+            if (pc == CeRomTocFiles.MapO32DecompressFail
+                && _logged.Contains("hive:ldde32")
+                && _logged.Add("hive:decompfail"))
+            {
+                System.Console.WriteLine("[Hive] 0x80028844 fail-87 site ra=0x" +
+                    (registers != null && registers.Length > 31
+                        ? registers[31].ToString("X8") : "0") +
+                    " v0=0x" + (registers != null && registers.Length > 2
+                        ? registers[2].ToString("X8") : "0") +
+                    " s4=0x" + (registers != null && registers.Length > 20
+                        ? registers[20].ToString("X8") : "0"));
+                return;
+            }
+            if (pc == CeRomTocFiles.MapO32CommitDest
+                && _logged.Contains("hive:ldde32")
+                && _logged.Add("hive:commitdest"))
+            {
+                System.Console.WriteLine("[Hive] 0x80026F50 commit dest a0=0x" +
+                    (registers != null && registers.Length > 4
+                        ? registers[4].ToString("X8") : "0") +
+                    " a1=0x" + (registers != null && registers.Length > 5
+                        ? registers[5].ToString("X8") : "0") +
+                    " a2=0x" + (registers != null && registers.Length > 6
+                        ? registers[6].ToString("X8") : "0") +
+                    " a3=0x" + (registers != null && registers.Length > 7
+                        ? registers[7].ToString("X8") : "0"));
+                return;
+            }
             if (pc == CeRomTocFiles.MapO32Decompress
                 && _logged.Contains("hive:ldde32")
                 && registers != null && registers.Length > 4)

@@ -37,6 +37,9 @@ namespace ProcessorEmulator.Core
         public const uint CopyO32Rom = 0x8001AFA4;
         public const uint MapO32Rom = 0x8001AC30;
         public const uint MapO32Decompress = 0x80028844;
+        public const uint MapO32DecompressSrcChk = 0x80028A48;
+        public const uint MapO32DecompressFail = 0x80028A90;
+        public const uint MapO32CommitDest = 0x80026F50;
         public const uint MapO32VirtualCopy = 0x80043298;
         public const uint MapO32VallocRet = 0x8001AE08;
         public const uint MemReserve = 0x2000;
