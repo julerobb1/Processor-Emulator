@@ -2070,6 +2070,10 @@ namespace ProcessorEmulator.Core
                 " *heap=" + (magicOk ? "0x" + magic.ToString("X8") : "unmapped") +
                 heapNote +
                 " (do not invent 0x000E0000)");
+            // wait44: HeapCreate host-back copied=0. Retry after
+            // LocalAlloc when the firmware HEAP page is DestMapped.
+            if (heap != 0)
+                CeRomTocFiles.TryHostBackProcessHeap(bus, heap);
         }
 
         private static string HeapPtrNote(MipsBus bus)

@@ -1526,8 +1526,11 @@ namespace ProcessorEmulator.Core
         // the LocalAlloc GDI object (heap 0x080E0000+0x1970).
         // VALLOC(0x08000000) returned 0x080D0000, host-back ended
         // 0x080E0000. Firmware HEAP is the next 64K (*heap=HeaP).
-        // Host-back that handle 64K only. Not a dump ExtraROM page.
-        // Not a static 0x000E0000 map.
+        // Not a dump ExtraROM page. Not a static 0x000E0000 map.
+        // wait43/44: host-back of that 64K at HeapCreate copied=0
+        // (no DestMapped words yet) hid the live firmware HEAP.
+        // Host-back only DestMapped pages, and retry after
+        // LocalAlloc when *heap=HeaP is readable.
         public static void TryHostBackProcessHeap(MipsBus bus, uint heap)
         {
             if (bus == null || heap < 0x04000000u || heap >= 0x20000000u)
@@ -1540,21 +1543,11 @@ namespace ProcessorEmulator.Core
             uint hi = lo + CeAllocGranularity;
             if (hi <= lo)
                 return;
-            for (int i = 0; i < _vallocHostN; i++)
-            {
-                if (_vallocHostLo[i] <= lo && _vallocHostHi[i] >= hi)
-                    return;
-            }
-            if (_vallocHostN >= _vallocHostLo.Length)
+            if (VallocHostCovers(lo, hi))
                 return;
             uint span = hi - lo;
-            uint kseg = _vallocHostPool;
-            if (kseg < VallocHostKseg || kseg + span > VallocHostKsegLim)
-                return;
-            // wait43: host-back without a copy replaced a live
-            // HEAP (firmware TLB) with zeros; gwes C0000005
-            // before LocalAlloc. Copy mapped pages first.
             uint[] words = new uint[span / 4];
+            bool[] pageOk = new bool[span / 0x1000];
             uint copied = 0;
             for (uint i = 0; i < span; i += 4)
             {
@@ -1562,31 +1555,78 @@ namespace ProcessorEmulator.Core
                 {
                     words[i / 4] = bus.Read32(lo + i);
                     copied++;
+                    pageOk[i / 0x1000] = true;
                 }
                 catch
                 {
                     words[i / 4] = 0;
                 }
             }
-            _vallocHostLo[_vallocHostN] = lo;
-            _vallocHostHi[_vallocHostN] = hi;
+            if (copied == 0)
+            {
+                System.Console.WriteLine("[Hive] process-heap host-back skip heap=0x" +
+                    heap.ToString("X8") +
+                    " copied=0 (wait43/44 empty 64K hid live HEAP; not a dump 0x000E0000 page)");
+                return;
+            }
+            int p = 0;
+            while (p < pageOk.Length)
+            {
+                if (!pageOk[p])
+                {
+                    p++;
+                    continue;
+                }
+                uint runLo = lo + (uint)p * 0x1000u;
+                int q = p + 1;
+                while (q < pageOk.Length && pageOk[q])
+                    q++;
+                uint runHi = lo + (uint)q * 0x1000u;
+                if (!VallocHostCovers(runLo, runHi))
+                    InstallProcessHeapHost(bus, runLo, runHi, words, lo, heap, copied);
+                p = q;
+            }
+        }
+
+        private static bool VallocHostCovers(uint lo, uint hi)
+        {
+            for (int i = 0; i < _vallocHostN; i++)
+            {
+                if (_vallocHostLo[i] <= lo && _vallocHostHi[i] >= hi)
+                    return true;
+            }
+            return false;
+        }
+
+        private static void InstallProcessHeapHost(MipsBus bus, uint runLo, uint runHi,
+            uint[] words, uint wordBase, uint heap, uint copied)
+        {
+            if (_vallocHostN >= _vallocHostLo.Length || runHi <= runLo)
+                return;
+            uint span = runHi - runLo;
+            uint kseg = _vallocHostPool;
+            if (kseg < VallocHostKseg || kseg + span > VallocHostKsegLim)
+                return;
+            _vallocHostLo[_vallocHostN] = runLo;
+            _vallocHostHi[_vallocHostN] = runHi;
             _vallocHostKseg[_vallocHostN] = kseg;
             _vallocHostN++;
             _vallocHostPool += span;
             try
             {
+                uint off = runLo - wordBase;
                 for (uint i = 0; i < span; i += 4)
-                    bus.Write32(kseg + i, words[i / 4]);
+                    bus.Write32(kseg + i, words[(off + i) / 4]);
             }
             catch
             {
             }
             System.Console.WriteLine("[Hive] process-heap host-back 0x" +
-                lo.ToString("X8") + "-0x" + hi.ToString("X8") +
+                runLo.ToString("X8") + "-0x" + runHi.ToString("X8") +
                 " -> 0x" + kseg.ToString("X8") +
                 " heap=0x" + heap.ToString("X8") +
                 " copied=" + copied +
-                " (firmware HEAP 64K; not a dump 0x000E0000 page)");
+                " (firmware HEAP pages; not a dump 0x000E0000 page)");
         }
 
         // coredll HeapAlloc (0x03F796A4) keeps the heap in the
