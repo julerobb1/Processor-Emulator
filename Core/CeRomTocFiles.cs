@@ -26,6 +26,18 @@ namespace ProcessorEmulator.Core
         public const uint TocWalkMissContinue = 0x80016B78;
         public const uint LoadE32Rom = 0x800196E4;
         public const uint LoadE32RomRet = 0x8001E3E8;
+        // After OpenE32, 0x8001E418 jal 0x800165DC then
+        // 0x8001E750 jal 0x8001AFA4 (CopyO32). MapO32
+        // 0x8001AC30 jal 0x80028844 only when flags lack
+        // 0x80002000. ExtraROM o32[0] 0x60002020 has 0x2000
+        // and skips to VirtualCopy 0x80043298 of compressed
+        // dataptr 0x80764CE0. Do not host-alias that XIP.
+        public const uint LoadO32Rom = 0x800165DC;
+        public const uint LoadO32RomRet = 0x8001E420;
+        public const uint CopyO32Rom = 0x8001AFA4;
+        public const uint MapO32Rom = 0x8001AC30;
+        public const uint MapO32Decompress = 0x80028844;
+        public const uint MapO32VirtualCopy = 0x80043298;
         public const uint LoadLibSyscallRet = 0x03F6C8F4;
         public const uint BindImpMiss = 0x80018F9C;
         public const uint BindImpWalk = 0x80018F3C;
@@ -57,6 +69,11 @@ namespace ProcessorEmulator.Core
         public const uint ThreadPtr = 0xFFFFDAC0;
         public const uint ThreadStack = 0x24;
         public const uint O32Compressed = 0x4000;
+        // ExtraROM o32[0] 0x60002020: 0x2000 makes MapO32
+        // VirtualCopy compressed bytes as XIP. Clear it so
+        // 0x80028844 decompresses dataptr onto o32.real.
+        public const uint O32RomXip = 0x2000;
+        public const uint O32Writable = 0x80000000;
         // 0x8001F12C andi s4, 0x8000 / beq skip CallDLL a1=1.
         // User-mode LoadLibrary keeps s4=0 (same for CEDDK/HAL/
         // filter). coredll 0x03F73050 then walks 3 new modules
@@ -148,6 +165,7 @@ namespace ProcessorEmulator.Core
             {
                 System.Console.WriteLine("[Hive] TOC-attach ExtraROM ddi_nop.dll entry=0x" +
                     tocEntry.ToString("X8") + " (CreateFile miss; do not invent 0x81360000)");
+                TryMarkExtraRomO32Compressed(bus, tocEntry);
                 return true;
             }
             return false;
@@ -196,7 +214,78 @@ namespace ProcessorEmulator.Core
             }
             System.Console.WriteLine("[Hive] TOC-walk ExtraROM ddi_nop.dll entry=0x" +
                 tocEntry.ToString("X8") + " (LoadDriver; do not invent 0x81360000)");
+            TryMarkExtraRomO32Compressed(bus, tocEntry);
             return true;
+        }
+
+        // ExtraROM o32[0] first word B501743A / psize<vsize is CE
+        // compressed, but flags 0x60002020 lack 0x4000 and have
+        // 0x2000. MapO32 0x8001AC30 then VirtualCopys dataptr
+        // 0x80764CE0 as XIP. Clear 0x2000 (and WRITE on .data)
+        // and set 0x4000 so firmware 0x80028844 decompresses
+        // onto the existing o32.real. Do not host-alias XIP.
+        // Do not invent 0x81360000.
+        public static void TryMarkExtraRomO32Compressed(MipsBus bus, uint tocEntry)
+        {
+            if (bus == null || tocEntry == 0)
+                return;
+            if (tocEntry != _ddiNopTocEntry && _ddiNopTocEntry != 0)
+                return;
+            try
+            {
+                uint e32 = bus.Read32(tocEntry + 0x14);
+                uint o32 = bus.Read32(tocEntry + 0x18);
+                if (e32 == 0 || o32 == 0)
+                    return;
+                uint objcnt = bus.Read32(e32) & 0xFFFF;
+                if (objcnt == 0 || objcnt > 16)
+                    return;
+                for (uint s = 0; s < objcnt; s++)
+                {
+                    uint src = o32 + s * O32RomSize;
+                    uint vsize = bus.Read32(src);
+                    uint psize = bus.Read32(src + 8);
+                    uint dataptr = bus.Read32(src + 0xC);
+                    uint real = bus.Read32(src + 0x10);
+                    uint flags = bus.Read32(src + 0x14);
+                    if (!LooksCompressed(bus, dataptr, vsize, psize))
+                        continue;
+                    uint next = flags | O32Compressed;
+                    next &= ~O32RomXip;
+                    if ((next & O32Writable) != 0)
+                        next &= ~O32Writable;
+                    if (next == flags)
+                        continue;
+                    bus.Write32(src + 0x14, next);
+                    System.Console.WriteLine("[Hive] ExtraROM o32[" + s +
+                        "] flags 0x" + flags.ToString("X8") +
+                        " -> 0x" + next.ToString("X8") +
+                        " dataptr=0x" + dataptr.ToString("X8") +
+                        " real=0x" + real.ToString("X8") +
+                        " (firmware 0x80028844; do not XIP-alias)");
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        private static bool LooksCompressed(MipsBus bus, uint dataptr, uint vsize, uint psize)
+        {
+            if (bus == null || dataptr == 0 || vsize == 0 || psize == 0 || psize >= vsize)
+                return false;
+            try
+            {
+                uint first = bus.Read32(dataptr);
+                uint declared = first & 0x00FFFFFFu;
+                uint sig = first >> 24;
+                return declared == vsize
+                    || sig == 0xB5 || sig == 0xB4 || sig == 0x11 || sig == 0x0C;
+            }
+            catch
+            {
+                return psize < vsize;
+            }
         }
 
         public static bool IsDdiNopTocObject(MipsBus bus, uint obj)
