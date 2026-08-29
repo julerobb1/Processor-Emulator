@@ -1,0 +1,9 @@
+name-template: "v$RESOLVED_VERSION"
+tag-template: "v$RESOLVED_VERSION"
+categories:
+  - title: "Changes"
+    labels:
+      - "*"
+change-template: "- $TITLE (#$NUMBER) @$AUTHOR"
+template: |
+  $CHANGES

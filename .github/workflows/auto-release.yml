@@ -1,0 +1,92 @@
+name: Auto Release
+
+# Restores the old ci.yml "Build & Auto Release" path (last working
+# cut was v1.0.7). PRs do not publish a release. Merging a PR is a
+# push to main (release) or dev (prerelease), and that is what cuts
+# the GitHub Release. Leave the empty/no-jobs ci.yml alone.
+on:
+  push:
+    branches: [main, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build and release
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore ProcessorEmulator.csproj
+
+      - name: Build
+        run: dotnet build ProcessorEmulator.csproj --configuration Release --no-restore
+
+      - name: Tag next version
+        id: tag
+        shell: pwsh
+        run: |
+          $latestTag = git describe --tags --abbrev=0 2>$null
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($latestTag)) {
+            if ("${{ github.ref }}" -eq "refs/heads/dev") {
+              $newTag = "v1.0.0-dev.$(Get-Date -Format 'yyyyMMddHHmm')"
+            } else {
+              $newTag = "v1.0.0"
+            }
+          } else {
+            $version = $latestTag -replace '^v', '' -replace '-.*$', ''
+            $parts = $version.Split('.')
+            $major = [int]$parts[0]
+            $minor = [int]$parts[1]
+            $patch = [int]$parts[2]
+            if ("${{ github.ref }}" -eq "refs/heads/dev") {
+              $newTag = "v$major.$minor.$($patch + 1)-dev.$(Get-Date -Format 'yyyyMMddHHmm')"
+            } else {
+              $newTag = "v$major.$minor.$($patch + 1)"
+            }
+          }
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag $newTag
+          git push origin $newTag
+          "NEW_TAG=$newTag" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "new_tag=$newTag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Tagged $newTag"
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $out = "bin\Release\net8.0-windows"
+          if (-not (Test-Path $out)) {
+            Write-Host "Build output missing at $out"
+            Get-ChildItem bin -Recurse -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_.FullName }
+            exit 1
+          }
+          New-Item -ItemType Directory -Path release-package -Force | Out-Null
+          Copy-Item -Path "$out\*" -Destination release-package\ -Recurse -Force
+          if (Test-Path README.md) { Copy-Item README.md release-package\ }
+          Compress-Archive -Path "release-package\*" -DestinationPath "ProcessorEmulator-$env:NEW_TAG.zip" -Force
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ProcessorEmulator-*.zip
+          generate_release_notes: true
+          prerelease: ${{ github.ref == 'refs/heads/dev' }}
+          tag_name: ${{ env.NEW_TAG }}
+          name: Processor Emulator ${{ env.NEW_TAG }}
+          body: |
+            Automated release from `${{ github.ref_name }}` (`${{ github.sha }}`).
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
