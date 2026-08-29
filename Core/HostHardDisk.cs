@@ -515,6 +515,12 @@ namespace ProcessorEmulator.Core
                     return false;
                 }
             }
+            if (pc == CeRomTocFiles.BinaryDecompressInner
+                && _logged.Contains("hive:ldde32"))
+                CeRomTocFiles.TryCapExtraRomInnerDest(bus, registers);
+            if (pc == CeRomTocFiles.BinaryDecompressAfterInner
+                && _logged.Contains("hive:ldde32"))
+                CeRomTocFiles.TryNoteExtraRomInnerRet(registers);
             if (CeRomTocFiles.TryNoteExtraRomDecompressRet(bus, registers, pc))
                 return false;
             if (_logged.Contains("hive:ldde32"))

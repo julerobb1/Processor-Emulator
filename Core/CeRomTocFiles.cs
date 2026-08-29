@@ -53,6 +53,14 @@ namespace ProcessorEmulator.Core
         // not a type to strip. Call the kernel entry with
         // skip=0, convert=1, stepsize=0x1000.
         public const uint BinaryDecompressRom = 0x80050974;
+        // Inner 0x800504B4 dest_end is dest+16($sp). Outer
+        // stores leftover vsize there, so a 4K page keeps
+        // decoding past stepsize, lookback hits dest+0x1000,
+        // and later pages return -10/-12 → outer v0=-1.
+        // Cap ExtraROM 16($sp) at stepsize. 0x80050B00 is
+        // bltz $v0 after the jal.
+        public const uint BinaryDecompressInner = 0x800504B4;
+        public const uint BinaryDecompressAfterInner = 0x80050B00;
         public const uint MemReserve = 0x2000;
         public const uint SlotMask = 0x01FFFFFF;
         public const uint LoadLibSyscallRet = 0x03F6C8F4;
@@ -389,6 +397,13 @@ namespace ProcessorEmulator.Core
         // This is not ExtraROM and not 0x81360000.
         public const uint AlignedCompSrc = 0x8F000000;
         public const uint AlignedCompStride = 0x10000;
+        // VALLOC dest is useg. CEDecompress lbu/sb that VA
+        // before the first store, so DestReadable is false and
+        // lookbacks TLB-miss. Host-back the already-VALLOC'd
+        // pages at kseg0 (zeros only). Not ExtraROM XIP and
+        // not 0x81360000.
+        public const uint ExtraRomDestKseg0 = 0x8F100000;
+        public const uint ExtraRomDestKseg1 = 0x8F180000;
 
         public static bool TryReserveExtraRomValloc(uint[] regs)
         {
@@ -482,6 +497,8 @@ namespace ProcessorEmulator.Core
         private static uint _ddiNopDecompRa;
         private static uint _ddiNopDecompDest;
         private static uint _ddiNopDecompVsize;
+        private static bool _ddiNopInnerCap;
+        private static int _ddiNopInnerPages;
 
         public static bool TryRedirectExtraRomVirtualCopyToDecompress(
             MipsBus bus, uint[] regs, ref uint programCounter)
@@ -499,6 +516,7 @@ namespace ProcessorEmulator.Core
             uint aligned = CopyExtraRomSrcPageAligned(bus, src, psize);
             if (aligned != 0)
                 src = aligned;
+            HostCommitExtraRomDest(bus, dest, vsize);
             // ExtraROM first word is [size0][size1][size2][b0].
             // Kernel 0x80050A10 takes the 3-byte LE size, then
             // 3-byte page offsets starting at src+3. Byte 3 is
@@ -527,6 +545,7 @@ namespace ProcessorEmulator.Core
             _ddiNopDecompRa = regs.Length > 31 ? regs[31] : 0;
             _ddiNopDecompDest = dest;
             _ddiNopDecompVsize = vsize;
+            _ddiNopInnerPages = 0;
             uint first = 0;
             try
             {
@@ -543,6 +562,49 @@ namespace ProcessorEmulator.Core
                 " dest-" + (DestReadable(bus, dest) ? "mapped" : "unmapped") +
                 " (firmware 0x80050974 skip=0 convert=1 step=0x1000; keep ExtraROM first word)");
             return true;
+        }
+
+        public static bool TryCapExtraRomInnerDest(MipsBus bus, uint[] regs)
+        {
+            if (_ddiNopDecompRa == 0 || bus == null || regs == null || regs.Length <= 29)
+                return false;
+            try
+            {
+                uint sp = regs[29];
+                uint budget = bus.Read32(sp + 16);
+                if (budget <= 0x1000)
+                    return false;
+                bus.Write32(sp + 16, 0x1000);
+                if (!_ddiNopInnerCap)
+                {
+                    _ddiNopInnerCap = true;
+                    System.Console.WriteLine("[Hive] ExtraROM CEDecompress inner dest budget 0x" +
+                        budget.ToString("X") + " -> 0x1000 (stepsize; leftover vsize over-decodes B5/B4)");
+                }
+            }
+            catch
+            {
+            }
+            return false;
+        }
+
+        public static bool TryNoteExtraRomInnerRet(uint[] regs)
+        {
+            if (_ddiNopDecompRa == 0 || regs == null || regs.Length <= 2)
+                return false;
+            if (_ddiNopInnerPages >= 8)
+                return false;
+            _ddiNopInnerPages++;
+            uint v0 = regs[2];
+            uint page = regs.Length > 23 ? regs[23] : 0;
+            uint total = regs.Length > 21 ? regs[21] : 0;
+            System.Console.WriteLine("[Hive] ExtraROM CEDecompress inner v0=0x" +
+                v0.ToString("X8") + " page=" + page +
+                " total=0x" + total.ToString("X") +
+                (v0 == 0xFFFFFFF6 ? " (-10 src eof match)" :
+                    v0 == 0xFFFFFFF4 ? " (-12 src eof ext)" :
+                    (int)v0 < 0 ? " (inner fail)" : ""));
+            return false;
         }
 
         public static bool TryNoteExtraRomDecompressRet(MipsBus bus, uint[] regs, uint pc)
@@ -718,6 +780,35 @@ namespace ProcessorEmulator.Core
             return false;
         }
 
+        private static void HostCommitExtraRomDest(MipsBus bus, uint dest, uint vsize)
+        {
+            if (bus == null || dest == 0 || vsize == 0)
+                return;
+            uint kseg = 0;
+            uint off = 0;
+            if (dest >= 0x01980000u && dest < 0x019B0000u)
+            {
+                kseg = ExtraRomDestKseg0;
+                off = dest - 0x01980000u;
+            }
+            else if (dest >= 0x01F57000u && dest < 0x01F67000u)
+            {
+                kseg = ExtraRomDestKseg1;
+                off = dest - 0x01F57000u;
+            }
+            if (kseg == 0)
+                return;
+            try
+            {
+                uint n = (vsize + 0x1FFFu) & ~0xFFFu;
+                for (uint i = 0; i < n; i += 4)
+                    bus.Write32(kseg + off + i, 0);
+            }
+            catch
+            {
+            }
+        }
+
         private static uint CopyExtraRomSrcPageAligned(MipsBus bus, uint src, uint psize)
         {
             if (bus == null || src == 0 || psize == 0 || psize > 0x20000)
@@ -854,6 +945,8 @@ namespace ProcessorEmulator.Core
             _ddiNopDecompRa = 0;
             _ddiNopDecompDest = 0;
             _ddiNopDecompVsize = 0;
+            _ddiNopInnerCap = false;
+            _ddiNopInnerPages = 0;
             _ddiNopBindHdr = false;
             _ddiNopBindName = false;
             _ddiNopBindLib = false;
@@ -1245,6 +1338,8 @@ namespace ProcessorEmulator.Core
             _ddiNopDecompRa = 0;
             _ddiNopDecompDest = 0;
             _ddiNopDecompVsize = 0;
+            _ddiNopInnerCap = false;
+            _ddiNopInnerPages = 0;
             _ddiNopBindHdr = false;
             _ddiNopBindName = false;
             _ddiNopBindLib = false;
@@ -1276,7 +1371,11 @@ namespace ProcessorEmulator.Core
             if (!_ddiNopDestOn || _ddiNopSlot0 == 0)
                 return va;
             if (va >= DdiNopVbase && va < 0x039B0000u)
-                return _ddiNopSlot0 + (va - DdiNopVbase);
+                va = _ddiNopSlot0 + (va - DdiNopVbase);
+            if (va >= 0x01980000u && va < 0x019B0000u)
+                return ExtraRomDestKseg0 + (va - 0x01980000u);
+            if (va >= 0x01F57000u && va < 0x01F67000u)
+                return ExtraRomDestKseg1 + (va - 0x01F57000u);
             return va;
         }
 
