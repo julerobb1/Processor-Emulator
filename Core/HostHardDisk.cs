@@ -172,6 +172,7 @@ namespace ProcessorEmulator.Core
         public const uint CoredllThreadExceptionExit = 0x03F74B18;
         public const uint CoredllIsApiReady = 0x03F73240;
         public const uint CoredllLoadDriver = 0x03F70C74;
+        public const uint CoredllLoadDriverRet = 0x03F70C88;
         public const uint CoredllMessageBoxW = 0x03F8A500;
         public const uint ExceptionWorker = 0x03FBF69C;
         public const uint GwesVaAfterKmode = 0x00016090;
@@ -1551,6 +1552,17 @@ namespace ProcessorEmulator.Core
                         pc.ToString("X8"));
                 return;
             }
+            if (pc == CoredllLoadDriverRet && _logged.Contains("hive:ll:ddi_nop.dll"))
+            {
+                if (_logged.Add("hive:ldret"))
+                    System.Console.WriteLine("[Hive] LoadDriver ret v0=0x" +
+                        (registers != null && registers.Length > 2
+                            ? registers[2].ToString("X8") : "0") +
+                        " last-error=" + ReadLastError(bus) +
+                        " ddi_nop@0x03998014 " +
+                        (DdiNopMapped(bus) ? "mapped" : "unmapped"));
+                return;
+            }
             if (pc == CoredllLoadLibraryW || pc == CoredllLoadLibraryExW
                 || pc == CoredllLoadDriver)
             {
@@ -1923,6 +1935,21 @@ namespace ProcessorEmulator.Core
             if (_logged.Add("hive:gpc:" + what))
                 System.Console.WriteLine("[Hive] gwes " + what + " pc=0x" + pc.ToString("X8") +
                     " word=0x" + got.ToString("X8"));
+        }
+
+        private static bool DdiNopMapped(MipsBus bus)
+        {
+            if (bus == null)
+                return false;
+            try
+            {
+                uint w = bus.Read32(DdiNopEntry);
+                return w != 0 && w != 0xDEADBEEFu;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static void LogDdiNopMapped(MipsBus bus)
