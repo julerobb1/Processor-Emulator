@@ -183,6 +183,13 @@ namespace ProcessorEmulator.Core
         public const uint GwesVaDisplayParent = 0x00023C60;
         public const uint GwesVaAvHelper = 0x0005377C;
         public const uint GwesVaAvCaller = 0x0005BCF8;
+        // wait46: C0000005 at 0x00053944 is lhu 4(a0).
+        // 0x0005BCA4 jal 0x00053938; delay lw a0, 0xC8(a0)
+        // (GDI +0xC8). Then lhu 4(a1) / lhu 4(a0). Not a dump
+        // 0x000E0000 page. Do not SetEvent.
+        public const uint GwesVaAvCompare = 0x00053938;
+        public const uint GwesVaAvCompareLhu = 0x00053944;
+        public const uint GwesVaAvCompareCaller = 0x0005BCA4;
         public const uint GwesDispObj = 0x000BA954;
         // 0x0005D24C addiu a0, 584; jal 0x000B4D20 (IAT 0x000B60D0).
         // wait42: ExtraROM dest host-back [v0, dest+size] — LoadDriver
@@ -1874,6 +1881,14 @@ namespace ProcessorEmulator.Core
                 LogGwesAvSite(pc, registers, bus);
                 return;
             }
+            if ((pc == GwesVaAvCompare || IsSlottedVa(pc, GwesVaAvCompare)
+                || pc == GwesVaAvCompareCaller || IsSlottedVa(pc, GwesVaAvCompareCaller)
+                || pc == GwesVaAvCompareLhu || IsSlottedVa(pc, GwesVaAvCompareLhu))
+                && _gwesWatch)
+            {
+                LogGwesAvCompare(pc, registers, bus);
+                return;
+            }
             if (pc == CoredllMessageBoxW && _gwesSawThrEx)
             {
                 if (_logged.Add("hive:msgbox"))
@@ -2042,6 +2057,37 @@ namespace ProcessorEmulator.Core
                 " (lhu 8(a0) / *(gdi+0xC8))");
             LogGwesDispObj(bus, "AV-site");
             RetryProcessHeapHost(bus, "AV-site");
+        }
+
+        // wait46: 0x00053944 lhu 4(a0) after 0x0005BCA4 delay
+        // lw a0, 0xC8(a0). Compares GDI +0xC8 object vs a1.
+        // Host-back only DestMapped HEAP pages. Not a dump
+        // 0x000E0000 page. Do not SetEvent.
+        private static void LogGwesAvCompare(uint pc, uint[] registers, MipsBus bus)
+        {
+            uint a0 = registers != null && registers.Length > 4 ? registers[4] : 0;
+            uint a1 = registers != null && registers.Length > 5 ? registers[5] : 0;
+            string key = "hive:avcmp:" + (pc & CeSlotMask).ToString("X") + ":" +
+                a0.ToString("X") + ":" + a1.ToString("X");
+            if (!_logged.Add(key))
+                return;
+            uint a0p4 = a0 + 4;
+            uint a1p4 = a1 + 4;
+            uint w0 = 0, w1 = 0;
+            bool m0 = DestMapped(bus, a0p4);
+            bool m1 = DestMapped(bus, a1p4);
+            bool r0 = m0 && TryReadWord(bus, a0p4 & ~3u, out w0);
+            bool r1 = m1 && TryReadWord(bus, a1p4 & ~3u, out w1);
+            System.Console.WriteLine("[Hive] gwes AV-compare pc=0x" + pc.ToString("X8") +
+                " a0=0x" + a0.ToString("X8") +
+                " a1=0x" + a1.ToString("X8") +
+                " lhu4(a0)=" + (m0 ? "mapped" : "unmapped") +
+                (r0 ? " w=0x" + w0.ToString("X8") : "") +
+                " lhu4(a1)=" + (m1 ? "mapped" : "unmapped") +
+                (r1 ? " w=0x" + w1.ToString("X8") : "") +
+                " (GDI +0xC8 vs a1; not a dump 0x000E0000 page)");
+            LogGwesDispObj(bus, "AV-compare");
+            RetryProcessHeapHost(bus, "AV-compare");
         }
 
         private static void LogGwesDispAlloc(uint pc, uint[] registers, MipsBus bus, bool ret)
@@ -2309,6 +2355,18 @@ namespace ProcessorEmulator.Core
             // 0 is a timer interrupt. Those ate the cap and hid the AV.
             if (code == 0)
                 return;
+            if ((epc & CeSlotMask) == GwesVaAvCompareLhu
+                && _logged.Add("hive:exn:53944"))
+            {
+                uint a0 = registers != null && registers.Length > 4 ? registers[4] : 0;
+                uint a1 = registers != null && registers.Length > 5 ? registers[5] : 0;
+                System.Console.WriteLine("[Hive] AV-compare exception code=" + code +
+                    " epc=0x" + epc.ToString("X8") +
+                    " vaddr=0x" + vaddr.ToString("X8") +
+                    " a0=0x" + a0.ToString("X8") +
+                    " a1=0x" + a1.ToString("X8") +
+                    " (lhu 4(a0); not a dump 0x000E0000 page)");
+            }
             if (!ddi && vector != ExceptionVector && vector != 0xBFC00380u)
                 return;
             if (!loader && _gwesExnLogged >= 8)
