@@ -3150,9 +3150,29 @@ namespace ProcessorEmulator.Core
             return proc == ProcTable || proc == ProcTable + ProcSize;
         }
 
+        // wait71: keep/force while +5C was trampoline 0x8001FF38
+        // aborted CreateProcess (v0=0 last-error=193). Wait until
+        // firmware has stored startip on the primary (CreateProcess-ret).
+        private static bool IsTv2PrimaryStartipReady(MipsBus bus)
+        {
+            if (bus == null || _tv2Thread == 0)
+                return false;
+            try
+            {
+                uint ip = bus.Read32(_tv2Thread + ThreadStartip);
+                return IsAllowedTv2Startip(ip);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         public static void TryKeepTv2ThreadOwner(MipsBus bus, string tag)
         {
             if (!_tv2FileDestOn || bus == null || _tv2Thread == 0 || _tv2Proc == 0)
+                return;
+            if (!IsTv2PrimaryStartipReady(bus))
                 return;
             if (IsNkOrFilesysProc(_tv2Proc))
                 return;
@@ -3190,6 +3210,8 @@ namespace ProcessorEmulator.Core
             if (programCounter != ThreadSwitchProcChk)
                 return false;
             if (regs[2] != _tv2Thread)
+                return false;
+            if (!IsTv2PrimaryStartipReady(bus))
                 return false;
             if (IsNkOrFilesysProc(_tv2Proc))
                 return false;
@@ -3316,6 +3338,8 @@ namespace ProcessorEmulator.Core
         public static void TryKeepTv2ThreadCtx(MipsBus bus, string tag)
         {
             if (!_tv2FileDestOn || bus == null || _tv2Thread == 0)
+                return;
+            if (!IsTv2PrimaryStartipReady(bus))
                 return;
             uint startip = _tv2Startip;
             if (startip == 0)
