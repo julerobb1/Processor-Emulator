@@ -89,6 +89,7 @@ namespace ProcessorEmulator.Emulation
 
         public uint Read32(uint vaddr)
         {
+            vaddr = CeRomTocFiles.MapDdiNopDestVa(vaddr);
             vaddr = CeRomTocFiles.MapExeXipVa(this, vaddr);
             uint paddr = Translate(vaddr, isStore: false);
             IBusDevice device = _lookupTable[paddr >> 16];
@@ -103,6 +104,7 @@ namespace ProcessorEmulator.Emulation
 
         public void Write32(uint vaddr, uint value)
         {
+            vaddr = CeRomTocFiles.MapDdiNopDestVa(vaddr);
             uint paddr = Translate(vaddr, isStore: true);
             IBusDevice device = _lookupTable[paddr >> 16];
 
@@ -117,6 +119,7 @@ namespace ProcessorEmulator.Emulation
         
         public byte Read8(uint vaddr)
         {
+            vaddr = CeRomTocFiles.MapDdiNopDestVa(vaddr);
             vaddr = CeRomTocFiles.MapExeXipVa(this, vaddr);
             uint paddr = Translate(vaddr, isStore: false);
             IBusDevice device = _lookupTable[paddr >> 16];
@@ -132,6 +135,7 @@ namespace ProcessorEmulator.Emulation
 
         public void Write8(uint vaddr, byte value)
         {
+            vaddr = CeRomTocFiles.MapDdiNopDestVa(vaddr);
             uint paddr = Translate(vaddr, isStore: true);
             IBusDevice device = _lookupTable[paddr >> 16];
 

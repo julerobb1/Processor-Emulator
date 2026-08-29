@@ -320,6 +320,38 @@ namespace ProcessorEmulator.Core
             }
         }
 
+        // Empty dest pages at o32.real (slot-1 VALLOC returns 14).
+        // Then clear 0x2000 on the lite so MapO32 takes 0x80028844.
+        public static void TrySteerExtraRomMapO32(MipsBus bus, uint o32Lite)
+        {
+            if (bus == null || o32Lite == 0)
+                return;
+            EnsureExtraRomDestPages(bus);
+            try
+            {
+                uint dest = bus.Read32(o32Lite + 8);
+                uint flags = bus.Read32(o32Lite + 0x10);
+                uint dataptr = bus.Read32(o32Lite + 0x18);
+                if (!IsExtraRomDdiNopDest(dest) && !IsExtraRomDdiNopData(dataptr))
+                    return;
+                uint next = flags | O32Compressed;
+                next &= ~O32RomXip;
+                if ((next & O32Writable) != 0)
+                    next &= ~O32Writable;
+                if (next == flags)
+                    return;
+                bus.Write32(o32Lite + 0x10, next);
+                System.Console.WriteLine("[Hive] ExtraROM MapO32 lite flags 0x" +
+                    flags.ToString("X8") + " -> 0x" + next.ToString("X8") +
+                    " dest=0x" + dest.ToString("X8") +
+                    " dest-" + (DestReadable(bus, dest) ? "mapped" : "unmapped") +
+                    " (firmware 0x80028844; do not XIP-alias)");
+            }
+            catch
+            {
+            }
+        }
+
         // MapO32 VALLOCs dest only when flags keep 0x2000 (the early
         // 0x80028844 path does not). After that VALLOC it VirtualCopys
         // compressed ExtraROM bytes as XIP. Rewrite that jal to
@@ -410,6 +442,9 @@ namespace ProcessorEmulator.Core
             _ddiNopDataPtr = null;
             _ddiNopDataLen = null;
             _ddiNopData = null;
+            _ddiNopDestOn = false;
+            _ddiNopCodeK0 = 0;
+            _ddiNopDataK0 = 0;
         }
 
         public static void NoteExtraRomModule(uint romhdr, uint tocEntry, uint attr)
@@ -746,6 +781,16 @@ namespace ProcessorEmulator.Core
         private static uint _aliasSlot;
         private static bool _aliasOn;
         private static uint _aliasLoggedRom;
+        // Empty kseg0 pages for ExtraROM o32.real. Firmware VALLOC of
+        // slot-1 0x03981000 returns 14. Do not host-alias src XIP.
+        // Do not invent 0x81360000.
+        private const uint DdiNopCodeK0 = 0x8F000000;
+        private const uint DdiNopDataK0 = 0x8F080000;
+        private const uint DdiNopCodeBytes = 0x30000;
+        private const uint DdiNopDataBytes = 0x10000;
+        private static bool _ddiNopDestOn;
+        private static uint _ddiNopCodeK0;
+        private static uint _ddiNopDataK0;
 
         public static void ResetExeXipAlias()
         {
@@ -757,6 +802,9 @@ namespace ProcessorEmulator.Core
             _aliasSlot = 0;
             _aliasOn = false;
             _aliasLoggedRom = 0;
+            _ddiNopDestOn = false;
+            _ddiNopCodeK0 = 0;
+            _ddiNopDataK0 = 0;
         }
 
         public static void RefreshExeXipAlias(MipsBus bus)
@@ -776,6 +824,41 @@ namespace ProcessorEmulator.Core
             finally
             {
                 _aliasBusy = false;
+            }
+        }
+
+        public static uint MapDdiNopDestVa(uint va)
+        {
+            if (!_ddiNopDestOn)
+                return va;
+            if (va >= DdiNopVbase && va < 0x039B0000u && _ddiNopCodeK0 != 0)
+                return _ddiNopCodeK0 + (va - DdiNopVbase);
+            if (va >= 0x01F57000u && va < 0x01F66000u && _ddiNopDataK0 != 0)
+                return _ddiNopDataK0 + (va - 0x01F57000u);
+            return va;
+        }
+
+        public static void EnsureExtraRomDestPages(MipsBus bus)
+        {
+            if (bus == null || _ddiNopDestOn)
+                return;
+            try
+            {
+                for (uint i = 0; i < DdiNopCodeBytes; i += 4)
+                    bus.Write32(DdiNopCodeK0 + i, 0);
+                for (uint i = 0; i < DdiNopDataBytes; i += 4)
+                    bus.Write32(DdiNopDataK0 + i, 0);
+                _ddiNopCodeK0 = DdiNopCodeK0;
+                _ddiNopDataK0 = DdiNopDataK0;
+                _ddiNopDestOn = true;
+                System.Console.WriteLine("[Hive] ExtraROM dest pages kseg0 0x" +
+                    DdiNopCodeK0.ToString("X8") + "+0x" + DdiNopCodeBytes.ToString("X") +
+                    " / 0x" + DdiNopDataK0.ToString("X8") +
+                    " (empty; firmware 0x80028844 writes o32.real; do not XIP-alias)");
+            }
+            catch (System.Exception ex)
+            {
+                System.Console.WriteLine("[Hive] ExtraROM dest pages fail " + ex.Message);
             }
         }
 

@@ -1620,6 +1620,7 @@ namespace ProcessorEmulator.Core
                 && _logged.Contains("hive:ldde32")
                 && registers != null && registers.Length > 5)
             {
+                CeRomTocFiles.TrySteerExtraRomMapO32(bus, registers[5]);
                 LogMapO32(registers, bus);
                 return;
             }
