@@ -275,6 +275,8 @@ namespace ProcessorEmulator.Core.Loaders
                             " comp=" + comp +
                             " load=0x" + load.ToString("X8") +
                             " (FILESentry; do not invent 0x81360000)");
+                        if (IsTv2ClientCeExe(fname))
+                            CeRomTocFiles.CacheExtraRomTv2File(memory, entry);
                     }
                 }
             }
@@ -299,6 +301,27 @@ namespace ProcessorEmulator.Core.Loaders
                 && (name[8] == 'd' || name[8] == 'D')
                 && (name[9] == 'l' || name[9] == 'L')
                 && (name[10] == 'l' || name[10] == 'L');
+        }
+
+        private static bool IsTv2ClientCeExe(string name)
+        {
+            if (string.IsNullOrEmpty(name) || name.Length != 15)
+                return false;
+            return (name[0] == 't' || name[0] == 'T')
+                && (name[1] == 'v' || name[1] == 'V')
+                && name[2] == '2'
+                && (name[3] == 'c' || name[3] == 'C')
+                && (name[4] == 'l' || name[4] == 'L')
+                && (name[5] == 'i' || name[5] == 'I')
+                && (name[6] == 'e' || name[6] == 'E')
+                && (name[7] == 'n' || name[7] == 'N')
+                && (name[8] == 't' || name[8] == 'T')
+                && (name[9] == 'c' || name[9] == 'C')
+                && (name[10] == 'e' || name[10] == 'E')
+                && name[11] == '.'
+                && (name[12] == 'e' || name[12] == 'E')
+                && (name[13] == 'x' || name[13] == 'X')
+                && (name[14] == 'e' || name[14] == 'E');
         }
 
         private static string ReadAscii(IMemoryManager memory, uint addr)

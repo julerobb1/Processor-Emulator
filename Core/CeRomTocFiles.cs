@@ -187,6 +187,19 @@ namespace ProcessorEmulator.Core
         private static uint[] _ddiNopDataPtr;
         private static uint[] _ddiNopDataLen;
         private static uint[][] _ddiNopData;
+        // wait54: ExtraROM FILE[25] tv2clientce.exe lives at
+        // 0x8134E794 (28-byte FILESentry). Firmware later reuses
+        // that tail as RAM (same class as TOC[33]). Cache at map
+        // time and put the dump bytes back before CreateFileFail
+        // attach. Do not invent 0x81360000.
+        private static uint _tv2FileEntry;
+        private static uint[] _tv2FileWords;
+        private static uint _tv2FileName;
+        private static uint[] _tv2FileNameWords;
+        private static uint _tv2FileReal;
+        private static uint _tv2FileComp;
+        private static uint _tv2FileLoad;
+        private static uint[] _tv2FileData;
 
         public static void NotePendingRomFile(string path)
         {
@@ -242,12 +255,29 @@ namespace ProcessorEmulator.Core
             // (5120/2421 at 0x81050DCC), not a TOC module and
             // not the 90-byte root stub. Same attach as TOC
             // (object+0=entry, +4=7). Image bytes are already
-            // in ExtraROM RAM. Do not invent 0x81360000. Do
-            // not host CreateProcess.
-            if (IsTv2ClientCe(baseName)
-                && TryFindExtraRomFile(bus, "tv2clientce.exe", out tocEntry, out attr,
-                    out uint real, out uint comp, out uint load))
+            // in ExtraROM RAM. wait54: live FILE table at
+            // 0x8134xxxx is zeros by Launch56 (ExtraROM tail
+            // RAM reuse). Restore the cached FILESentry first.
+            // Do not invent 0x81360000. Do not host CreateProcess.
+            if (IsTv2ClientCe(baseName))
             {
+                TryRestoreExtraRomFileIfClobbered(bus);
+                uint real = 0;
+                uint comp = 0;
+                uint load = 0;
+                if (_tv2FileEntry != 0 && _tv2FileWords != null)
+                {
+                    tocEntry = _tv2FileEntry;
+                    attr = (_tv2FileWords[0] & 0xFFFFEFFFu) | 0x2040u;
+                    real = _tv2FileReal;
+                    comp = _tv2FileComp;
+                    load = _tv2FileLoad;
+                }
+                else if (!TryFindExtraRomFile(bus, "tv2clientce.exe", out tocEntry, out attr,
+                    out real, out comp, out load))
+                {
+                    return false;
+                }
                 System.Console.WriteLine("[Hive] FILE-attach ExtraROM tv2clientce.exe entry=0x" +
                     tocEntry.ToString("X8") +
                     " real=" + real +
@@ -1055,6 +1085,14 @@ namespace ProcessorEmulator.Core
             _ddiNopBindName = false;
             _ddiNopBindLib = false;
             _ddiNopBindLibRet = false;
+            _tv2FileEntry = 0;
+            _tv2FileWords = null;
+            _tv2FileName = 0;
+            _tv2FileNameWords = null;
+            _tv2FileReal = 0;
+            _tv2FileComp = 0;
+            _tv2FileLoad = 0;
+            _tv2FileData = null;
         }
 
         public static void NoteExtraRomModule(uint romhdr, uint tocEntry, uint attr)
@@ -1125,6 +1163,60 @@ namespace ProcessorEmulator.Core
             }
         }
 
+        // wait54: FILE[25] FILESentry is 28 bytes at 0x8134E794
+        // plus name at +0x14 and compressed bytes at load.
+        // Same ExtraROM-tail reuse that zeros TOC[33].
+        public static void CacheExtraRomTv2File(ProcessorEmulator.Core.Emulation.IMemoryManager memory, uint filesEntry)
+        {
+            if (memory == null || filesEntry == 0)
+                return;
+            try
+            {
+                var words = new uint[7];
+                for (int i = 0; i < words.Length; i++)
+                    words[i] = memory.ReadMemory32(filesEntry + (uint)(i * 4));
+                uint real = words[3];
+                uint comp = words[4];
+                uint name = words[5];
+                uint load = words[6];
+                if (real == 0 || name == 0 || load == 0)
+                    return;
+                uint[] nameWords = null;
+                if (name != 0)
+                {
+                    nameWords = new uint[8];
+                    for (int i = 0; i < nameWords.Length; i++)
+                        nameWords[i] = memory.ReadMemory32(name + (uint)(i * 4));
+                }
+                uint[] blob = null;
+                if (comp > 0 && comp <= 0x10000)
+                {
+                    uint n = (comp + 3) / 4;
+                    blob = new uint[n];
+                    for (uint w = 0; w < n; w++)
+                        blob[w] = memory.ReadMemory32(load + w * 4);
+                }
+                _tv2FileEntry = filesEntry;
+                _tv2FileWords = words;
+                _tv2FileName = name;
+                _tv2FileNameWords = nameWords;
+                _tv2FileReal = real;
+                _tv2FileComp = comp;
+                _tv2FileLoad = load;
+                _tv2FileData = blob;
+                System.Console.WriteLine("[NkBinLoader] ExtraROM FILE[25] cached entry=0x" +
+                    filesEntry.ToString("X8") +
+                    " real=" + real +
+                    " comp=" + comp +
+                    " load=0x" + load.ToString("X8") +
+                    " (restore if firmware RAM reuses ExtraROM tail)");
+            }
+            catch (System.Exception ex)
+            {
+                System.Console.WriteLine("[NkBinLoader] ExtraROM FILE[25] cache skipped: " + ex.Message);
+            }
+        }
+
         private static void TryRestoreExtraRomIfClobbered(MipsBus bus, uint tocEntry)
         {
             if (bus == null || tocEntry == 0 || _ddiNopTocWords == null)
@@ -1180,6 +1272,67 @@ namespace ProcessorEmulator.Core
             catch (System.Exception ex)
             {
                 System.Console.WriteLine("[Hive] ExtraROM TOC[33] restore-fail " + ex.Message);
+            }
+        }
+
+        private static void TryRestoreExtraRomFileIfClobbered(MipsBus bus)
+        {
+            if (bus == null || _tv2FileEntry == 0 || _tv2FileWords == null)
+                return;
+            uint liveAttr = 0;
+            uint liveName = 0;
+            uint liveReal = 0;
+            uint liveComp = 0;
+            uint liveLoad = 0;
+            try
+            {
+                liveAttr = bus.Read32(_tv2FileEntry);
+                liveName = bus.Read32(_tv2FileEntry + FilesNameOff);
+                liveReal = bus.Read32(_tv2FileEntry + FilesRealSize);
+                liveComp = bus.Read32(_tv2FileEntry + FilesCompSize);
+                liveLoad = bus.Read32(_tv2FileEntry + FilesLoadOff);
+            }
+            catch
+            {
+            }
+            if (liveAttr == _tv2FileWords[0] && liveName == _tv2FileName
+                && liveReal == _tv2FileReal && liveComp == _tv2FileComp
+                && liveLoad == _tv2FileLoad && liveReal != 0)
+                return;
+            try
+            {
+                for (int i = 0; i < _tv2FileWords.Length; i++)
+                    bus.Write32(_tv2FileEntry + (uint)(i * 4), _tv2FileWords[i]);
+                if (_tv2FileName != 0 && _tv2FileNameWords != null)
+                {
+                    for (int i = 0; i < _tv2FileNameWords.Length; i++)
+                        bus.Write32(_tv2FileName + (uint)(i * 4), _tv2FileNameWords[i]);
+                }
+                uint liveLoad0 = 0;
+                try
+                {
+                    if (_tv2FileLoad != 0)
+                        liveLoad0 = bus.Read32(_tv2FileLoad);
+                }
+                catch
+                {
+                }
+                if (_tv2FileData != null && _tv2FileLoad != 0 && liveLoad0 == 0)
+                {
+                    for (int w = 0; w < _tv2FileData.Length; w++)
+                        bus.Write32(_tv2FileLoad + (uint)(w * 4), _tv2FileData[w]);
+                }
+                System.Console.WriteLine("[Hive] ExtraROM FILE[25] restored entry=0x" +
+                    _tv2FileEntry.ToString("X8") +
+                    " real=" + _tv2FileReal +
+                    " load=0x" + _tv2FileLoad.ToString("X8") +
+                    " (was attr=0x" + liveAttr.ToString("X8") +
+                    " real=" + liveReal +
+                    "; firmware RAM reused ExtraROM tail; do not invent 0x81360000)");
+            }
+            catch (System.Exception ex)
+            {
+                System.Console.WriteLine("[Hive] ExtraROM FILE[25] restore-fail " + ex.Message);
             }
         }
 
