@@ -464,6 +464,11 @@ namespace ProcessorEmulator.Core
             uint aligned = CopyExtraRomSrcPageAligned(bus, src, psize);
             if (aligned != 0)
                 src = aligned;
+            // ExtraROM first word is (type<<24)|vsize: bytes
+            // [size0][size1][size2][type][stream]. Kernel
+            // 0x80050A10 takes a 3-byte LE size then stream.
+            // Drop the type byte so 0xB5/0xB4/0x0C is not data.
+            src = DropExtraRomCompressType(bus, src, ref psize);
             regs[4] = src;
             regs[5] = psize;
             regs[6] = dest;
@@ -552,6 +557,30 @@ namespace ProcessorEmulator.Core
                 (entryMapped ? " entry=0x" + entry.ToString("X8") : "") +
                 note);
             return false;
+        }
+
+        private static uint DropExtraRomCompressType(MipsBus bus, uint src, ref uint psize)
+        {
+            if (bus == null || src == 0 || psize <= 4)
+                return src;
+            try
+            {
+                for (uint i = 3; i + 1 < psize; i++)
+                {
+                    uint from = src + i + 1;
+                    uint to = src + i;
+                    uint fw = bus.Read32(from & ~3u);
+                    uint b = (fw >> (8 * (int)(from & 3))) & 0xFF;
+                    uint tw = bus.Read32(to & ~3u);
+                    int sh = 8 * (int)(to & 3);
+                    bus.Write32(to & ~3u, (tw & ~(0xFFu << sh)) | (b << sh));
+                }
+                psize -= 1;
+            }
+            catch
+            {
+            }
+            return src;
         }
 
         private static uint CopyExtraRomSrcPageAligned(MipsBus bus, uint src, uint psize)
