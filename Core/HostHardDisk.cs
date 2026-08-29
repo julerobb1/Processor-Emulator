@@ -504,13 +504,21 @@ namespace ProcessorEmulator.Core
             if (pc == ThreadStartTrampoline)
             {
                 CeRomTocFiles.TryFillProcExeStartip(bus);
+                CeRomTocFiles.TryNoteTv2ProcSwitch(bus);
                 LogThreadTrampoline(registers, bus);
                 return false;
             }
             if (pc == CeRomTocFiles.LoadExeE32Ret)
             {
+                CeRomTocFiles.TryNoteTv2LoadExeE32(bus, registers, pc);
                 CeRomTocFiles.TryFillProcExeStartip(bus);
                 LogLoadExeStartip(bus);
+                return false;
+            }
+            if (pc == CeRomTocFiles.LoadExeStartipRet)
+            {
+                CeRomTocFiles.TryKeepTv2FileStartip(bus, registers, pc);
+                CeRomTocFiles.TryFillProcExeStartip(bus);
                 return false;
             }
             if (pc == CeRomTocFiles.CallDllStartip)
@@ -614,6 +622,7 @@ namespace ProcessorEmulator.Core
                 && CeRomTocFiles.TryRedirectExtraRomVirtualCopyToDecompress(
                     bus, registers, ref programCounter))
                 return false;
+            CeRomTocFiles.TryNoteTv2StartipFetch(bus, pc);
             ObserveGwesPath(pc, registers, bus);
             if (pc == FilesysCreateProcess
                 || (pc == KernelCreateProcess && _cprocRa == 0))
@@ -3107,6 +3116,21 @@ namespace ProcessorEmulator.Core
             }
             if (v0 != 0)
                 LogCprocThreadAtRet(bus, img);
+            if (v0 != 0
+                && img.IndexOf("tv2clientce", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                uint threadIp = 0;
+                try
+                {
+                    if (bus != null && _cprocThread != 0)
+                        threadIp = bus.Read32(_cprocThread + ThreadStartip);
+                }
+                catch
+                {
+                }
+                CeRomTocFiles.TryKeepTv2ThreadStartip(bus, threadIp);
+                CeRomTocFiles.TryNoteTv2ProcSwitch(bus);
+            }
             _cprocThread = 0;
         }
 

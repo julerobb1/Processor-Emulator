@@ -208,7 +208,8 @@ namespace ProcessorEmulator.Emulation
                 }
 
                 if (programCounter == CeRomTocFiles.ThreadStartTrampoline
-                    || programCounter == CeRomTocFiles.LoadExeE32Ret)
+                    || programCounter == CeRomTocFiles.LoadExeE32Ret
+                    || programCounter == CeRomTocFiles.LoadExeStartipRet)
                     CeRomTocFiles.TryFillProcExeStartip(_bus);
 
                 if (programCounter == CeRomTocFiles.ProcessAttachGate)

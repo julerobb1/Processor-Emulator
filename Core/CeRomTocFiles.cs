@@ -120,6 +120,12 @@ namespace ProcessorEmulator.Core
         public const uint XipDllCallDllJal = 0x8001DD94;
         public const uint ThreadStartTrampoline = 0x8001FF38;
         public const uint LoadExeE32Ret = 0x8001F870;
+        // LoadExe 0x8001F81C. 0x8001F870 is jal 0x800196E4 ret.
+        // startip is not stored there. 0x8001FD74 lw 28($sp)
+        // (FILE LoadE32 AddressOfEntryPoint) then jal 0x8001B388
+        // unless e32_lite+16 (COM) takes BindImpLoadLib first.
+        public const uint LoadExeStartipArg = 0x8001FD74;
+        public const uint LoadExeStartipRet = 0x8001FD80;
         public const uint ThreadContextSetup = 0x80020BE4;
         public const uint ExeVbase = 0x00010000;
         public const uint ProcModule = 0x50;
@@ -282,6 +288,21 @@ namespace ProcessorEmulator.Core
         private static uint _tv2PeImageBytes;
         private static uint _tv2PeVallocRa;
         private static bool _tv2BindLogged;
+        private static uint _tv2PeEntryRva;
+        private static uint _tv2PeImageBase;
+        private static uint _tv2PeComRva;
+        private static uint _tv2Proc;
+        // wait67: LoadExe 0x8001F870 logs proc+0x5C before
+        // e32+16 COM takes BindImpLoadLib(mscoree) /
+        // GetProcAddress(_CorExeMain). That VA is s3 at
+        // 0x8001FD80 and thread+5C (0x014B9D98). Type-8
+        // never fills proc+0x5C. Keep firmware s3 only
+        // when it lands on a mapped dest. Do not write
+        // dump AddressOfEntryPoint 0x7F54 (that invents
+        // 0x00017F54; filesys already I-fetches there).
+        private static uint _tv2Startip;
+        private static bool _tv2FetchLogged;
+        private static bool _tv2ProcSwitchLogged;
 
         public static void NotePendingRomFile(string path)
         {
@@ -1688,6 +1709,13 @@ namespace ProcessorEmulator.Core
             _tv2PeImageBytes = 0;
             _tv2PeVallocRa = 0;
             _tv2BindLogged = false;
+            _tv2PeEntryRva = 0;
+            _tv2PeImageBase = 0;
+            _tv2PeComRva = 0;
+            _tv2Proc = 0;
+            _tv2Startip = 0;
+            _tv2FetchLogged = false;
+            _tv2ProcSwitchLogged = false;
             _mscoreeTocEntry = 0;
             _mscoreeAttr = 0;
             _mscoreeTocWords = null;
@@ -2287,6 +2315,13 @@ namespace ProcessorEmulator.Core
                         lfanew = bus.Read32(Tv2FileDest + 0x3C);
                         if (lfanew + 4 <= _tv2FileReal)
                             pe = bus.Read32(Tv2FileDest + lfanew);
+                        if (pe == 0x00004550u && lfanew + 56 <= _tv2FileReal)
+                        {
+                            _tv2PeEntryRva = bus.Read32(Tv2FileDest + lfanew + 40);
+                            _tv2PeImageBase = bus.Read32(Tv2FileDest + lfanew + 52);
+                            if (lfanew + 24 + 96 + 14 * 8 + 4 <= _tv2FileReal)
+                                _tv2PeComRva = bus.Read32(Tv2FileDest + lfanew + 24 + 96 + 14 * 8);
+                        }
                     }
                 }
             }
@@ -2298,6 +2333,11 @@ namespace ProcessorEmulator.Core
                 " word=0x" + word.ToString("X8") +
                 (mz ? " MZ e_lfanew=0x" + lfanew.ToString("X") +
                     " pe=0x" + pe.ToString("X8") : " (not MZ)") +
+                (_tv2PeEntryRva != 0 || _tv2PeImageBase != 0
+                    ? " entryrva=0x" + _tv2PeEntryRva.ToString("X") +
+                      " imagebase=0x" + _tv2PeImageBase.ToString("X8") +
+                      " comrva=0x" + _tv2PeComRva.ToString("X")
+                    : "") +
                 (v0 == _tv2FileReal ? " (firmware expanded FILE real)" : "") +
                 " (do not invent e32; FILE[26] tv2clientcorece.dll is 6398464)");
             return false;
@@ -2447,6 +2487,11 @@ namespace ProcessorEmulator.Core
             if (!_tv2FileDestOn || dest == 0 || dest == 0x000E0000u)
                 return false;
             if (dest >= 0x80000000u)
+                return false;
+            // wait67: filesys I-fetches 0x00017F54 / 0x00017000.
+            // VALLOC 0x00010000/0x8000 covers that useg. Those
+            // pages are not MapO32 dests. Do not invent them.
+            if (dest >= 0x00017000u && dest < 0x00018000u)
                 return false;
             if (_tv2PeImageVa != 0 && _tv2PeImageBytes != 0)
                 return dest >= _tv2PeImageVa && dest < _tv2PeImageVa + _tv2PeImageBytes;
@@ -2936,6 +2981,175 @@ namespace ProcessorEmulator.Core
             }
         }
 
+        public static bool IsAllowedTv2Startip(uint va)
+        {
+            if (va >= 0x00012000u && va < 0x00013000u) return true;
+            if (va >= 0x00014000u && va < 0x00015000u) return true;
+            if (va >= 0x00016000u && va < 0x00017000u) return true;
+            if (va >= 0x014B1000u && va < 0x014D0000u) return true;
+            return false;
+        }
+
+        public static void TryNoteTv2LoadExeE32(MipsBus bus, uint[] regs, uint pc)
+        {
+            if (!_tv2FileDestOn || pc != LoadExeE32Ret || bus == null || regs == null)
+                return;
+            if (regs.Length <= 29)
+                return;
+            try
+            {
+                uint proc = bus.Read32(CurProc);
+                if (proc >= 0x80000000u)
+                    _tv2Proc = proc;
+                uint sp = regs[29];
+                uint s5 = regs.Length > 21 ? regs[21] : 0;
+                uint entryRva = sp != 0 ? bus.Read32(sp + 28) : 0;
+                uint e32plus4 = 0;
+                uint e32plus8 = 0;
+                uint e32plus16 = 0;
+                if (s5 >= 0x80000000u)
+                {
+                    e32plus4 = bus.Read32(s5 + 4);
+                    e32plus8 = bus.Read32(s5 + 8);
+                    e32plus16 = bus.Read32(s5 + 16);
+                }
+                System.Console.WriteLine("[Hive] FILE[25] load-exe e32: 28(sp)=0x" +
+                    entryRva.ToString("X8") +
+                    " e32+4=0x" + e32plus4.ToString("X8") +
+                    " e32+8=0x" + e32plus8.ToString("X8") +
+                    " e32+16=0x" + e32plus16.ToString("X8") +
+                    " dump-entryrva=0x" + _tv2PeEntryRva.ToString("X8") +
+                    " dump-imagebase=0x" + _tv2PeImageBase.ToString("X8") +
+                    " dump-comrva=0x" + _tv2PeComRva.ToString("X8") +
+                    " (COM path if e32+16!=0; do not invent 0x00017F54)");
+            }
+            catch
+            {
+            }
+        }
+
+        public static void TryKeepTv2FileStartip(MipsBus bus, uint[] regs, uint pc)
+        {
+            if (!_tv2FileDestOn || pc != LoadExeStartipRet || bus == null || regs == null)
+                return;
+            if (regs.Length <= 19)
+                return;
+            uint s3 = regs[19];
+            System.Console.WriteLine("[Hive] FILE[25] load-exe startip-ret: s3=0x" +
+                s3.ToString("X8") +
+                " dump-entryrva=0x" + _tv2PeEntryRva.ToString("X8") +
+                " dump-comrva=0x" + _tv2PeComRva.ToString("X8") +
+                " (firmware RVA->VA or _CorExeMain; not invented 0x00017F54)");
+            if (!IsAllowedTv2Startip(s3))
+                return;
+            _tv2Startip = s3;
+            try
+            {
+                uint proc = bus.Read32(CurProc);
+                if (proc >= 0x80000000u)
+                    _tv2Proc = proc;
+                if (_tv2Proc != 0)
+                    TryFillFileExeStartip(bus, _tv2Proc);
+            }
+            catch
+            {
+            }
+        }
+
+        public static void TryKeepTv2ThreadStartip(MipsBus bus, uint threadStartip)
+        {
+            if (!_tv2FileDestOn || bus == null)
+                return;
+            if (IsAllowedTv2Startip(threadStartip) && _tv2Startip == 0)
+                _tv2Startip = threadStartip;
+            uint proc = _tv2Proc;
+            if (proc == 0)
+                return;
+            TryFillFileExeStartip(bus, proc);
+            try
+            {
+                uint p50 = bus.Read32(proc + ProcModule);
+                uint p5c = bus.Read32(proc + ModuleStartip);
+                uint m5c = 0;
+                if (p50 != 0 && p50 != 0xDEADBEEFu && p50 != proc)
+                    m5c = bus.Read32(p50 + ModuleStartip);
+                System.Console.WriteLine("[Hive] FILE[25] CreateProcess-ret proc=0x" +
+                    proc.ToString("X8") +
+                    " +50=0x" + p50.ToString("X8") +
+                    " +5C=0x" + p5c.ToString("X8") +
+                    " module+5C=0x" + m5c.ToString("X8") +
+                    " thread+5C=0x" + threadStartip.ToString("X8") +
+                    " kept=0x" + _tv2Startip.ToString("X8") +
+                    " (tv2 proc, not CurProc/filesys)");
+            }
+            catch
+            {
+            }
+        }
+
+        public static void TryNoteTv2StartipFetch(MipsBus bus, uint pc)
+        {
+            if (_tv2Startip == 0 || pc != _tv2Startip || _tv2FetchLogged)
+                return;
+            _tv2FetchLogged = true;
+            System.Console.WriteLine("[Hive] FILE[25] I-fetch startip=0x" +
+                pc.ToString("X8") +
+                " (firmware dest; not invented 0x00017F54)");
+            TryNoteTv2ProcSwitch(bus);
+        }
+
+        public static void TryNoteTv2ProcSwitch(MipsBus bus)
+        {
+            if (_tv2ProcSwitchLogged || _tv2Proc == 0 || bus == null)
+                return;
+            try
+            {
+                uint cur = bus.Read32(CurProc);
+                if (cur != _tv2Proc)
+                    return;
+                _tv2ProcSwitchLogged = true;
+                uint startip = 0;
+                try
+                {
+                    startip = bus.Read32(_tv2Proc + ModuleStartip);
+                }
+                catch
+                {
+                }
+                System.Console.WriteLine("[Hive] FILE[25] CurProc=0x" +
+                    cur.ToString("X8") +
+                    " startip=0x" + startip.ToString("X8") +
+                    " (thread switched onto tv2 proc)");
+            }
+            catch
+            {
+            }
+        }
+
+        private static bool TryFillFileExeStartip(MipsBus bus, uint module)
+        {
+            if (!_tv2FileDestOn || bus == null || module == 0 || _tv2Startip == 0)
+                return false;
+            if (!IsAllowedTv2Startip(_tv2Startip))
+                return false;
+            try
+            {
+                uint cur = bus.Read32(module + ModuleStartip);
+                if (cur != 0 && IsAllowedTv2Startip(cur))
+                    return true;
+                bus.Write32(module + ModuleStartip, _tv2Startip);
+                System.Console.WriteLine("[Hive] FILE[25] startip: fill 0x" +
+                    module.ToString("X8") + "+0x5C=0x" +
+                    _tv2Startip.ToString("X8") +
+                    " (firmware thread/s3 dest; not invented 0x00017F54)");
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         public static void TryFillProcExeStartip(MipsBus bus)
         {
             if (bus == null)
@@ -2945,11 +3159,18 @@ namespace ProcessorEmulator.Core
                 uint proc = bus.Read32(CurProc);
                 if (proc == 0 || proc == 0xDEADBEEFu)
                     return;
+                if (!TryFillFileExeStartip(bus, proc)
+                    && !TryFillFileExeStartip(bus, proc + ProcModule))
+                {
+                    uint p50 = bus.Read32(proc + ProcModule);
+                    if (p50 != 0 && p50 != proc && p50 != proc + ProcModule)
+                        TryFillFileExeStartip(bus, p50);
+                }
                 TryFillTocStartip(bus, proc);
                 TryFillTocStartip(bus, proc + ProcModule);
-                uint p50 = bus.Read32(proc + ProcModule);
-                if (p50 != 0 && p50 != proc && p50 != proc + ProcModule)
-                    TryFillTocStartip(bus, p50);
+                uint p50Toc = bus.Read32(proc + ProcModule);
+                if (p50Toc != 0 && p50Toc != proc && p50Toc != proc + ProcModule)
+                    TryFillTocStartip(bus, p50Toc);
                 RefreshExeXipAlias(bus);
             }
             catch
