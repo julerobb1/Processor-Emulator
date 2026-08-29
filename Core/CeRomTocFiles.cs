@@ -793,7 +793,11 @@ namespace ProcessorEmulator.Core
         public const uint ExtraRomDestKsegMscoree1 = 0x8F1C0000;
         // wait65: TOC[34] slot-0 view of dump o32.real
         // 0x03941000 / 0x03972000. Not 0x81360000.
-        public const uint ExtraRomDestKsegOle32 = 0x8F080000;
+        // 0x8F080000 is ole32 aligned-src slot 8
+        // (0x8F000000 + 8*0x10000). HostCommit of dest
+        // 0x01941000 at that kseg zeroed psize 0x17BDC
+        // and CEDecompressROM page 3 was v0=4.
+        public const uint ExtraRomDestKsegOle32 = 0x8F0C0000;
         // Firmware VirtualAlloc(NULL) useg must not alias kseg0
         // 0x80000000|va: 0x000E1700 would be NK at 0x800E1700.
         // Dedicated unused kseg0, same class as ExtraROM dest.
