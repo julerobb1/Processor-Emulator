@@ -91,6 +91,7 @@ namespace ProcessorEmulator.Emulation
         {
             vaddr = CeRomTocFiles.MapDdiNopDestVa(vaddr);
             vaddr = CeRomTocFiles.MapVallocHostVa(vaddr);
+            vaddr = CeRomTocFiles.MapProcessHeapSlotVa(this, vaddr);
             vaddr = CeRomTocFiles.MapExeXipVa(this, vaddr);
             uint paddr = Translate(vaddr, isStore: false);
             IBusDevice device = _lookupTable[paddr >> 16];
@@ -107,6 +108,7 @@ namespace ProcessorEmulator.Emulation
         {
             vaddr = CeRomTocFiles.MapDdiNopDestVa(vaddr);
             vaddr = CeRomTocFiles.MapVallocHostVa(vaddr);
+            vaddr = CeRomTocFiles.MapProcessHeapSlotVa(this, vaddr);
             uint paddr = Translate(vaddr, isStore: true);
             IBusDevice device = _lookupTable[paddr >> 16];
 
@@ -123,6 +125,7 @@ namespace ProcessorEmulator.Emulation
         {
             vaddr = CeRomTocFiles.MapDdiNopDestVa(vaddr);
             vaddr = CeRomTocFiles.MapVallocHostVa(vaddr);
+            vaddr = CeRomTocFiles.MapProcessHeapSlotVa(this, vaddr);
             vaddr = CeRomTocFiles.MapExeXipVa(this, vaddr);
             uint paddr = Translate(vaddr, isStore: false);
             IBusDevice device = _lookupTable[paddr >> 16];
@@ -140,6 +143,7 @@ namespace ProcessorEmulator.Emulation
         {
             vaddr = CeRomTocFiles.MapDdiNopDestVa(vaddr);
             vaddr = CeRomTocFiles.MapVallocHostVa(vaddr);
+            vaddr = CeRomTocFiles.MapProcessHeapSlotVa(this, vaddr);
             uint paddr = Translate(vaddr, isStore: true);
             IBusDevice device = _lookupTable[paddr >> 16];
 

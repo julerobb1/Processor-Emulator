@@ -185,11 +185,11 @@ namespace ProcessorEmulator.Core
         public const uint GwesVaAvCaller = 0x0005BCF8;
         public const uint GwesDispObj = 0x000BA954;
         // 0x0005D24C addiu a0, 584; jal 0x000B4D20 (IAT 0x000B60D0).
-        // 0x0005D288 sw $v0, *0x000BA954. wait40: VirtualAlloc(NULL,
-        // 0x70) returned 0x000D0000; VirtualAlloc(0x08000000, 0x10000)
-        // returned 0x080D0000. Process heap *0x01FFFFA0 is 0x080E0000
-        // (next 64K). LocalAlloc v0=0x000E1700 is the slot-0 view of
-        // heap+0x1700. No VALLOC returned 0x000E0000. Do not invent it.
+        // 0x0005D288 sw $v0, *0x000BA954. wait40: heap is 0x080E0000;
+        // LocalAlloc v0=0x000E1700 is the slot-0 view of heap+0x1700.
+        // HeapAlloc 0x03F796A4 keeps the slot address. 0x800140A8 is
+        // jr $ra so slot 0 has no PTE. Rewrite that 64K only. Not a
+        // dump page. Do not invent 0x000E0000.
         public const uint GwesVaDispAlloc = 0x0005D250;
         public const uint GwesVaDispAllocRet = 0x0005D258;
         public const uint GwesVaDispStore = 0x0005D288;
@@ -2055,9 +2055,20 @@ namespace ProcessorEmulator.Core
                 return;
             }
             bool mapped = DestMapped(bus, v0);
+            uint heap = 0;
+            TryReadWord(bus, CeRomTocFiles.ProcessHeapPtr, out heap);
+            uint slot = heap & 0xFE000000u;
+            uint slotV0 = slot != 0 ? (slot | (v0 & 0x01FFFFFFu)) : 0;
+            bool slotMapped = slotV0 != 0 && DestMapped(bus, slotV0);
+            uint magic = 0;
+            bool magicOk = heap != 0 && TryReadWord(bus, heap, out magic);
             System.Console.WriteLine("[Hive] gwes LocalAlloc-site ret pc=0x" +
                 pc.ToString("X8") + " v0=0x" + v0.ToString("X8") +
-                (mapped ? " mapped" : " unmapped") + heapNote +
+                (mapped ? " mapped" : " unmapped") +
+                " slot-v0=0x" + slotV0.ToString("X8") +
+                (slotMapped ? " mapped" : " unmapped") +
+                " *heap=" + (magicOk ? "0x" + magic.ToString("X8") : "unmapped") +
+                heapNote +
                 " (do not invent 0x000E0000)");
         }
 

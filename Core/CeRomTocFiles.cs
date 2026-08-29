@@ -1409,6 +1409,8 @@ namespace ProcessorEmulator.Core
             _ddiNopBindLibRet = false;
             _vallocHostN = 0;
             _vallocHostPool = VallocHostKseg;
+            _heapSlotBusy = false;
+            _heapSlotLogged = false;
             for (int i = 0; i < _vallocHostLo.Length; i++)
             {
                 _vallocHostLo[i] = 0;
@@ -1506,6 +1508,58 @@ namespace ProcessorEmulator.Core
                     return _vallocHostKseg[i] + (va - _vallocHostLo[i]);
             }
             return va;
+        }
+
+        // coredll HeapAlloc (0x03F796A4) keeps the heap in the
+        // process slot (0x080E0000) and returns the slot-0 view
+        // (0x000E1700). 0x800140A8 is jr $ra, so slot 0 never
+        // got those PTEs. Rewrite only the 64K that holds
+        // *0x01FFFFA0, and only past image end. Not a dump
+        // ExtraROM page. Not a static 0x000E0000 map.
+        public const uint HeapSignature = 0x50616548;
+        private static bool _heapSlotBusy;
+        private static bool _heapSlotLogged;
+
+        public static uint MapProcessHeapSlotVa(MipsBus bus, uint va)
+        {
+            if (bus == null || va >= 0x02000000u || _heapSlotBusy)
+                return va;
+            uint off = va & 0x01FFFFFF;
+            if (off < 0x000CB000u)
+                return va;
+            try
+            {
+                _heapSlotBusy = true;
+                uint heap = bus.Read32(ProcessHeapPtr);
+                if (heap < 0x04000000u || heap >= 0x20000000u)
+                    return va;
+                uint slot = heap & 0xFE000000u;
+                uint heapOff = heap & 0x01FFFFFF;
+                if (slot == 0 || heapOff < 0x000CB000u)
+                    return va;
+                if ((off & ~0xFFFFu) != (heapOff & ~0xFFFFu))
+                    return va;
+                uint slotted = slot | off;
+                if (slotted == va)
+                    return va;
+                if (!_heapSlotLogged)
+                {
+                    _heapSlotLogged = true;
+                    System.Console.WriteLine("[Hive] process-heap slot-0 0x" +
+                        va.ToString("X8") + " -> 0x" + slotted.ToString("X8") +
+                        " heap=0x" + heap.ToString("X8") +
+                        " (not a dump 0x000E0000 page)");
+                }
+                return slotted;
+            }
+            catch
+            {
+                return va;
+            }
+            finally
+            {
+                _heapSlotBusy = false;
+            }
         }
 
         public static uint MapExeXipVa(MipsBus bus, uint va)
