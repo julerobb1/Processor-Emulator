@@ -1535,6 +1535,16 @@ namespace ProcessorEmulator.Core
         // (wait45 miss 0x080E7ECC). Not a dump 0x000E0000 map.
         public static bool TryHostBackProcessHeap(MipsBus bus, uint heap)
         {
+            return TryHostBackProcessHeap(bus, heap, 0);
+        }
+
+        // wait48: AV-site host-back of 0x080E6000-0x080E9000
+        // included GDI +0xC8 (0x000E8370 / page 0x080E8000).
+        // skipVa is that object; leave its 4K on firmware TLB.
+        // 0x080E7ECC is page 0x080E7000 (ddi_nop load). DestMapped
+        // only. Not a dump 0x000E0000 page.
+        public static bool TryHostBackProcessHeap(MipsBus bus, uint heap, uint skipVa)
+        {
             if (bus == null || heap < 0x04000000u || heap >= 0x20000000u)
                 return false;
             uint slot = heap & 0xFE000000u;
@@ -1547,6 +1557,13 @@ namespace ProcessorEmulator.Core
                 return false;
             if (VallocHostCovers(lo, hi))
                 return false;
+            uint skipPage = 0;
+            if (skipVa != 0)
+            {
+                uint skipOff = skipVa & 0x01FFFFFF;
+                if ((skipOff & ~0xFFFFu) == (heapOff & ~0xFFFFu))
+                    skipPage = (slot | skipOff) & ~0xFFFu;
+            }
             uint span = hi - lo;
             uint[] words = new uint[span / 4];
             bool[] pageOk = new bool[span / 0x1000];
@@ -1575,15 +1592,21 @@ namespace ProcessorEmulator.Core
             int p = 0;
             while (p < pageOk.Length)
             {
-                if (!pageOk[p])
+                uint page = lo + (uint)p * 0x1000u;
+                if (!pageOk[p] || (skipPage != 0 && page == skipPage))
                 {
                     p++;
                     continue;
                 }
-                uint runLo = lo + (uint)p * 0x1000u;
+                uint runLo = page;
                 int q = p + 1;
                 while (q < pageOk.Length && pageOk[q])
+                {
+                    uint n = lo + (uint)q * 0x1000u;
+                    if (skipPage != 0 && n == skipPage)
+                        break;
                     q++;
+                }
                 uint runHi = lo + (uint)q * 0x1000u;
                 if (!VallocHostCovers(runLo, runHi))
                 {

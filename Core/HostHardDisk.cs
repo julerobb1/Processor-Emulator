@@ -2068,11 +2068,18 @@ namespace ProcessorEmulator.Core
                 " a0=0x" + a0.ToString("X8") +
                 " (lhu 8(a0) / *(gdi+0xC8))");
             LogGwesDispObj(bus, "AV-site");
-            // wait47: host-back of 0x080E6000-0x080E9000 here
-            // sat under +0xC8=0x000E8370. Firmware 0x00063254
-            // then stored v0=0. Do not host-back those GDI
-            // heap pages at the AV-site. LocalAlloc 8K stays.
-            // Do not poke +0xC8. Do not invent 0x000E0000.
+            // wait48: 0x080E7ECC TLB after skipping all AV-site
+            // host-back. That VA is heap 0x080E0000+0x7ECC
+            // (ddi_nop 0x03982DD4 load), DestMapped at AV-site
+            // (wait46/47). Skip only the GDI +0xC8 page
+            // (0x000E8370 / 0x080E8000). Do not poke +0xC8.
+            // Do not invent 0x000E0000.
+            uint skip = 0;
+            uint obj = 0, field = 0;
+            if (TryReadWord(bus, GwesDispObj, out obj) && obj != 0
+                && TryReadWord(bus, obj + 0xC8, out field) && field != 0)
+                skip = field;
+            RetryProcessHeapHost(bus, "AV-site", skip);
         }
 
         // wait46: 0x00053944 lhu 4(a0) after 0x0005BCA4 delay
@@ -2168,10 +2175,15 @@ namespace ProcessorEmulator.Core
         // Not a dump ExtraROM page. Not a static 0x000E0000 map.
         private static void RetryProcessHeapHost(MipsBus bus, string when)
         {
+            RetryProcessHeapHost(bus, when, 0);
+        }
+
+        private static void RetryProcessHeapHost(MipsBus bus, string when, uint skipVa)
+        {
             uint heap = 0;
             if (bus == null || !TryReadWord(bus, CeRomTocFiles.ProcessHeapPtr, out heap) || heap == 0)
                 return;
-            bool installed = CeRomTocFiles.TryHostBackProcessHeap(bus, heap);
+            bool installed = CeRomTocFiles.TryHostBackProcessHeap(bus, heap, skipVa);
             if (!_logged.Add("hive:heappages:" + when))
                 return;
             uint[] vas = { 0x080E1970u, 0x080E7ECCu, 0x000E7ECCu, 0x080E8370u, 0x000E8370u };
