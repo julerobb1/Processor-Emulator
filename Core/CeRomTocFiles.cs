@@ -24,6 +24,9 @@ namespace ProcessorEmulator.Core
         // +4=7, v0=0. 0x800196E4 then uses e32 at TOC+0x14.
         public const uint TocWalkMiss = 0x80016B74;
         public const uint TocWalkMissContinue = 0x80016B78;
+        public const uint LoadE32Rom = 0x800196E4;
+        public const uint LoadE32RomRet = 0x8001E3E8;
+        public const uint LoadLibSyscallRet = 0x03F6C8F4;
         public const uint BindImpMiss = 0x80018F9C;
         public const uint BindImpWalk = 0x80018F3C;
         // 0x80018B34 CallDLLEntry jalrs module+0x5C with no
@@ -194,6 +197,26 @@ namespace ProcessorEmulator.Core
             System.Console.WriteLine("[Hive] TOC-walk ExtraROM ddi_nop.dll entry=0x" +
                 tocEntry.ToString("X8") + " (LoadDriver; do not invent 0x81360000)");
             return true;
+        }
+
+        public static bool IsDdiNopTocObject(MipsBus bus, uint obj)
+        {
+            if (bus == null || obj == 0 || _ddiNopTocEntry == 0)
+                return false;
+            try
+            {
+                return bus.Read32(obj) == _ddiNopTocEntry
+                    && bus.Read8(obj + 4) == TocAttachType;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public static uint DdiNopTocEntry
+        {
+            get { return _ddiNopTocEntry; }
         }
 
         public static void NoteExtraRom(uint imageStart)

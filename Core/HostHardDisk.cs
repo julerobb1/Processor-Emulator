@@ -1563,6 +1563,41 @@ namespace ProcessorEmulator.Core
                         (DdiNopMapped(bus) ? "mapped" : "unmapped"));
                 return;
             }
+            if (pc == CeRomTocFiles.LoadE32Rom
+                && registers != null && registers.Length > 4
+                && _logged.Contains("hive:ll:ddi_nop.dll")
+                && CeRomTocFiles.IsDdiNopTocObject(bus, registers[4]))
+            {
+                if (_logged.Add("hive:ldde32"))
+                    System.Console.WriteLine("[Hive] 0x800196E4 ExtraROM ddi_nop obj=0x" +
+                        registers[4].ToString("X8") +
+                        " entry=0x" + CeRomTocFiles.DdiNopTocEntry.ToString("X8") +
+                        " (firmware decompress/map; do not invent 0x81360000)");
+                return;
+            }
+            if (pc == CeRomTocFiles.LoadE32RomRet
+                && _logged.Contains("hive:ldde32")
+                && _logged.Add("hive:ldde32ret"))
+            {
+                System.Console.WriteLine("[Hive] 0x800196E4 ret v0=0x" +
+                    (registers != null && registers.Length > 2
+                        ? registers[2].ToString("X8") : "0") +
+                    " ddi_nop@0x03998014 " +
+                    (DdiNopMapped(bus) ? "mapped" : "unmapped"));
+                return;
+            }
+            if (pc == CeRomTocFiles.LoadLibSyscallRet
+                && _logged.Contains("hive:ll:ddi_nop.dll")
+                && _logged.Add("hive:ldsys"))
+            {
+                System.Console.WriteLine("[Hive] LoadLibraryExW syscall ret v0=0x" +
+                    (registers != null && registers.Length > 2
+                        ? registers[2].ToString("X8") : "0") +
+                    " last-error=" + ReadLastError(bus) +
+                    " ddi_nop@0x03998014 " +
+                    (DdiNopMapped(bus) ? "mapped" : "unmapped"));
+                return;
+            }
             if (pc == CoredllLoadLibraryW || pc == CoredllLoadLibraryExW
                 || pc == CoredllLoadDriver)
             {
