@@ -706,7 +706,7 @@ namespace ProcessorEmulator.Core
                 " dest-" + (mapped ? "mapped" : "unmapped") +
                 " dest-word=0x" + word.ToString("X8") +
                 " dest+4=0x" + word4.ToString("X8") +
-                (mapped && word != 0
+                (mapped && (word != 0 || word4 != 0)
                     ? " (firmware dest after MapO32)"
                     : " (dest still empty)"));
         }
