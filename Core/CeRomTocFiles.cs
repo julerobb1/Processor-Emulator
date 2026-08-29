@@ -700,7 +700,56 @@ namespace ProcessorEmulator.Core
                 (entryMapped ? " entry=0x" + entry.ToString("X8") : "") +
                 imp +
                 note);
+            if (bus != null && dest == 0x01981000u && v0 == vsize)
+                DumpDdiNopTextSites(bus, dest);
             return false;
+        }
+
+        // DllMain TLB epc 0x03981520 is dest+0x520 (rva 0x1520).
+        // 0x000E1970 is not an o32 RVA (e32 vsize 0x2B000) and not
+        // sec1 BSS (0x01F57xxx / leftover after 0xAB28). Observe
+        // the store insn. Do not invent a map at 0x000E0000.
+        private static void DumpDdiNopTextSites(MipsBus bus, uint dest)
+        {
+            uint[] off = { 0x520, 0x1D50, 0x1DD4, 0x5FA8, 0x70C4, 0x70E4, 0x17014, 0x170F0 };
+            for (int i = 0; i < off.Length; i++)
+            {
+                try
+                {
+                    uint va = dest + off[i];
+                    uint w0 = bus.Read32(va);
+                    uint w1 = bus.Read32(va + 4);
+                    uint w2 = bus.Read32(va + 8);
+                    System.Console.WriteLine("[Hive] ExtraROM ddi_nop dest+0x" +
+                        off[i].ToString("X") + " @0x" + va.ToString("X8") +
+                        " " + w0.ToString("X8") + " " + w1.ToString("X8") +
+                        " " + w2.ToString("X8"));
+                }
+                catch
+                {
+                }
+            }
+            int hits = 0;
+            try
+            {
+                uint n = 0x1743A & ~3u;
+                for (uint o = 0; o < n && hits < 4; o += 4)
+                {
+                    uint w = bus.Read32(dest + o);
+                    if (w >= 0x000E0000u && w < 0x000F0000u)
+                    {
+                        System.Console.WriteLine("[Hive] ExtraROM ddi_nop sec0 literal 0x" +
+                            w.ToString("X8") + " at dest+0x" + o.ToString("X") +
+                            " (image pointer, not a firmware VALLOC)");
+                        hits++;
+                    }
+                }
+            }
+            catch
+            {
+            }
+            if (hits == 0)
+                System.Console.WriteLine("[Hive] ExtraROM ddi_nop sec0 has no 0x000Exxxx literal (0x000E1970 is not an unrelocated o32 RVA; e32 vsize 0x2B000)");
         }
 
         private static bool _ddiNopBindHdr;

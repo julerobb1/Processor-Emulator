@@ -2074,12 +2074,19 @@ namespace ProcessorEmulator.Core
         // ThreadExceptionExit. Do not SetEvent that handle.
         public static void NoteCpuException(uint code, uint epc, uint vaddr, uint vector)
         {
+            NoteCpuException(code, epc, vaddr, vector, null, null);
+        }
+
+        public static void NoteCpuException(uint code, uint epc, uint vaddr, uint vector,
+            uint[] registers, MipsBus bus)
+        {
             bool ddi = _logged.Contains("hive:ldde32")
                 && ((epc >= DdiNopVbase && epc < DdiNopVend)
                     || (epc >= DdiNopSlot0 && epc < DdiNopSlot0Vend)
                     || (vaddr >= DdiNopVbase && vaddr < DdiNopVend)
                     || (vaddr >= DdiNopSlot0 && vaddr < DdiNopSlot0Vend)
-                    || (vaddr >= 0x01F57000u && vaddr < 0x01F66000u));
+                    || (vaddr >= 0x01F57000u && vaddr < 0x01F66000u)
+                    || (vaddr >= 0x000E0000u && vaddr < 0x000F0000u && epc >= DdiNopVbase && epc < DdiNopVend));
             bool loader = _logged.Contains("hive:ldde32")
                 && ((epc >= 0x80016000u && epc < 0x8001C000u)
                     || (vaddr >= 0x03980000u && vaddr < 0x039B0000u)
@@ -2094,6 +2101,9 @@ namespace ProcessorEmulator.Core
                         " epc=0x" + epc.ToString("X8") +
                         " vaddr=0x" + vaddr.ToString("X8") +
                         " vec=0x" + vector.ToString("X8"));
+                if (vaddr >= 0x000E0000u && vaddr < 0x000F0000u
+                    && _logged.Add("hive:ddiexn:e000"))
+                    LogDdiNopE000Store(code, epc, vaddr, registers, bus);
             }
             if (!_gwesWatch || !_logged.Contains("hive:gpc:WinMain"))
                 return;
@@ -2237,6 +2247,61 @@ namespace ProcessorEmulator.Core
             {
                 return false;
             }
+        }
+
+        private static void LogDdiNopE000Store(uint code, uint epc, uint vaddr,
+            uint[] registers, MipsBus bus)
+        {
+            uint insn = 0;
+            bool insnOk = false;
+            try
+            {
+                if (bus != null)
+                {
+                    insn = bus.Read32(epc);
+                    insnOk = true;
+                }
+            }
+            catch
+            {
+            }
+            uint gp = registers != null && registers.Length > 28 ? registers[28] : 0;
+            uint v0 = registers != null && registers.Length > 2 ? registers[2] : 0;
+            uint v1 = registers != null && registers.Length > 3 ? registers[3] : 0;
+            uint a0 = registers != null && registers.Length > 4 ? registers[4] : 0;
+            uint a1 = registers != null && registers.Length > 5 ? registers[5] : 0;
+            uint a2 = registers != null && registers.Length > 6 ? registers[6] : 0;
+            uint a3 = registers != null && registers.Length > 7 ? registers[7] : 0;
+            uint s0 = registers != null && registers.Length > 16 ? registers[16] : 0;
+            uint s1 = registers != null && registers.Length > 17 ? registers[17] : 0;
+            uint parent = 0;
+            bool parentOk = false;
+            try
+            {
+                if (bus != null)
+                {
+                    parent = bus.Read32(GwesDispObj);
+                    parentOk = true;
+                }
+            }
+            catch
+            {
+            }
+            System.Console.WriteLine("[Hive] ddi_nop 0x000E store code=" + code +
+                " epc=0x" + epc.ToString("X8") +
+                (insnOk ? " insn=0x" + insn.ToString("X8") : " insn-unmapped") +
+                " vaddr=0x" + vaddr.ToString("X8") +
+                " gp=0x" + gp.ToString("X8") +
+                " v0=0x" + v0.ToString("X8") +
+                " v1=0x" + v1.ToString("X8") +
+                " a0=0x" + a0.ToString("X8") +
+                " a1=0x" + a1.ToString("X8") +
+                " a2=0x" + a2.ToString("X8") +
+                " a3=0x" + a3.ToString("X8") +
+                " s0=0x" + s0.ToString("X8") +
+                " s1=0x" + s1.ToString("X8") +
+                (parentOk ? " disp=0x" + parent.ToString("X8") : " disp-unmapped") +
+                " (0x000E1970 is not o32 RVA / not sec1 BSS 0x01F57xxx; no VALLOC 0x000E0000; do not invent that map)");
         }
 
         private static void LogDdiNopMapped(MipsBus bus)
