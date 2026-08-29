@@ -190,6 +190,11 @@ namespace ProcessorEmulator.Core
         public const uint GwesVaAvCompare = 0x00053938;
         public const uint GwesVaAvCompareLhu = 0x00053944;
         public const uint GwesVaAvCompareCaller = 0x0005BCA4;
+        // wait47: firmware writes GDI +0xC8. 0x000631D4 stores
+        // jal 0x00054038 (0x000E8370). 0x00063254 stores v0
+        // (0 if later init failed). Do not poke +0xC8.
+        public const uint GwesVaC8StoreSet = 0x000631D4;
+        public const uint GwesVaC8StoreClr = 0x00063254;
         public const uint GwesDispObj = 0x000BA954;
         // 0x0005D24C addiu a0, 584; jal 0x000B4D20 (IAT 0x000B60D0).
         // wait42: ExtraROM dest host-back [v0, dest+size] — LoadDriver
@@ -1889,6 +1894,13 @@ namespace ProcessorEmulator.Core
                 LogGwesAvCompare(pc, registers, bus);
                 return;
             }
+            if ((pc == GwesVaC8StoreSet || IsSlottedVa(pc, GwesVaC8StoreSet)
+                || pc == GwesVaC8StoreClr || IsSlottedVa(pc, GwesVaC8StoreClr))
+                && _gwesWatch)
+            {
+                LogGwesC8Store(pc, registers, bus);
+                return;
+            }
             if (pc == CoredllMessageBoxW && _gwesSawThrEx)
             {
                 if (_logged.Add("hive:msgbox"))
@@ -2056,7 +2068,11 @@ namespace ProcessorEmulator.Core
                 " a0=0x" + a0.ToString("X8") +
                 " (lhu 8(a0) / *(gdi+0xC8))");
             LogGwesDispObj(bus, "AV-site");
-            RetryProcessHeapHost(bus, "AV-site");
+            // wait47: host-back of 0x080E6000-0x080E9000 here
+            // sat under +0xC8=0x000E8370. Firmware 0x00063254
+            // then stored v0=0. Do not host-back those GDI
+            // heap pages at the AV-site. LocalAlloc 8K stays.
+            // Do not poke +0xC8. Do not invent 0x000E0000.
         }
 
         // wait46: 0x00053944 lhu 4(a0) after 0x0005BCA4 delay
@@ -2088,6 +2104,26 @@ namespace ProcessorEmulator.Core
                 " (GDI +0xC8 vs a1; not a dump 0x000E0000 page)");
             LogGwesDispObj(bus, "AV-compare");
             RetryProcessHeapHost(bus, "AV-compare");
+        }
+
+        // 0x000631D4 / 0x00063254: sw $v0, 0xC8($v1) with
+        // $v1=*0x000BA954. Firmware path. Do not poke +0xC8.
+        private static void LogGwesC8Store(uint pc, uint[] registers, MipsBus bus)
+        {
+            uint v0 = registers != null && registers.Length > 2 ? registers[2] : 0;
+            uint v1 = registers != null && registers.Length > 3 ? registers[3] : 0;
+            string key = "hive:c8sw:" + (pc & CeSlotMask).ToString("X") + ":" + v0.ToString("X");
+            if (!_logged.Add(key))
+                return;
+            uint obj = 0, field = 0;
+            bool objOk = TryReadWord(bus, GwesDispObj, out obj);
+            bool fieldOk = objOk && obj != 0 && TryReadWord(bus, obj + 0xC8, out field);
+            System.Console.WriteLine("[Hive] gwes +0xC8 store pc=0x" + pc.ToString("X8") +
+                " v0=0x" + v0.ToString("X8") +
+                " v1=0x" + v1.ToString("X8") +
+                " *0x000BA954=" + (objOk ? "0x" + obj.ToString("X8") : "unmapped") +
+                " +0xC8=" + (fieldOk ? "0x" + field.ToString("X8") : "unmapped") +
+                " (firmware sw v0,0xC8(v1); do not poke +0xC8)");
         }
 
         private static void LogGwesDispAlloc(uint pc, uint[] registers, MipsBus bus, bool ret)
