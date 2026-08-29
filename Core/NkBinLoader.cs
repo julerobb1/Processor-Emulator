@@ -277,14 +277,14 @@ namespace ProcessorEmulator.Core.Loaders
                         if (IsMscoree(fname))
                         {
                             sawMscoreeFile = true;
-                            uint real = memory.ReadMemory32(entry + 0x0C);
-                            uint comp = memory.ReadMemory32(entry + 0x10);
-                            uint load = memory.ReadMemory32(entry + 0x18);
+                            uint mReal = memory.ReadMemory32(entry + 0x0C);
+                            uint mComp = memory.ReadMemory32(entry + 0x10);
+                            uint mLoad = memory.ReadMemory32(entry + 0x18);
                             Console.WriteLine("[NkBinLoader] ExtraROM FILE[" + i + "] " + fname +
                                 " entry=0x" + entry.ToString("X8") +
-                                " real=" + real +
-                                " comp=" + comp +
-                                " load=0x" + load.ToString("X8") +
+                                " real=" + mReal +
+                                " comp=" + mComp +
+                                " load=0x" + mLoad.ToString("X8") +
                                 " (FILESentry; unexpected; do not invent)");
                             continue;
                         }
