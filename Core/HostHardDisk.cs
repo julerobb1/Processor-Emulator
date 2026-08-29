@@ -433,7 +433,14 @@ namespace ProcessorEmulator.Core
                         "\" a0=0x" + a0.ToString("X8") +
                         " a1=0x" + a1.ToString("X8") +
                         " a2=0x" + a2.ToString("X8"));
-                if (_gwesWatch && registers.Length > 31)
+                // CreateProcess(gwes) VALLOC(NULL, 0x70) returns
+                // before _gwesWatch. That reservation is the
+                // LocalAlloc 0x000E1700 page. Capture gwes returns
+                // during load, not only after watch.
+                bool gwesLoad = !string.IsNullOrEmpty(_cprocName)
+                    && _cprocName.IndexOf("gwes", StringComparison.OrdinalIgnoreCase) >= 0;
+                if ((_gwesWatch || gwesLoad || _logged.Contains("hive:ldde32"))
+                    && registers.Length > 31)
                 {
                     _vallocRa = registers[31];
                     _vallocA0 = a0;
@@ -1548,6 +1555,7 @@ namespace ProcessorEmulator.Core
                 return;
             }
             if ((pc == GwesVaHeapCreate + 8 || IsSlottedVa(pc, GwesVaHeapCreate + 8))
+                && _gwesWatch
                 && _logged.Add("hive:heapcreate:ret"))
             {
                 uint v0 = registers != null && registers.Length > 2 ? registers[2] : 0;
@@ -2036,35 +2044,45 @@ namespace ProcessorEmulator.Core
             string key = ret ? "hive:dispalloc:ret" : "hive:dispalloc";
             if (!_logged.Add(key))
                 return;
+            string heapNote = HeapPtrNote(bus);
             if (!ret)
             {
-                uint heap = 0;
-                uint fn = 0;
-                bool heapOk = false;
-                try
-                {
-                    if (bus != null)
-                    {
-                        heap = bus.Read32(CeRomTocFiles.ProcessHeapPtr);
-                        fn = bus.Read32(0x01FFF794u);
-                        heapOk = true;
-                    }
-                }
-                catch
-                {
-                }
                 System.Console.WriteLine("[Hive] gwes LocalAlloc-site pc=0x" +
-                    pc.ToString("X8") + " a0=" + a0 +
-                    (heapOk ? " *0x01FFFFA0=0x" + heap.ToString("X8") +
-                        " *0x01FFF794=0x" + fn.ToString("X8") : "") +
+                    pc.ToString("X8") + " a0=" + a0 + heapNote +
                     " (size 584 -> *0x000BA954; do not invent 0x000E0000)");
                 return;
             }
             bool mapped = DestMapped(bus, v0);
             System.Console.WriteLine("[Hive] gwes LocalAlloc-site ret pc=0x" +
                 pc.ToString("X8") + " v0=0x" + v0.ToString("X8") +
-                (mapped ? " mapped" : " unmapped") +
+                (mapped ? " mapped" : " unmapped") + heapNote +
                 " (do not invent 0x000E0000)");
+        }
+
+        private static string HeapPtrNote(MipsBus bus)
+        {
+            uint heap = 0;
+            uint fn = 0;
+            bool heapOk = TryReadWord(bus, CeRomTocFiles.ProcessHeapPtr, out heap);
+            bool fnOk = TryReadWord(bus, 0x01FFF794u, out fn);
+            return " *0x01FFFFA0=" + (heapOk ? "0x" + heap.ToString("X8") : "unmapped") +
+                " *0x01FFF794=" + (fnOk ? "0x" + fn.ToString("X8") : "unmapped");
+        }
+
+        private static bool TryReadWord(MipsBus bus, uint va, out uint word)
+        {
+            word = 0;
+            if (bus == null || va == 0)
+                return false;
+            try
+            {
+                word = bus.Read32(va);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static void LogVallocRet(MipsBus bus, uint v0)
@@ -2078,7 +2096,7 @@ namespace ProcessorEmulator.Core
                     " v0=0x" + v0.ToString("X8") +
                     (mapped ? " mapped" : " unmapped"));
             if (v0 != 0)
-                CeRomTocFiles.TryHostBackValloc(v0, _vallocA1, _vallocA2, mapped);
+                CeRomTocFiles.TryHostBackValloc(v0, _vallocA0, _vallocA1, _vallocA2, mapped);
         }
 
         private static void LogGwesDispStore(uint pc, uint[] registers, MipsBus bus)

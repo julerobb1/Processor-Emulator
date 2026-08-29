@@ -401,6 +401,12 @@ namespace ProcessorEmulator.Core
         // not 0x81360000.
         public const uint ExtraRomDestKseg0 = 0x8F100000;
         public const uint ExtraRomDestKseg1 = 0x8F180000;
+        // Firmware VirtualAlloc(NULL) useg must not alias kseg0
+        // 0x80000000|va: 0x000E1700 would be NK at 0x800E1700.
+        // Dedicated unused kseg0, same class as ExtraROM dest.
+        public const uint VallocHostKseg = 0x8F200000;
+        public const uint VallocHostKsegLim = 0x8F400000;
+        public const uint CeAllocGranularity = 0x10000;
 
         public static bool TryReserveExtraRomValloc(uint[] regs)
         {
@@ -1402,10 +1408,12 @@ namespace ProcessorEmulator.Core
             _ddiNopBindLib = false;
             _ddiNopBindLibRet = false;
             _vallocHostN = 0;
+            _vallocHostPool = VallocHostKseg;
             for (int i = 0; i < _vallocHostLo.Length; i++)
             {
                 _vallocHostLo[i] = 0;
                 _vallocHostHi[i] = 0;
+                _vallocHostKseg[i] = 0;
             }
         }
 
@@ -1444,13 +1452,17 @@ namespace ProcessorEmulator.Core
 
         // Firmware VirtualAlloc returned a useg base the TLB has
         // no PTE for (same class as ExtraROM dest). Host-back that
-        // returned range only, via kseg0. Not a static 0x000E0000
-        // map. Skip MEM_IMAGE and the process-info page.
-        private static readonly uint[] _vallocHostLo = new uint[8];
-        private static readonly uint[] _vallocHostHi = new uint[8];
+        // returned range only. Not a static 0x000E0000 map.
+        // NULL+RESERVE uses CE 64K granularity (HeapAlloc of the
+        // 0x70 HEAP header then hands out +0x1700 in that reserve).
+        // Skip MEM_IMAGE and the process-info page.
+        private static readonly uint[] _vallocHostLo = new uint[16];
+        private static readonly uint[] _vallocHostHi = new uint[16];
+        private static readonly uint[] _vallocHostKseg = new uint[16];
         private static int _vallocHostN;
+        private static uint _vallocHostPool = VallocHostKseg;
 
-        public static void TryHostBackValloc(uint baseVa, uint size, uint type, bool alreadyMapped)
+        public static void TryHostBackValloc(uint baseVa, uint reqVa, uint size, uint type, bool alreadyMapped)
         {
             if (alreadyMapped || baseVa == 0 || baseVa >= 0x80000000u)
                 return;
@@ -1465,17 +1477,25 @@ namespace ProcessorEmulator.Core
             if (size == 0)
                 size = 0x1000;
             size = (size + 0xFFFu) & ~0xFFFu;
+            if (reqVa == 0 && (type & 0x2000u) != 0 && size < CeAllocGranularity)
+                size = CeAllocGranularity;
             uint end = baseVa + size;
             if (end <= baseVa)
                 return;
             if (_vallocHostN >= _vallocHostLo.Length)
                 return;
+            uint kseg = _vallocHostPool;
+            if (kseg < VallocHostKseg || kseg + size > VallocHostKsegLim)
+                return;
             _vallocHostLo[_vallocHostN] = baseVa;
             _vallocHostHi[_vallocHostN] = end;
+            _vallocHostKseg[_vallocHostN] = kseg;
             _vallocHostN++;
+            _vallocHostPool += size;
             System.Console.WriteLine("[Hive] VALLOC host-back 0x" +
                 baseVa.ToString("X8") + "-0x" + end.ToString("X8") +
-                " kseg0 (firmware returned this; do not invent 0x000E0000)");
+                " -> 0x" + kseg.ToString("X8") +
+                " (firmware returned this; do not invent 0x000E0000)");
         }
 
         public static uint MapVallocHostVa(uint va)
@@ -1483,7 +1503,7 @@ namespace ProcessorEmulator.Core
             for (int i = 0; i < _vallocHostN; i++)
             {
                 if (va >= _vallocHostLo[i] && va < _vallocHostHi[i])
-                    return 0x80000000u | va;
+                    return _vallocHostKseg[i] + (va - _vallocHostLo[i]);
             }
             return va;
         }
