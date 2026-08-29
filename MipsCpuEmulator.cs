@@ -126,20 +126,34 @@ namespace ProcessorEmulator.Emulation
 
                 if (programCounter == CeRomTocFiles.CreateFileFail)
                 {
-                    uint path = registers[23];
-                    if (CeRomTocFiles.TryContinueRomModule(_bus, path, out uint attr, out uint tocEntry))
+                    try
                     {
-                        // Same object layout as 0x80016AFC: +0 = TOC entry,
-                        // +4 = 7. 0x800196E4 then uses e32 at TOC+0x14
-                        // instead of CreateFileMapping(INVALID_HANDLE).
-                        // 40($sp) still needs FILE_ATTRIBUTE_ROMMODULE so
-                        // 0x8001D4B8 takes the existing 0x2000 return.
-                        uint obj = registers[30];
-                        _bus.Write32(obj, tocEntry);
-                        _bus.Write8(obj + 4, CeRomTocFiles.TocAttachType);
-                        _bus.Write32(registers[29] + 40, attr);
-                        registers[3] = attr;
-                        programCounter = CeRomTocFiles.NameCopyContinue;
+                        uint path = registers[23];
+                        if (CeRomTocFiles.TryContinueRomModule(_bus, path, out uint attr, out uint tocEntry))
+                        {
+                            // Same object layout as 0x80016AFC: +0 = TOC entry,
+                            // +4 = 7. 0x800196E4 then uses e32 at TOC+0x14
+                            // instead of CreateFileMapping(INVALID_HANDLE).
+                            // 40($sp) still needs FILE_ATTRIBUTE_ROMMODULE so
+                            // 0x8001D4B8 takes the existing 0x2000 return.
+                            uint obj = registers[30];
+                            _bus.Write32(obj, tocEntry);
+                            _bus.Write8(obj + 4, CeRomTocFiles.TocAttachType);
+                            _bus.Write32(registers[29] + 40, attr);
+                            registers[3] = attr;
+                            programCounter = CeRomTocFiles.NameCopyContinue;
+                            _cp0.UpdateTimer(1);
+                            _bus.Tick(1);
+                            continue;
+                        }
+                    }
+                    catch (TlbMissException ex)
+                    {
+                        // wait52: hook Read32(s7=0x040851E8) aborted
+                        // the probe. That VA is filesys slot-2, not a
+                        // dump ExtraROM/gwes/coredll/BINFS/tv2 page.
+                        // Do not invent a map. Firmware refill owns it.
+                        TriggerTlbException(ex);
                         _cp0.UpdateTimer(1);
                         _bus.Tick(1);
                         continue;

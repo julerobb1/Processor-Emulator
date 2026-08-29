@@ -2080,24 +2080,33 @@ namespace ProcessorEmulator.Core
 
         private static string Basename(MipsBus bus, uint path)
         {
+            if (bus == null || path == 0)
+                return "";
             var sb = new System.Text.StringBuilder();
             int start = 0;
-            for (int i = 0; i < 260; i++)
+            try
             {
-                uint p = path + (uint)(i * 2);
-                uint word = bus.Read32(p & ~3u);
-                uint ch = ((p & 2) == 0) ? (word & 0xFFFF) : (word >> 16);
-                if (ch == 0)
-                    break;
-                if (ch == '\\' || ch == '/')
+                for (int i = 0; i < 260; i++)
                 {
-                    sb.Length = 0;
-                    start = i + 1;
-                    continue;
+                    uint p = path + (uint)(i * 2);
+                    uint word = bus.Read32(p & ~3u);
+                    uint ch = ((p & 2) == 0) ? (word & 0xFFFF) : (word >> 16);
+                    if (ch == 0)
+                        break;
+                    if (ch == '\\' || ch == '/')
+                    {
+                        sb.Length = 0;
+                        start = i + 1;
+                        continue;
+                    }
+                    if (ch < 0x20 || ch > 0x7E)
+                        return "";
+                    sb.Append((char)ch);
                 }
-                if (ch < 0x20 || ch > 0x7E)
-                    return "";
-                sb.Append((char)ch);
+            }
+            catch
+            {
+                return "";
             }
             return start >= 0 ? sb.ToString() : "";
         }

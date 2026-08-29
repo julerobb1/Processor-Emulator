@@ -603,6 +603,12 @@ namespace ProcessorEmulator.Core
                 if ((_notified || IsHardDiskPath(kn)) && _logged.Add("k:" + kn))
                     System.Console.WriteLine($"[HardDisk] kCreateFile \"{kn}\"");
                 LogKernelCreateFile(bus, registers[4]);
+                LogTv2CreateFile(registers, bus, kn);
+                return false;
+            }
+            if (pc == CeRomTocFiles.CreateFileFail)
+            {
+                LogCreateFileFail(registers, bus);
                 return false;
             }
 
@@ -975,6 +981,76 @@ namespace ProcessorEmulator.Core
             string host = MapHost(_root, name);
             bool hit = !string.IsNullOrEmpty(host) && File.Exists(host);
             System.Console.WriteLine($"[HardDisk] CreateFile \"{name}\" host={(hit ? host : "miss")} fat={(IsPresent ? "yes" : "no")}");
+        }
+
+        // wait52: probe died at CreateFileFail 0x8001D400 reading
+        // s7=0x040851E8. Log the path and slot-0 view. Do not
+        // invent that page. Do not host CreateProcess tv2clientce.
+        private static void LogTv2CreateFile(uint[] registers, MipsBus bus, string name)
+        {
+            bool tv2 = (!string.IsNullOrEmpty(_cprocName)
+                    && _cprocName.IndexOf("tv2", StringComparison.OrdinalIgnoreCase) >= 0)
+                || (!string.IsNullOrEmpty(name)
+                    && name.IndexOf("tv2", StringComparison.OrdinalIgnoreCase) >= 0);
+            if (!tv2)
+                return;
+            if (!_logged.Add("hive:kcf:tv2:" + (name ?? "")))
+                return;
+            uint a0 = registers != null && registers.Length > 4 ? registers[4] : 0;
+            System.Console.WriteLine("[Hive] CreateFile tv2 a0=0x" + a0.ToString("X8") +
+                " \"" + (name ?? "") + "\"" +
+                " cproc=\"" + _cprocName + "\"" +
+                " a0-mapped=" + (DestMapped(bus, a0) ? "yes" : "no") +
+                " (firmware OpenExe; do not host CreateProcess)");
+        }
+
+        private static void LogCreateFileFail(uint[] registers, MipsBus bus)
+        {
+            uint s7 = registers != null && registers.Length > 23 ? registers[23] : 0;
+            uint a0 = registers != null && registers.Length > 4 ? registers[4] : 0;
+            uint fp = registers != null && registers.Length > 30 ? registers[30] : 0;
+            uint v0 = registers != null && registers.Length > 2 ? registers[2] : 0;
+            if (!_logged.Add("hive:cfile:fail:" + s7.ToString("X") + ":" + a0.ToString("X")))
+                return;
+            string pathS7 = ReadUtf16(bus, s7);
+            string pathA0 = ReadUtf16(bus, a0);
+            uint slot0 = s7 & CeSlotMask;
+            uint proc = 0;
+            TryReadWord(bus, CeRomTocFiles.CurProc, out proc);
+            System.Console.WriteLine("[Hive] CreateFileFail pc=0x8001D400" +
+                " s7=0x" + s7.ToString("X8") +
+                " slot0=0x" + slot0.ToString("X8") +
+                " a0=0x" + a0.ToString("X8") +
+                " fp=0x" + fp.ToString("X8") +
+                " v0=0x" + v0.ToString("X8") +
+                " CurProc=0x" + proc.ToString("X8") +
+                " s7=\"" + pathS7 + "\"" +
+                " a0=\"" + pathA0 + "\"" +
+                " cproc=\"" + _cprocName + "\"" +
+                " (wait52 TLB; do not invent 0x040851E8)");
+            LogSlotAliasVa(bus, s7, "CreateFileFail s7");
+            if (slot0 != s7)
+                LogSlotAliasVa(bus, slot0, "CreateFileFail slot0");
+        }
+
+        private static void LogSlotAliasVa(MipsBus bus, uint va, string when)
+        {
+            if (va == 0)
+                return;
+            uint slot0 = va & CeSlotMask;
+            uint w = 0, w0 = 0;
+            bool m = DestMapped(bus, va);
+            bool m0 = DestMapped(bus, slot0);
+            bool r = m && TryReadWord(bus, va & ~3u, out w);
+            bool r0 = m0 && TryReadWord(bus, slot0 & ~3u, out w0);
+            System.Console.WriteLine("[Hive] slot-alias " + when +
+                " va=0x" + va.ToString("X8") +
+                (m ? " mapped" : " unmapped") +
+                (r ? " w=0x" + w.ToString("X8") : "") +
+                " slot0=0x" + slot0.ToString("X8") +
+                (m0 ? " mapped" : " unmapped") +
+                (r0 ? " w=0x" + w0.ToString("X8") : "") +
+                " (not ExtraROM/gwes/coredll/BINFS/tv2 dump unless proven)");
         }
 
         private static bool TrySatisfyWfmo(uint[] registers, ref uint programCounter)
@@ -2456,6 +2532,19 @@ namespace ProcessorEmulator.Core
                 if (vaddr >= 0x000E0000u && vaddr < 0x000F0000u
                     && _logged.Add("hive:ddiexn:e000"))
                     LogDdiNopE000Store(code, epc, vaddr, registers, bus);
+                if ((vaddr & CeSlotMask) == 0x000C891Cu
+                    && _logged.Add("hive:ddiexn:c891c"))
+                    LogSlotAliasVa(bus, vaddr, "ddi_nop 0x03986FA8 gwes slot-4 data");
+            }
+            if ((epc == CeRomTocFiles.CreateFileFail || (vaddr & ~0xFFFu) == 0x04085000u)
+                && code != 0 && _logged.Add("hive:cfile:tlb:" + vaddr.ToString("X")))
+            {
+                System.Console.WriteLine("[Hive] CreateFileFail TLB code=" + code +
+                    " epc=0x" + epc.ToString("X8") +
+                    " vaddr=0x" + vaddr.ToString("X8") +
+                    " vec=0x" + vector.ToString("X8") +
+                    " (firmware refill; do not invent 0x040851E8)");
+                LogSlotAliasVa(bus, vaddr, "CreateFileFail");
             }
             if (!_gwesWatch || !_logged.Contains("hive:gpc:WinMain"))
                 return;
