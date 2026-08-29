@@ -595,6 +595,14 @@ namespace ProcessorEmulator.Core
             if (_logged.Contains("hive:ldde32"))
                 CeRomTocFiles.TryNoteExtraRomBindImp(bus, registers, pc);
             CeRomTocFiles.TryNoteTv2BindImp(bus, registers, pc);
+            if (pc == CeRomTocFiles.MapO32Decompress
+                && _logged.Contains("hive:ldde32:mscoree")
+                && CeRomTocFiles.TryRedirectExtraRomMapO32Decompress(
+                    bus, registers, ref programCounter))
+                return false;
+            if (pc == CeRomTocFiles.MapO32RomEpilogue
+                && _logged.Contains("hive:ldde32:mscoree"))
+                CeRomTocFiles.TryLogMscoreeMapO32Ret(bus, registers);
             if (pc == CeRomTocFiles.MapO32VirtualCopy
                 && (_logged.Contains("hive:ldde32")
                     || _logged.Contains("hive:ldde32:mscoree"))
@@ -1896,6 +1904,8 @@ namespace ProcessorEmulator.Core
                 if (_logged.Contains("hive:ldde32")
                     || _logged.Contains("hive:ldde32:mscoree"))
                     CeRomTocFiles.TrySteerExtraRomMapO32(bus, registers[5]);
+                if (_logged.Contains("hive:ldde32:mscoree"))
+                    CeRomTocFiles.TryClearO32RomXipForMscoree(bus, registers);
                 CeRomTocFiles.TryMapTv2DumpPeO32(bus, registers[5]);
                 LogMapO32(registers, bus);
                 return;
@@ -1946,7 +1956,8 @@ namespace ProcessorEmulator.Core
                 return;
             }
             if (pc == CeRomTocFiles.MapO32Decompress
-                && _logged.Contains("hive:ldde32")
+                && (_logged.Contains("hive:ldde32")
+                    || _logged.Contains("hive:ldde32:mscoree"))
                 && registers != null && registers.Length > 4)
             {
                 uint dest = registers[4];
@@ -2536,7 +2547,8 @@ namespace ProcessorEmulator.Core
                 return;
             uint destWord = 0;
             uint dataWord = 0;
-            bool mscoree = dest == 0x034B1000u || dataptr == 0x809435ECu;
+            bool mscoree = dest == 0x034B1000u || dest == 0x014B1000u
+                || dataptr == 0x809435ECu;
             if (mscoree && bus != null)
             {
                 try

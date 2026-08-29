@@ -51,6 +51,14 @@ namespace ProcessorEmulator.Core
         public const uint LoadO32RomRet = 0x8001E420;
         public const uint CopyO32Rom = 0x8001AFA4;
         public const uint MapO32Rom = 0x8001AC30;
+        // 0x8001AC9C: bne (flags & 0x80002000), AD50.
+        // flags 0x60006020 have 0x2000, so jal 0x80028844 is
+        // skipped. AD50 VALLOCs only when object+6>=2 or flags
+        // have 0x08000000; type-7 attach stores neither, so
+        // dest stays zeros. Clear 0x2000 on TOC[46] o32_lite
+        // only (a3==0) so firmware jals 0x80028844 onto the
+        // steered dest. Do not VALLOC. Do not poke object+6.
+        public const uint MapO32RomEpilogue = 0x8001AE50;
         public const uint MapO32Decompress = 0x80028844;
         public const uint MapO32DecompressSrcChk = 0x80028A48;
         public const uint MapO32DecompressFail = 0x80028A90;
@@ -558,11 +566,149 @@ namespace ProcessorEmulator.Core
                 bus.Write32(o32Lite + 8, slot);
                 System.Console.WriteLine("[Hive] ExtraROM MapO32 dest 0x" +
                     dest.ToString("X8") + " -> 0x" + slot.ToString("X8") +
-                    " (slot-0 view of dump o32.real; firmware VALLOC+CEDecompressROM)");
+                    " (slot-0 view of dump o32.real; firmware 0x80028844+CEDecompressROM)");
             }
             catch
             {
             }
+        }
+
+        // wait63: dest 0x014B1000 dest-word=0. 0x8001AC9C
+        // ands flags with 0x80002000; 0x60006020 leaves
+        // 0x2000 so jal 0x80028844 is skipped. AD50 then
+        // returns at 0x8001AE4C when object+6<2 and flags
+        // lack 0x08000000 (type-7 never stores those).
+        // ddi_nop keeps 0x2000 and VALLOCs because LoadDriver
+        // set object+6>=2. Do not force that VALLOC.
+        // CopyO32 already passed; clear O32RomXip on the
+        // lite only so 0x8001AC9C falls through. a3!=0
+        // still hits 0x8001ACB0 and skips the jal: leave
+        // flags alone. Do not invent dest bytes.
+        public static void TryClearO32RomXipForMscoree(MipsBus bus, uint[] regs)
+        {
+            if (bus == null || regs == null || regs.Length <= 7)
+                return;
+            uint o32Lite = regs[5];
+            if (o32Lite == 0)
+                return;
+            try
+            {
+                uint dest = bus.Read32(o32Lite + 8);
+                uint dataptr = bus.Read32(o32Lite + 0x18);
+                uint flags = bus.Read32(o32Lite + 0x10);
+                if (!IsExtraRomMscoreeDest(dest) && !IsExtraRomMscoreeData(dataptr))
+                    return;
+                uint a3 = regs[7];
+                uint obj = regs[4];
+                uint obj6 = 0;
+                uint type = 0;
+                if (obj != 0)
+                {
+                    obj6 = (uint)(bus.Read8(obj + 6) | (bus.Read8(obj + 7) << 8));
+                    type = bus.Read8(obj + 4);
+                }
+                uint gate = flags & 0x80002000u;
+                System.Console.WriteLine("[Hive] ExtraROM MapO32 0x8001AC9C dest=0x" +
+                    dest.ToString("X8") + " flags=0x" + flags.ToString("X8") +
+                    " &0x80002000=0x" + gate.ToString("X") +
+                    " a3=0x" + a3.ToString("X8") +
+                    " type=" + type +
+                    " object+6=" + obj6 +
+                    (gate != 0
+                        ? " (skip jal 0x80028844; 0x2000 set)"
+                        : " (jal 0x80028844 if a3==0 and type bit2)"));
+                if (a3 != 0)
+                {
+                    System.Console.WriteLine("[Hive] ExtraROM MapO32 dest=0x" +
+                        dest.ToString("X8") +
+                        " a3!=0 (0x8001ACB0 would still skip jal; leave 0x2000; no VALLOC)");
+                    return;
+                }
+                if ((flags & O32RomXip) == 0)
+                    return;
+                uint next = flags & ~O32RomXip;
+                bus.Write32(o32Lite + 0x10, next);
+                System.Console.WriteLine("[Hive] ExtraROM MapO32 clear-xip dest=0x" +
+                    dest.ToString("X8") + " flags 0x" + flags.ToString("X8") +
+                    " -> 0x" + next.ToString("X8") +
+                    " (o32_lite only; jal 0x80028844; dump LZX; no VALLOC)");
+            }
+            catch
+            {
+            }
+        }
+
+        // 0x80028844 is a0=dest a1=dataptr a2=vsize. Same
+        // CEDecompressROM as ddi_nop VirtualCopy. TOC[46]
+        // dests only. ddi_nop keeps 0x2000 and VALLOC+VirtualCopy.
+        public static bool TryRedirectExtraRomMapO32Decompress(
+            MipsBus bus, uint[] regs, ref uint programCounter)
+        {
+            if (bus == null || regs == null || regs.Length <= 23)
+                return false;
+            uint dest = regs[4];
+            uint src = regs[5];
+            uint vsize = regs[6];
+            if (!IsExtraRomMscoreeDest(dest) && !IsExtraRomMscoreeData(src))
+                return false;
+            uint o32Lite = regs[23];
+            uint psize = 0;
+            try
+            {
+                if (o32Lite != 0)
+                {
+                    if (vsize == 0)
+                        vsize = bus.Read32(o32Lite);
+                    psize = bus.Read32(o32Lite + 0x14);
+                    if (src == 0)
+                        src = bus.Read32(o32Lite + 0x18);
+                }
+            }
+            catch
+            {
+                return false;
+            }
+            if (psize == 0 || vsize == 0)
+                return false;
+            regs[4] = src;
+            regs[5] = psize;
+            regs[6] = dest;
+            regs[7] = vsize;
+            System.Console.WriteLine("[Hive] ExtraROM MapO32 0x80028844 -> CEDecompressROM dest=0x" +
+                dest.ToString("X8") + " src=0x" + src.ToString("X8") +
+                " vsize=0x" + vsize.ToString("X") +
+                " psize=0x" + psize.ToString("X") +
+                " (TOC[46] dump LZX; same 0x8004DBF8 as ddi_nop; no VALLOC)");
+            return TryRedirectExtraRomVirtualCopyToDecompress(bus, regs, ref programCounter);
+        }
+
+        public static void TryLogMscoreeMapO32Ret(MipsBus bus, uint[] regs)
+        {
+            if (bus == null || regs == null || regs.Length <= 20)
+                return;
+            uint dest = regs[20];
+            if (dest == 0 || !IsExtraRomMscoreeDest(dest))
+                return;
+            uint word = 0;
+            uint word4 = 0;
+            bool mapped = false;
+            try
+            {
+                word = bus.Read32(dest);
+                word4 = bus.Read32(dest + 4);
+                mapped = true;
+            }
+            catch
+            {
+            }
+            System.Console.WriteLine("[Hive] ExtraROM MapO32 ret dest=0x" +
+                dest.ToString("X8") +
+                " dest-" + (mapped ? "mapped" : "unmapped") +
+                " dest-word=0x" + word.ToString("X8") +
+                " dest+4=0x" + word4.ToString("X8") +
+                (mapped && word != 0
+                    ? " (firmware dest after MapO32)"
+                    : " (dest still empty)"));
         }
 
         // kseg0 scratch for an aligned copy of ExtraROM compressed
