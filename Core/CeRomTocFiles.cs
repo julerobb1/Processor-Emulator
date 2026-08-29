@@ -3086,12 +3086,62 @@ namespace ProcessorEmulator.Core
             }
         }
 
+        // wait70: dest-on gated this past the primary ThreadContextSetup
+        // (thr+5C still 0). First noted thread after FILE dest-on was
+        // the NK helper. Bind the CreateProcess thread even before
+        // dest-on; displace only when incoming +5C is firmware startip
+        // and the current bind is not.
         public static void NoteTv2Thread(uint thr)
         {
-            if (!_tv2FileDestOn || thr < 0x80000000u)
+            NoteTv2Thread(null, thr);
+        }
+
+        public static void NoteTv2Thread(MipsBus bus, uint thr)
+        {
+            if (thr < 0x80000000u)
                 return;
+            uint incomingIp = 0;
+            if (bus != null)
+            {
+                try
+                {
+                    incomingIp = bus.Read32(thr + ThreadStartip);
+                }
+                catch
+                {
+                }
+            }
+            bool incomingPrimary = incomingIp != 0 && IsAllowedTv2Startip(incomingIp);
             if (_tv2Thread != 0 && _tv2Thread != thr)
-                return;
+            {
+                if (!incomingPrimary)
+                    return;
+                uint curIp = 0;
+                if (bus != null)
+                {
+                    try
+                    {
+                        curIp = bus.Read32(_tv2Thread + ThreadStartip);
+                    }
+                    catch
+                    {
+                    }
+                }
+                if (curIp != 0 && IsAllowedTv2Startip(curIp))
+                    return;
+                System.Console.WriteLine("[Hive] FILE[25] thread bind: was=0x" +
+                    _tv2Thread.ToString("X8") +
+                    " now=0x" + thr.ToString("X8") +
+                    " +5C=0x" + incomingIp.ToString("X8") +
+                    " (firmware startip; not NK helper)");
+            }
+            else if (_tv2Thread == 0)
+            {
+                System.Console.WriteLine("[Hive] FILE[25] thread bind: now=0x" +
+                    thr.ToString("X8") +
+                    " +5C=0x" + incomingIp.ToString("X8") +
+                    " (tv2 CreateProcess thread; dest-on not required)");
+            }
             _tv2Thread = thr;
         }
 
@@ -3386,10 +3436,13 @@ namespace ProcessorEmulator.Core
             uint cur = 0;
             uint owner = 0;
             uint slot = 0;
+            uint curThr = 0;
             try
             {
                 if (bus != null)
                     cur = bus.Read32(CurProc);
+                if (bus != null)
+                    curThr = bus.Read32(ThreadPtr);
                 if (bus != null && _tv2Thread != 0)
                     owner = bus.Read32(_tv2Thread + ThreadPrc);
                 if (bus != null && _tv2Proc != 0)
@@ -3400,6 +3453,8 @@ namespace ProcessorEmulator.Core
             }
             System.Console.WriteLine("[Hive] FILE[25] I-fetch startip=0x" +
                 pc.ToString("X8") +
+                " CurThread=0x" + curThr.ToString("X8") +
+                " bound=0x" + _tv2Thread.ToString("X8") +
                 " CurProc=0x" + cur.ToString("X8") +
                 " thread+0C=0x" + owner.ToString("X8") +
                 " proc+0C=0x" + slot.ToString("X8") +

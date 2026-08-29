@@ -3147,7 +3147,7 @@ namespace ProcessorEmulator.Core
                 catch
                 {
                 }
-                CeRomTocFiles.NoteTv2Thread(_cprocThread);
+                CeRomTocFiles.NoteTv2Thread(bus, _cprocThread);
                 CeRomTocFiles.TryKeepTv2ThreadStartip(bus, threadIp);
                 CeRomTocFiles.TryNoteTv2ProcSwitch(bus);
             }
@@ -3165,7 +3165,7 @@ namespace ProcessorEmulator.Core
                 _cprocThread = thr;
             if (!string.IsNullOrEmpty(_cprocName)
                 && _cprocName.IndexOf("tv2clientce", StringComparison.OrdinalIgnoreCase) >= 0)
-                CeRomTocFiles.NoteTv2Thread(thr);
+                CeRomTocFiles.NoteTv2Thread(bus, thr);
             if (_gwesThr == 0 && !string.IsNullOrEmpty(_cprocName)
                 && _cprocName.IndexOf("gwes", StringComparison.OrdinalIgnoreCase) >= 0)
                 _gwesThr = thr;
