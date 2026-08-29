@@ -1603,11 +1603,12 @@ namespace ProcessorEmulator.Core
                 return;
             }
             if (pc == CeRomTocFiles.CopyO32Rom
-                && _logged.Contains("hive:ldde32")
-                && _logged.Add("hive:copyo32"))
+                && _logged.Contains("hive:ldde32"))
             {
-                System.Console.WriteLine("[Hive] 0x8001AFA4 CopyO32 ExtraROM ddi_nop" +
-                    " (firmware MapO32; do not XIP-alias 0x80764CE0)");
+                CeRomTocFiles.TryMarkExtraRomO32Compressed(bus, CeRomTocFiles.DdiNopTocEntry);
+                if (_logged.Add("hive:copyo32"))
+                    System.Console.WriteLine("[Hive] 0x8001AFA4 CopyO32 ExtraROM ddi_nop" +
+                        " (firmware MapO32; do not XIP-alias 0x80764CE0)");
                 return;
             }
             if (pc == CeRomTocFiles.MapO32Rom
@@ -1619,18 +1620,23 @@ namespace ProcessorEmulator.Core
             }
             if (pc == CeRomTocFiles.MapO32Decompress
                 && _logged.Contains("hive:ldde32")
-                && _logged.Add("hive:decomp"))
+                && registers != null && registers.Length > 4)
             {
-                System.Console.WriteLine("[Hive] 0x80028844 decompress dest=0x" +
-                    (registers != null && registers.Length > 4
-                        ? registers[4].ToString("X8") : "0") +
-                    " src=0x" + (registers != null && registers.Length > 5
-                        ? registers[5].ToString("X8") : "0") +
-                    " a2=0x" + (registers != null && registers.Length > 6
-                        ? registers[6].ToString("X8") : "0") +
-                    " a3=0x" + (registers != null && registers.Length > 7
-                        ? registers[7].ToString("X8") : "0") +
-                    " (firmware; do not host-alias XIP)");
+                uint dest = registers[4];
+                uint src = registers.Length > 5 ? registers[5] : 0;
+                if (_logged.Add("hive:decomp:" + dest.ToString("X")))
+                {
+                    bool destOk = DestMapped(bus, dest);
+                    System.Console.WriteLine("[Hive] 0x80028844 decompress dest=0x" +
+                        dest.ToString("X8") +
+                        " src=0x" + src.ToString("X8") +
+                        " a2=0x" + (registers.Length > 6
+                            ? registers[6].ToString("X8") : "0") +
+                        " a3=0x" + (registers.Length > 7
+                            ? registers[7].ToString("X8") : "0") +
+                        " dest-" + (destOk ? "mapped" : "unmapped") +
+                        " (firmware; do not host-alias XIP)");
+                }
                 return;
             }
             if (pc == CeRomTocFiles.MapO32VirtualCopy
@@ -1953,6 +1959,7 @@ namespace ProcessorEmulator.Core
                 " flags=0x" + flags.ToString("X8") +
                 " vsize=0x" + vsize.ToString("X") +
                 " psize=0x" + psize.ToString("X") +
+                " dest-" + (DestMapped(bus, dest) ? "mapped" : "unmapped") +
                 " ddi_nop@0x03998014 " +
                 (DdiNopMapped(bus) ? "mapped" : "unmapped"));
         }
@@ -2070,6 +2077,21 @@ namespace ProcessorEmulator.Core
             if (_logged.Add("hive:gpc:" + what))
                 System.Console.WriteLine("[Hive] gwes " + what + " pc=0x" + pc.ToString("X8") +
                     " word=0x" + got.ToString("X8"));
+        }
+
+        private static bool DestMapped(MipsBus bus, uint dest)
+        {
+            if (bus == null || dest == 0)
+                return false;
+            try
+            {
+                bus.Read32(dest);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static bool DdiNopMapped(MipsBus bus)

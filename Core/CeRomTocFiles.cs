@@ -131,6 +131,18 @@ namespace ProcessorEmulator.Core
         private static uint _extraRomHdr;
         private static uint _ddiNopTocEntry;
         private static uint _ddiNopAttr;
+        // ExtraROM TOC/e32/o32 live at 0x8134xxxx / 0x80E99Cxx.
+        // Firmware later reuses that phys as RAM and zeros the
+        // TOC. Cache the dump bytes at map time and put them
+        // back when LoadDriver asks. Do not invent 0x81360000.
+        private static uint[] _ddiNopTocWords;
+        private static uint _ddiNopE32;
+        private static uint[] _ddiNopE32Words;
+        private static uint _ddiNopO32;
+        private static uint[] _ddiNopO32Words;
+        private static uint[] _ddiNopDataPtr;
+        private static uint[] _ddiNopDataLen;
+        private static uint[][] _ddiNopData;
 
         public static bool TryContinueRomModule(MipsBus bus, uint path, out uint attr, out uint tocEntry)
         {
@@ -231,10 +243,31 @@ namespace ProcessorEmulator.Core
                 return;
             if (tocEntry != _ddiNopTocEntry && _ddiNopTocEntry != 0)
                 return;
+            TryRestoreExtraRomIfClobbered(bus, tocEntry);
+            uint e32 = 0;
+            uint o32 = 0;
             try
             {
-                uint e32 = bus.Read32(tocEntry + 0x14);
-                uint o32 = bus.Read32(tocEntry + 0x18);
+                uint attr = bus.Read32(tocEntry);
+                uint name = bus.Read32(tocEntry + 0x10);
+                e32 = bus.Read32(tocEntry + 0x14);
+                o32 = bus.Read32(tocEntry + 0x18);
+                System.Console.WriteLine("[Hive] ExtraROM TOC[33] live entry=0x" +
+                    tocEntry.ToString("X8") +
+                    " attr=0x" + attr.ToString("X8") +
+                    " name=0x" + name.ToString("X8") +
+                    " e32=0x" + e32.ToString("X8") +
+                    " o32=0x" + o32.ToString("X8") +
+                    " cachedE32=0x" + _ddiNopE32.ToString("X8"));
+            }
+            catch (System.Exception ex)
+            {
+                System.Console.WriteLine("[Hive] ExtraROM TOC[33] live entry=0x" +
+                    tocEntry.ToString("X8") + " read-fail " + ex.Message);
+                return;
+            }
+            try
+            {
                 if (e32 == 0 || o32 == 0)
                     return;
                 uint objcnt = bus.Read32(e32) & 0xFFFF;
@@ -314,6 +347,14 @@ namespace ProcessorEmulator.Core
             _extraRomHdr = 0;
             _ddiNopTocEntry = 0;
             _ddiNopAttr = 0;
+            _ddiNopTocWords = null;
+            _ddiNopE32 = 0;
+            _ddiNopE32Words = null;
+            _ddiNopO32 = 0;
+            _ddiNopO32Words = null;
+            _ddiNopDataPtr = null;
+            _ddiNopDataLen = null;
+            _ddiNopData = null;
         }
 
         public static void NoteExtraRomModule(uint romhdr, uint tocEntry, uint attr)
@@ -324,6 +365,121 @@ namespace ProcessorEmulator.Core
             {
                 _ddiNopTocEntry = tocEntry;
                 _ddiNopAttr = attr;
+            }
+        }
+
+        public static void CacheExtraRomDdiNop(ProcessorEmulator.Core.Emulation.IMemoryManager memory, uint tocEntry)
+        {
+            if (memory == null || tocEntry == 0)
+                return;
+            try
+            {
+                var toc = new uint[8];
+                for (int i = 0; i < 8; i++)
+                    toc[i] = memory.ReadMemory32(tocEntry + (uint)(i * 4));
+                uint e32 = toc[5];
+                uint o32 = toc[6];
+                if (e32 == 0 || o32 == 0)
+                    return;
+                uint objcnt = memory.ReadMemory32(e32) & 0xFFFF;
+                if (objcnt == 0 || objcnt > 16)
+                    return;
+                var e32Words = new uint[32];
+                for (int i = 0; i < e32Words.Length; i++)
+                    e32Words[i] = memory.ReadMemory32(e32 + (uint)(i * 4));
+                var o32Words = new uint[objcnt * 6];
+                for (int i = 0; i < o32Words.Length; i++)
+                    o32Words[i] = memory.ReadMemory32(o32 + (uint)(i * 4));
+                var dataPtr = new uint[objcnt];
+                var dataLen = new uint[objcnt];
+                var data = new uint[objcnt][];
+                for (uint s = 0; s < objcnt; s++)
+                {
+                    uint psize = o32Words[s * 6 + 2];
+                    uint dataptr = o32Words[s * 6 + 3];
+                    if (dataptr == 0 || psize == 0 || psize > 0x20000)
+                        continue;
+                    uint n = (psize + 3) / 4;
+                    var blob = new uint[n];
+                    for (uint w = 0; w < n; w++)
+                        blob[w] = memory.ReadMemory32(dataptr + w * 4);
+                    dataPtr[s] = dataptr;
+                    dataLen[s] = psize;
+                    data[s] = blob;
+                }
+                _ddiNopTocWords = toc;
+                _ddiNopE32 = e32;
+                _ddiNopE32Words = e32Words;
+                _ddiNopO32 = o32;
+                _ddiNopO32Words = o32Words;
+                _ddiNopDataPtr = dataPtr;
+                _ddiNopDataLen = dataLen;
+                _ddiNopData = data;
+                System.Console.WriteLine("[NkBinLoader] ExtraROM TOC[33] cached e32=0x" +
+                    e32.ToString("X8") + " o32=0x" + o32.ToString("X8") +
+                    " (restore if firmware RAM reuses ExtraROM tail)");
+            }
+            catch (System.Exception ex)
+            {
+                System.Console.WriteLine("[NkBinLoader] ExtraROM TOC[33] cache skipped: " + ex.Message);
+            }
+        }
+
+        private static void TryRestoreExtraRomIfClobbered(MipsBus bus, uint tocEntry)
+        {
+            if (bus == null || tocEntry == 0 || _ddiNopTocWords == null)
+                return;
+            uint liveE32 = 0;
+            uint liveO32 = 0;
+            uint liveObjcnt = 0;
+            uint liveVsize = 0;
+            try
+            {
+                liveE32 = bus.Read32(tocEntry + 0x14);
+                liveO32 = bus.Read32(tocEntry + 0x18);
+                if (liveE32 != 0)
+                    liveObjcnt = bus.Read32(liveE32) & 0xFFFF;
+                if (liveO32 != 0)
+                    liveVsize = bus.Read32(liveO32);
+            }
+            catch
+            {
+            }
+            if (liveE32 == _ddiNopE32 && liveE32 != 0 && liveObjcnt != 0 && liveVsize != 0)
+                return;
+            try
+            {
+                for (int i = 0; i < _ddiNopTocWords.Length; i++)
+                    bus.Write32(tocEntry + (uint)(i * 4), _ddiNopTocWords[i]);
+                if (_ddiNopE32 != 0 && _ddiNopE32Words != null)
+                {
+                    for (int i = 0; i < _ddiNopE32Words.Length; i++)
+                        bus.Write32(_ddiNopE32 + (uint)(i * 4), _ddiNopE32Words[i]);
+                }
+                if (_ddiNopO32 != 0 && _ddiNopO32Words != null)
+                {
+                    for (int i = 0; i < _ddiNopO32Words.Length; i++)
+                        bus.Write32(_ddiNopO32 + (uint)(i * 4), _ddiNopO32Words[i]);
+                }
+                if (_ddiNopData != null)
+                {
+                    for (int s = 0; s < _ddiNopData.Length; s++)
+                    {
+                        uint[] blob = _ddiNopData[s];
+                        if (blob == null || _ddiNopDataPtr[s] == 0)
+                            continue;
+                        for (int w = 0; w < blob.Length; w++)
+                            bus.Write32(_ddiNopDataPtr[s] + (uint)(w * 4), blob[w]);
+                    }
+                }
+                System.Console.WriteLine("[Hive] ExtraROM TOC[33] restored e32=0x" +
+                    _ddiNopE32.ToString("X8") + " o32=0x" + _ddiNopO32.ToString("X8") +
+                    " (was 0x" + liveE32.ToString("X8") +
+                    "; firmware RAM reused ExtraROM tail; do not invent 0x81360000)");
+            }
+            catch (System.Exception ex)
+            {
+                System.Console.WriteLine("[Hive] ExtraROM TOC[33] restore-fail " + ex.Message);
             }
         }
 

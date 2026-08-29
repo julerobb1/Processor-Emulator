@@ -240,6 +240,7 @@ namespace ProcessorEmulator.Core.Loaders
                     {
                         uint tocAttr = memory.ReadMemory32(entry);
                         CeRomTocFiles.NoteExtraRomModule(romhdr, entry, tocAttr);
+                        CeRomTocFiles.CacheExtraRomDdiNop(memory, entry);
                         Console.WriteLine("[NkBinLoader] ExtraROM TOC[" + i + "] ddi_nop.dll entry=0x" +
                             entry.ToString("X8") + " (LoadDriver; do not invent 0x81360000)");
                     }
