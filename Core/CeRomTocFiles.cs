@@ -54,11 +54,11 @@ namespace ProcessorEmulator.Core
         // skip=0, convert=1, stepsize=0x1000.
         public const uint BinaryDecompressRom = 0x80050974;
         // Inner 0x800504B4 dest_end is dest+16($sp). Outer
-        // stores leftover vsize there, so a 4K page keeps
-        // decoding past stepsize, lookback hits dest+0x1000,
-        // and later pages return -10/-12 → outer v0=-1.
-        // Cap ExtraROM 16($sp) at stepsize. 0x80050B00 is
-        // bltz $v0 after the jal.
+        // stores leftover vsize there. ExtraROM B5/B4 page 0
+        // writes 0x321B then page 4 returns -10. Capping
+        // 16($sp) at 0x1000 makes outer v0=vsize but ImpHdr
+        // stays 0xBEBC0000 and entry stays 0. Do not cap.
+        // 0x80050B00 is bltz $v0 after the jal.
         public const uint BinaryDecompressInner = 0x800504B4;
         public const uint BinaryDecompressAfterInner = 0x80050B00;
         public const uint MemReserve = 0x2000;
@@ -564,7 +564,7 @@ namespace ProcessorEmulator.Core
             return true;
         }
 
-        public static bool TryCapExtraRomInnerDest(MipsBus bus, uint[] regs)
+        public static bool TryNoteExtraRomInnerDest(MipsBus bus, uint[] regs)
         {
             if (_ddiNopDecompRa == 0 || bus == null || regs == null || regs.Length <= 29)
                 return false;
@@ -572,15 +572,15 @@ namespace ProcessorEmulator.Core
             {
                 uint sp = regs[29];
                 uint budget = bus.Read32(sp + 16);
-                if (budget <= 0x1000)
-                    return false;
-                bus.Write32(sp + 16, 0x1000);
                 if (!_ddiNopInnerCap)
                 {
                     _ddiNopInnerCap = true;
                     System.Console.WriteLine("[Hive] ExtraROM CEDecompress inner dest budget 0x" +
-                        budget.ToString("X") + " -> 0x1000 (stepsize; leftover vsize over-decodes B5/B4)");
+                        budget.ToString("X") +
+                        " (leftover vsize; dest is kseg0-backed)");
                 }
+                if (budget <= 0x1000)
+                    return false;
             }
             catch
             {
