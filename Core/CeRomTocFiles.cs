@@ -566,7 +566,7 @@ namespace ProcessorEmulator.Core
                 bus.Write32(o32Lite + 8, slot);
                 System.Console.WriteLine("[Hive] ExtraROM MapO32 dest 0x" +
                     dest.ToString("X8") + " -> 0x" + slot.ToString("X8") +
-                    " (slot-0 view of dump o32.real; firmware 0x80028844+CEDecompressROM)");
+                    " (slot-0 view of dump o32.real; firmware CEDecompressROM of dump LZX)");
             }
             catch
             {
