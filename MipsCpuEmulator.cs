@@ -211,7 +211,8 @@ namespace ProcessorEmulator.Emulation
 
                 if (programCounter == CeRomTocFiles.Win32CreateFile)
                 {
-                    if (CeRomTocFiles.TryMissMissingDevice(_bus, registers[4], registers, ref programCounter))
+                    if (CeRomTocFiles.TryMissMissingDevice(_bus, registers[4], registers, ref programCounter)
+                        || CeRomTocFiles.TryMissMscoreeWin32(_bus, registers[4], registers, ref programCounter))
                     {
                         _cp0.UpdateTimer(1);
                         _bus.Tick(1);

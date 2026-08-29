@@ -2110,6 +2110,30 @@ namespace ProcessorEmulator.Core
             }
         }
 
+        public static bool TryMissMscoreeWin32(MipsBus bus, uint path, uint[] regs, ref uint programCounter)
+        {
+            if (regs == null || regs.Length <= 31)
+                return false;
+            string baseName = "";
+            try
+            {
+                if (bus != null && path != 0)
+                    baseName = Basename(bus, path);
+            }
+            catch
+            {
+            }
+            if (string.IsNullOrEmpty(baseName))
+                baseName = _pendingRomFile;
+            if (!IsMscoreeDll(baseName))
+                return false;
+            regs[2] = 0xFFFFFFFFu;
+            programCounter = regs[31];
+            System.Console.WriteLine("[Hive] Win32 CreateFile mscoree.dll INVALID_HANDLE" +
+                " (no dump FILE; TOC[46] type-7 attach at 0x8001D400)");
+            return true;
+        }
+
         public static void TryRejectMscoreeFileHandle(MipsBus bus, uint[] regs)
         {
             if (bus == null || regs == null || regs.Length <= 23)
@@ -2117,23 +2141,26 @@ namespace ProcessorEmulator.Core
             uint v0 = regs[2];
             if (v0 == 0xFFFFFFFFu)
                 return;
-            try
+            string baseName = _pendingRomFile;
+            if (!IsMscoreeDll(baseName))
             {
-                string baseName = Basename(bus, regs[23]);
-                if (string.IsNullOrEmpty(baseName) && !string.IsNullOrEmpty(_pendingRomFile))
-                    baseName = _pendingRomFile;
-                if (!IsMscoreeDll(baseName) && regs[4] != 0)
-                    baseName = Basename(bus, regs[4]);
-                if (!IsMscoreeDll(baseName))
+                try
+                {
+                    baseName = Basename(bus, regs[23]);
+                    if (!IsMscoreeDll(baseName) && regs[4] != 0)
+                        baseName = Basename(bus, regs[4]);
+                }
+                catch
+                {
                     return;
-                regs[2] = 0xFFFFFFFFu;
-                System.Console.WriteLine("[Hive] Win32 CreateFile mscoree.dll v0=0x" +
-                    v0.ToString("X8") +
-                    " (filesys handle; FILE table has no mscoree.dll; INVALID_HANDLE so TOC[46] type-7 attach)");
+                }
             }
-            catch
-            {
-            }
+            if (!IsMscoreeDll(baseName))
+                return;
+            regs[2] = 0xFFFFFFFFu;
+            System.Console.WriteLine("[Hive] Win32 CreateFile mscoree.dll v0=0x" +
+                v0.ToString("X8") +
+                " (filesys handle; FILE table has no mscoree.dll; INVALID_HANDLE so TOC[46] type-7 attach)");
         }
 
         public static bool TryMissMissingDevice(MipsBus bus, uint path, uint[] regs, ref uint programCounter)
