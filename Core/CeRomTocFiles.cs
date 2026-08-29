@@ -199,6 +199,20 @@ namespace ProcessorEmulator.Core
         private static uint[] _ddiNopDataPtr;
         private static uint[] _ddiNopDataLen;
         private static uint[][] _ddiNopData;
+        // wait59: ExtraROM TOC[46] mscoree.dll. FILE table has
+        // mscorlib.dll / system*.dll, not this name. Same tail
+        // reuse as TOC[33] / FILE[25]. Cache at map time.
+        // Do not invent a FILE. Do not invent 0x81360000.
+        private static uint _mscoreeTocEntry;
+        private static uint _mscoreeAttr;
+        private static uint[] _mscoreeTocWords;
+        private static uint _mscoreeE32;
+        private static uint[] _mscoreeE32Words;
+        private static uint _mscoreeO32;
+        private static uint[] _mscoreeO32Words;
+        private static uint[] _mscoreeDataPtr;
+        private static uint[] _mscoreeDataLen;
+        private static uint[][] _mscoreeData;
         // wait54: ExtraROM FILE[25] tv2clientce.exe lives at
         // 0x8134E794 (28-byte FILESentry). Firmware later reuses
         // that tail as RAM (same class as TOC[33]). Cache at map
@@ -267,6 +281,7 @@ namespace ProcessorEmulator.Core
                 && !NamesEqual(baseName, "ceddk.dll")
                 && !NamesEqual(baseName, "sigcheckfilter.dll")
                 && !NamesEqual(baseName, "ddi_nop.dll")
+                && !IsMscoreeDll(baseName)
                 && !IsTv2ClientCe(baseName))
                 return false;
 
@@ -281,6 +296,35 @@ namespace ProcessorEmulator.Core
                 System.Console.WriteLine("[Hive] TOC-attach ExtraROM ddi_nop.dll entry=0x" +
                     tocEntry.ToString("X8") + " (CreateFile miss; do not invent 0x81360000)");
                 TryMarkExtraRomO32Compressed(bus, tocEntry);
+                return true;
+            }
+            // wait59: BindImp of FILE[25] OpenExe \mscoree.dll.
+            // ExtraROM TOC[46] is that name (e32 0x80E9A658).
+            // FILE table has mscorlib/system*.dll, not mscoree.dll.
+            // Do not invent a FILE. Do not attach TOC[79]
+            // mscoree3_5.dll. Type 7: e32 at entry+0x14.
+            if (IsMscoreeDll(baseName))
+            {
+                TryRestoreExtraRomMscoreeIfClobbered(bus);
+                if (_mscoreeTocEntry != 0 && _mscoreeTocWords != null)
+                {
+                    tocEntry = _mscoreeTocEntry;
+                    attr = _mscoreeAttr != 0 ? _mscoreeAttr : _mscoreeTocWords[0];
+                }
+                else if (!TryFindTocModule(bus, ExtraRomToc(bus), 128, baseName, out tocEntry, out attr))
+                {
+                    System.Console.WriteLine("[Hive] TOC-attach ExtraROM mscoree.dll miss" +
+                        " (FILE table has no mscoree.dll; do not invent a FILE)");
+                    return false;
+                }
+                attachType = TocAttachType;
+                System.Console.WriteLine("[Hive] TOC-attach ExtraROM mscoree.dll entry=0x" +
+                    tocEntry.ToString("X8") +
+                    " type=7 attr=0x" + attr.ToString("X8") +
+                    " e32=0x" + (_mscoreeE32 != 0 ? _mscoreeE32 : (uint)0).ToString("X8") +
+                    " (TOC[46]; not a FILE; do not invent 0x81360000)");
+                TryMarkExtraRomO32Compressed(bus, tocEntry);
+                _pendingRomFile = null;
                 return true;
             }
             // wait53: CreateFile \Windows\tv2clientce.exe is
@@ -338,9 +382,11 @@ namespace ProcessorEmulator.Core
             if (bus == null || path == 0 || obj == 0)
                 return false;
             string baseName = Basename(bus, path);
-            if (!NamesEqual(baseName, "ddi_nop.dll"))
+            if (!NamesEqual(baseName, "ddi_nop.dll") && !IsMscoreeDll(baseName))
                 return false;
-            uint tocEntry = _ddiNopTocEntry;
+            if (IsMscoreeDll(baseName))
+                TryRestoreExtraRomMscoreeIfClobbered(bus);
+            uint tocEntry = IsMscoreeDll(baseName) ? _mscoreeTocEntry : _ddiNopTocEntry;
             if (tocEntry == 0
                 && !TryFindTocModule(bus, ExtraRomToc(bus), 128, baseName, out tocEntry, out _))
             {
@@ -354,7 +400,7 @@ namespace ProcessorEmulator.Core
                 catch
                 {
                 }
-                System.Console.WriteLine("[Hive] TOC-walk ExtraROM ddi_nop.dll miss toc=0x" +
+                System.Console.WriteLine("[Hive] TOC-walk ExtraROM " + baseName + " miss toc=0x" +
                     toc.ToString("X8") + " nmods=" + nmods +
                     " cached-hdr=0x" + _extraRomHdr.ToString("X8") +
                     " (do not invent 0x81360000)");
@@ -369,8 +415,11 @@ namespace ProcessorEmulator.Core
             {
                 return false;
             }
-            System.Console.WriteLine("[Hive] TOC-walk ExtraROM ddi_nop.dll entry=0x" +
-                tocEntry.ToString("X8") + " (LoadDriver; do not invent 0x81360000)");
+            System.Console.WriteLine("[Hive] TOC-walk ExtraROM " + baseName + " entry=0x" +
+                tocEntry.ToString("X8") +
+                (IsMscoreeDll(baseName)
+                    ? " (OpenExe; TOC[46]; do not invent a FILE)"
+                    : " (LoadDriver; do not invent 0x81360000)"));
             TryMarkExtraRomO32Compressed(bus, tocEntry);
             return true;
         }
@@ -388,9 +437,12 @@ namespace ProcessorEmulator.Core
         {
             if (bus == null || tocEntry == 0)
                 return;
-            if (tocEntry != _ddiNopTocEntry && _ddiNopTocEntry != 0)
+            if (tocEntry != _ddiNopTocEntry && tocEntry != _mscoreeTocEntry)
                 return;
-            TryRestoreExtraRomIfClobbered(bus, tocEntry);
+            if (tocEntry == _mscoreeTocEntry)
+                TryRestoreExtraRomMscoreeIfClobbered(bus);
+            else
+                TryRestoreExtraRomIfClobbered(bus, tocEntry);
             uint e32 = 0;
             uint o32 = 0;
             try
@@ -399,17 +451,20 @@ namespace ProcessorEmulator.Core
                 uint name = bus.Read32(tocEntry + 0x10);
                 e32 = bus.Read32(tocEntry + 0x14);
                 o32 = bus.Read32(tocEntry + 0x18);
-                System.Console.WriteLine("[Hive] ExtraROM TOC[33] live entry=0x" +
+                string tag = tocEntry == _mscoreeTocEntry ? "TOC[46]" : "TOC[33]";
+                uint cachedE32 = tocEntry == _mscoreeTocEntry ? _mscoreeE32 : _ddiNopE32;
+                System.Console.WriteLine("[Hive] ExtraROM " + tag + " live entry=0x" +
                     tocEntry.ToString("X8") +
                     " attr=0x" + attr.ToString("X8") +
                     " name=0x" + name.ToString("X8") +
                     " e32=0x" + e32.ToString("X8") +
                     " o32=0x" + o32.ToString("X8") +
-                    " cachedE32=0x" + _ddiNopE32.ToString("X8"));
+                    " cachedE32=0x" + cachedE32.ToString("X8"));
             }
             catch (System.Exception ex)
             {
-                System.Console.WriteLine("[Hive] ExtraROM TOC[33] live entry=0x" +
+                string tag = tocEntry == _mscoreeTocEntry ? "TOC[46]" : "TOC[33]";
+                System.Console.WriteLine("[Hive] ExtraROM " + tag + " live entry=0x" +
                     tocEntry.ToString("X8") + " read-fail " + ex.Message);
                 return;
             }
@@ -1142,6 +1197,16 @@ namespace ProcessorEmulator.Core
             _tv2PeImageBytes = 0;
             _tv2PeVallocRa = 0;
             _tv2BindLogged = false;
+            _mscoreeTocEntry = 0;
+            _mscoreeAttr = 0;
+            _mscoreeTocWords = null;
+            _mscoreeE32 = 0;
+            _mscoreeE32Words = null;
+            _mscoreeO32 = 0;
+            _mscoreeO32Words = null;
+            _mscoreeDataPtr = null;
+            _mscoreeDataLen = null;
+            _mscoreeData = null;
         }
 
         public static void NoteExtraRomModule(uint romhdr, uint tocEntry, uint attr)
@@ -1266,6 +1331,65 @@ namespace ProcessorEmulator.Core
             }
         }
 
+        public static void CacheExtraRomMscoree(ProcessorEmulator.Core.Emulation.IMemoryManager memory, uint tocEntry)
+        {
+            if (memory == null || tocEntry == 0)
+                return;
+            try
+            {
+                var toc = new uint[8];
+                for (int i = 0; i < 8; i++)
+                    toc[i] = memory.ReadMemory32(tocEntry + (uint)(i * 4));
+                uint e32 = toc[5];
+                uint o32 = toc[6];
+                if (e32 == 0 || o32 == 0)
+                    return;
+                uint objcnt = memory.ReadMemory32(e32) & 0xFFFF;
+                if (objcnt == 0 || objcnt > 16)
+                    return;
+                var e32Words = new uint[32];
+                for (int i = 0; i < e32Words.Length; i++)
+                    e32Words[i] = memory.ReadMemory32(e32 + (uint)(i * 4));
+                var o32Words = new uint[objcnt * 6];
+                for (int i = 0; i < o32Words.Length; i++)
+                    o32Words[i] = memory.ReadMemory32(o32 + (uint)(i * 4));
+                var dataPtr = new uint[objcnt];
+                var dataLen = new uint[objcnt];
+                var data = new uint[objcnt][];
+                for (uint s = 0; s < objcnt; s++)
+                {
+                    uint psize = o32Words[s * 6 + 2];
+                    uint dataptr = o32Words[s * 6 + 3];
+                    if (dataptr == 0 || psize == 0 || psize > 0x20000)
+                        continue;
+                    uint n = (psize + 3) / 4;
+                    var blob = new uint[n];
+                    for (uint w = 0; w < n; w++)
+                        blob[w] = memory.ReadMemory32(dataptr + w * 4);
+                    dataPtr[s] = dataptr;
+                    dataLen[s] = psize;
+                    data[s] = blob;
+                }
+                _mscoreeTocEntry = tocEntry;
+                _mscoreeAttr = toc[0];
+                _mscoreeTocWords = toc;
+                _mscoreeE32 = e32;
+                _mscoreeE32Words = e32Words;
+                _mscoreeO32 = o32;
+                _mscoreeO32Words = o32Words;
+                _mscoreeDataPtr = dataPtr;
+                _mscoreeDataLen = dataLen;
+                _mscoreeData = data;
+                System.Console.WriteLine("[NkBinLoader] ExtraROM TOC[46] cached e32=0x" +
+                    e32.ToString("X8") + " o32=0x" + o32.ToString("X8") +
+                    " (restore if firmware RAM reuses ExtraROM tail; not a FILE)");
+            }
+            catch (System.Exception ex)
+            {
+                System.Console.WriteLine("[NkBinLoader] ExtraROM TOC[46] cache skipped: " + ex.Message);
+            }
+        }
+
         private static void TryRestoreExtraRomIfClobbered(MipsBus bus, uint tocEntry)
         {
             if (bus == null || tocEntry == 0 || _ddiNopTocWords == null)
@@ -1321,6 +1445,64 @@ namespace ProcessorEmulator.Core
             catch (System.Exception ex)
             {
                 System.Console.WriteLine("[Hive] ExtraROM TOC[33] restore-fail " + ex.Message);
+            }
+        }
+
+        private static void TryRestoreExtraRomMscoreeIfClobbered(MipsBus bus)
+        {
+            if (bus == null || _mscoreeTocEntry == 0 || _mscoreeTocWords == null)
+                return;
+            uint liveE32 = 0;
+            uint liveO32 = 0;
+            uint liveObjcnt = 0;
+            uint liveVsize = 0;
+            try
+            {
+                liveE32 = bus.Read32(_mscoreeTocEntry + 0x14);
+                liveO32 = bus.Read32(_mscoreeTocEntry + 0x18);
+                if (liveE32 != 0)
+                    liveObjcnt = bus.Read32(liveE32) & 0xFFFF;
+                if (liveO32 != 0)
+                    liveVsize = bus.Read32(liveO32);
+            }
+            catch
+            {
+            }
+            if (liveE32 == _mscoreeE32 && liveE32 != 0 && liveObjcnt != 0 && liveVsize != 0)
+                return;
+            try
+            {
+                for (int i = 0; i < _mscoreeTocWords.Length; i++)
+                    bus.Write32(_mscoreeTocEntry + (uint)(i * 4), _mscoreeTocWords[i]);
+                if (_mscoreeE32 != 0 && _mscoreeE32Words != null)
+                {
+                    for (int i = 0; i < _mscoreeE32Words.Length; i++)
+                        bus.Write32(_mscoreeE32 + (uint)(i * 4), _mscoreeE32Words[i]);
+                }
+                if (_mscoreeO32 != 0 && _mscoreeO32Words != null)
+                {
+                    for (int i = 0; i < _mscoreeO32Words.Length; i++)
+                        bus.Write32(_mscoreeO32 + (uint)(i * 4), _mscoreeO32Words[i]);
+                }
+                if (_mscoreeData != null)
+                {
+                    for (int s = 0; s < _mscoreeData.Length; s++)
+                    {
+                        uint[] blob = _mscoreeData[s];
+                        if (blob == null || _mscoreeDataPtr[s] == 0)
+                            continue;
+                        for (int w = 0; w < blob.Length; w++)
+                            bus.Write32(_mscoreeDataPtr[s] + (uint)(w * 4), blob[w]);
+                    }
+                }
+                System.Console.WriteLine("[Hive] ExtraROM TOC[46] restored e32=0x" +
+                    _mscoreeE32.ToString("X8") + " o32=0x" + _mscoreeO32.ToString("X8") +
+                    " (was 0x" + liveE32.ToString("X8") +
+                    "; firmware RAM reused ExtraROM tail; do not invent a FILE)");
+            }
+            catch (System.Exception ex)
+            {
+                System.Console.WriteLine("[Hive] ExtraROM TOC[46] restore-fail " + ex.Message);
             }
         }
 
@@ -1680,7 +1862,24 @@ namespace ProcessorEmulator.Core
                 v0.ToString("X8") +
                 (v0 == 0 ? " (firmware miss)" : " (dump PE dest range)") +
                 " (do not invent 0x81360000; do not host-back 0x000E0000)");
+            if (v0 != 0)
+                TryHostBackTv2PeVallocGapPage();
             return true;
+        }
+
+        // wait59: I-fetch 0x00013628 is page 0x00013000. That page
+        // sits inside firmware VALLOC 0x00010000/0x8000, past
+        // dest+vsize 0x8C4 (MapO32 host-back ends at 0x00013000).
+        // Host-back this one page only. Not a MapO32 dest. Not
+        // 0x000E0000. Do not invent section bytes.
+        private static void TryHostBackTv2PeVallocGapPage()
+        {
+            const uint page = 0x00013000u;
+            if (!_tv2FileDestOn || _tv2PeImageVa == 0 || _tv2PeImageBytes == 0)
+                return;
+            if (page < _tv2PeImageVa || page + 0x1000u > _tv2PeImageVa + _tv2PeImageBytes)
+                return;
+            TryHostBackTv2PeDest(page, 0x1000);
         }
 
         // wait57: type 8 MapO32 does not jal 0x80028844 or VirtualCopy.
@@ -1793,10 +1992,12 @@ namespace ProcessorEmulator.Core
             _vallocHostKseg[_vallocHostN] = kseg;
             _vallocHostN++;
             _vallocHostPool += span;
+            string why = baseVa == 0x00013000u
+                ? " (firmware VALLOC image page; not a MapO32 dest; do not invent 0x000E0000)"
+                : " (firmware MapO32 of dump PE; do not invent 0x000E0000)";
             System.Console.WriteLine("[Hive] FILE[25] dest host-back 0x" +
                 baseVa.ToString("X8") + "-0x" + end.ToString("X8") +
-                " -> 0x" + kseg.ToString("X8") +
-                " (firmware MapO32 of dump PE; do not invent 0x000E0000)");
+                " -> 0x" + kseg.ToString("X8") + why);
         }
 
         private static bool TryFindTocModule(MipsBus bus, uint tocOrZero, uint maxMods,
@@ -2973,6 +3174,25 @@ namespace ProcessorEmulator.Core
             {
             }
             return created;
+        }
+
+        // ExtraROM TOC[46] only. Length 11: do not match
+        // mscoree3_5.dll (TOC[79], 15).
+        private static bool IsMscoreeDll(string name)
+        {
+            if (string.IsNullOrEmpty(name) || name.Length != 11)
+                return false;
+            return (name[0] == 'm' || name[0] == 'M')
+                && (name[1] == 's' || name[1] == 'S')
+                && (name[2] == 'c' || name[2] == 'C')
+                && (name[3] == 'o' || name[3] == 'O')
+                && (name[4] == 'r' || name[4] == 'R')
+                && (name[5] == 'e' || name[5] == 'E')
+                && (name[6] == 'e' || name[6] == 'E')
+                && name[7] == '.'
+                && (name[8] == 'd' || name[8] == 'D')
+                && (name[9] == 'l' || name[9] == 'L')
+                && (name[10] == 'l' || name[10] == 'L');
         }
 
         // wait53 retry is \Windows\tv2clientce.exe.exe

@@ -244,6 +244,19 @@ namespace ProcessorEmulator.Core.Loaders
                         Console.WriteLine("[NkBinLoader] ExtraROM TOC[" + i + "] ddi_nop.dll entry=0x" +
                             entry.ToString("X8") + " (LoadDriver; do not invent 0x81360000)");
                     }
+                    if (IsMscoree(name))
+                    {
+                        uint tocAttr = memory.ReadMemory32(entry);
+                        uint e32 = memory.ReadMemory32(entry + 0x14);
+                        uint o32 = memory.ReadMemory32(entry + 0x18);
+                        CeRomTocFiles.CacheExtraRomMscoree(memory, entry);
+                        Console.WriteLine("[NkBinLoader] ExtraROM TOC[" + i + "] mscoree.dll entry=0x" +
+                            entry.ToString("X8") +
+                            " attr=0x" + tocAttr.ToString("X8") +
+                            " e32=0x" + e32.ToString("X8") +
+                            " o32=0x" + o32.ToString("X8") +
+                            " (OpenExe; not a FILE; do not invent 0x81360000)");
+                    }
                     if (shown < 24)
                     {
                         Console.WriteLine("[NkBinLoader] ExtraROM XIP " + name);
@@ -254,36 +267,71 @@ namespace ProcessorEmulator.Core.Loaders
                 if (nfiles > 0 && nfiles <= 128)
                 {
                     uint first = romhdr + 0x54 + nummods * 32;
+                    bool sawMscoreeFile = false;
                     for (uint i = 0; i < nfiles; i++)
                     {
                         uint entry = first + i * 28;
                         string fname = ReadAscii(memory, memory.ReadMemory32(entry + 0x14));
                         if (string.IsNullOrEmpty(fname))
                             continue;
+                        if (IsMscoree(fname))
+                        {
+                            sawMscoreeFile = true;
+                            uint real = memory.ReadMemory32(entry + 0x0C);
+                            uint comp = memory.ReadMemory32(entry + 0x10);
+                            uint load = memory.ReadMemory32(entry + 0x18);
+                            Console.WriteLine("[NkBinLoader] ExtraROM FILE[" + i + "] " + fname +
+                                " entry=0x" + entry.ToString("X8") +
+                                " real=" + real +
+                                " comp=" + comp +
+                                " load=0x" + load.ToString("X8") +
+                                " (FILESentry; unexpected; do not invent)");
+                            continue;
+                        }
                         bool tv2 = fname.Length >= 11
                             && (fname[0] == 't' || fname[0] == 'T')
                             && (fname[1] == 'v' || fname[1] == 'V')
                             && fname[2] == '2';
                         if (!tv2)
                             continue;
-                        uint real = memory.ReadMemory32(entry + 0x0C);
-                        uint comp = memory.ReadMemory32(entry + 0x10);
+                        uint realSz = memory.ReadMemory32(entry + 0x0C);
+                        uint compSz = memory.ReadMemory32(entry + 0x10);
                         uint load = memory.ReadMemory32(entry + 0x18);
                         Console.WriteLine("[NkBinLoader] ExtraROM FILE[" + i + "] " + fname +
                             " entry=0x" + entry.ToString("X8") +
-                            " real=" + real +
-                            " comp=" + comp +
+                            " real=" + realSz +
+                            " comp=" + compSz +
                             " load=0x" + load.ToString("X8") +
                             " (FILESentry; do not invent 0x81360000)");
                         if (IsTv2ClientCeExe(fname))
                             CeRomTocFiles.CacheExtraRomTv2File(memory, entry);
                     }
+                    if (!sawMscoreeFile)
+                        Console.WriteLine("[NkBinLoader] ExtraROM FILE table has no mscoree.dll" +
+                            " (TOC[46] is the dump module; do not invent a FILE)");
                 }
             }
             catch (Exception ex)
             {
                 Console.WriteLine("[NkBinLoader] ExtraROM ROMHDR log skipped: " + ex.Message);
             }
+        }
+
+        private static bool IsMscoree(string name)
+        {
+            if (string.IsNullOrEmpty(name) || name.Length != 11)
+                return false;
+            return (name[0] == 'm' || name[0] == 'M')
+                && (name[1] == 's' || name[1] == 'S')
+                && (name[2] == 'c' || name[2] == 'C')
+                && (name[3] == 'o' || name[3] == 'O')
+                && (name[4] == 'r' || name[4] == 'R')
+                && (name[5] == 'e' || name[5] == 'E')
+                && (name[6] == 'e' || name[6] == 'E')
+                && name[7] == '.'
+                && (name[8] == 'd' || name[8] == 'D')
+                && (name[9] == 'l' || name[9] == 'L')
+                && (name[10] == 'l' || name[10] == 'L');
         }
 
         private static bool IsDdiNop(string name)

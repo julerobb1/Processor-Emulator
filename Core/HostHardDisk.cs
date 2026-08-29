@@ -2566,10 +2566,24 @@ namespace ProcessorEmulator.Core
             if (code != 0 && CeRomTocFiles.IsTv2DumpPeDest(vaddr)
                 && _logged.Add("hive:tv2exn:" + epc.ToString("X") + ":" + vaddr.ToString("X")))
             {
+                uint startip = 0;
+                try
+                {
+                    if (bus != null)
+                    {
+                        uint proc = bus.Read32(CeRomTocFiles.CurProc);
+                        if (proc != 0 && proc != 0xDEADBEEFu)
+                            startip = ReadModuleStartip(bus, proc);
+                    }
+                }
+                catch
+                {
+                }
                 System.Console.WriteLine("[Hive] FILE[25] exception code=" + code +
                     " epc=0x" + epc.ToString("X8") +
                     " vaddr=0x" + vaddr.ToString("X8") +
                     " vec=0x" + vector.ToString("X8") +
+                    " startip=0x" + startip.ToString("X8") +
                     " (dump PE dest; do not invent 0x81360000)");
             }
             if (!_gwesWatch || !_logged.Contains("hive:gpc:WinMain"))
