@@ -185,10 +185,9 @@ namespace ProcessorEmulator.Core
         public const uint GwesVaAvCaller = 0x0005BCF8;
         public const uint GwesDispObj = 0x000BA954;
         // 0x0005D24C addiu a0, 584; jal 0x000B4D20 (IAT 0x000B60D0).
-        // 0x0005D288 sw $v0, *0x000BA954. wait41: slot-0 rewrite made
-        // v0=0x000E1700 mapped; *heap=0x50616548; slot-v0 0x080E1700
-        // mapped. No TLB at 0x000E1970. LoadDriver still 193
-        // (dest 0x01F60000 / 0x019A8000). Do not invent 0x000E0000.
+        // wait42: ExtraROM dest host-back [v0, dest+size] — LoadDriver
+        // v0=0x86F36EA0. DllMain dest+0x520 TLB $fp=0x080E1970
+        // (slot-4 view of the GDI object). Do not invent 0x000E0000.
         public const uint GwesVaDispAlloc = 0x0005D250;
         public const uint GwesVaDispAllocRet = 0x0005D258;
         public const uint GwesVaDispStore = 0x0005D288;
