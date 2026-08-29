@@ -185,9 +185,11 @@ namespace ProcessorEmulator.Core
         public const uint GwesVaAvCaller = 0x0005BCF8;
         public const uint GwesDispObj = 0x000BA954;
         // 0x0005D24C addiu a0, 584; jal 0x000B4D20 (IAT 0x000B60D0).
-        // 0x0005D288 sw $v0, *0x000BA954. That $v0 is the GDI object
-        // later seen as 0x000E1700. Observe the alloc. Do not invent
-        // 0x000E0000.
+        // 0x0005D288 sw $v0, *0x000BA954. wait40: VirtualAlloc(NULL,
+        // 0x70) returned 0x000D0000; VirtualAlloc(0x08000000, 0x10000)
+        // returned 0x080D0000. Process heap *0x01FFFFA0 is 0x080E0000
+        // (next 64K). LocalAlloc v0=0x000E1700 is the slot-0 view of
+        // heap+0x1700. No VALLOC returned 0x000E0000. Do not invent it.
         public const uint GwesVaDispAlloc = 0x0005D250;
         public const uint GwesVaDispAllocRet = 0x0005D258;
         public const uint GwesVaDispStore = 0x0005D288;
