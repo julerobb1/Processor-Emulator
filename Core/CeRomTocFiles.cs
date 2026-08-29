@@ -1527,6 +1527,11 @@ namespace ProcessorEmulator.Core
                     pos.ToString("X") + " method=" + method +
                     " (dump FILE bytes; do not invent e32)");
             }
+            else if (method == 0 && dist < _tv2FileReal)
+            {
+                System.Console.WriteLine("[Hive] FILE[25] MapO32 SetFilePointer pos=0x" +
+                    pos.ToString("X") + " (PE raw; firmware 0x8001AECC)");
+            }
             return true;
         }
 
@@ -1541,9 +1546,12 @@ namespace ProcessorEmulator.Core
             uint outN = regs[7];
             if (dest == 0 || count == 0 || count > 0x10000)
                 return false;
+            if (IsTv2DumpPeDest(dest) && !DestReadable(bus, dest))
+                TryHostBackTv2PeDest(dest, count);
             uint left = _tv2FileReal > _tv2FilePos ? _tv2FileReal - _tv2FilePos : 0;
             if (count > left)
                 count = left;
+            uint srcPos = _tv2FilePos;
             try
             {
                 for (uint i = 0; i < count; i += 4)
@@ -1577,6 +1585,28 @@ namespace ProcessorEmulator.Core
             _tv2FilePos += count;
             regs[2] = 1;
             programCounter = regs[31];
+            if (IsTv2DumpPeDest(dest) && count != 0)
+            {
+                uint destWord = 0;
+                uint fileWord = 0;
+                try
+                {
+                    destWord = bus.Read32(dest);
+                    fileWord = bus.Read32(Tv2FileDest + srcPos);
+                }
+                catch
+                {
+                }
+                System.Console.WriteLine("[Hive] FILE[25] MapO32 ReadFile dest=0x" +
+                    dest.ToString("X8") + " pos=0x" + srcPos.ToString("X") +
+                    " n=0x" + count.ToString("X") +
+                    " dest-word=0x" + destWord.ToString("X8") +
+                    " file-word=0x" + fileWord.ToString("X8") +
+                    (destWord == fileWord && destWord != 0
+                        ? " (firmware copied dump PE)"
+                        : " (copy miss)") +
+                    " (Tv2FileDest+raw; do not invent section bytes)");
+            }
             return true;
         }
 
@@ -1645,11 +1675,13 @@ namespace ProcessorEmulator.Core
             return true;
         }
 
-        // wait56: MapO32 dests are firmware VALLOC of this dump PE.
-        // dataptr are PE PointerToRawData, not ExtraROM XIP. Host-back
-        // those dest pages only and point dataptr at Tv2FileDest+raw
-        // so firmware copies dump bytes. Do not invent e32/o32. Do
-        // not rewrite the 5120-byte PE. Do not invent 0x81360000.
+        // wait57: type 8 MapO32 does not jal 0x80028844 or VirtualCopy.
+        // object+4 bit2 is 0, so 0x8001AECC SetFilePointer(dataptr,
+        // FILE_BEGIN) then ReadFile(dest, min(vsize,psize)). dataptr
+        // must stay PE raw. wait57 rewrote it to Tv2FileDest+raw;
+        // jalr -8210 then v0!=dataptr and skipped the copy (BindImp
+        // word=0). Host-back dest only; firmware ReadFile copies
+        // from Tv2FileDest+_tv2FilePos. Do not invent section bytes.
         public static void TryMapTv2DumpPeO32(MipsBus bus, uint o32Lite)
         {
             if (!_tv2FileDestOn || bus == null || o32Lite == 0 || _tv2FileReal == 0)
@@ -1661,31 +1693,25 @@ namespace ProcessorEmulator.Core
                 uint dataptr = bus.Read32(o32Lite + 0x18);
                 if (!IsTv2DumpPeDest(dest))
                     return;
-                if (dataptr >= Tv2FileDest && dataptr < Tv2FileDest + _tv2FileReal)
-                    return;
                 if (dataptr >= _tv2FileReal)
                     return;
                 uint raw = dataptr;
-                bool already = DestReadable(bus, dest);
-                if (!already)
+                if (!DestReadable(bus, dest))
                     TryHostBackTv2PeDest(dest, vsize);
-                uint filePtr = Tv2FileDest + raw;
-                bus.Write32(o32Lite + 0x18, filePtr);
                 uint fileWord = 0;
                 try
                 {
-                    fileWord = bus.Read32(filePtr);
+                    fileWord = bus.Read32(Tv2FileDest + raw);
                 }
                 catch
                 {
                 }
                 System.Console.WriteLine("[Hive] FILE[25] MapO32 dest=0x" +
                     dest.ToString("X8") + " dataptr raw=0x" + raw.ToString("X") +
-                    " -> 0x" + filePtr.ToString("X8") +
                     " vsize=0x" + vsize.ToString("X") +
                     " file-word=0x" + fileWord.ToString("X8") +
                     " dest-" + (DestReadable(bus, dest) ? "mapped" : "unmapped") +
-                    " (dump PE; do not invent e32; FILE[26] stays 6398464)");
+                    " (SetFilePointer+ReadFile of dump PE; do not rewrite dataptr)");
             }
             catch (System.Exception ex)
             {
