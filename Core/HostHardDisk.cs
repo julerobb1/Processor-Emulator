@@ -1893,7 +1893,7 @@ namespace ProcessorEmulator.Core
             uint[] addrs =
             {
                 GwesIatGetProc, GwesIatLoadLib, 0x000B607C, GwesIatHeapCreate,
-                0x000B7A1C, GwesSlot | GwesIatGetProc, GwesSlot | 0x000B607C
+                0x000B7A1C, GwesDispObj, GwesSlot | GwesIatGetProc, GwesSlot | 0x000B607C
             };
             for (int i = 0; i < addrs.Length; i++)
             {
@@ -2303,7 +2303,7 @@ namespace ProcessorEmulator.Core
                 " s0=0x" + s0.ToString("X8") +
                 " s1=0x" + s1.ToString("X8") +
                 (parentOk ? " disp=0x" + parent.ToString("X8") : " disp-unmapped") +
-                " (jal delay sw $v0,0($fp); $fp is gwes GDI 0x000Exxxx, not o32 RVA / not sec1 BSS; no VALLOC 0x000E0000; do not invent that map)");
+                " (jal delay sw $v0,0($fp); $fp is gwes GDI 0x000Exxxx; nk TOC[7] gwes e32 ends 0x000CB000; no ExtraROM/nk o32 or B000FF page at 0x000E0000; not in dump as LE word; do not invent that map)");
         }
 
         private static void LogDdiNopMapped(MipsBus bus)

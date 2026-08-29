@@ -707,8 +707,12 @@ namespace ProcessorEmulator.Core
 
         // DllMain TLB epc 0x03981520 is dest+0x520 (rva 0x1520).
         // 0x000E1970 is not an o32 RVA (e32 vsize 0x2B000) and not
-        // sec1 BSS (0x01F57xxx / leftover after 0xAB28). Observe
-        // the store insn. Do not invent a map at 0x000E0000.
+        // sec1 BSS (0x01F57xxx / leftover after 0xAB28). nk TOC[7]
+        // gwes.exe e32 vbase 0x00010000 vsize 0xBB000 ends
+        // 0x000CB000 (o32[3] real 0x000C6000+0x42C4). ExtraROM
+        // has no module or B000FF record in 0x000E0000-0x000F0000.
+        // 0x000E1970 / 0x000E1700 are not LE words in nk.bin or
+        // etc.bin. Observe the store. Do not invent 0x000E0000.
         private static void DumpDdiNopTextSites(MipsBus bus, uint dest)
         {
             uint[] off = { 0x520, 0x1D50, 0x1DD4, 0x5FA8, 0x70C4, 0x70E4, 0x17014, 0x170F0 };
