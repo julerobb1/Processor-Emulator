@@ -38,6 +38,9 @@ namespace ProcessorEmulator.Core
         public const uint MapO32Rom = 0x8001AC30;
         public const uint MapO32Decompress = 0x80028844;
         public const uint MapO32VirtualCopy = 0x80043298;
+        public const uint MapO32VallocRet = 0x8001AE08;
+        public const uint MemReserve = 0x2000;
+        public const uint SlotMask = 0x01FFFFFF;
         public const uint LoadLibSyscallRet = 0x03F6C8F4;
         public const uint BindImpMiss = 0x80018F9C;
         public const uint BindImpWalk = 0x80018F3C;
@@ -320,35 +323,66 @@ namespace ProcessorEmulator.Core
             }
         }
 
-        // Empty dest pages at o32.real (slot-1 VALLOC returns 14).
-        // Then clear 0x2000 on the lite so MapO32 takes 0x80028844.
+        // Slot-1 o32.real 0x03981000 is the ExtraROM vbase. VALLOC
+        // only MEM_COMMITs and the current process has no reservation
+        // there (last-error 14). Use the same slot offset in slot 0
+        // (0x01981000) so firmware can RESERVE|COMMIT, then
+        // 0x80028844 writes those pages. Alias 0x0398xxxx to that
+        // dest after VALLOC. Do not host-alias src XIP.
         public static void TrySteerExtraRomMapO32(MipsBus bus, uint o32Lite)
         {
             if (bus == null || o32Lite == 0)
                 return;
-            EnsureExtraRomDestPages(bus);
             try
             {
                 uint dest = bus.Read32(o32Lite + 8);
-                uint flags = bus.Read32(o32Lite + 0x10);
                 uint dataptr = bus.Read32(o32Lite + 0x18);
                 if (!IsExtraRomDdiNopDest(dest) && !IsExtraRomDdiNopData(dataptr))
                     return;
-                uint next = flags | O32Compressed;
-                next &= ~O32RomXip;
-                if ((next & O32Writable) != 0)
-                    next &= ~O32Writable;
-                if (next == flags)
+                if (dest < DdiNopVbase || dest >= 0x039B0000u)
                     return;
-                bus.Write32(o32Lite + 0x10, next);
-                System.Console.WriteLine("[Hive] ExtraROM MapO32 lite flags 0x" +
-                    flags.ToString("X8") + " -> 0x" + next.ToString("X8") +
-                    " dest=0x" + dest.ToString("X8") +
-                    " dest-" + (DestReadable(bus, dest) ? "mapped" : "unmapped") +
-                    " (firmware 0x80028844; do not XIP-alias)");
+                uint slot = dest & SlotMask;
+                if (slot == dest)
+                    return;
+                bus.Write32(o32Lite + 8, slot);
+                System.Console.WriteLine("[Hive] ExtraROM MapO32 dest 0x" +
+                    dest.ToString("X8") + " -> 0x" + slot.ToString("X8") +
+                    " (slot-0 view of existing o32.real; firmware VALLOC+0x80028844)");
             }
             catch
             {
+            }
+        }
+
+        public static bool TryReserveExtraRomValloc(uint[] regs)
+        {
+            if (regs == null || regs.Length <= 6)
+                return false;
+            uint dest = regs[4];
+            if (!IsExtraRomDdiNopDest(dest))
+                return false;
+            uint type = regs[6];
+            if ((type & MemReserve) != 0)
+                return false;
+            regs[6] = type | MemReserve;
+            System.Console.WriteLine("[Hive] ExtraROM VALLOC a0=0x" +
+                dest.ToString("X8") + " type 0x" + type.ToString("X") +
+                " -> 0x" + regs[6].ToString("X") +
+                " (MEM_RESERVE|COMMIT; do not invent 0x81360000)");
+            return true;
+        }
+
+        public static void NoteExtraRomVallocRet(uint dest, uint v0)
+        {
+            if (!IsExtraRomDdiNopDest(dest))
+                return;
+            System.Console.WriteLine("[Hive] ExtraROM VALLOC dest=0x" +
+                dest.ToString("X8") + " v0=0x" + v0.ToString("X8") +
+                (v0 == 0 ? " (firmware miss)" : " (slot-0 dest ready)"));
+            if (v0 != 0)
+            {
+                _ddiNopDestOn = true;
+                _ddiNopSlot0 = DdiNopVbase & SlotMask;
             }
         }
 
@@ -399,7 +433,9 @@ namespace ProcessorEmulator.Core
 
         private static bool IsExtraRomDdiNopDest(uint dest)
         {
+            uint slot = dest & SlotMask;
             return (dest >= DdiNopVbase && dest < 0x039B0000u)
+                || (slot >= 0x01980000u && slot < 0x019B0000u)
                 || (dest >= 0x01F57000u && dest < 0x01F66000u);
         }
 
@@ -443,8 +479,7 @@ namespace ProcessorEmulator.Core
             _ddiNopDataLen = null;
             _ddiNopData = null;
             _ddiNopDestOn = false;
-            _ddiNopCodeK0 = 0;
-            _ddiNopDataK0 = 0;
+            _ddiNopSlot0 = 0;
         }
 
         public static void NoteExtraRomModule(uint romhdr, uint tocEntry, uint attr)
@@ -781,16 +816,10 @@ namespace ProcessorEmulator.Core
         private static uint _aliasSlot;
         private static bool _aliasOn;
         private static uint _aliasLoggedRom;
-        // Empty kseg0 pages for ExtraROM o32.real. Firmware VALLOC of
-        // slot-1 0x03981000 returns 14. Do not host-alias src XIP.
-        // Do not invent 0x81360000.
-        private const uint DdiNopCodeK0 = 0x8F000000;
-        private const uint DdiNopDataK0 = 0x8F080000;
-        private const uint DdiNopCodeBytes = 0x30000;
-        private const uint DdiNopDataBytes = 0x10000;
+        // After firmware VALLOC of the slot-0 view of o32.real,
+        // fetch 0x0398xxxx from 0x0198xxxx. Do not host-alias src.
         private static bool _ddiNopDestOn;
-        private static uint _ddiNopCodeK0;
-        private static uint _ddiNopDataK0;
+        private static uint _ddiNopSlot0;
 
         public static void ResetExeXipAlias()
         {
@@ -803,8 +832,7 @@ namespace ProcessorEmulator.Core
             _aliasOn = false;
             _aliasLoggedRom = 0;
             _ddiNopDestOn = false;
-            _ddiNopCodeK0 = 0;
-            _ddiNopDataK0 = 0;
+            _ddiNopSlot0 = 0;
         }
 
         public static void RefreshExeXipAlias(MipsBus bus)
@@ -829,37 +857,11 @@ namespace ProcessorEmulator.Core
 
         public static uint MapDdiNopDestVa(uint va)
         {
-            if (!_ddiNopDestOn)
+            if (!_ddiNopDestOn || _ddiNopSlot0 == 0)
                 return va;
-            if (va >= DdiNopVbase && va < 0x039B0000u && _ddiNopCodeK0 != 0)
-                return _ddiNopCodeK0 + (va - DdiNopVbase);
-            if (va >= 0x01F57000u && va < 0x01F66000u && _ddiNopDataK0 != 0)
-                return _ddiNopDataK0 + (va - 0x01F57000u);
+            if (va >= DdiNopVbase && va < 0x039B0000u)
+                return _ddiNopSlot0 + (va - DdiNopVbase);
             return va;
-        }
-
-        public static void EnsureExtraRomDestPages(MipsBus bus)
-        {
-            if (bus == null || _ddiNopDestOn)
-                return;
-            try
-            {
-                for (uint i = 0; i < DdiNopCodeBytes; i += 4)
-                    bus.Write32(DdiNopCodeK0 + i, 0);
-                for (uint i = 0; i < DdiNopDataBytes; i += 4)
-                    bus.Write32(DdiNopDataK0 + i, 0);
-                _ddiNopCodeK0 = DdiNopCodeK0;
-                _ddiNopDataK0 = DdiNopDataK0;
-                _ddiNopDestOn = true;
-                System.Console.WriteLine("[Hive] ExtraROM dest pages kseg0 0x" +
-                    DdiNopCodeK0.ToString("X8") + "+0x" + DdiNopCodeBytes.ToString("X") +
-                    " / 0x" + DdiNopDataK0.ToString("X8") +
-                    " (empty; firmware 0x80028844 writes o32.real; do not XIP-alias)");
-            }
-            catch (System.Exception ex)
-            {
-                System.Console.WriteLine("[Hive] ExtraROM dest pages fail " + ex.Message);
-            }
         }
 
         public static uint MapExeXipVa(MipsBus bus, uint va)

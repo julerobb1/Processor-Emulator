@@ -403,6 +403,8 @@ namespace ProcessorEmulator.Core
             if (pc == KernelValloc && (!string.IsNullOrEmpty(_cprocName)
                 || _logged.Contains("hive:ldde32")))
             {
+                if (_logged.Contains("hive:ldde32"))
+                    CeRomTocFiles.TryReserveExtraRomValloc(registers);
                 uint a0 = registers[4];
                 uint a1 = registers[5];
                 uint a2 = registers[6];
@@ -412,6 +414,16 @@ namespace ProcessorEmulator.Core
                         "\" a0=0x" + a0.ToString("X8") +
                         " a1=0x" + a1.ToString("X8") +
                         " a2=0x" + a2.ToString("X8"));
+                return false;
+            }
+            if (pc == CeRomTocFiles.MapO32VallocRet
+                && _logged.Contains("hive:ldde32")
+                && registers != null && registers.Length > 4)
+            {
+                uint dest = registers.Length > 20 ? registers[20] : 0;
+                if (dest == 0 && registers.Length > 4)
+                    dest = registers[4];
+                CeRomTocFiles.NoteExtraRomVallocRet(dest, registers[2]);
                 return false;
             }
             if (pc == ThreadContextSetup && !string.IsNullOrEmpty(_cprocName))
