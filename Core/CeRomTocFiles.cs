@@ -550,9 +550,7 @@ namespace ProcessorEmulator.Core
             {
                 uint dest = bus.Read32(o32Lite + 8);
                 uint dataptr = bus.Read32(o32Lite + 0x18);
-                if (!IsExtraRomDdiNopDest(dest) && !IsExtraRomDdiNopData(dataptr))
-                    return;
-                if (dest < DdiNopVbase || dest >= 0x039B0000u)
+                if (!IsExtraRomCompressedDest(dest) && !IsExtraRomCompressedData(dataptr))
                     return;
                 uint slot = dest & SlotMask;
                 if (slot == dest)
@@ -560,7 +558,7 @@ namespace ProcessorEmulator.Core
                 bus.Write32(o32Lite + 8, slot);
                 System.Console.WriteLine("[Hive] ExtraROM MapO32 dest 0x" +
                     dest.ToString("X8") + " -> 0x" + slot.ToString("X8") +
-                    " (slot-0 view of existing o32.real; firmware VALLOC+0x80028844)");
+                    " (slot-0 view of dump o32.real; firmware VALLOC+CEDecompressROM)");
             }
             catch
             {
@@ -580,6 +578,10 @@ namespace ProcessorEmulator.Core
         // not 0x81360000.
         public const uint ExtraRomDestKseg0 = 0x8F100000;
         public const uint ExtraRomDestKseg1 = 0x8F180000;
+        // wait62: TOC[46] slot-0 view of dump o32.real
+        // 0x034B1000 / 0x034Cxxxx. Not 0x81360000.
+        public const uint ExtraRomDestKsegMscoree = 0x8F1A0000;
+        public const uint ExtraRomDestKsegMscoree1 = 0x8F1C0000;
         // Firmware VirtualAlloc(NULL) useg must not alias kseg0
         // 0x80000000|va: 0x000E1700 would be NK at 0x800E1700.
         // Dedicated unused kseg0, same class as ExtraROM dest.
@@ -592,15 +594,15 @@ namespace ProcessorEmulator.Core
             if (regs == null || regs.Length <= 6)
                 return false;
             uint dest = regs[4];
-            if (!IsExtraRomDdiNopDest(dest))
+            if (!IsExtraRomCompressedDest(dest))
                 return false;
             // o32[0].real is vbase+0x1000. BindImp reads IMP
-            // at vbase+0x18350 and names at vbase+NameRVA.
-            // VALLOC of dest alone leaves 0x01980000 unmapped.
-            // Pull dest down one page. Do not invent a PE header.
+            // at vbase+NameRVA. VALLOC of dest alone leaves
+            // the header page unmapped. Pull dest down one
+            // page. Do not invent a PE header.
             uint slot = dest & SlotMask;
             uint header = 0;
-            if ((slot & 0xFFFFF000u) == 0x01981000u)
+            if (IsExtraRomHeaderDestPage(slot & 0xFFFFF000u))
             {
                 header = 0x1000;
                 dest -= header;
@@ -642,7 +644,7 @@ namespace ProcessorEmulator.Core
             if (regs == null || regs.Length <= 30)
                 return false;
             uint dest = regs[30];
-            if (!IsExtraRomDdiNopDest(dest))
+            if (!IsExtraRomCompressedDest(dest))
                 return false;
             uint v0 = regs[2];
             uint pages = regs[20];
@@ -657,15 +659,24 @@ namespace ProcessorEmulator.Core
 
         public static void NoteExtraRomVallocRet(uint dest, uint v0)
         {
-            if (!IsExtraRomDdiNopDest(dest))
+            if (!IsExtraRomCompressedDest(dest))
                 return;
             System.Console.WriteLine("[Hive] ExtraROM VALLOC dest=0x" +
                 dest.ToString("X8") + " v0=0x" + v0.ToString("X8") +
                 (v0 == 0 ? " (firmware miss)" : " (slot-0 dest ready)"));
             if (v0 != 0)
             {
-                _ddiNopDestOn = true;
-                _ddiNopSlot0 = DdiNopVbase & SlotMask;
+                if (IsExtraRomDdiNopDest(dest))
+                {
+                    _ddiNopDestOn = true;
+                    _ddiNopSlot0 = DdiNopVbase & SlotMask;
+                }
+                if (IsExtraRomMscoreeDest(dest))
+                {
+                    _mscoreeDestOn = true;
+                    if (_mscoreeVbase != 0)
+                        _mscoreeSlot0 = _mscoreeVbase & SlotMask;
+                }
             }
         }
 
@@ -692,13 +703,19 @@ namespace ProcessorEmulator.Core
             uint psize = regs[5];
             uint dest = regs[6];
             uint vsize = regs[7];
-            if (!IsExtraRomDdiNopDest(dest) && !IsExtraRomDdiNopData(src))
+            if (!IsExtraRomCompressedDest(dest) && !IsExtraRomCompressedData(src))
                 return false;
             if (psize == 0 || psize > 0x200000 || vsize == 0 || vsize > 0x200000)
                 return false;
             uint aligned = CopyExtraRomSrcPageAligned(bus, src, psize);
             if (aligned != 0)
                 src = aligned;
+            if (IsExtraRomMscoreeDest(dest) || IsExtraRomMscoreeData(src))
+            {
+                _mscoreeDestOn = true;
+                if (_mscoreeVbase != 0)
+                    _mscoreeSlot0 = _mscoreeVbase & SlotMask;
+            }
             HostCommitExtraRomDest(bus, dest, vsize);
             // ExtraROM first word is [size0][size1][size2][b0].
             // Kernel 0x80050A10 takes the 3-byte LE size, then
@@ -1040,6 +1057,16 @@ namespace ProcessorEmulator.Core
                 kseg = ExtraRomDestKseg1;
                 off = dest - 0x01F57000u;
             }
+            else if (dest >= 0x014B0000u && dest < 0x014D0000u)
+            {
+                kseg = ExtraRomDestKsegMscoree;
+                off = dest - 0x014B0000u;
+            }
+            else if (dest >= 0x01F32000u && dest < 0x01F33000u)
+            {
+                kseg = ExtraRomDestKsegMscoree1;
+                off = dest - 0x01F32000u;
+            }
             if (kseg == 0)
                 return;
             try
@@ -1060,25 +1087,41 @@ namespace ProcessorEmulator.Core
             if ((src & 0xFFF) == 0)
                 return src;
             int slot = -1;
-            if (_ddiNopDataPtr != null)
+            uint[][] cache = null;
+            int baseSlot = 0;
+            if (_mscoreeDataPtr != null)
+            {
+                for (int s = 0; s < _mscoreeDataPtr.Length; s++)
+                {
+                    if (_mscoreeDataPtr[s] == src)
+                    {
+                        slot = s;
+                        cache = _mscoreeData;
+                        baseSlot = 4;
+                        break;
+                    }
+                }
+            }
+            if (slot < 0 && _ddiNopDataPtr != null)
             {
                 for (int s = 0; s < _ddiNopDataPtr.Length; s++)
                 {
                     if (_ddiNopDataPtr[s] == src)
                     {
                         slot = s;
+                        cache = _ddiNopData;
                         break;
                     }
                 }
             }
             if (slot < 0)
                 slot = 0;
-            uint dest = AlignedCompSrc + (uint)slot * AlignedCompStride;
+            uint dest = AlignedCompSrc + (uint)(baseSlot + slot) * AlignedCompStride;
             try
             {
                 uint[] blob = null;
-                if (_ddiNopData != null && slot < _ddiNopData.Length)
-                    blob = _ddiNopData[slot];
+                if (cache != null && slot < cache.Length)
+                    blob = cache[slot];
                 uint n = (psize + 3) / 4;
                 if (blob != null && blob.Length < n)
                     n = (uint)blob.Length;
@@ -1150,6 +1193,79 @@ namespace ProcessorEmulator.Core
             return dataptr >= 0x80764CE0u && dataptr < 0x80776000u;
         }
 
+        // wait62: TOC[46] dump o32.real / dataptr. Not invented.
+        private static bool IsExtraRomMscoreeDest(uint dest)
+        {
+            if (dest == 0 || _mscoreeO32Words == null)
+                return false;
+            uint slot = dest & SlotMask;
+            for (int s = 0; s + 5 < _mscoreeO32Words.Length; s += 6)
+            {
+                uint vsize = _mscoreeO32Words[s];
+                uint rva = _mscoreeO32Words[s + 1];
+                uint real = _mscoreeO32Words[s + 4];
+                if (real == 0)
+                    continue;
+                uint span = vsize == 0 ? 0x1000u : ((vsize + 0xFFFu) & ~0xFFFu);
+                if (span < 0x1000)
+                    span = 0x1000;
+                uint loSlot = real & SlotMask;
+                if ((dest >= real && dest < real + span)
+                    || (slot >= loSlot && slot < loSlot + span))
+                    return true;
+                if (rva == 0x1000 && real >= 0x1000)
+                {
+                    uint vbase = real - 0x1000;
+                    uint vbaseSlot = vbase & SlotMask;
+                    if (dest == vbase || dest == vbaseSlot || slot == vbaseSlot)
+                        return true;
+                }
+            }
+            return false;
+        }
+
+        private static bool IsExtraRomMscoreeData(uint dataptr)
+        {
+            if (dataptr == 0 || _mscoreeDataPtr == null)
+                return false;
+            for (int s = 0; s < _mscoreeDataPtr.Length; s++)
+            {
+                uint p = _mscoreeDataPtr[s];
+                if (p == 0)
+                    continue;
+                if (dataptr == p)
+                    return true;
+                uint n = _mscoreeDataLen != null && s < _mscoreeDataLen.Length
+                    ? _mscoreeDataLen[s] : 0;
+                if (n != 0 && dataptr > p && dataptr < p + n)
+                    return true;
+            }
+            return false;
+        }
+
+        private static bool IsExtraRomCompressedDest(uint dest)
+        {
+            return IsExtraRomDdiNopDest(dest) || IsExtraRomMscoreeDest(dest);
+        }
+
+        private static bool IsExtraRomCompressedData(uint dataptr)
+        {
+            return IsExtraRomDdiNopData(dataptr) || IsExtraRomMscoreeData(dataptr);
+        }
+
+        private static bool IsExtraRomHeaderDestPage(uint slotPage)
+        {
+            if (slotPage == 0x01981000u)
+                return true;
+            if (_mscoreeO32Words == null || _mscoreeO32Words.Length < 6)
+                return false;
+            uint rva = _mscoreeO32Words[1];
+            uint real = _mscoreeO32Words[4];
+            if (rva != 0x1000 || real == 0)
+                return false;
+            return (real & SlotMask & 0xFFFFF000u) == slotPage;
+        }
+
         public static bool IsDdiNopTocObject(MipsBus bus, uint obj)
         {
             if (bus == null || obj == 0 || _ddiNopTocEntry == 0)
@@ -1212,6 +1328,9 @@ namespace ProcessorEmulator.Core
             _ddiNopData = null;
             _ddiNopDestOn = false;
             _ddiNopSlot0 = 0;
+            _mscoreeDestOn = false;
+            _mscoreeSlot0 = 0;
+            _mscoreeVbase = 0;
             _ddiNopDecompRa = 0;
             _ddiNopDecompDest = 0;
             _ddiNopDecompVsize = 0;
@@ -1421,8 +1540,12 @@ namespace ProcessorEmulator.Core
                 _mscoreeDataPtr = dataPtr;
                 _mscoreeDataLen = dataLen;
                 _mscoreeData = data;
+                _mscoreeVbase = 0;
+                if (o32Words.Length >= 6 && o32Words[1] == 0x1000 && o32Words[4] >= 0x1000)
+                    _mscoreeVbase = o32Words[4] - o32Words[1];
                 System.Console.WriteLine("[NkBinLoader] ExtraROM TOC[46] cached e32=0x" +
                     e32.ToString("X8") + " o32=0x" + o32.ToString("X8") +
+                    " vbase=0x" + _mscoreeVbase.ToString("X8") +
                     " (restore if firmware RAM reuses ExtraROM tail; not a FILE)");
             }
             catch (System.Exception ex)
@@ -2383,6 +2506,9 @@ namespace ProcessorEmulator.Core
         // fetch 0x0398xxxx from 0x0198xxxx. Do not host-alias src.
         private static bool _ddiNopDestOn;
         private static uint _ddiNopSlot0;
+        private static bool _mscoreeDestOn;
+        private static uint _mscoreeSlot0;
+        private static uint _mscoreeVbase;
 
         public static void ResetExeXipAlias()
         {
@@ -2396,6 +2522,8 @@ namespace ProcessorEmulator.Core
             _aliasLoggedRom = 0;
             _ddiNopDestOn = false;
             _ddiNopSlot0 = 0;
+            _mscoreeDestOn = false;
+            _mscoreeSlot0 = 0;
             _ddiNopDecompRa = 0;
             _ddiNopDecompDest = 0;
             _ddiNopDecompVsize = 0;
@@ -2442,14 +2570,26 @@ namespace ProcessorEmulator.Core
 
         public static uint MapDdiNopDestVa(uint va)
         {
-            if (!_ddiNopDestOn || _ddiNopSlot0 == 0)
-                return va;
-            if (va >= DdiNopVbase && va < 0x039B0000u)
-                va = _ddiNopSlot0 + (va - DdiNopVbase);
-            if (va >= 0x01980000u && va < 0x019B0000u)
-                return ExtraRomDestKseg0 + (va - 0x01980000u);
-            if (va >= 0x01F57000u && va < 0x01F67000u)
-                return ExtraRomDestKseg1 + (va - 0x01F57000u);
+            if (_ddiNopDestOn && _ddiNopSlot0 != 0)
+            {
+                if (va >= DdiNopVbase && va < 0x039B0000u)
+                    va = _ddiNopSlot0 + (va - DdiNopVbase);
+                if (va >= 0x01980000u && va < 0x019B0000u)
+                    return ExtraRomDestKseg0 + (va - 0x01980000u);
+                if (va >= 0x01F57000u && va < 0x01F67000u)
+                    return ExtraRomDestKseg1 + (va - 0x01F57000u);
+            }
+            if (_mscoreeDestOn && _mscoreeVbase != 0 && _mscoreeSlot0 != 0)
+            {
+                uint vbase = _mscoreeVbase;
+                uint vbaseEnd = vbase + 0x20000u;
+                if (va >= vbase && va < vbaseEnd)
+                    va = _mscoreeSlot0 + (va - vbase);
+                if (va >= 0x014B0000u && va < 0x014D0000u)
+                    return ExtraRomDestKsegMscoree + (va - 0x014B0000u);
+                if (va >= 0x01F32000u && va < 0x01F33000u)
+                    return ExtraRomDestKsegMscoree1 + (va - 0x01F32000u);
+            }
             return va;
         }
 

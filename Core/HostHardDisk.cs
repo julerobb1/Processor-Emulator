@@ -442,7 +442,8 @@ namespace ProcessorEmulator.Core
                 || _gwesWatch
                 || CeRomTocFiles.IsTv2FileExpanded()))
             {
-                if (_logged.Contains("hive:ldde32"))
+                if (_logged.Contains("hive:ldde32")
+                    || _logged.Contains("hive:ldde32:mscoree"))
                     CeRomTocFiles.TryReserveExtraRomValloc(registers);
                 uint a0 = registers[4];
                 uint a1 = registers[5];
@@ -483,7 +484,8 @@ namespace ProcessorEmulator.Core
                 return false;
             }
             if (pc == CeRomTocFiles.MapO32VallocRet
-                && _logged.Contains("hive:ldde32")
+                && (_logged.Contains("hive:ldde32")
+                    || _logged.Contains("hive:ldde32:mscoree"))
                 && registers != null && registers.Length > 4)
             {
                 uint dest = registers.Length > 20 ? registers[20] : 0;
@@ -594,7 +596,8 @@ namespace ProcessorEmulator.Core
                 CeRomTocFiles.TryNoteExtraRomBindImp(bus, registers, pc);
             CeRomTocFiles.TryNoteTv2BindImp(bus, registers, pc);
             if (pc == CeRomTocFiles.MapO32VirtualCopy
-                && _logged.Contains("hive:ldde32")
+                && (_logged.Contains("hive:ldde32")
+                    || _logged.Contains("hive:ldde32:mscoree"))
                 && CeRomTocFiles.TryRedirectExtraRomVirtualCopyToDecompress(
                     bus, registers, ref programCounter))
                 return false;
@@ -1890,7 +1893,8 @@ namespace ProcessorEmulator.Core
                     || _logged.Contains("hive:ldde32:mscoree")
                     || CeRomTocFiles.IsTv2FileExpanded()))
             {
-                if (_logged.Contains("hive:ldde32"))
+                if (_logged.Contains("hive:ldde32")
+                    || _logged.Contains("hive:ldde32:mscoree"))
                     CeRomTocFiles.TrySteerExtraRomMapO32(bus, registers[5]);
                 CeRomTocFiles.TryMapTv2DumpPeO32(bus, registers[5]);
                 LogMapO32(registers, bus);
