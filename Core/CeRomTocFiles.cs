@@ -146,6 +146,7 @@ namespace ProcessorEmulator.Core
         public const uint ThreadSwitchProcSlow = 0x80015550;
         public const uint ThreadSwitchProcStore = 0x80015570;
         public const uint ExnAfterFetch = 0x8001588C;
+        public const uint ExnAfterFetch2 = 0x80015B9C;
         public const uint ExeVbase = 0x00010000;
         public const uint ProcModule = 0x50;
         public const uint ProcSlot = 0x0C;
@@ -326,6 +327,7 @@ namespace ProcessorEmulator.Core
         private static bool _tv2CurThreadLogged;
         private static bool _tv2RestoreLogged;
         private static bool _tv2SwitchForced;
+        private static bool _tv2SwitchStoreLogged;
 
         public static void NotePendingRomFile(string path)
         {
@@ -1743,6 +1745,7 @@ namespace ProcessorEmulator.Core
             _tv2CurThreadLogged = false;
             _tv2RestoreLogged = false;
             _tv2SwitchForced = false;
+            _tv2SwitchStoreLogged = false;
             _mscoreeTocEntry = 0;
             _mscoreeAttr = 0;
             _mscoreeTocWords = null;
@@ -3176,6 +3179,9 @@ namespace ProcessorEmulator.Core
             uint t0 = regs[8];
             if (t0 != _tv2Proc)
                 return;
+            if (_tv2SwitchStoreLogged)
+                return;
+            _tv2SwitchStoreLogged = true;
             try
             {
                 uint cur = bus.Read32(CurProc);
@@ -3327,7 +3333,7 @@ namespace ProcessorEmulator.Core
                 uint owner = bus.Read32(_tv2Thread + ThreadPrc);
                 bool notable = ctxPc == _tv2Startip
                     || ctxPc == ExnAfterFetch
-                    || cur == _tv2Proc
+                    || ctxPc == ExnAfterFetch2
                     || !_tv2RestoreLogged;
                 if (notable)
                 {
