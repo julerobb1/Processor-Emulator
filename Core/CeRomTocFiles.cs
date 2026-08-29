@@ -43,6 +43,13 @@ namespace ProcessorEmulator.Core
         public const uint MapO32CommitDest = 0x80026F50;
         public const uint MapO32VirtualCopy = 0x80043298;
         public const uint MapO32VallocRet = 0x8001AE08;
+        // 0x80028844 remaps dest PTEs onto src (XIP alias). Its
+        // kseg0 src path (0x80028A60) sets 32($sp)=1 and never
+        // writes dest bytes, so startip stays VALLOC zeros.
+        // coredll BinaryDecompress (kseg0 XIP of TOC[5]) jalrs
+        // 0xFFFFFB36: (src, psize, dest, vsize, skip). MapO32
+        // VirtualCopy already passes that layout and 16($sp)=0.
+        public const uint BinaryDecompressRom = 0x800938A8;
         public const uint MemReserve = 0x2000;
         public const uint SlotMask = 0x01FFFFFF;
         public const uint LoadLibSyscallRet = 0x03F6C8F4;
@@ -428,13 +435,14 @@ namespace ProcessorEmulator.Core
 
         // MapO32 VALLOCs dest only when flags keep 0x2000 (the early
         // 0x80028844 path does not). After that VALLOC it VirtualCopys
-        // compressed ExtraROM bytes as XIP. Rewrite that jal to
-        // 0x80028844 (dest, src, vsize, o32_access). a3 is PAGE_*
-        // (o32_lite+0xC), not psize: 0x80026C0C rejects 0xD989 and
-        // sets last-error 87, leaving VALLOC zeros at startip.
-        // Do not host-alias XIP.
+        // compressed ExtraROM bytes as XIP. 0x80028844 is a PTE remap
+        // (kseg0 src takes the XIP shortcut and dest stays zeros).
+        // Rewrite that jal to coredll BinaryDecompress so firmware
+        // expands the real ExtraROM stream onto the VALLOC dest.
+        // Do not host-alias XIP. Do not invent 0x81360000.
         private static uint _ddiNopDecompRa;
         private static uint _ddiNopDecompDest;
+        private static uint _ddiNopDecompVsize;
 
         public static bool TryRedirectExtraRomVirtualCopyToDecompress(
             MipsBus bus, uint[] regs, ref uint programCounter)
@@ -447,27 +455,35 @@ namespace ProcessorEmulator.Core
             uint vsize = regs[7];
             if (!IsExtraRomDdiNopDest(dest) && !IsExtraRomDdiNopData(src))
                 return false;
-            uint access = ExtraRomO32Access(bus, regs);
+            if (psize == 0 || psize > 0x200000 || vsize == 0 || vsize > 0x200000)
+                return false;
             uint aligned = CopyExtraRomSrcPageAligned(bus, src, psize);
             if (aligned != 0)
                 src = aligned;
-            regs[4] = dest;
-            regs[5] = src;
-            regs[6] = vsize;
-            regs[7] = access;
-            programCounter = MapO32Decompress;
+            regs[4] = src;
+            regs[5] = psize;
+            regs[6] = dest;
+            regs[7] = vsize;
+            if (regs.Length > 29)
+            {
+                try
+                {
+                    bus.Write32(regs[29] + 16, 0);
+                }
+                catch
+                {
+                }
+            }
+            programCounter = BinaryDecompressRom;
             _ddiNopDecompRa = regs.Length > 31 ? regs[31] : 0;
             _ddiNopDecompDest = dest;
-            System.Console.WriteLine("[Hive] ExtraROM VALLOC dest then 0x80028844 dest=0x" +
+            _ddiNopDecompVsize = vsize;
+            System.Console.WriteLine("[Hive] ExtraROM VALLOC dest then BinaryDecompress dest=0x" +
                 dest.ToString("X8") + " src=0x" + src.ToString("X8") +
                 " vsize=0x" + vsize.ToString("X") +
-                " access=0x" + access.ToString("X") +
                 " psize=0x" + psize.ToString("X") +
                 " dest-" + (DestReadable(bus, dest) ? "mapped" : "unmapped") +
-                (((dest ^ src) & 0xFFF) == 0
-                    ? " (firmware decompress; dest^src page-aligned)"
-                    : " (dest^src off 0x" + ((dest ^ src) & 0xFFF).ToString("X") +
-                      "; 0x80028844 wants match)"));
+                " (firmware 0x800938A8; do not host-alias XIP)");
             return true;
         }
 
@@ -476,10 +492,13 @@ namespace ProcessorEmulator.Core
             if (_ddiNopDecompRa == 0 || pc != _ddiNopDecompRa)
                 return false;
             uint dest = _ddiNopDecompDest;
+            uint vsize = _ddiNopDecompVsize;
             _ddiNopDecompRa = 0;
             uint v0 = regs != null && regs.Length > 2 ? regs[2] : 0;
             uint word = 0;
+            uint entry = 0;
             bool mapped = false;
+            bool entryMapped = false;
             try
             {
                 if (bus != null && dest != 0)
@@ -491,10 +510,31 @@ namespace ProcessorEmulator.Core
             catch
             {
             }
-            System.Console.WriteLine("[Hive] ExtraROM 0x80028844 ret v0=0x" +
+            try
+            {
+                if (bus != null && dest != 0 && vsize > 0x18014)
+                {
+                    entry = bus.Read32(dest + 0x17014);
+                    entryMapped = true;
+                }
+            }
+            catch
+            {
+            }
+            string note;
+            if (v0 == 0xFFFFFFFFu)
+                note = " (firmware BinaryDecompress miss)";
+            else if (vsize != 0 && v0 == vsize)
+                note = " (firmware expanded vsize)";
+            else if (v0 == 0)
+                note = " (firmware returned 0)";
+            else
+                note = "";
+            System.Console.WriteLine("[Hive] ExtraROM BinaryDecompress ret v0=0x" +
                 v0.ToString("X8") + " dest=0x" + dest.ToString("X8") +
                 (mapped ? " word=0x" + word.ToString("X8") : " dest-unmapped") +
-                (v0 == 0 ? " (firmware miss last-error 87)" : ""));
+                (entryMapped ? " entry=0x" + entry.ToString("X8") : "") +
+                note);
             return false;
         }
 
@@ -633,6 +673,7 @@ namespace ProcessorEmulator.Core
             _ddiNopSlot0 = 0;
             _ddiNopDecompRa = 0;
             _ddiNopDecompDest = 0;
+            _ddiNopDecompVsize = 0;
         }
 
         public static void NoteExtraRomModule(uint romhdr, uint tocEntry, uint attr)
@@ -1019,6 +1060,7 @@ namespace ProcessorEmulator.Core
             _ddiNopSlot0 = 0;
             _ddiNopDecompRa = 0;
             _ddiNopDecompDest = 0;
+            _ddiNopDecompVsize = 0;
         }
 
         public static void RefreshExeXipAlias(MipsBus bus)
