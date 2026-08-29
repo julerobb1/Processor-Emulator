@@ -170,10 +170,15 @@ namespace ProcessorEmulator.Core
         public const uint CoredllCreateThread = 0x03F71E04;
         public const uint CoredllThreadExceptionExit = 0x03F74B18;
         public const uint CoredllIsApiReady = 0x03F73240;
+        public const uint CoredllLoadDriver = 0x03F70C74;
+        public const uint CoredllMessageBoxW = 0x03F8A500;
         public const uint ExceptionWorker = 0x03FBF69C;
         public const uint GwesVaAfterKmode = 0x00016090;
         public const uint GwesVaHeapCreate = 0x00048C8C;
         public const uint GwesVaDisplayParent = 0x00023C60;
+        public const uint GwesVaAvHelper = 0x0005377C;
+        public const uint GwesVaAvCaller = 0x0005BCF8;
+        public const uint GwesDispObj = 0x000BA954;
         public const uint GwesIatGetProc = 0x000B6008;
         public const uint GwesIatLoadLib = 0x000B600C;
         public const uint GwesIatHeapCreate = 0x000B621C;
@@ -1472,6 +1477,7 @@ namespace ProcessorEmulator.Core
             if (pc == GwesVaDisplayParent || IsSlottedVa(pc, GwesVaDisplayParent))
             {
                 NoteGwesPc(pc, "display-parent", GwesRomText + (GwesVaDisplayParent - 0x00011000), bus);
+                LogGwesDispObj(bus, "display-parent");
                 return;
             }
             if (pc == GwesVaWinMainSkip || IsSlottedVa(pc, GwesVaWinMainSkip))
@@ -1544,7 +1550,8 @@ namespace ProcessorEmulator.Core
                         pc.ToString("X8"));
                 return;
             }
-            if (pc == CoredllLoadLibraryW || pc == CoredllLoadLibraryExW)
+            if (pc == CoredllLoadLibraryW || pc == CoredllLoadLibraryExW
+                || pc == CoredllLoadDriver)
             {
                 string n = registers != null && registers.Length > 4 && bus != null
                     ? ReadUtf16(bus, registers[4]) : "";
@@ -1553,10 +1560,26 @@ namespace ProcessorEmulator.Core
                 bool after = _logged.Contains("hive:gpc:WinMain");
                 bool ddi = n.IndexOf("ddi", StringComparison.OrdinalIgnoreCase) >= 0
                     || n.IndexOf("display", StringComparison.OrdinalIgnoreCase) >= 0
-                    || n.IndexOf("gwes", StringComparison.OrdinalIgnoreCase) >= 0;
+                    || n.IndexOf("gwes", StringComparison.OrdinalIgnoreCase) >= 0
+                    || n.IndexOf("mon", StringComparison.OrdinalIgnoreCase) >= 0;
                 if ((after || ddi) && _logged.Add("hive:ll:" + n))
-                    System.Console.WriteLine("[Hive] LoadLibrary \"" + n + "\" pc=0x" +
-                        pc.ToString("X8"));
+                    System.Console.WriteLine("[Hive] " +
+                        (pc == CoredllLoadDriver ? "LoadDriver" : "LoadLibrary") +
+                        " \"" + n + "\" pc=0x" + pc.ToString("X8"));
+                return;
+            }
+            if ((pc == GwesVaAvHelper || IsSlottedVa(pc, GwesVaAvHelper)
+                || pc == GwesVaAvCaller || IsSlottedVa(pc, GwesVaAvCaller))
+                && _gwesWatch)
+            {
+                LogGwesAvSite(pc, registers, bus);
+                return;
+            }
+            if (pc == CoredllMessageBoxW && _gwesSawThrEx)
+            {
+                if (_logged.Add("hive:msgbox"))
+                    System.Console.WriteLine("[Hive] MessageBoxW pc=0x" + pc.ToString("X8") +
+                        " (exception worker; needs gwes)");
                 return;
             }
             if (pc == CoredllExitThread && _gwesWatch && (_gwesIn || _gwesLastPc != 0))
@@ -1706,6 +1729,50 @@ namespace ProcessorEmulator.Core
             }
         }
 
+        // 0x0005BCF8 jal 0x0005377C; delay lw a0, 0xC8(fp).
+        // Helper is lhu 8(a0). a0==0 is the C0000005.
+        private static void LogGwesAvSite(uint pc, uint[] registers, MipsBus bus)
+        {
+            uint a0 = registers != null && registers.Length > 4 ? registers[4] : 0;
+            string key = "hive:av:" + (pc & CeSlotMask).ToString("X") + ":" + a0.ToString("X");
+            if (!_logged.Add(key))
+                return;
+            System.Console.WriteLine("[Hive] gwes AV-site pc=0x" + pc.ToString("X8") +
+                " a0=0x" + a0.ToString("X8") +
+                " (lhu 8(a0) / *(gdi+0xC8))");
+            LogGwesDispObj(bus, "AV-site");
+        }
+
+        private static void LogGwesDispObj(MipsBus bus, string when)
+        {
+            if (bus == null || !_logged.Add("hive:dispobj:" + when))
+                return;
+            try
+            {
+                uint obj = bus.Read32(GwesDispObj);
+                uint field = 0;
+                bool have = false;
+                if (obj != 0 && obj != 0xDEADBEEFu)
+                {
+                    try
+                    {
+                        field = bus.Read32(obj + 0xC8);
+                        have = true;
+                    }
+                    catch
+                    {
+                    }
+                }
+                System.Console.WriteLine("[Hive] gwes *0x000BA954=0x" + obj.ToString("X8") +
+                    " +0xC8=" + (have ? "0x" + field.ToString("X8") : "unmapped") +
+                    " (" + when + ")");
+            }
+            catch
+            {
+                System.Console.WriteLine("[Hive] gwes *0x000BA954 unmapped (" + when + ")");
+            }
+        }
+
         // Observe only. Handle is the CreateThread object;
         // the worker's ExitThread signals it. Do not SetEvent.
         private static void LogThreadExceptionExit(uint pc, uint[] registers, MipsBus bus)
@@ -1753,6 +1820,9 @@ namespace ProcessorEmulator.Core
         public static void NoteCpuException(uint code, uint epc, uint vaddr, uint vector)
         {
             if (!_gwesWatch || !_logged.Contains("hive:gpc:WinMain"))
+                return;
+            // 0 is a timer interrupt. Those ate the cap and hid the AV.
+            if (code == 0)
                 return;
             if (vector != ExceptionVector && vector != 0xBFC00380u)
                 return;
