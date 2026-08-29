@@ -1610,14 +1610,22 @@ namespace ProcessorEmulator.Core
             return true;
         }
 
+        // wait58: v0=Tv2FileDest made CreateFile think the FILE was
+        // mapped. Firmware then skips sh object+6=3 (0x8001D4F0)
+        // and MapO32 lhu +6 < 2 returns success without ReadFile
+        // (BindImp word=0). Mapping miss is the real FILE path:
+        // object+6=3, then 0x8001AECC SetFilePointer(dataptr raw)
+        // + ReadFile onto the VALLOC dest from Tv2FileDest+pos.
         public static bool TryServeTv2FileMap(uint[] regs, ref uint programCounter)
         {
             if (regs == null || regs.Length <= 31)
                 return false;
             if (!IsTv2FileHandle(regs[4]))
                 return false;
-            regs[2] = Tv2FileDest;
+            regs[2] = 0;
             programCounter = regs[31];
+            System.Console.WriteLine("[Hive] FILE[25] CreateFileMapping v0=0" +
+                " (firmware object+6=3; MapO32 ReadFile of dump PE; do not invent e32)");
             return true;
         }
 
