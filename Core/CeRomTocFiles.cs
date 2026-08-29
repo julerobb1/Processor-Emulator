@@ -136,6 +136,16 @@ namespace ProcessorEmulator.Core
         public const uint ThreadCtxPc = 0xEC;
         public const uint ThreadStartip = 0x5C;
         public const uint ThreadCtxSr = 0xF0;
+        public const uint ThreadPrc = 0x0C;
+        // 0x8001554C beq s0, v0, 0x800155A8 skips CurProc
+        // update when the same thread is rescheduled.
+        // wait69: tv2 +0x0C was filesys, so even the slow path
+        // stored CurProc=0x80340110 and I-fetch 0x014B9D98
+        // faulted to 0x8001588C. Do not invent a slot map.
+        public const uint ThreadSwitchProcChk = 0x8001554C;
+        public const uint ThreadSwitchProcSlow = 0x80015550;
+        public const uint ThreadSwitchProcStore = 0x80015570;
+        public const uint ExnAfterFetch = 0x8001588C;
         public const uint ExeVbase = 0x00010000;
         public const uint ProcModule = 0x50;
         public const uint ProcSlot = 0x0C;
@@ -314,6 +324,8 @@ namespace ProcessorEmulator.Core
         private static bool _tv2FetchLogged;
         private static bool _tv2ProcSwitchLogged;
         private static bool _tv2CurThreadLogged;
+        private static bool _tv2RestoreLogged;
+        private static bool _tv2SwitchForced;
 
         public static void NotePendingRomFile(string path)
         {
@@ -1729,6 +1741,8 @@ namespace ProcessorEmulator.Core
             _tv2FetchLogged = false;
             _tv2ProcSwitchLogged = false;
             _tv2CurThreadLogged = false;
+            _tv2RestoreLogged = false;
+            _tv2SwitchForced = false;
             _mscoreeTocEntry = 0;
             _mscoreeAttr = 0;
             _mscoreeTocWords = null;
@@ -3012,7 +3026,7 @@ namespace ProcessorEmulator.Core
             try
             {
                 uint proc = bus.Read32(CurProc);
-                if (proc >= 0x80000000u)
+                if (proc >= 0x80000000u && (_tv2Proc == 0 || IsNkOrFilesysProc(_tv2Proc)))
                     _tv2Proc = proc;
                 uint sp = regs[29];
                 uint s5 = regs.Length > 21 ? regs[21] : 0;
@@ -3059,7 +3073,7 @@ namespace ProcessorEmulator.Core
             try
             {
                 uint proc = bus.Read32(CurProc);
-                if (proc >= 0x80000000u)
+                if (proc >= 0x80000000u && (_tv2Proc == 0 || IsNkOrFilesysProc(_tv2Proc)))
                     _tv2Proc = proc;
                 if (_tv2Proc != 0)
                     TryFillFileExeStartip(bus, _tv2Proc);
@@ -3073,7 +3087,110 @@ namespace ProcessorEmulator.Core
         {
             if (!_tv2FileDestOn || thr < 0x80000000u)
                 return;
+            if (_tv2Thread != 0 && _tv2Thread != thr)
+                return;
             _tv2Thread = thr;
+        }
+
+        private static bool IsNkOrFilesysProc(uint proc)
+        {
+            return proc == ProcTable || proc == ProcTable + ProcSize;
+        }
+
+        public static void TryKeepTv2ThreadOwner(MipsBus bus, string tag)
+        {
+            if (!_tv2FileDestOn || bus == null || _tv2Thread == 0 || _tv2Proc == 0)
+                return;
+            if (IsNkOrFilesysProc(_tv2Proc))
+                return;
+            uint owner;
+            try
+            {
+                owner = bus.Read32(_tv2Thread + ThreadPrc);
+            }
+            catch
+            {
+                return;
+            }
+            if (owner == _tv2Proc)
+                return;
+            if (owner != 0 && !IsNkOrFilesysProc(owner))
+                return;
+            try
+            {
+                bus.Write32(_tv2Thread + ThreadPrc, _tv2Proc);
+                System.Console.WriteLine("[Hive] FILE[25] thread +0C: " + tag +
+                    " thr=0x" + _tv2Thread.ToString("X8") +
+                    " was=0x" + owner.ToString("X8") +
+                    " now=0x" + _tv2Proc.ToString("X8") +
+                    " (firmware tv2 proc; switcher CurProc; not a slot map)");
+            }
+            catch
+            {
+            }
+        }
+
+        public static bool TryForceTv2ProcSwitch(MipsBus bus, uint[] regs, ref uint programCounter)
+        {
+            if (!_tv2FileDestOn || _tv2Thread == 0 || _tv2Proc == 0 || regs == null || regs.Length <= 2)
+                return false;
+            if (programCounter != ThreadSwitchProcChk)
+                return false;
+            if (regs[2] != _tv2Thread)
+                return false;
+            if (IsNkOrFilesysProc(_tv2Proc))
+                return false;
+            uint cur = 0;
+            if (bus != null)
+            {
+                try
+                {
+                    cur = bus.Read32(CurProc);
+                }
+                catch
+                {
+                    return false;
+                }
+                if (cur == _tv2Proc)
+                    return false;
+            }
+            programCounter = ThreadSwitchProcSlow;
+            if (!_tv2SwitchForced)
+            {
+                _tv2SwitchForced = true;
+                System.Console.WriteLine("[Hive] FILE[25] switcher force-slow v0=0x" +
+                    regs[2].ToString("X8") +
+                    " CurProc=0x" + cur.ToString("X8") +
+                    " owner=0x" + _tv2Proc.ToString("X8") +
+                    " (firmware 0x8001554C; not an invented slot map)");
+            }
+            return true;
+        }
+
+        public static void TryNoteTv2ProcSwitchStore(MipsBus bus, uint[] regs, uint pc)
+        {
+            if (!_tv2FileDestOn || pc != ThreadSwitchProcStore || bus == null || regs == null)
+                return;
+            if (regs.Length <= 8)
+                return;
+            uint t0 = regs[8];
+            if (t0 != _tv2Proc)
+                return;
+            try
+            {
+                uint cur = bus.Read32(CurProc);
+                uint slot = 0;
+                if (_tv2Proc != 0)
+                    slot = bus.Read32(_tv2Proc + ProcSlot);
+                System.Console.WriteLine("[Hive] FILE[25] switcher CurProc t0=0x" +
+                    t0.ToString("X8") +
+                    " before=0x" + cur.ToString("X8") +
+                    " proc+0C=0x" + slot.ToString("X8") +
+                    " (firmware 0x80015570; not an invented slot map)");
+            }
+            catch
+            {
+            }
         }
 
         public static void TryKeepTv2ThreadStartip(MipsBus bus, uint threadStartip)
@@ -3100,17 +3217,34 @@ namespace ProcessorEmulator.Core
                     ctxPc = bus.Read32(_tv2Thread + ThreadCtxPc);
                     ctxSr = bus.Read32(_tv2Thread + ThreadCtxSr);
                 }
+                uint owner = 0;
+                uint slot = 0;
+                uint p0 = 0;
+                uint p8 = 0;
+                if (_tv2Thread != 0)
+                    owner = bus.Read32(_tv2Thread + ThreadPrc);
+                if (proc >= 0x80000000u)
+                {
+                    p0 = bus.Read32(proc);
+                    p8 = bus.Read32(proc + 8);
+                    slot = bus.Read32(proc + ProcSlot);
+                }
                 System.Console.WriteLine("[Hive] FILE[25] CreateProcess-ret proc=0x" +
                     proc.ToString("X8") +
+                    " +0=0x" + p0.ToString("X8") +
+                    " +8=0x" + p8.ToString("X8") +
+                    " +0C=0x" + slot.ToString("X8") +
                     " +50=0x" + p50.ToString("X8") +
                     " +5C=0x" + p5c.ToString("X8") +
                     " module+5C=0x" + m5c.ToString("X8") +
                     " thread=0x" + _tv2Thread.ToString("X8") +
+                    " thread+0C=0x" + owner.ToString("X8") +
                     " thread+5C=0x" + threadStartip.ToString("X8") +
                     " ctxPC=0x" + ctxPc.ToString("X8") +
                     " +F0=0x" + ctxSr.ToString("X8") +
                     " kept=0x" + _tv2Startip.ToString("X8") +
                     " (tv2 proc, not CurProc/filesys)");
+                TryKeepTv2ThreadOwner(bus, "CreateProcess-ret");
                 TryKeepTv2ThreadCtx(bus, "CreateProcess-ret");
             }
             catch
@@ -3183,18 +3317,29 @@ namespace ProcessorEmulator.Core
             uint s0 = regs[16];
             if (s0 != _tv2Thread)
                 return;
+            TryKeepTv2ThreadOwner(bus, pc == ThreadCtxRestore ? "ERET" : "ERET2");
             TryKeepTv2ThreadCtx(bus, pc == ThreadCtxRestore ? "ERET" : "ERET2");
             try
             {
                 uint ctxPc = bus.Read32(_tv2Thread + ThreadCtxPc);
                 uint startip = bus.Read32(_tv2Thread + ThreadStartip);
                 uint cur = bus.Read32(CurProc);
-                System.Console.WriteLine("[Hive] FILE[25] thread restore pc=0x" +
-                    pc.ToString("X8") +
-                    " thr=0x" + s0.ToString("X8") +
-                    " ctxPC=0x" + ctxPc.ToString("X8") +
-                    " +5C=0x" + startip.ToString("X8") +
-                    " CurProc=0x" + cur.ToString("X8"));
+                uint owner = bus.Read32(_tv2Thread + ThreadPrc);
+                bool notable = ctxPc == _tv2Startip
+                    || ctxPc == ExnAfterFetch
+                    || cur == _tv2Proc
+                    || !_tv2RestoreLogged;
+                if (notable)
+                {
+                    _tv2RestoreLogged = true;
+                    System.Console.WriteLine("[Hive] FILE[25] thread restore pc=0x" +
+                        pc.ToString("X8") +
+                        " thr=0x" + s0.ToString("X8") +
+                        " ctxPC=0x" + ctxPc.ToString("X8") +
+                        " +5C=0x" + startip.ToString("X8") +
+                        " +0C=0x" + owner.ToString("X8") +
+                        " CurProc=0x" + cur.ToString("X8"));
+                }
             }
             catch
             {
@@ -3232,8 +3377,26 @@ namespace ProcessorEmulator.Core
             if (_tv2Startip == 0 || pc != _tv2Startip || _tv2FetchLogged)
                 return;
             _tv2FetchLogged = true;
+            uint cur = 0;
+            uint owner = 0;
+            uint slot = 0;
+            try
+            {
+                if (bus != null)
+                    cur = bus.Read32(CurProc);
+                if (bus != null && _tv2Thread != 0)
+                    owner = bus.Read32(_tv2Thread + ThreadPrc);
+                if (bus != null && _tv2Proc != 0)
+                    slot = bus.Read32(_tv2Proc + ProcSlot);
+            }
+            catch
+            {
+            }
             System.Console.WriteLine("[Hive] FILE[25] I-fetch startip=0x" +
                 pc.ToString("X8") +
+                " CurProc=0x" + cur.ToString("X8") +
+                " thread+0C=0x" + owner.ToString("X8") +
+                " proc+0C=0x" + slot.ToString("X8") +
                 " (firmware dest; not invented 0x00017F54)");
             TryNoteTv2ProcSwitch(bus);
         }

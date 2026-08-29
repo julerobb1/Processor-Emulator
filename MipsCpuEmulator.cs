@@ -216,6 +216,20 @@ namespace ProcessorEmulator.Emulation
                     || programCounter == CeRomTocFiles.ThreadCtxRestore2)
                     CeRomTocFiles.TryNoteTv2ThreadRestore(_bus, registers, programCounter);
 
+                if (programCounter == CeRomTocFiles.ThreadSwitchProcChk)
+                {
+                    CeRomTocFiles.TryKeepTv2ThreadOwner(_bus, "switcher");
+                    if (CeRomTocFiles.TryForceTv2ProcSwitch(_bus, registers, ref programCounter))
+                    {
+                        _cp0.UpdateTimer(1);
+                        _bus.Tick(1);
+                        continue;
+                    }
+                }
+
+                if (programCounter == CeRomTocFiles.ThreadSwitchProcStore)
+                    CeRomTocFiles.TryNoteTv2ProcSwitchStore(_bus, registers, programCounter);
+
                 if (programCounter == CeRomTocFiles.ProcessAttachGate)
                     CeRomTocFiles.TryEnableFilterProcessAttach(_bus, registers);
 

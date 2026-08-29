@@ -507,6 +507,18 @@ namespace ProcessorEmulator.Core
                 CeRomTocFiles.TryNoteTv2ThreadRestore(bus, registers, pc);
                 return false;
             }
+            if (pc == CeRomTocFiles.ThreadSwitchProcChk)
+            {
+                CeRomTocFiles.TryKeepTv2ThreadOwner(bus, "switcher");
+                if (CeRomTocFiles.TryForceTv2ProcSwitch(bus, registers, ref programCounter))
+                    return true;
+                return false;
+            }
+            if (pc == CeRomTocFiles.ThreadSwitchProcStore)
+            {
+                CeRomTocFiles.TryNoteTv2ProcSwitchStore(bus, registers, pc);
+                return false;
+            }
             if (pc == ThreadStartTrampoline)
             {
                 CeRomTocFiles.TryFillProcExeStartip(bus);
