@@ -56,10 +56,14 @@ namespace ProcessorEmulator.Core
     // fetches filesys at 0x000163C8. Alias current-process
     // XIP o32[0] to dataptr and keep startip as the VA.
     // 0x8001DD6C skips CallDLL when +0x50 is useg/C2.
-    // After WinMain, log the gwes-thread WFMO/WFSO (handles,
-    // timeout, ra, last useg PC). Do not SetEvent. DisplayDll
-    // is inside 0x00024BE8 (Reg DisplayDll / Class). Do not
-    // map ddi_nop unless LoadLibrary/ActivateDevice of it.
+    // After WinMain, the first gwes-thread INFINITE WFSO is
+    // coredll ThreadExceptionExit (0x03F74B18) waiting on
+    // its CreateThread handle (start 0x03FBF69C). Who
+    // signals it: that worker's ExitThread, not SetEvent.
+    // Log the exception that entered that path. Do not
+    // SetEvent. DisplayDll is inside 0x00024BE8 (Reg
+    // DisplayDll / Class). Do not map ddi_nop unless
+    // LoadLibrary/ActivateDevice of it.
     // Display=ddi_nop.dll (default.hv; ExtraROM
     // TOC[33] vbase 0x03980000). Do not SetEvent GweApi or
     // Launch30. Do not host CreateProcess(tv2clientce).
@@ -159,6 +163,21 @@ namespace ProcessorEmulator.Core
         public const uint CoredllLoadLibraryExW = 0x03F6C84C;
         public const uint CoredllWaitSo = 0x03F6B9AC;
         public const uint CoredllWaitMo = 0x03F6B914;
+        // WinMain first jal is SetKMode. The later INFINITE
+        // WFSO is ThreadExceptionExit waiting on its
+        // CreateThread handle (not an event). Do not SetEvent.
+        public const uint CoredllSetKMode = 0x03F71098;
+        public const uint CoredllCreateThread = 0x03F71E04;
+        public const uint CoredllThreadExceptionExit = 0x03F74B18;
+        public const uint CoredllIsApiReady = 0x03F73240;
+        public const uint ExceptionWorker = 0x03FBF69C;
+        public const uint GwesVaAfterKmode = 0x00016090;
+        public const uint GwesVaHeapCreate = 0x00048C8C;
+        public const uint GwesVaDisplayParent = 0x00023C60;
+        public const uint GwesIatGetProc = 0x000B6008;
+        public const uint GwesIatLoadLib = 0x000B600C;
+        public const uint GwesIatHeapCreate = 0x000B621C;
+        public const uint ExceptionVector = 0x80000180;
         public const uint OemIdle = 0x80059E98;
         public const uint OemIdleLoop = 0x80059D20;
         public const uint FilesysCreateProcess = 0x0004BCA4;
@@ -240,6 +259,10 @@ namespace ProcessorEmulator.Core
         private static bool _gwesSawWait;
         private static bool _gwesSawDdi;
         private static bool _gwesSawSignal;
+        private static bool _gwesSawThrEx;
+        private static bool _gwesSawCreateThr;
+        private static bool _gwesSawWorker;
+        private static int _gwesExnLogged;
         private static uint _gwesThr;
 
         public static bool IsPresent => _image != null && _image.Length > 0;
@@ -293,6 +316,10 @@ namespace ProcessorEmulator.Core
             _gwesSawWait = false;
             _gwesSawDdi = false;
             _gwesSawSignal = false;
+            _gwesSawThrEx = false;
+            _gwesSawCreateThr = false;
+            _gwesSawWorker = false;
+            _gwesExnLogged = 0;
             _gwesThr = 0;
             CeRomTocFiles.ResetExeXipAlias();
             string dir = ResolveRoot();
@@ -1432,9 +1459,54 @@ namespace ProcessorEmulator.Core
                 LogGwesIat(bus);
                 return;
             }
+            if (pc == GwesVaAfterKmode || IsSlottedVa(pc, GwesVaAfterKmode))
+            {
+                NoteGwesPc(pc, "after-SetKMode", GwesRomWinMain + (GwesVaAfterKmode - GwesVaWinMain), bus);
+                return;
+            }
+            if (pc == GwesVaHeapCreate || IsSlottedVa(pc, GwesVaHeapCreate))
+            {
+                NoteGwesPc(pc, "HeapCreate-site", GwesRomText + (GwesVaHeapCreate - 0x00011000), bus);
+                return;
+            }
+            if (pc == GwesVaDisplayParent || IsSlottedVa(pc, GwesVaDisplayParent))
+            {
+                NoteGwesPc(pc, "display-parent", GwesRomText + (GwesVaDisplayParent - 0x00011000), bus);
+                return;
+            }
             if (pc == GwesVaWinMainSkip || IsSlottedVa(pc, GwesVaWinMainSkip))
             {
                 NoteGwesPc(pc, "WinMain-skip", GwesRomWinMain + (GwesVaWinMainSkip - GwesVaWinMain), bus);
+                return;
+            }
+            if (pc == CoredllThreadExceptionExit && _gwesWatch && IsGwesThread(registers, bus))
+            {
+                LogThreadExceptionExit(pc, registers, bus);
+                return;
+            }
+            if (pc == CoredllCreateThread && _gwesWatch)
+            {
+                LogGwesCreateThread(pc, registers, bus);
+                return;
+            }
+            if (pc == ExceptionWorker)
+            {
+                _gwesSawWorker = true;
+                if (_logged.Add("hive:worker"))
+                    System.Console.WriteLine("[Hive] exception-worker pc=0x" +
+                        pc.ToString("X8") + " a0=0x" +
+                        (registers != null && registers.Length > 4
+                            ? registers[4].ToString("X8") : "0") +
+                        " (ThreadExceptionExit CreateThread start)");
+                return;
+            }
+            if (pc == CoredllIsApiReady && _gwesSawThrEx)
+            {
+                uint a0 = registers != null && registers.Length > 4 ? registers[4] : 0;
+                if (_logged.Add("hive:isapi:" + a0.ToString("X")))
+                    System.Console.WriteLine("[Hive] IsAPIReady a0=" + a0 +
+                        " pc=0x" + pc.ToString("X8") +
+                        " (worker uses 17 before MessageBoxW)");
                 return;
             }
             if (pc == GwesRomDisplayFn || pc == GwesVaDisplayFn || IsSlottedVa(pc, GwesVaDisplayFn))
@@ -1575,7 +1647,11 @@ namespace ProcessorEmulator.Core
         {
             if (bus == null || !_logged.Add("hive:iat"))
                 return;
-            uint[] addrs = { 0x000B607C, GwesSlot | 0x000B607C, 0x000B7A1C, GwesSlot | 0x000B7A1C };
+            uint[] addrs =
+            {
+                GwesIatGetProc, GwesIatLoadLib, 0x000B607C, GwesIatHeapCreate,
+                0x000B7A1C, GwesSlot | GwesIatGetProc, GwesSlot | 0x000B607C
+            };
             for (int i = 0; i < addrs.Length; i++)
             {
                 uint a = addrs[i];
@@ -1630,6 +1706,69 @@ namespace ProcessorEmulator.Core
             }
         }
 
+        // Observe only. Handle is the CreateThread object;
+        // the worker's ExitThread signals it. Do not SetEvent.
+        private static void LogThreadExceptionExit(uint pc, uint[] registers, MipsBus bus)
+        {
+            _gwesSawThrEx = true;
+            if (!_logged.Add("hive:threx"))
+                return;
+            uint ra = registers != null && registers.Length > 31 ? registers[31] : 0;
+            uint a0 = registers != null && registers.Length > 4 ? registers[4] : 0;
+            uint a1 = registers != null && registers.Length > 5 ? registers[5] : 0;
+            System.Console.WriteLine("[Hive] ThreadExceptionExit pc=0x" + pc.ToString("X8") +
+                " ra=0x" + ra.ToString("X8") +
+                " last-gwes=0x" + _gwesLastPc.ToString("X8") +
+                " a0=0x" + a0.ToString("X8") +
+                " a1=0x" + a1.ToString("X8") +
+                " (CreateThread+WFSO; do not SetEvent)");
+        }
+
+        private static void LogGwesCreateThread(uint pc, uint[] registers, MipsBus bus)
+        {
+            uint start = registers != null && registers.Length > 6 ? registers[6] : 0;
+            bool gwes = IsGwesThread(registers, bus);
+            bool worker = start == ExceptionWorker;
+            if (!gwes && !worker && !_gwesSawThrEx)
+                return;
+            _gwesSawCreateThr = true;
+            string key = "hive:ct:" + start.ToString("X");
+            if (!_logged.Add(key))
+                return;
+            uint a0 = registers != null && registers.Length > 4 ? registers[4] : 0;
+            uint a1 = registers != null && registers.Length > 5 ? registers[5] : 0;
+            uint a3 = registers != null && registers.Length > 7 ? registers[7] : 0;
+            System.Console.WriteLine("[Hive] CreateThread pc=0x" + pc.ToString("X8") +
+                " start=0x" + start.ToString("X8") +
+                " a0=0x" + a0.ToString("X8") +
+                " a1=0x" + a1.ToString("X8") +
+                " a3=0x" + a3.ToString("X8") +
+                (worker ? " (ThreadExceptionExit worker)" : "") +
+                " gwes-thr=" + gwes);
+        }
+
+        // Refills stay on 0x80000000. Only the general vector
+        // after WinMain is the unhandled path into
+        // ThreadExceptionExit. Do not SetEvent that handle.
+        public static void NoteCpuException(uint code, uint epc, uint vaddr, uint vector)
+        {
+            if (!_gwesWatch || !_logged.Contains("hive:gpc:WinMain"))
+                return;
+            if (vector != ExceptionVector && vector != 0xBFC00380u)
+                return;
+            if (_gwesExnLogged >= 8)
+                return;
+            string key = "hive:exn:" + epc.ToString("X") + ":" + code.ToString("X") + ":" + vaddr.ToString("X");
+            if (!_logged.Add(key))
+                return;
+            _gwesExnLogged++;
+            System.Console.WriteLine("[Hive] exception code=" + code +
+                " epc=0x" + epc.ToString("X8") +
+                " vaddr=0x" + vaddr.ToString("X8") +
+                " vec=0x" + vector.ToString("X8") +
+                " last-gwes=0x" + _gwesLastPc.ToString("X8"));
+        }
+
         // Observe only. Do not SetEvent the waited handle.
         private static void LogGwesWait(uint pc, uint[] registers, MipsBus bus)
         {
@@ -1659,8 +1798,12 @@ namespace ProcessorEmulator.Core
             try
             {
                 if (pc == CoredllWaitSo)
+                {
                     System.Console.WriteLine("[Hive] gwes wait handle=0x" + a0.ToString("X8") +
                         " timeout=0x" + a1.ToString("X8"));
+                    if (ra >= CoredllThreadExceptionExit && ra < CoredllThreadExceptionExit + 0x1B0)
+                        System.Console.WriteLine("[Hive] gwes wait is ThreadExceptionExit CreateThread handle (not an event; do not SetEvent)");
+                }
                 else
                 {
                     uint n = a0;
@@ -1742,6 +1885,9 @@ namespace ProcessorEmulator.Core
                 " DisplayDll=" + _logged.Contains("hive:gpc:DisplayDll") +
                 " SignalStarted=" + _gwesSawSignal +
                 " first-wait=" + _gwesSawWait +
+                " ThreadExceptionExit=" + _gwesSawThrEx +
+                " CreateThread=" + _gwesSawCreateThr +
+                " exn-worker=" + _gwesSawWorker +
                 " ddi_nop=" + _gwesSawDdi +
                 " ExitThread=" + _gwesSawExit);
         }

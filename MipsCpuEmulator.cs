@@ -258,6 +258,7 @@ namespace ProcessorEmulator.Emulation
             {
                 programCounter = 0x80000180;
             }
+            HostHardDisk.NoteCpuException(exceptionCode, _cp0.EPC, 0, programCounter);
         }
 
         private void TriggerTlbException(TlbMissException ex)
@@ -284,6 +285,7 @@ namespace ProcessorEmulator.Emulation
                 programCounter = bev ? 0xBFC00200u : 0x80000000u;
             else
                 programCounter = bev ? 0xBFC00380u : 0x80000180u;
+            HostHardDisk.NoteCpuException(code, _cp0.EPC, ex.FaultingAddress, programCounter);
         }
 
         private void TriggerAddressError(uint vaddr)
@@ -297,6 +299,7 @@ namespace ProcessorEmulator.Emulation
             _cp0.Status |= (1 << 1);
             bool bev = (_cp0.Status & (1 << 22)) != 0;
             programCounter = bev ? 0xBFC00380u : 0x80000180u;
+            HostHardDisk.NoteCpuException(4, _cp0.EPC, vaddr, programCounter);
         }
 
 
