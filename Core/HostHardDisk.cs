@@ -439,7 +439,8 @@ namespace ProcessorEmulator.Core
             }
             if (pc == KernelValloc && (!string.IsNullOrEmpty(_cprocName)
                 || _logged.Contains("hive:ldde32")
-                || _gwesWatch))
+                || _gwesWatch
+                || CeRomTocFiles.IsTv2FileExpanded()))
             {
                 if (_logged.Contains("hive:ldde32"))
                     CeRomTocFiles.TryReserveExtraRomValloc(registers);
@@ -467,8 +468,13 @@ namespace ProcessorEmulator.Core
                     _vallocA1 = a1;
                     _vallocA2 = a2;
                 }
+                if (registers.Length > 31)
+                    CeRomTocFiles.NoteTv2PeImageValloc(a0, a1, a2, registers[31]);
                 return false;
             }
+            if (CeRomTocFiles.TryFinishTv2PeImageValloc(pc,
+                registers != null && registers.Length > 2 ? registers[2] : 0))
+                return false;
             if (_vallocRa != 0 && pc == _vallocRa)
             {
                 uint v0 = registers != null && registers.Length > 2 ? registers[2] : 0;
@@ -586,6 +592,7 @@ namespace ProcessorEmulator.Core
                 return true;
             if (_logged.Contains("hive:ldde32"))
                 CeRomTocFiles.TryNoteExtraRomBindImp(bus, registers, pc);
+            CeRomTocFiles.TryNoteTv2BindImp(bus, registers, pc);
             if (pc == CeRomTocFiles.MapO32VirtualCopy
                 && _logged.Contains("hive:ldde32")
                 && CeRomTocFiles.TryRedirectExtraRomVirtualCopyToDecompress(
@@ -1854,10 +1861,12 @@ namespace ProcessorEmulator.Core
                 return;
             }
             if (pc == CeRomTocFiles.MapO32Rom
-                && _logged.Contains("hive:ldde32")
-                && registers != null && registers.Length > 5)
+                && registers != null && registers.Length > 5
+                && (_logged.Contains("hive:ldde32") || CeRomTocFiles.IsTv2FileExpanded()))
             {
-                CeRomTocFiles.TrySteerExtraRomMapO32(bus, registers[5]);
+                if (_logged.Contains("hive:ldde32"))
+                    CeRomTocFiles.TrySteerExtraRomMapO32(bus, registers[5]);
+                CeRomTocFiles.TryMapTv2DumpPeO32(bus, registers[5]);
                 LogMapO32(registers, bus);
                 return;
             }
@@ -2553,6 +2562,15 @@ namespace ProcessorEmulator.Core
                     " vec=0x" + vector.ToString("X8") +
                     " (firmware refill; do not invent 0x040851E8)");
                 LogSlotAliasVa(bus, vaddr, "CreateFileFail");
+            }
+            if (code != 0 && CeRomTocFiles.IsTv2DumpPeDest(vaddr)
+                && _logged.Add("hive:tv2exn:" + epc.ToString("X") + ":" + vaddr.ToString("X")))
+            {
+                System.Console.WriteLine("[Hive] FILE[25] exception code=" + code +
+                    " epc=0x" + epc.ToString("X8") +
+                    " vaddr=0x" + vaddr.ToString("X8") +
+                    " vec=0x" + vector.ToString("X8") +
+                    " (dump PE dest; do not invent 0x81360000)");
             }
             if (!_gwesWatch || !_logged.Contains("hive:gpc:WinMain"))
                 return;

@@ -217,6 +217,16 @@ namespace ProcessorEmulator.Core
         private static uint _tv2FilePos;
         private static bool _tv2FileDestOn;
         private static bool _tv2FileIoLogged;
+        // wait56: firmware VALLOC a0=0x00010000 a1=0x00008000
+        // a2=0x01002000 (MEM_IMAGE|RESERVE) for this dump PE.
+        // MapO32 dests 0x00012000/0x00014000/0x00016000 are in
+        // that range; dataptr 0x200/0xC00/0x1200 are PE raw
+        // offsets, not ExtraROM XIP. Dedicated RA: the shared
+        // _vallocRa slot is overwritten before return.
+        private static uint _tv2PeImageVa;
+        private static uint _tv2PeImageBytes;
+        private static uint _tv2PeVallocRa;
+        private static bool _tv2BindLogged;
 
         public static void NotePendingRomFile(string path)
         {
@@ -1128,6 +1138,10 @@ namespace ProcessorEmulator.Core
             _tv2FilePos = 0;
             _tv2FileDestOn = false;
             _tv2FileIoLogged = false;
+            _tv2PeImageVa = 0;
+            _tv2PeImageBytes = 0;
+            _tv2PeVallocRa = 0;
+            _tv2BindLogged = false;
         }
 
         public static void NoteExtraRomModule(uint romhdr, uint tocEntry, uint attr)
@@ -1575,6 +1589,180 @@ namespace ProcessorEmulator.Core
             regs[2] = Tv2FileDest;
             programCounter = regs[31];
             return true;
+        }
+
+        public static bool IsTv2FileExpanded()
+        {
+            return _tv2FileDestOn && _tv2FileReal != 0;
+        }
+
+        public static bool IsTv2DumpPeDest(uint dest)
+        {
+            if (!_tv2FileDestOn || dest == 0 || dest == 0x000E0000u)
+                return false;
+            if (dest >= 0x80000000u)
+                return false;
+            if (_tv2PeImageVa != 0 && _tv2PeImageBytes != 0)
+                return dest >= _tv2PeImageVa && dest < _tv2PeImageVa + _tv2PeImageBytes;
+            return dest >= ExeVbase && dest < ExeVbase + 0x8000u;
+        }
+
+        // wait56: MEM_IMAGE VALLOC of this dump PE. Capture even
+        // when the shared VALLOC-ret slot is overwritten.
+        public static bool NoteTv2PeImageValloc(uint dest, uint size, uint type, uint ra)
+        {
+            if (!_tv2FileDestOn || dest != ExeVbase)
+                return false;
+            if ((type & 0x01000000u) == 0)
+                return false;
+            if (size < 0x4000u || size > 0x10000u)
+                return false;
+            _tv2PeImageVa = dest;
+            _tv2PeImageBytes = size;
+            _tv2PeVallocRa = ra;
+            System.Console.WriteLine("[Hive] FILE[25] VALLOC image a0=0x" +
+                dest.ToString("X8") + " a1=0x" + size.ToString("X8") +
+                " a2=0x" + type.ToString("X8") +
+                " (dump PE MEM_IMAGE; dests host-backed at MapO32 only)");
+            return true;
+        }
+
+        public static bool TryFinishTv2PeImageValloc(uint pc, uint v0)
+        {
+            if (_tv2PeVallocRa == 0 || pc != _tv2PeVallocRa)
+                return false;
+            _tv2PeVallocRa = 0;
+            if (v0 != 0)
+            {
+                _tv2PeImageVa = v0;
+                if (_tv2PeImageBytes == 0)
+                    _tv2PeImageBytes = 0x8000;
+            }
+            System.Console.WriteLine("[Hive] FILE[25] VALLOC image ret v0=0x" +
+                v0.ToString("X8") +
+                (v0 == 0 ? " (firmware miss)" : " (dump PE dest range)") +
+                " (do not invent 0x81360000; do not host-back 0x000E0000)");
+            return true;
+        }
+
+        // wait56: MapO32 dests are firmware VALLOC of this dump PE.
+        // dataptr are PE PointerToRawData, not ExtraROM XIP. Host-back
+        // those dest pages only and point dataptr at Tv2FileDest+raw
+        // so firmware copies dump bytes. Do not invent e32/o32. Do
+        // not rewrite the 5120-byte PE. Do not invent 0x81360000.
+        public static void TryMapTv2DumpPeO32(MipsBus bus, uint o32Lite)
+        {
+            if (!_tv2FileDestOn || bus == null || o32Lite == 0 || _tv2FileReal == 0)
+                return;
+            try
+            {
+                uint vsize = bus.Read32(o32Lite);
+                uint dest = bus.Read32(o32Lite + 8);
+                uint dataptr = bus.Read32(o32Lite + 0x18);
+                if (!IsTv2DumpPeDest(dest))
+                    return;
+                if (dataptr >= Tv2FileDest && dataptr < Tv2FileDest + _tv2FileReal)
+                    return;
+                if (dataptr >= _tv2FileReal)
+                    return;
+                uint raw = dataptr;
+                bool already = DestReadable(bus, dest);
+                if (!already)
+                    TryHostBackTv2PeDest(dest, vsize);
+                uint filePtr = Tv2FileDest + raw;
+                bus.Write32(o32Lite + 0x18, filePtr);
+                uint fileWord = 0;
+                try
+                {
+                    fileWord = bus.Read32(filePtr);
+                }
+                catch
+                {
+                }
+                System.Console.WriteLine("[Hive] FILE[25] MapO32 dest=0x" +
+                    dest.ToString("X8") + " dataptr raw=0x" + raw.ToString("X") +
+                    " -> 0x" + filePtr.ToString("X8") +
+                    " vsize=0x" + vsize.ToString("X") +
+                    " file-word=0x" + fileWord.ToString("X8") +
+                    " dest-" + (DestReadable(bus, dest) ? "mapped" : "unmapped") +
+                    " (dump PE; do not invent e32; FILE[26] stays 6398464)");
+            }
+            catch (System.Exception ex)
+            {
+                System.Console.WriteLine("[Hive] FILE[25] MapO32 fail " + ex.Message +
+                    " (do not invent 0x81360000)");
+            }
+        }
+
+        public static void TryNoteTv2BindImp(MipsBus bus, uint[] regs, uint pc)
+        {
+            if (!_tv2FileDestOn || _tv2BindLogged || regs == null)
+                return;
+            if (pc != BindImpHdr)
+                return;
+            _tv2BindLogged = true;
+            uint hdr = regs.Length > 20 ? regs[20] : 0;
+            uint vbase = regs.Length > 22 ? regs[22] : 0;
+            uint destWord = 0;
+            bool destOk = false;
+            try
+            {
+                if (bus != null && hdr != 0)
+                {
+                    destWord = bus.Read32(hdr);
+                    destOk = true;
+                }
+            }
+            catch
+            {
+            }
+            System.Console.WriteLine("[Hive] FILE[25] BindImp hdr=0x" +
+                hdr.ToString("X8") + " vbase=0x" + vbase.ToString("X8") +
+                " word=0x" + destWord.ToString("X8") +
+                " dest-" + (destOk ? "mapped" : "unmapped") +
+                " (dump PE dest; do not invent 0x81360000)");
+        }
+
+        private static void TryHostBackTv2PeDest(uint dest, uint vsize)
+        {
+            if (dest == 0 || dest == 0x000E0000u || dest >= 0x80000000u)
+                return;
+            if (!IsTv2DumpPeDest(dest))
+                return;
+            uint baseVa = dest & ~0xFFFu;
+            uint size = vsize == 0 ? 0x1000u : vsize;
+            uint end = (dest + size + 0xFFFu) & ~0xFFFu;
+            if (end <= baseVa)
+                return;
+            if (end > 0x000E0000u && baseVa < 0x000E0000u)
+                end = 0x000E0000u;
+            if (_tv2PeImageVa != 0 && _tv2PeImageBytes != 0)
+            {
+                uint imageEnd = _tv2PeImageVa + _tv2PeImageBytes;
+                if (end > imageEnd)
+                    end = imageEnd;
+            }
+            else if (end > ExeVbase + 0x8000u)
+                end = ExeVbase + 0x8000u;
+            if (end <= baseVa)
+                return;
+            if (MapVallocHostVa(baseVa) != baseVa)
+                return;
+            uint span = end - baseVa;
+            if (_vallocHostN >= _vallocHostLo.Length)
+                return;
+            uint kseg = _vallocHostPool;
+            if (kseg < VallocHostKseg || kseg + span > VallocHostKsegLim)
+                return;
+            _vallocHostLo[_vallocHostN] = baseVa;
+            _vallocHostHi[_vallocHostN] = end;
+            _vallocHostKseg[_vallocHostN] = kseg;
+            _vallocHostN++;
+            _vallocHostPool += span;
+            System.Console.WriteLine("[Hive] FILE[25] dest host-back 0x" +
+                baseVa.ToString("X8") + "-0x" + end.ToString("X8") +
+                " -> 0x" + kseg.ToString("X8") +
+                " (firmware MapO32 of dump PE; do not invent 0x000E0000)");
         }
 
         private static bool TryFindTocModule(MipsBus bus, uint tocOrZero, uint maxMods,
