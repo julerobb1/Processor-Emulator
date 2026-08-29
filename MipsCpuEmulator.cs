@@ -129,7 +129,9 @@ namespace ProcessorEmulator.Emulation
                     try
                     {
                         uint path = registers[23];
-                        if (CeRomTocFiles.TryContinueRomModule(_bus, path, out uint attr, out uint tocEntry))
+                        if (!CeRomTocFiles.TryContinueRomModule(_bus, path, out uint attr, out uint tocEntry))
+                            CeRomTocFiles.TryContinueRomModule(_bus, registers[4], out attr, out tocEntry);
+                        if (tocEntry != 0)
                         {
                             // Same object layout as 0x80016AFC: +0 = TOC entry,
                             // +4 = 7. 0x800196E4 then uses e32 at TOC+0x14

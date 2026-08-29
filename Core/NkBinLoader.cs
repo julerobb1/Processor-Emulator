@@ -250,6 +250,33 @@ namespace ProcessorEmulator.Core.Loaders
                         shown++;
                     }
                 }
+                uint nfiles = memory.ReadMemory32(romhdr + 0x30);
+                if (nfiles > 0 && nfiles <= 128)
+                {
+                    uint first = romhdr + 0x54 + nummods * 32;
+                    for (uint i = 0; i < nfiles; i++)
+                    {
+                        uint entry = first + i * 28;
+                        string fname = ReadAscii(memory, memory.ReadMemory32(entry + 0x14));
+                        if (string.IsNullOrEmpty(fname))
+                            continue;
+                        bool tv2 = fname.Length >= 11
+                            && (fname[0] == 't' || fname[0] == 'T')
+                            && (fname[1] == 'v' || fname[1] == 'V')
+                            && fname[2] == '2';
+                        if (!tv2)
+                            continue;
+                        uint real = memory.ReadMemory32(entry + 0x0C);
+                        uint comp = memory.ReadMemory32(entry + 0x10);
+                        uint load = memory.ReadMemory32(entry + 0x18);
+                        Console.WriteLine("[NkBinLoader] ExtraROM FILE[" + i + "] " + fname +
+                            " entry=0x" + entry.ToString("X8") +
+                            " real=" + real +
+                            " comp=" + comp +
+                            " load=0x" + load.ToString("X8") +
+                            " (FILESentry; do not invent 0x81360000)");
+                    }
+                }
             }
             catch (Exception ex)
             {

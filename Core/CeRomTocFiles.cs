@@ -137,8 +137,14 @@ namespace ProcessorEmulator.Core
         public const uint CurProc = 0xFFFFDAC4;
         public const uint EcecTocPtr = 0x80010044;
         public const uint RomHdrNumMods = 0x10;
+        public const uint RomHdrNumFiles = 0x30;
         public const uint TocFirst = 0x54;
         public const uint TocEntrySize = 32;
+        public const uint FilesEntrySize = 28;
+        public const uint FilesRealSize = 0x0C;
+        public const uint FilesCompSize = 0x10;
+        public const uint FilesNameOff = 0x14;
+        public const uint FilesLoadOff = 0x18;
         public const byte TocAttachType = 7;
         public const uint O32RomSize = 0x18;
         public const uint O32LiteSize = 0x1C;
@@ -166,6 +172,7 @@ namespace ProcessorEmulator.Core
         public const uint DdiNopVbase = 0x03980000;
         private static uint _extraRomStart;
         private static uint _extraRomHdr;
+        private static string _pendingRomFile;
         private static uint _ddiNopTocEntry;
         private static uint _ddiNopAttr;
         // ExtraROM TOC/e32/o32 live at 0x8134xxxx / 0x80E99Cxx.
@@ -181,6 +188,16 @@ namespace ProcessorEmulator.Core
         private static uint[] _ddiNopDataLen;
         private static uint[][] _ddiNopData;
 
+        public static void NotePendingRomFile(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+                return;
+            int slash = path.LastIndexOf('\\');
+            if (slash < 0)
+                slash = path.LastIndexOf('/');
+            _pendingRomFile = slash >= 0 ? path.Substring(slash + 1) : path;
+        }
+
         public static bool TryContinueRomModule(MipsBus bus, uint path, out uint attr, out uint tocEntry)
         {
             attr = 0;
@@ -189,6 +206,8 @@ namespace ProcessorEmulator.Core
                 return false;
 
             string baseName = Basename(bus, path);
+            if (string.IsNullOrEmpty(baseName) && !string.IsNullOrEmpty(_pendingRomFile))
+                baseName = _pendingRomFile;
             if (string.IsNullOrEmpty(baseName))
                 return false;
             // LoadLibraryExW and CreateProcess already map TOC modules when
@@ -201,7 +220,8 @@ namespace ProcessorEmulator.Core
                 && !NamesEqual(baseName, "iptvcryptohal.dll")
                 && !NamesEqual(baseName, "ceddk.dll")
                 && !NamesEqual(baseName, "sigcheckfilter.dll")
-                && !NamesEqual(baseName, "ddi_nop.dll"))
+                && !NamesEqual(baseName, "ddi_nop.dll")
+                && !IsTv2ClientCe(baseName))
                 return false;
 
             if (TryFindTocModule(bus, 0, 64, baseName, out tocEntry, out attr))
@@ -215,6 +235,26 @@ namespace ProcessorEmulator.Core
                 System.Console.WriteLine("[Hive] TOC-attach ExtraROM ddi_nop.dll entry=0x" +
                     tocEntry.ToString("X8") + " (CreateFile miss; do not invent 0x81360000)");
                 TryMarkExtraRomO32Compressed(bus, tocEntry);
+                return true;
+            }
+            // wait53: CreateFile \Windows\tv2clientce.exe is
+            // INVALID_HANDLE. ExtraROM FILE[25] is that name
+            // (5120/2421 at 0x81050DCC), not a TOC module and
+            // not the 90-byte root stub. Same attach as TOC
+            // (object+0=entry, +4=7). Image bytes are already
+            // in ExtraROM RAM. Do not invent 0x81360000. Do
+            // not host CreateProcess.
+            if (IsTv2ClientCe(baseName)
+                && TryFindExtraRomFile(bus, "tv2clientce.exe", out tocEntry, out attr,
+                    out uint real, out uint comp, out uint load))
+            {
+                System.Console.WriteLine("[Hive] FILE-attach ExtraROM tv2clientce.exe entry=0x" +
+                    tocEntry.ToString("X8") +
+                    " real=" + real +
+                    " comp=" + comp +
+                    " load=0x" + load.ToString("X8") +
+                    " (FILESentry; not a dump 0x81360000 map)");
+                _pendingRomFile = null;
                 return true;
             }
             return false;
@@ -993,6 +1033,7 @@ namespace ProcessorEmulator.Core
         {
             _extraRomStart = imageStart;
             _extraRomHdr = 0;
+            _pendingRomFile = null;
             _ddiNopTocEntry = 0;
             _ddiNopAttr = 0;
             _ddiNopTocWords = null;
@@ -1168,6 +1209,53 @@ namespace ProcessorEmulator.Core
                     uint tocAttr = bus.Read32(entry);
                     attr = (tocAttr & 0xFFFFEFFFu) | 0x2040u;
                     tocEntry = entry;
+                    return true;
+                }
+            }
+            catch
+            {
+            }
+            return false;
+        }
+
+        // ExtraROM FILESentry follows TOC modules
+        // (romhdr+0x54+nmods*32, 28 bytes). wait53 CreateFile
+        // miss: NK/BINFS never walks this table.
+        private static bool TryFindExtraRomFile(MipsBus bus, string baseName,
+            out uint filesEntry, out uint attr, out uint real, out uint comp, out uint load)
+        {
+            filesEntry = 0;
+            attr = 0;
+            real = 0;
+            comp = 0;
+            load = 0;
+            if (bus == null || string.IsNullOrEmpty(baseName))
+                return false;
+            try
+            {
+                uint toc = ExtraRomToc(bus);
+                if (toc == 0)
+                    return false;
+                uint nmods = bus.Read32(toc + RomHdrNumMods);
+                uint nfiles = bus.Read32(toc + RomHdrNumFiles);
+                if (nmods > 128 || nfiles == 0 || nfiles > 128)
+                    return false;
+                uint first = toc + TocFirst + nmods * TocEntrySize;
+                for (uint i = 0; i < nfiles; i++)
+                {
+                    uint entry = first + i * FilesEntrySize;
+                    uint name = bus.Read32(entry + FilesNameOff);
+                    if (!NamesEqual(baseName, ReadAscii(bus, name)))
+                        continue;
+                    uint fileAttr = bus.Read32(entry);
+                    real = bus.Read32(entry + FilesRealSize);
+                    comp = bus.Read32(entry + FilesCompSize);
+                    load = bus.Read32(entry + FilesLoadOff);
+                    // Same ROMMODULE bit the TOC helper sets so
+                    // 0x8001D4B8 takes NameCopyContinue. FILE bytes
+                    // stay at load in ExtraROM RAM.
+                    attr = (fileAttr & 0xFFFFEFFFu) | 0x2040u;
+                    filesEntry = entry;
                     return true;
                 }
             }
@@ -2270,6 +2358,13 @@ namespace ProcessorEmulator.Core
             {
             }
             return created;
+        }
+
+        // wait53 retry is \Windows\tv2clientce.exe.exe
+        private static bool IsTv2ClientCe(string name)
+        {
+            return NamesEqual(name, "tv2clientce.exe")
+                || NamesEqual(name, "tv2clientce.exe.exe");
         }
 
         private static bool NamesEqual(string a, string b)

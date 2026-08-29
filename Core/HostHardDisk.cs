@@ -1002,6 +1002,8 @@ namespace ProcessorEmulator.Core
                 " cproc=\"" + _cprocName + "\"" +
                 " a0-mapped=" + (DestMapped(bus, a0) ? "yes" : "no") +
                 " (firmware OpenExe; do not host CreateProcess)");
+            if (!string.IsNullOrEmpty(name))
+                CeRomTocFiles.NotePendingRomFile(name);
         }
 
         private static void LogCreateFileFail(uint[] registers, MipsBus bus)
