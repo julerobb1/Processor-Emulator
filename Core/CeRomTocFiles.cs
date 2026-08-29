@@ -48,11 +48,10 @@ namespace ProcessorEmulator.Core
         // writes dest bytes, so startip stays VALLOC zeros.
         // Kernel BinaryDecompress 0x80050974 is CEDecompress:
         // (src, psize, dest, vsize, skip, convert, stepsize).
-        // convert 1 or 2; stepsize 0x1000 selects type 0x0C.
-        // coredll 0x800938A8 only forwards skip, so a junk
-        // convert/step made it return 0xFFFFFFFF and walk past
-        // section-2 dest (ThreadExceptionExit). Call the kernel
-        // entry with skip=0, convert=1, stepsize=0x1000.
+        // convert 1 or 2; stepsize 0x1000 selects shift 12.
+        // ExtraROM byte 3 is the first page-offset low byte,
+        // not a type to strip. Call the kernel entry with
+        // skip=0, convert=1, stepsize=0x1000.
         public const uint BinaryDecompressRom = 0x80050974;
         public const uint MemReserve = 0x2000;
         public const uint SlotMask = 0x01FFFFFF;
@@ -500,11 +499,13 @@ namespace ProcessorEmulator.Core
             uint aligned = CopyExtraRomSrcPageAligned(bus, src, psize);
             if (aligned != 0)
                 src = aligned;
-            // ExtraROM first word is (type<<24)|vsize: bytes
-            // [size0][size1][size2][type][stream]. Kernel
-            // 0x80050A10 takes a 3-byte LE size then stream.
-            // Drop the type byte so 0xB5/0xB4/0x0C is not data.
-            src = DropExtraRomCompressType(bus, src, ref psize);
+            // ExtraROM first word is [size0][size1][size2][b0].
+            // Kernel 0x80050A10 takes the 3-byte LE size, then
+            // 3-byte page offsets starting at src+3. Byte 3 is
+            // the low byte of the first offset (0xB5 08 00 =
+            // 0x8B5), not a type to drop. Dropping it made
+            // every offset 0xDD0008-style and left entry/ImpHdr
+            // empty (BindImp LoadLibrary "").
             regs[4] = src;
             regs[5] = psize;
             regs[6] = dest;
@@ -540,7 +541,7 @@ namespace ProcessorEmulator.Core
                 " psize=0x" + psize.ToString("X") +
                 " src0=0x" + first.ToString("X8") +
                 " dest-" + (DestReadable(bus, dest) ? "mapped" : "unmapped") +
-                " (firmware 0x80050974 skip=0 convert=1 step=0x1000)");
+                " (firmware 0x80050974 skip=0 convert=1 step=0x1000; keep ExtraROM first word)");
             return true;
         }
 
@@ -715,30 +716,6 @@ namespace ProcessorEmulator.Core
                 return false;
             }
             return false;
-        }
-
-        private static uint DropExtraRomCompressType(MipsBus bus, uint src, ref uint psize)
-        {
-            if (bus == null || src == 0 || psize <= 4)
-                return src;
-            try
-            {
-                for (uint i = 3; i + 1 < psize; i++)
-                {
-                    uint from = src + i + 1;
-                    uint to = src + i;
-                    uint fw = bus.Read32(from & ~3u);
-                    uint b = (fw >> (8 * (int)(from & 3))) & 0xFF;
-                    uint tw = bus.Read32(to & ~3u);
-                    int sh = 8 * (int)(to & 3);
-                    bus.Write32(to & ~3u, (tw & ~(0xFFu << sh)) | (b << sh));
-                }
-                psize -= 1;
-            }
-            catch
-            {
-            }
-            return src;
         }
 
         private static uint CopyExtraRomSrcPageAligned(MipsBus bus, uint src, uint psize)
