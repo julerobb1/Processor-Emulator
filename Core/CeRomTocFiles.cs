@@ -46,21 +46,18 @@ namespace ProcessorEmulator.Core
         // 0x80028844 remaps dest PTEs onto src (XIP alias). Its
         // kseg0 src path (0x80028A60) sets 32($sp)=1 and never
         // writes dest bytes, so startip stays VALLOC zeros.
-        // Kernel BinaryDecompress 0x80050974 is CEDecompress:
-        // (src, psize, dest, vsize, skip, convert, stepsize).
-        // convert 1 or 2; stepsize 0x1000 selects shift 12.
-        // ExtraROM byte 3 is the first page-offset low byte,
-        // not a type to strip. Call the kernel entry with
-        // skip=0, convert=1, stepsize=0x1000.
-        public const uint BinaryDecompressRom = 0x80050974;
-        // Inner 0x800504B4 dest_end is dest+16($sp). Outer
-        // stores leftover vsize there. ExtraROM B5/B4 page 0
-        // writes 0x321B then page 4 returns -10. Capping
-        // 16($sp) at 0x1000 makes outer v0=vsize but ImpHdr
-        // stays 0xBEBC0000 and entry stays 0. Do not cap.
-        // 0x80050B00 is bltz $v0 after the jal.
-        public const uint BinaryDecompressInner = 0x800504B4;
-        public const uint BinaryDecompressAfterInner = 0x80050B00;
+        // Kernel 0x80050974 is CEDecompress (CE3 inner
+        // 0x800504B4). ExtraROM pages are not that codec:
+        // after the 3-byte table each slice is
+        // window=16 / vsize / … (LZX). 0x800504B4 then
+        // returns -10/-12 on B5/B4. Official 4K wrapper
+        // 0x80043B8C jals CEDecompressROM 0x8004DBF8
+        // (inner 0x80050F78). Same args: skip, convert,
+        // stepsize. Byte 3 stays the first page-offset
+        // low byte. Do not cap leftover at 0x1000.
+        public const uint BinaryDecompressRom = 0x8004DBF8;
+        public const uint BinaryDecompressInner = 0x80050F78;
+        public const uint BinaryDecompressAfterInner = 0x8004DD80;
         public const uint MemReserve = 0x2000;
         public const uint SlotMask = 0x01FFFFFF;
         public const uint LoadLibSyscallRet = 0x03F6C8F4;
@@ -491,9 +488,10 @@ namespace ProcessorEmulator.Core
         // 0x80028844 path does not). After that VALLOC it VirtualCopys
         // compressed ExtraROM bytes as XIP. 0x80028844 is a PTE remap
         // (kseg0 src takes the XIP shortcut and dest stays zeros).
-        // Rewrite that jal to coredll BinaryDecompress so firmware
-        // expands the real ExtraROM stream onto the VALLOC dest.
-        // Do not host-alias XIP. Do not invent 0x81360000.
+        // Rewrite that jal to kernel CEDecompressROM so
+        // firmware expands the real ExtraROM LZX pages onto
+        // the VALLOC dest. Do not host-alias XIP. Do not
+        // invent 0x81360000. Do not jal CE3 0x80050974.
         private static uint _ddiNopDecompRa;
         private static uint _ddiNopDecompDest;
         private static uint _ddiNopDecompVsize;
@@ -545,8 +543,10 @@ namespace ProcessorEmulator.Core
             _ddiNopDecompRa = regs.Length > 31 ? regs[31] : 0;
             _ddiNopDecompDest = dest;
             _ddiNopDecompVsize = vsize;
+            _ddiNopInnerCap = false;
             _ddiNopInnerPages = 0;
             uint first = 0;
+            uint page0 = 0;
             try
             {
                 first = bus.Read32(src);
@@ -554,33 +554,57 @@ namespace ProcessorEmulator.Core
             catch
             {
             }
-            System.Console.WriteLine("[Hive] ExtraROM VALLOC dest then BinaryDecompress dest=0x" +
+            try
+            {
+                // 3-byte size then 3-byte offsets. First LZX
+                // block header sits at the first page-offset
+                // (byte 3..5 = 0x8B5 for ddi_nop o32[0]; the
+                // table length is (pages+2)*3).
+                uint size3 = first & 0xFFFFFFu;
+                uint n = ((size3 >> 12) + 2) * 3;
+                if (n >= 6 && n < psize)
+                    page0 = bus.Read32(src + n);
+            }
+            catch
+            {
+            }
+            System.Console.WriteLine("[Hive] ExtraROM VALLOC dest then CEDecompressROM dest=0x" +
                 dest.ToString("X8") + " src=0x" + src.ToString("X8") +
                 " vsize=0x" + vsize.ToString("X") +
                 " psize=0x" + psize.ToString("X") +
                 " src0=0x" + first.ToString("X8") +
+                " page0=0x" + page0.ToString("X8") +
                 " dest-" + (DestReadable(bus, dest) ? "mapped" : "unmapped") +
-                " (firmware 0x80050974 skip=0 convert=1 step=0x1000; keep ExtraROM first word)");
+                " (firmware 0x8004DBF8 skip=0 convert=1 step=0x1000; LZX window at page0; keep ExtraROM first word)");
             return true;
         }
 
         public static bool TryNoteExtraRomInnerDest(MipsBus bus, uint[] regs)
         {
-            if (_ddiNopDecompRa == 0 || bus == null || regs == null || regs.Length <= 29)
+            if (_ddiNopDecompRa == 0 || bus == null || regs == null || regs.Length <= 7)
                 return false;
             try
             {
-                uint sp = regs[29];
-                uint budget = bus.Read32(sp + 16);
+                uint src = regs[4];
+                uint slen = regs[5];
+                uint dest = regs[6];
+                uint work = regs[7];
+                uint leftover = 0;
+                uint src0 = 0;
+                if (work != 0)
+                    leftover = bus.Read32(work);
+                if (src != 0)
+                    src0 = bus.Read32(src);
                 if (!_ddiNopInnerCap)
                 {
                     _ddiNopInnerCap = true;
-                    System.Console.WriteLine("[Hive] ExtraROM CEDecompress inner dest budget 0x" +
-                        budget.ToString("X") +
-                        " (leftover vsize; dest is kseg0-backed)");
+                    System.Console.WriteLine("[Hive] ExtraROM CEDecompressROM inner src=0x" +
+                        src.ToString("X8") + " slen=0x" + slen.ToString("X") +
+                        " dest=0x" + dest.ToString("X8") +
+                        " leftover=0x" + leftover.ToString("X") +
+                        " src0=0x" + src0.ToString("X8") +
+                        " (LZX window/vsize header; do not cap leftover)");
                 }
-                if (budget <= 0x1000)
-                    return false;
             }
             catch
             {
@@ -598,12 +622,13 @@ namespace ProcessorEmulator.Core
             uint v0 = regs[2];
             uint page = regs.Length > 23 ? regs[23] : 0;
             uint total = regs.Length > 21 ? regs[21] : 0;
-            System.Console.WriteLine("[Hive] ExtraROM CEDecompress inner v0=0x" +
+            System.Console.WriteLine("[Hive] ExtraROM CEDecompressROM inner v0=0x" +
                 v0.ToString("X8") + " page=" + page +
                 " total=0x" + total.ToString("X") +
-                (v0 == 0xFFFFFFF6 ? " (-10 src eof match)" :
-                    v0 == 0xFFFFFFF4 ? " (-12 src eof ext)" :
-                    (int)v0 < 0 ? " (inner fail)" : ""));
+                (v0 == 0 ? " (LZX page ok)" :
+                    v0 == 3 ? " (window/leftover miss)" :
+                    v0 == 4 ? " (bad LZX window)" :
+                    (int)v0 < 0 ? " (ROM inner fail)" : " (ROM inner status)"));
             return false;
         }
 
@@ -662,14 +687,14 @@ namespace ProcessorEmulator.Core
             }
             string note;
             if (v0 == 0xFFFFFFFFu)
-                note = " (firmware BinaryDecompress miss)";
+                note = " (firmware CEDecompressROM miss)";
             else if (vsize != 0 && v0 == vsize)
                 note = " (firmware expanded vsize)";
             else if (v0 == 0)
                 note = " (firmware returned 0)";
             else
                 note = "";
-            System.Console.WriteLine("[Hive] ExtraROM BinaryDecompress ret v0=0x" +
+            System.Console.WriteLine("[Hive] ExtraROM CEDecompressROM ret v0=0x" +
                 v0.ToString("X8") + " dest=0x" + dest.ToString("X8") +
                 (mapped ? " word=0x" + word.ToString("X8") : " dest-unmapped") +
                 (entryMapped ? " entry=0x" + entry.ToString("X8") : "") +
