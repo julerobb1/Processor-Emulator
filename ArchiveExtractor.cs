@@ -120,7 +120,7 @@ namespace ProcessorEmulator
             // Try SharpCompress for common archive formats
             try
             {
-                using var archive = ArchiveFactory.Open(archivePath);
+                using var archive = ArchiveFactory.OpenArchive(archivePath);
                 var options = new ExtractionOptions { ExtractFullPath = true, Overwrite = true };
                 foreach (var entry in archive.Entries.Where(e => !e.IsDirectory))
                 {
