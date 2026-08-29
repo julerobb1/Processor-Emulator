@@ -1522,6 +1522,47 @@ namespace ProcessorEmulator.Core
             return va;
         }
 
+        // wait42: DllMain dest+0x520 $fp=0x080E1970 is slot-4 of
+        // the LocalAlloc GDI object (heap 0x080E0000+0x1970).
+        // VALLOC(0x08000000) returned 0x080D0000, host-back ended
+        // 0x080E0000. Firmware HEAP is the next 64K (*heap=HeaP).
+        // Host-back that handle 64K only. Not a dump ExtraROM page.
+        // Not a static 0x000E0000 map.
+        public static void TryHostBackProcessHeap(uint heap)
+        {
+            if (heap < 0x04000000u || heap >= 0x20000000u)
+                return;
+            uint slot = heap & 0xFE000000u;
+            uint heapOff = heap & 0x01FFFFFF;
+            if (slot == 0 || heapOff < 0x000CB000u)
+                return;
+            uint lo = heap & ~0xFFFFu;
+            uint hi = lo + CeAllocGranularity;
+            if (hi <= lo)
+                return;
+            for (int i = 0; i < _vallocHostN; i++)
+            {
+                if (_vallocHostLo[i] <= lo && _vallocHostHi[i] >= hi)
+                    return;
+            }
+            if (_vallocHostN >= _vallocHostLo.Length)
+                return;
+            uint span = hi - lo;
+            uint kseg = _vallocHostPool;
+            if (kseg < VallocHostKseg || kseg + span > VallocHostKsegLim)
+                return;
+            _vallocHostLo[_vallocHostN] = lo;
+            _vallocHostHi[_vallocHostN] = hi;
+            _vallocHostKseg[_vallocHostN] = kseg;
+            _vallocHostN++;
+            _vallocHostPool += span;
+            System.Console.WriteLine("[Hive] process-heap host-back 0x" +
+                lo.ToString("X8") + "-0x" + hi.ToString("X8") +
+                " -> 0x" + kseg.ToString("X8") +
+                " heap=0x" + heap.ToString("X8") +
+                " (firmware HEAP 64K; not a dump 0x000E0000 page)");
+        }
+
         // coredll HeapAlloc (0x03F796A4) keeps the heap in the
         // process slot (0x080E0000) and returns the slot-0 view
         // (0x000E1700). 0x800140A8 is jr $ra, so slot 0 never

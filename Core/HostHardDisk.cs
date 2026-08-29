@@ -1575,6 +1575,8 @@ namespace ProcessorEmulator.Core
                 System.Console.WriteLine("[Hive] gwes HeapCreate ret v0=0x" +
                     v0.ToString("X8") +
                     (heapOk ? " *0x01FFFFA0=0x" + heap.ToString("X8") : " *0x01FFFFA0 unmapped"));
+                if (heapOk)
+                    CeRomTocFiles.TryHostBackProcessHeap(heap);
                 return;
             }
             if (pc == GwesVaDisplayParent || IsSlottedVa(pc, GwesVaDisplayParent))
