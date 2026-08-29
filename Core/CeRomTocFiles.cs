@@ -59,6 +59,14 @@ namespace ProcessorEmulator.Core
         public const uint LoadLibSyscallRet = 0x03F6C8F4;
         public const uint BindImpMiss = 0x80018F9C;
         public const uint BindImpWalk = 0x80018F3C;
+        // 0x80018E94 lw ImpHdr+0; 0x80018EC0 lbu name at
+        // vbase+NameRVA. ExtraROM IMP is RVA 0x18350
+        // (e32+0x2C). Name RVA 0 reads the unmapped
+        // header page at vbase (0x01980000).
+        public const uint BindImpHdr = 0x80018E94;
+        public const uint BindImpDllName = 0x80018EC0;
+        public const uint BindImpLoadLib = 0x8001E9D4;
+        public const uint BindImpLoadLibRet = 0x80018EF8;
         // 0x80018B34 CallDLLEntry jalrs module+0x5C with no
         // null check. TOC-attach writes object+0/4 so 0x800196E4
         // can read e32, but 0x8001E960 skips the startip store
@@ -390,27 +398,42 @@ namespace ProcessorEmulator.Core
             uint dest = regs[4];
             if (!IsExtraRomDdiNopDest(dest))
                 return false;
+            // o32[0].real is vbase+0x1000. BindImp reads IMP
+            // at vbase+0x18350 and names at vbase+NameRVA.
+            // VALLOC of dest alone leaves 0x01980000 unmapped.
+            // Pull dest down one page. Do not invent a PE header.
+            uint slot = dest & SlotMask;
+            uint header = 0;
+            if ((slot & 0xFFFFF000u) == 0x01981000u)
+            {
+                header = 0x1000;
+                dest -= header;
+                regs[4] = dest;
+            }
             uint type = regs[6];
-            if ((type & MemReserve) != 0)
-                return false;
-            regs[6] = type | MemReserve;
+            bool needReserve = (type & MemReserve) == 0;
+            if (needReserve)
+                regs[6] = type | MemReserve;
             // CEDecompress step 0x1000 can lbu the next dest page
             // (section 2 vsize 0xB04 read 0x019A9000 and took
             // 0x80000180). Commit one extra page. Not ExtraROM XIP.
             if (regs.Length > 5)
             {
-                uint size = regs[5];
+                uint size = regs[5] + header;
                 uint pages = (size + 0xFFFu) & ~0xFFFu;
                 if (pages < size + 0x1000)
                     pages += 0x1000;
-                if (pages > size)
+                if (pages > regs[5])
                     regs[5] = pages;
             }
+            if (!needReserve && header == 0)
+                return false;
             System.Console.WriteLine("[Hive] ExtraROM VALLOC a0=0x" +
                 dest.ToString("X8") + " type 0x" + type.ToString("X") +
                 " -> 0x" + regs[6].ToString("X") +
                 " size 0x" + (regs.Length > 5 ? regs[5].ToString("X") : "0") +
-                " (MEM_RESERVE|COMMIT + extra page; do not invent 0x81360000)");
+                (header != 0 ? " (vbase header page + extra; do not invent 0x81360000)"
+                    : " (MEM_RESERVE|COMMIT + extra page; do not invent 0x81360000)"));
             return true;
         }
 
@@ -546,7 +569,8 @@ namespace ProcessorEmulator.Core
             }
             try
             {
-                if (bus != null && dest != 0 && vsize > 0x18014)
+                // entryrva 0x18014 is dest+0x17014 (o32[0] rva 0x1000).
+                if (bus != null && dest != 0 && vsize > 0x17014)
                 {
                     entry = bus.Read32(dest + 0x17014);
                     entryMapped = true;
@@ -554,6 +578,24 @@ namespace ProcessorEmulator.Core
             }
             catch
             {
+            }
+            string imp = "";
+            if (bus != null && dest != 0 && vsize > 0x17370)
+            {
+                try
+                {
+                    uint lookup = bus.Read32(dest + 0x17350);
+                    uint nameRva = bus.Read32(dest + 0x1735C);
+                    string dll = "";
+                    if (nameRva >= 0x1000 && nameRva < 0x1843Au)
+                        dll = ReadAscii(bus, dest + (nameRva - 0x1000));
+                    imp = " imp0=0x" + lookup.ToString("X8") +
+                        " nameRVA=0x" + nameRva.ToString("X") +
+                        (dll.Length > 0 ? " \"" + dll + "\"" : "");
+                }
+                catch
+                {
+                }
             }
             string note;
             if (v0 == 0xFFFFFFFFu)
@@ -568,7 +610,110 @@ namespace ProcessorEmulator.Core
                 v0.ToString("X8") + " dest=0x" + dest.ToString("X8") +
                 (mapped ? " word=0x" + word.ToString("X8") : " dest-unmapped") +
                 (entryMapped ? " entry=0x" + entry.ToString("X8") : "") +
+                imp +
                 note);
+            return false;
+        }
+
+        private static bool _ddiNopBindHdr;
+        private static bool _ddiNopBindName;
+        private static bool _ddiNopBindLib;
+        private static bool _ddiNopBindLibRet;
+
+        public static bool TryNoteExtraRomBindImp(MipsBus bus, uint[] regs, uint pc)
+        {
+            if (regs == null || regs.Length <= 30)
+                return false;
+            if (pc == BindImpHdr && !_ddiNopBindHdr)
+            {
+                _ddiNopBindHdr = true;
+                uint hdr = regs[20];
+                uint vbase = regs[22];
+                uint e32 = regs[23];
+                uint impRva = 0;
+                uint impSize = 0;
+                uint w0 = 0;
+                uint nameRva = 0;
+                try
+                {
+                    if (e32 != 0)
+                    {
+                        impRva = bus != null ? bus.Read32(e32 + 0x24) : 0;
+                        impSize = bus != null ? bus.Read32(e32 + 0x28) : 0;
+                    }
+                    if (bus != null && hdr != 0)
+                    {
+                        w0 = bus.Read32(hdr);
+                        nameRva = bus.Read32(hdr + 12);
+                    }
+                }
+                catch
+                {
+                }
+                string dll = "";
+                try
+                {
+                    if (bus != null && nameRva != 0)
+                        dll = ReadAscii(bus, vbase + nameRva);
+                }
+                catch
+                {
+                }
+                System.Console.WriteLine("[Hive] ExtraROM BindImp hdr=0x" +
+                    hdr.ToString("X8") + " vbase=0x" + vbase.ToString("X8") +
+                    " e32IMP=0x" + impRva.ToString("X") + "/0x" + impSize.ToString("X") +
+                    " word0=0x" + w0.ToString("X8") +
+                    " nameRVA=0x" + nameRva.ToString("X") +
+                    (dll.Length > 0 ? " \"" + dll + "\"" : " (name unread)") +
+                    " (do not invent 0x81360000)");
+                return false;
+            }
+            if (pc == BindImpDllName && !_ddiNopBindName)
+            {
+                _ddiNopBindName = true;
+                uint nameVa = regs[3];
+                string dll = "";
+                try
+                {
+                    if (bus != null && nameVa != 0)
+                        dll = ReadAscii(bus, nameVa);
+                }
+                catch
+                {
+                }
+                System.Console.WriteLine("[Hive] ExtraROM BindImp nameVA=0x" +
+                    nameVa.ToString("X8") +
+                    (dll.Length > 0 ? " \"" + dll + "\"" : " (empty or unmapped)") +
+                    " (LoadLibrary of this import; 126 is this miss)");
+                return false;
+            }
+            if (pc == BindImpLoadLib && _ddiNopBindHdr && !_ddiNopBindLib)
+            {
+                _ddiNopBindLib = true;
+                uint a0 = regs[4];
+                string dll = "";
+                try
+                {
+                    if (bus != null && a0 != 0)
+                        dll = ReadUtf16Name(bus, a0);
+                }
+                catch
+                {
+                }
+                System.Console.WriteLine("[Hive] ExtraROM BindImp LoadLibrary \"" +
+                    (dll.Length > 0 ? dll : "(empty)") +
+                    "\" a0=0x" + a0.ToString("X8"));
+                return false;
+            }
+            if (pc == BindImpLoadLibRet && _ddiNopBindLib && !_ddiNopBindLibRet)
+            {
+                _ddiNopBindLibRet = true;
+                uint v0 = regs[2];
+                System.Console.WriteLine("[Hive] ExtraROM BindImp LoadLibrary ret v0=0x" +
+                    v0.ToString("X8") +
+                    (v0 == 0 ? " (import miss; last-error 126)" : " (import loaded)"));
+                return false;
+            }
             return false;
         }
 
@@ -732,6 +877,10 @@ namespace ProcessorEmulator.Core
             _ddiNopDecompRa = 0;
             _ddiNopDecompDest = 0;
             _ddiNopDecompVsize = 0;
+            _ddiNopBindHdr = false;
+            _ddiNopBindName = false;
+            _ddiNopBindLib = false;
+            _ddiNopBindLibRet = false;
         }
 
         public static void NoteExtraRomModule(uint romhdr, uint tocEntry, uint attr)
@@ -1119,6 +1268,10 @@ namespace ProcessorEmulator.Core
             _ddiNopDecompRa = 0;
             _ddiNopDecompDest = 0;
             _ddiNopDecompVsize = 0;
+            _ddiNopBindHdr = false;
+            _ddiNopBindName = false;
+            _ddiNopBindLib = false;
+            _ddiNopBindLibRet = false;
         }
 
         public static void RefreshExeXipAlias(MipsBus bus)
