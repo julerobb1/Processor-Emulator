@@ -1815,19 +1815,32 @@ namespace ProcessorEmulator.Core
                 return;
             }
             if (pc == CeRomTocFiles.LoadE32Rom
-                && registers != null && registers.Length > 4
-                && _logged.Contains("hive:ll:ddi_nop.dll")
-                && CeRomTocFiles.IsDdiNopTocObject(bus, registers[4]))
+                && registers != null && registers.Length > 4)
             {
-                if (_logged.Add("hive:ldde32"))
+                if (_logged.Contains("hive:ll:ddi_nop.dll")
+                    && CeRomTocFiles.IsDdiNopTocObject(bus, registers[4]))
                 {
-                    CeRomTocFiles.TryMarkExtraRomO32Compressed(bus, CeRomTocFiles.DdiNopTocEntry);
-                    System.Console.WriteLine("[Hive] 0x800196E4 ExtraROM ddi_nop obj=0x" +
-                        registers[4].ToString("X8") +
-                        " entry=0x" + CeRomTocFiles.DdiNopTocEntry.ToString("X8") +
-                        " (firmware decompress/map; do not invent 0x81360000)");
+                    if (_logged.Add("hive:ldde32"))
+                    {
+                        CeRomTocFiles.TryMarkExtraRomO32Compressed(bus, CeRomTocFiles.DdiNopTocEntry);
+                        System.Console.WriteLine("[Hive] 0x800196E4 ExtraROM ddi_nop obj=0x" +
+                            registers[4].ToString("X8") +
+                            " entry=0x" + CeRomTocFiles.DdiNopTocEntry.ToString("X8") +
+                            " (firmware decompress/map; do not invent 0x81360000)");
+                    }
+                    return;
                 }
-                return;
+                if (CeRomTocFiles.IsMscoreeTocObject(bus, registers[4])
+                    && _logged.Add("hive:ldde32:mscoree"))
+                {
+                    CeRomTocFiles.TryMarkExtraRomO32Compressed(bus, CeRomTocFiles.MscoreeTocEntry);
+                    System.Console.WriteLine("[Hive] 0x800196E4 ExtraROM mscoree.dll obj=0x" +
+                        registers[4].ToString("X8") +
+                        " entry=0x" + CeRomTocFiles.MscoreeTocEntry.ToString("X8") +
+                        " e32=0x" + CeRomTocFiles.MscoreeE32.ToString("X8") +
+                        " (TOC[46] type 7; firmware LoadE32; not a FILE)");
+                    return;
+                }
             }
             if (pc == CeRomTocFiles.LoadE32RomRet
                 && _logged.Contains("hive:ldde32")
@@ -1838,6 +1851,17 @@ namespace ProcessorEmulator.Core
                         ? registers[2].ToString("X8") : "0") +
                     " ddi_nop@0x03998014 " +
                     (DdiNopMapped(bus) ? "mapped" : "unmapped"));
+                return;
+            }
+            if (pc == CeRomTocFiles.LoadE32RomRet
+                && _logged.Contains("hive:ldde32:mscoree")
+                && _logged.Add("hive:ldde32ret:mscoree"))
+            {
+                System.Console.WriteLine("[Hive] 0x800196E4 mscoree ret v0=0x" +
+                    (registers != null && registers.Length > 2
+                        ? registers[2].ToString("X8") : "0") +
+                    " last-error=" + ReadLastError(bus) +
+                    " (TOC[46]; do not invent e32)");
                 return;
             }
             if (pc == CeRomTocFiles.LoadO32RomRet
@@ -1862,7 +1886,9 @@ namespace ProcessorEmulator.Core
             }
             if (pc == CeRomTocFiles.MapO32Rom
                 && registers != null && registers.Length > 5
-                && (_logged.Contains("hive:ldde32") || CeRomTocFiles.IsTv2FileExpanded()))
+                && (_logged.Contains("hive:ldde32")
+                    || _logged.Contains("hive:ldde32:mscoree")
+                    || CeRomTocFiles.IsTv2FileExpanded()))
             {
                 if (_logged.Contains("hive:ldde32"))
                     CeRomTocFiles.TrySteerExtraRomMapO32(bus, registers[5]);
@@ -2504,6 +2530,28 @@ namespace ProcessorEmulator.Core
             string key = "hive:mapo32:" + dest.ToString("X") + ":" + flags.ToString("X");
             if (!_logged.Add(key))
                 return;
+            uint destWord = 0;
+            uint dataWord = 0;
+            bool mscoree = dest == 0x034B1000u || dataptr == 0x809435ECu;
+            if (mscoree && bus != null)
+            {
+                try
+                {
+                    if (dest != 0)
+                        destWord = bus.Read32(dest);
+                }
+                catch
+                {
+                }
+                try
+                {
+                    if (dataptr != 0)
+                        dataWord = bus.Read32(dataptr);
+                }
+                catch
+                {
+                }
+            }
             System.Console.WriteLine("[Hive] 0x8001AC30 MapO32 dest=0x" + dest.ToString("X8") +
                 " dataptr=0x" + dataptr.ToString("X8") +
                 " flags=0x" + flags.ToString("X8") +
@@ -2511,7 +2559,12 @@ namespace ProcessorEmulator.Core
                 " psize=0x" + psize.ToString("X") +
                 " dest-" + (DestMapped(bus, dest) ? "mapped" : "unmapped") +
                 " ddi_nop@0x03998014 " +
-                (DdiNopMapped(bus) ? "mapped" : "unmapped"));
+                (DdiNopMapped(bus) ? "mapped" : "unmapped") +
+                (mscoree
+                    ? " dest-word=0x" + destWord.ToString("X8") +
+                      " dataptr-word=0x" + dataWord.ToString("X8") +
+                      " (TOC[46] o32[0]; dump LZX at dataptr)"
+                    : ""));
         }
 
         // Refills stay on 0x80000000. Only the general vector

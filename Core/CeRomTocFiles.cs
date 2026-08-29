@@ -24,6 +24,13 @@ namespace ProcessorEmulator.Core
         // INVALID_HANDLE here so type-7 attaches TOC[46].
         public const uint CreateFileWin32Chk = 0x8001D3F8;
         public const uint NameCopyContinue = 0x8001D464;
+        // CreateFile success epilogue. Type 7 must not take
+        // NameCopyContinue: that CreateFileMappings object+0.
+        // A TOCentry is not a handle. CreateFile then returned
+        // 14/1392, OpenExe failed, 0x8001DFC4 retried
+        // .dll.dll, and 0x8001E3AC was 126. Same object as
+        // TocWalk (entry + type 7); v0=0 so LoadE32 runs.
+        public const uint CreateFileOk = 0x8001D568;
         // 0x80016AFC walks *(0x80342B10) ROMHDR nodes. ExtraROM
         // 0x8134DA84 is mapped but never linked, so LoadDriver of
         // bare ddi_nop.dll misses (v0=2) and never CreateFile
@@ -1161,6 +1168,31 @@ namespace ProcessorEmulator.Core
         public static uint DdiNopTocEntry
         {
             get { return _ddiNopTocEntry; }
+        }
+
+        public static bool IsMscoreeTocObject(MipsBus bus, uint obj)
+        {
+            if (bus == null || obj == 0 || _mscoreeTocEntry == 0)
+                return false;
+            try
+            {
+                return bus.Read32(obj) == _mscoreeTocEntry
+                    && bus.Read8(obj + 4) == TocAttachType;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public static uint MscoreeTocEntry
+        {
+            get { return _mscoreeTocEntry; }
+        }
+
+        public static uint MscoreeE32
+        {
+            get { return _mscoreeE32; }
         }
 
         public static void NoteExtraRom(uint imageStart)
