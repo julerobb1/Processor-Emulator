@@ -1646,7 +1646,19 @@ namespace ProcessorEmulator.Core
             {
                 uint off = runLo - wordBase;
                 for (uint i = 0; i < span; i += 4)
+                {
+                    uint va = runLo + i;
+                    // wait49: do not host-back-overwrite GDI +0xC8
+                    // (0x000E1700+0xC8 / 0x080E17C8). Do not poke it.
+                    if ((va & 0x01FFFFFF) == 0x000E17C8u)
+                    {
+                        System.Console.WriteLine("[Hive] process-heap host-back skip-word va=0x" +
+                            va.ToString("X8") + " word=0x" + words[(off + i) / 4].ToString("X8") +
+                            " (GDI +0xC8; not a dump 0x000E0000 page)");
+                        continue;
+                    }
                     bus.Write32(kseg + i, words[(off + i) / 4]);
+                }
             }
             catch
             {

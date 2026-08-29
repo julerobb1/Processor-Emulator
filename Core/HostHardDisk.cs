@@ -195,7 +195,10 @@ namespace ProcessorEmulator.Core
         // (0 if later init failed). Do not poke +0xC8.
         public const uint GwesVaC8StoreSet = 0x000631D4;
         public const uint GwesVaC8StoreClr = 0x00063254;
+        public const uint GwesRomC8StoreSet = 0x801981D4;
+        public const uint GwesRomC8StoreClr = 0x80198254;
         public const uint GwesDispObj = 0x000BA954;
+        public const uint GwesDispC8Off = 0xC8;
         // 0x0005D24C addiu a0, 584; jal 0x000B4D20 (IAT 0x000B60D0).
         // wait42: ExtraROM dest host-back [v0, dest+size] — LoadDriver
         // v0=0x86F36EA0. DllMain dest+0x520 TLB $fp=0x080E1970
@@ -284,6 +287,8 @@ namespace ProcessorEmulator.Core
         private static bool _gwesWatch;
         private static bool _gwesIn;
         private static uint _gwesLastPc;
+        private static uint _stepPc;
+        private static bool _c8WriteBusy;
         private static bool _gwesSummary;
         private static bool _gwesSawExit;
         private static bool _gwesSawWait;
@@ -346,6 +351,8 @@ namespace ProcessorEmulator.Core
             _gwesWatch = false;
             _gwesIn = false;
             _gwesLastPc = 0;
+            _stepPc = 0;
+            _c8WriteBusy = false;
             _gwesSummary = false;
             _gwesSawExit = false;
             _gwesSawWait = false;
@@ -389,6 +396,7 @@ namespace ProcessorEmulator.Core
                 return false;
 
             uint pc = programCounter;
+            _stepPc = pc;
             if (pc == BinfsInheritFill)
             {
                 uint plus14 = registers[12];
@@ -1895,7 +1903,8 @@ namespace ProcessorEmulator.Core
                 return;
             }
             if ((pc == GwesVaC8StoreSet || IsSlottedVa(pc, GwesVaC8StoreSet)
-                || pc == GwesVaC8StoreClr || IsSlottedVa(pc, GwesVaC8StoreClr))
+                || pc == GwesVaC8StoreClr || IsSlottedVa(pc, GwesVaC8StoreClr)
+                || pc == GwesRomC8StoreSet || pc == GwesRomC8StoreClr)
                 && _gwesWatch)
             {
                 LogGwesC8Store(pc, registers, bus);
@@ -2133,6 +2142,42 @@ namespace ProcessorEmulator.Core
                 " (firmware sw v0,0xC8(v1); do not poke +0xC8)");
         }
 
+        // wait49: +0xC8 goes 0x000E8370 -> 0 before compare.
+        // Log the actual Write32. Do not poke +0xC8.
+        public static void NoteDispC8Write(uint va, uint value, MipsBus bus)
+        {
+            if (_c8WriteBusy || !_gwesWatch)
+                return;
+            uint off = va & 0x01FFFFFF;
+            bool hit = off == 0x000E17C8u;
+            if (!hit && bus != null)
+            {
+                _c8WriteBusy = true;
+                try
+                {
+                    uint obj = 0;
+                    if (TryReadWord(bus, GwesDispObj, out obj) && obj != 0
+                        && (va == obj + GwesDispC8Off
+                            || (va & 0x01FFFFFF) == ((obj + GwesDispC8Off) & 0x01FFFFFF)))
+                        hit = true;
+                }
+                finally
+                {
+                    _c8WriteBusy = false;
+                }
+            }
+            if (!hit)
+                return;
+            string key = "hive:c8wr:" + _stepPc.ToString("X") + ":" + value.ToString("X") + ":" + va.ToString("X");
+            if (!_logged.Add(key))
+                return;
+            System.Console.WriteLine("[Hive] GDI +0xC8 write pc=0x" + _stepPc.ToString("X8") +
+                " va=0x" + va.ToString("X8") +
+                " value=0x" + value.ToString("X8") +
+                " last-gwes=0x" + _gwesLastPc.ToString("X8") +
+                " (do not poke +0xC8)");
+        }
+
         private static void LogGwesDispAlloc(uint pc, uint[] registers, MipsBus bus, bool ret)
         {
             uint a0 = registers != null && registers.Length > 4 ? registers[4] : 0;
@@ -2189,6 +2234,7 @@ namespace ProcessorEmulator.Core
             uint[] vas = { 0x080E1970u, 0x080E7ECCu, 0x000E7ECCu, 0x080E8370u, 0x000E8370u };
             System.Console.Write("[Hive] process-heap pages " + when +
                 " heap=0x" + heap.ToString("X8") +
+                (skipVa != 0 ? " skip=0x" + skipVa.ToString("X8") : "") +
                 (installed ? " new-host-back" : " no-new"));
             for (int i = 0; i < vas.Length; i++)
             {

@@ -106,6 +106,7 @@ namespace ProcessorEmulator.Emulation
 
         public void Write32(uint vaddr, uint value)
         {
+            HostHardDisk.NoteDispC8Write(vaddr, value, this);
             vaddr = CeRomTocFiles.MapDdiNopDestVa(vaddr);
             vaddr = CeRomTocFiles.MapProcessHeapSlotVa(this, vaddr);
             vaddr = CeRomTocFiles.MapVallocHostVa(vaddr);
