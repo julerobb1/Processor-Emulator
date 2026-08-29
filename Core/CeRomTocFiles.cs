@@ -396,8 +396,13 @@ namespace ProcessorEmulator.Core
         // MapO32 VALLOCs dest only when flags keep 0x2000 (the early
         // 0x80028844 path does not). After that VALLOC it VirtualCopys
         // compressed ExtraROM bytes as XIP. Rewrite that jal to
-        // 0x80028844 (dest, src, vsize, psize) so firmware decompresses
-        // onto the pages it just mapped. Do not host-alias XIP.
+        // 0x80028844 (dest, src, vsize, o32_access). a3 is PAGE_*
+        // (o32_lite+0xC), not psize: 0x80026C0C rejects 0xD989 and
+        // sets last-error 87, leaving VALLOC zeros at startip.
+        // Do not host-alias XIP.
+        private static uint _ddiNopDecompRa;
+        private static uint _ddiNopDecompDest;
+
         public static bool TryRedirectExtraRomVirtualCopyToDecompress(
             MipsBus bus, uint[] regs, ref uint programCounter)
         {
@@ -409,18 +414,74 @@ namespace ProcessorEmulator.Core
             uint vsize = regs[7];
             if (!IsExtraRomDdiNopDest(dest) && !IsExtraRomDdiNopData(src))
                 return false;
+            uint access = ExtraRomO32Access(bus, regs);
             regs[4] = dest;
             regs[5] = src;
             regs[6] = vsize;
-            regs[7] = psize;
+            regs[7] = access;
             programCounter = MapO32Decompress;
+            _ddiNopDecompRa = regs.Length > 31 ? regs[31] : 0;
+            _ddiNopDecompDest = dest;
             System.Console.WriteLine("[Hive] ExtraROM VALLOC dest then 0x80028844 dest=0x" +
                 dest.ToString("X8") + " src=0x" + src.ToString("X8") +
                 " vsize=0x" + vsize.ToString("X") +
+                " access=0x" + access.ToString("X") +
                 " psize=0x" + psize.ToString("X") +
                 " dest-" + (DestReadable(bus, dest) ? "mapped" : "unmapped") +
                 " (firmware decompress; do not XIP-alias)");
             return true;
+        }
+
+        public static bool TryNoteExtraRomDecompressRet(MipsBus bus, uint[] regs, uint pc)
+        {
+            if (_ddiNopDecompRa == 0 || pc != _ddiNopDecompRa)
+                return false;
+            uint dest = _ddiNopDecompDest;
+            _ddiNopDecompRa = 0;
+            uint v0 = regs != null && regs.Length > 2 ? regs[2] : 0;
+            uint word = 0;
+            bool mapped = false;
+            try
+            {
+                if (bus != null && dest != 0)
+                {
+                    word = bus.Read32(dest);
+                    mapped = true;
+                }
+            }
+            catch
+            {
+            }
+            System.Console.WriteLine("[Hive] ExtraROM 0x80028844 ret v0=0x" +
+                v0.ToString("X8") + " dest=0x" + dest.ToString("X8") +
+                (mapped ? " word=0x" + word.ToString("X8") : " dest-unmapped") +
+                (v0 == 0 ? " (firmware miss last-error 87)" : ""));
+            return false;
+        }
+
+        private static uint ExtraRomO32Access(MipsBus bus, uint[] regs)
+        {
+            uint o32 = regs != null && regs.Length > 23 ? regs[23] : 0;
+            uint access = 0;
+            uint flags = 0;
+            try
+            {
+                if (bus != null && o32 != 0)
+                {
+                    access = bus.Read32(o32 + 0xC);
+                    flags = bus.Read32(o32 + 0x10);
+                }
+            }
+            catch
+            {
+            }
+            uint page = access & 0xFF;
+            if (page == 1 || page == 2 || page == 4 || page == 8
+                || page == 0x10 || page == 0x20 || page == 0x40 || page == 0x80)
+                return page;
+            if ((flags & 0x80000000u) != 0)
+                return 0x40;
+            return 0x20;
         }
 
         private static bool DestReadable(MipsBus bus, uint dest)
@@ -487,6 +548,8 @@ namespace ProcessorEmulator.Core
             _ddiNopData = null;
             _ddiNopDestOn = false;
             _ddiNopSlot0 = 0;
+            _ddiNopDecompRa = 0;
+            _ddiNopDecompDest = 0;
         }
 
         public static void NoteExtraRomModule(uint romhdr, uint tocEntry, uint attr)
@@ -871,6 +934,8 @@ namespace ProcessorEmulator.Core
             _aliasLoggedRom = 0;
             _ddiNopDestOn = false;
             _ddiNopSlot0 = 0;
+            _ddiNopDecompRa = 0;
+            _ddiNopDecompDest = 0;
         }
 
         public static void RefreshExeXipAlias(MipsBus bus)

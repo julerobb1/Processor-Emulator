@@ -462,7 +462,8 @@ namespace ProcessorEmulator.Core
             }
             if (pc == CeRomTocFiles.XipExeCallDllSkip)
             {
-                if (CeRomTocFiles.TryForceDdiNopCallDll(bus, registers, ref programCounter))
+                if (!_logged.Contains("hive:ddi:words")
+                    && CeRomTocFiles.TryForceDdiNopCallDll(bus, registers, ref programCounter))
                     return false;
                 LogXipExeCallDllSkip(registers, bus);
                 return false;
@@ -514,6 +515,8 @@ namespace ProcessorEmulator.Core
                     return false;
                 }
             }
+            if (CeRomTocFiles.TryNoteExtraRomDecompressRet(bus, registers, pc))
+                return false;
             if (pc == CeRomTocFiles.MapO32VirtualCopy
                 && _logged.Contains("hive:ldde32")
                 && CeRomTocFiles.TryRedirectExtraRomVirtualCopyToDecompress(
