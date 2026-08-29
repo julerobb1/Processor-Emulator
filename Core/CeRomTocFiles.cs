@@ -1482,18 +1482,30 @@ namespace ProcessorEmulator.Core
             if (reqVa == 0 && (type & 0x2000u) != 0 && size < CeAllocGranularity)
                 size = CeAllocGranularity;
             uint end = baseVa + size;
+            // CE returns a 64K-aligned base below dest
+            // (0x01F57000 -> 0x01F50000, 0x019A8000 -> 0x019A0000).
+            // Host-back [v0, dest+size] so ExtraROM o32.real
+            // (TOC[33] 0x01F57xxx / slot-0 0x019A8xxx) is covered.
+            // Not a static 0x000E0000 map.
+            if (reqVa != 0 && reqVa < 0x80000000u)
+            {
+                uint reqEnd = reqVa + size;
+                if (reqEnd > end)
+                    end = reqEnd;
+            }
             if (end <= baseVa)
                 return;
+            uint span = end - baseVa;
             if (_vallocHostN >= _vallocHostLo.Length)
                 return;
             uint kseg = _vallocHostPool;
-            if (kseg < VallocHostKseg || kseg + size > VallocHostKsegLim)
+            if (kseg < VallocHostKseg || kseg + span > VallocHostKsegLim)
                 return;
             _vallocHostLo[_vallocHostN] = baseVa;
             _vallocHostHi[_vallocHostN] = end;
             _vallocHostKseg[_vallocHostN] = kseg;
             _vallocHostN++;
-            _vallocHostPool += size;
+            _vallocHostPool += span;
             System.Console.WriteLine("[Hive] VALLOC host-back 0x" +
                 baseVa.ToString("X8") + "-0x" + end.ToString("X8") +
                 " -> 0x" + kseg.ToString("X8") +

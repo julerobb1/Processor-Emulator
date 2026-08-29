@@ -2108,7 +2108,10 @@ namespace ProcessorEmulator.Core
                     " v0=0x" + v0.ToString("X8") +
                     (mapped ? " mapped" : " unmapped"));
             if (v0 != 0)
+            {
                 CeRomTocFiles.TryHostBackValloc(v0, _vallocA0, _vallocA1, _vallocA2, mapped);
+                CeRomTocFiles.NoteExtraRomVallocRet(_vallocA0, v0);
+            }
         }
 
         private static void LogGwesDispStore(uint pc, uint[] registers, MipsBus bus)
