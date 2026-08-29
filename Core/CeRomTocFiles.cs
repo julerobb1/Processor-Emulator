@@ -1401,6 +1401,12 @@ namespace ProcessorEmulator.Core
             _ddiNopBindName = false;
             _ddiNopBindLib = false;
             _ddiNopBindLibRet = false;
+            _vallocHostN = 0;
+            for (int i = 0; i < _vallocHostLo.Length; i++)
+            {
+                _vallocHostLo[i] = 0;
+                _vallocHostHi[i] = 0;
+            }
         }
 
         public static void RefreshExeXipAlias(MipsBus bus)
@@ -1433,6 +1439,52 @@ namespace ProcessorEmulator.Core
                 return ExtraRomDestKseg0 + (va - 0x01980000u);
             if (va >= 0x01F57000u && va < 0x01F67000u)
                 return ExtraRomDestKseg1 + (va - 0x01F57000u);
+            return va;
+        }
+
+        // Firmware VirtualAlloc returned a useg base the TLB has
+        // no PTE for (same class as ExtraROM dest). Host-back that
+        // returned range only, via kseg0. Not a static 0x000E0000
+        // map. Skip MEM_IMAGE and the process-info page.
+        private static readonly uint[] _vallocHostLo = new uint[8];
+        private static readonly uint[] _vallocHostHi = new uint[8];
+        private static int _vallocHostN;
+
+        public static void TryHostBackValloc(uint baseVa, uint size, uint type, bool alreadyMapped)
+        {
+            if (alreadyMapped || baseVa == 0 || baseVa >= 0x80000000u)
+                return;
+            if ((type & 0x01000000u) != 0)
+                return;
+            if ((type & 0x3000u) == 0)
+                return;
+            if (baseVa >= 0x00010000u && baseVa < 0x000CB000u)
+                return;
+            if (baseVa >= 0x01FFF000u && baseVa < 0x02000000u)
+                return;
+            if (size == 0)
+                size = 0x1000;
+            size = (size + 0xFFFu) & ~0xFFFu;
+            uint end = baseVa + size;
+            if (end <= baseVa)
+                return;
+            if (_vallocHostN >= _vallocHostLo.Length)
+                return;
+            _vallocHostLo[_vallocHostN] = baseVa;
+            _vallocHostHi[_vallocHostN] = end;
+            _vallocHostN++;
+            System.Console.WriteLine("[Hive] VALLOC host-back 0x" +
+                baseVa.ToString("X8") + "-0x" + end.ToString("X8") +
+                " kseg0 (firmware returned this; do not invent 0x000E0000)");
+        }
+
+        public static uint MapVallocHostVa(uint va)
+        {
+            for (int i = 0; i < _vallocHostN; i++)
+            {
+                if (va >= _vallocHostLo[i] && va < _vallocHostHi[i])
+                    return 0x80000000u | va;
+            }
             return va;
         }
 

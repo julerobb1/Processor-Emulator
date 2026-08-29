@@ -283,6 +283,10 @@ namespace ProcessorEmulator.Core
         private static int _gwesExnLogged;
         private static int _ddiPcLogged;
         private static uint _gwesThr;
+        private static uint _vallocRa;
+        private static uint _vallocA0;
+        private static uint _vallocA1;
+        private static uint _vallocA2;
 
         public static bool IsPresent => _image != null && _image.Length > 0;
         public static bool IsOpen => _opened;
@@ -429,6 +433,20 @@ namespace ProcessorEmulator.Core
                         "\" a0=0x" + a0.ToString("X8") +
                         " a1=0x" + a1.ToString("X8") +
                         " a2=0x" + a2.ToString("X8"));
+                if (_gwesWatch && registers.Length > 31)
+                {
+                    _vallocRa = registers[31];
+                    _vallocA0 = a0;
+                    _vallocA1 = a1;
+                    _vallocA2 = a2;
+                }
+                return false;
+            }
+            if (_vallocRa != 0 && pc == _vallocRa)
+            {
+                uint v0 = registers != null && registers.Length > 2 ? registers[2] : 0;
+                LogVallocRet(bus, v0);
+                _vallocRa = 0;
                 return false;
             }
             if (pc == CeRomTocFiles.MapO32VallocRet
@@ -1529,6 +1547,28 @@ namespace ProcessorEmulator.Core
                 NoteGwesPc(pc, "HeapCreate-site", GwesRomText + (GwesVaHeapCreate - 0x00011000), bus);
                 return;
             }
+            if ((pc == GwesVaHeapCreate + 8 || IsSlottedVa(pc, GwesVaHeapCreate + 8))
+                && _logged.Add("hive:heapcreate:ret"))
+            {
+                uint v0 = registers != null && registers.Length > 2 ? registers[2] : 0;
+                uint heap = 0;
+                bool heapOk = false;
+                try
+                {
+                    if (bus != null)
+                    {
+                        heap = bus.Read32(CeRomTocFiles.ProcessHeapPtr);
+                        heapOk = true;
+                    }
+                }
+                catch
+                {
+                }
+                System.Console.WriteLine("[Hive] gwes HeapCreate ret v0=0x" +
+                    v0.ToString("X8") +
+                    (heapOk ? " *0x01FFFFA0=0x" + heap.ToString("X8") : " *0x01FFFFA0 unmapped"));
+                return;
+            }
             if (pc == GwesVaDisplayParent || IsSlottedVa(pc, GwesVaDisplayParent))
             {
                 NoteGwesPc(pc, "display-parent", GwesRomText + (GwesVaDisplayParent - 0x00011000), bus);
@@ -1998,8 +2038,25 @@ namespace ProcessorEmulator.Core
                 return;
             if (!ret)
             {
+                uint heap = 0;
+                uint fn = 0;
+                bool heapOk = false;
+                try
+                {
+                    if (bus != null)
+                    {
+                        heap = bus.Read32(CeRomTocFiles.ProcessHeapPtr);
+                        fn = bus.Read32(0x01FFF794u);
+                        heapOk = true;
+                    }
+                }
+                catch
+                {
+                }
                 System.Console.WriteLine("[Hive] gwes LocalAlloc-site pc=0x" +
                     pc.ToString("X8") + " a0=" + a0 +
+                    (heapOk ? " *0x01FFFFA0=0x" + heap.ToString("X8") +
+                        " *0x01FFF794=0x" + fn.ToString("X8") : "") +
                     " (size 584 -> *0x000BA954; do not invent 0x000E0000)");
                 return;
             }
@@ -2008,6 +2065,20 @@ namespace ProcessorEmulator.Core
                 pc.ToString("X8") + " v0=0x" + v0.ToString("X8") +
                 (mapped ? " mapped" : " unmapped") +
                 " (do not invent 0x000E0000)");
+        }
+
+        private static void LogVallocRet(MipsBus bus, uint v0)
+        {
+            bool mapped = DestMapped(bus, v0);
+            string key = "hive:varet:" + _vallocA0.ToString("X") + ":" + v0.ToString("X");
+            if (_logged.Add(key))
+                System.Console.WriteLine("[Hive] VALLOC ret a0=0x" + _vallocA0.ToString("X8") +
+                    " a1=0x" + _vallocA1.ToString("X8") +
+                    " a2=0x" + _vallocA2.ToString("X8") +
+                    " v0=0x" + v0.ToString("X8") +
+                    (mapped ? " mapped" : " unmapped"));
+            if (v0 != 0)
+                CeRomTocFiles.TryHostBackValloc(v0, _vallocA1, _vallocA2, mapped);
         }
 
         private static void LogGwesDispStore(uint pc, uint[] registers, MipsBus bus)
