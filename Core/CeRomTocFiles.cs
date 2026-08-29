@@ -361,10 +361,13 @@ namespace ProcessorEmulator.Core
             }
         }
 
-        // 0x80028844 commits dest itself (0x80026F50). VALLOC first
-        // leaves those pages owned; the later walk returns 0 and
-        // last-error 87, so startip stays zeros. Skip the jal and
-        // let firmware decompress onto dest it maps.
+        // kseg0 scratch for an aligned copy of ExtraROM compressed
+        // o32. 0x80028844 xors dest^src and requires the page
+        // offsets to match; dataptr 0x80764CE0 is off 0xCE0.
+        // This is not ExtraROM and not 0x81360000.
+        public const uint AlignedCompSrc = 0x8F000000;
+        public const uint AlignedCompStride = 0x10000;
+
         public static bool TryReserveExtraRomValloc(uint[] regs)
         {
             if (regs == null || regs.Length <= 6)
@@ -419,6 +422,9 @@ namespace ProcessorEmulator.Core
             if (!IsExtraRomDdiNopDest(dest) && !IsExtraRomDdiNopData(src))
                 return false;
             uint access = ExtraRomO32Access(bus, regs);
+            uint aligned = CopyExtraRomSrcPageAligned(bus, src, psize);
+            if (aligned != 0)
+                src = aligned;
             regs[4] = dest;
             regs[5] = src;
             regs[6] = vsize;
@@ -432,7 +438,10 @@ namespace ProcessorEmulator.Core
                 " access=0x" + access.ToString("X") +
                 " psize=0x" + psize.ToString("X") +
                 " dest-" + (DestReadable(bus, dest) ? "mapped" : "unmapped") +
-                " (firmware decompress; do not XIP-alias)");
+                (((dest ^ src) & 0xFFF) == 0
+                    ? " (firmware decompress; dest^src page-aligned)"
+                    : " (dest^src off 0x" + ((dest ^ src) & 0xFFF).ToString("X") +
+                      "; 0x80028844 wants match)"));
             return true;
         }
 
@@ -461,6 +470,50 @@ namespace ProcessorEmulator.Core
                 (mapped ? " word=0x" + word.ToString("X8") : " dest-unmapped") +
                 (v0 == 0 ? " (firmware miss last-error 87)" : ""));
             return false;
+        }
+
+        private static uint CopyExtraRomSrcPageAligned(MipsBus bus, uint src, uint psize)
+        {
+            if (bus == null || src == 0 || psize == 0 || psize > 0x20000)
+                return 0;
+            if ((src & 0xFFF) == 0)
+                return src;
+            int slot = -1;
+            if (_ddiNopDataPtr != null)
+            {
+                for (int s = 0; s < _ddiNopDataPtr.Length; s++)
+                {
+                    if (_ddiNopDataPtr[s] == src)
+                    {
+                        slot = s;
+                        break;
+                    }
+                }
+            }
+            if (slot < 0)
+                slot = 0;
+            uint dest = AlignedCompSrc + (uint)slot * AlignedCompStride;
+            try
+            {
+                uint[] blob = null;
+                if (_ddiNopData != null && slot < _ddiNopData.Length)
+                    blob = _ddiNopData[slot];
+                uint n = (psize + 3) / 4;
+                if (blob != null && blob.Length < n)
+                    n = (uint)blob.Length;
+                for (uint w = 0; w < n; w++)
+                {
+                    uint word = blob != null && w < blob.Length
+                        ? blob[w]
+                        : bus.Read32(src + w * 4);
+                    bus.Write32(dest + w * 4, word);
+                }
+                return dest;
+            }
+            catch
+            {
+                return 0;
+            }
         }
 
         private static uint ExtraRomO32Access(MipsBus bus, uint[] regs)
