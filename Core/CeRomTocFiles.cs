@@ -16,6 +16,14 @@ namespace ProcessorEmulator.Core
     {
         public const uint CreateFileFail = 0x8001D400;
         public const uint NameCopyContinue = 0x8001D464;
+        // 0x80016AFC walks *(0x80342B10) ROMHDR nodes. ExtraROM
+        // 0x8134DA84 is mapped but never linked, so LoadDriver of
+        // bare ddi_nop.dll misses (v0=2) and never CreateFile
+        // (OpenExe 0x8001D6F0 stores 24($sp)=0 when the name has
+        // no \ or /). Same hit layout as NK TOC: object+0=entry,
+        // +4=7, v0=0. 0x800196E4 then uses e32 at TOC+0x14.
+        public const uint TocWalkMiss = 0x80016B74;
+        public const uint TocWalkMissContinue = 0x80016B78;
         public const uint BindImpMiss = 0x80018F9C;
         public const uint BindImpWalk = 0x80018F3C;
         // 0x80018B34 CallDLLEntry jalrs module+0x5C with no
@@ -133,10 +141,41 @@ namespace ProcessorEmulator.Core
                 && TryFindTocModule(bus, ExtraRomToc(bus), 128, baseName, out tocEntry, out attr))
             {
                 System.Console.WriteLine("[Hive] TOC-attach ExtraROM ddi_nop.dll entry=0x" +
-                    tocEntry.ToString("X8") + " (LoadDriver asked; do not invent 0x81360000)");
+                    tocEntry.ToString("X8") + " (CreateFile miss; do not invent 0x81360000)");
                 return true;
             }
             return false;
+        }
+
+        // LoadDriver does not CreateFile. OpenExe 0x8001D6F0 calls
+        // this walk at 0x8001DA58 for a bare name. NK modules hit
+        // because they sit on *(0x80342B10). ExtraROM TOC[33] does
+        // not. Write the same object the hit path at 0x80016B9C
+        // writes and return 0 so 0x800196E4 can decompress/map.
+        public static bool TryAttachExtraRomTocWalk(MipsBus bus, uint path, uint obj)
+        {
+            if (bus == null || path == 0 || obj == 0)
+                return false;
+            string baseName = Basename(bus, path);
+            if (!NamesEqual(baseName, "ddi_nop.dll"))
+                return false;
+            if (!TryFindTocModule(bus, ExtraRomToc(bus), 128, baseName, out uint tocEntry, out _))
+            {
+                System.Console.WriteLine("[Hive] TOC-walk ExtraROM ddi_nop.dll miss (mapped ExtraROM has no TOC[33])");
+                return false;
+            }
+            try
+            {
+                bus.Write32(obj, tocEntry);
+                bus.Write8(obj + 4, TocAttachType);
+            }
+            catch
+            {
+                return false;
+            }
+            System.Console.WriteLine("[Hive] TOC-walk ExtraROM ddi_nop.dll entry=0x" +
+                tocEntry.ToString("X8") + " (LoadDriver; do not invent 0x81360000)");
+            return true;
         }
 
         public static void NoteExtraRom(uint imageStart)

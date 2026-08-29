@@ -146,6 +146,20 @@ namespace ProcessorEmulator.Emulation
                     }
                 }
 
+                // 0x80016AFC miss (v0=2). s3=UTF16 name, s4=object.
+                // ExtraROM TOC[33] ddi_nop is not on *(0x80342B10).
+                if (programCounter == CeRomTocFiles.TocWalkMiss)
+                {
+                    if (CeRomTocFiles.TryAttachExtraRomTocWalk(_bus, registers[19], registers[20]))
+                    {
+                        registers[2] = 0;
+                        programCounter = CeRomTocFiles.TocWalkMissContinue;
+                        _cp0.UpdateTimer(1);
+                        _bus.Tick(1);
+                        continue;
+                    }
+                }
+
                 if (programCounter == CeRomTocFiles.CallDllStartip)
                     CeRomTocFiles.TryFillTocStartip(_bus, registers[23], true);
 
