@@ -157,6 +157,9 @@ namespace ProcessorEmulator.Core
         public const uint DdiNopVbase = 0x03980000;
         public const uint DdiNopVend = 0x039B0000;
         public const uint DdiNopEntry = 0x03998014;
+        public const uint DdiNopSlot0 = 0x01980000;
+        public const uint DdiNopSlot0Vend = 0x019B0000;
+        public const uint DdiNopSlot0Entry = 0x01998014;
         public const uint CoredllActivateDevice = 0x03F6AD08;
         public const uint CoredllActivateDeviceEx = 0x03F6AD54;
         public const uint CoredllExitThread = 0x03F74844;
@@ -451,6 +454,8 @@ namespace ProcessorEmulator.Core
             }
             if (pc == CeRomTocFiles.XipExeCallDllSkip)
             {
+                if (CeRomTocFiles.TryForceDdiNopCallDll(bus, registers, ref programCounter))
+                    return false;
                 LogXipExeCallDllSkip(registers, bus);
                 return false;
             }
@@ -1552,12 +1557,15 @@ namespace ProcessorEmulator.Core
                     pc, bus);
                 return;
             }
-            if (pc == DdiNopEntry || (pc >= DdiNopVbase && pc < DdiNopVend))
+            if (pc == DdiNopEntry || pc == DdiNopSlot0Entry
+                || (pc >= DdiNopVbase && pc < DdiNopVend)
+                || (pc >= DdiNopSlot0 && pc < DdiNopSlot0Vend))
             {
                 _gwesSawDdi = true;
-                if (_logged.Add("hive:ddi:" + (pc == DdiNopEntry ? "entry" : "run")))
+                bool entry = pc == DdiNopEntry || pc == DdiNopSlot0Entry;
+                if (_logged.Add("hive:ddi:" + (entry ? "entry" : "run")))
                     System.Console.WriteLine("[Hive] ddi_nop pc=0x" + pc.ToString("X8") +
-                        (pc == DdiNopEntry ? " entry" : ""));
+                        (entry ? " entry" : ""));
                 return;
             }
             if (pc == CoredllActivateDevice || pc == CoredllActivateDeviceEx)
@@ -2116,6 +2124,15 @@ namespace ProcessorEmulator.Core
         {
             if (bus == null)
                 return false;
+            try
+            {
+                uint w = bus.Read32(DdiNopSlot0Entry);
+                if (w != 0 && w != 0xDEADBEEFu)
+                    return true;
+            }
+            catch
+            {
+            }
             try
             {
                 uint w = bus.Read32(DdiNopEntry);

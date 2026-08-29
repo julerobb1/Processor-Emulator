@@ -758,6 +758,36 @@ namespace ProcessorEmulator.Core
             }
         }
 
+        public static bool TryForceDdiNopCallDll(MipsBus bus, uint[] regs, ref uint programCounter)
+        {
+            if (bus == null || regs == null || regs.Length <= 30)
+                return false;
+            uint module = regs[30];
+            if (module == 0)
+                return false;
+            try
+            {
+                uint ip = bus.Read32(module + ModuleStartip);
+                uint vbase = bus.Read32(module + ProcModule);
+                bool ddi = (ip >= 0x01980000u && ip < 0x019B0000u)
+                    || (vbase >= DdiNopVbase && vbase < 0x04000000u)
+                    || IsDdiNopTocObject(bus, module + ModuleFileObj);
+                if (!ddi || ip == 0)
+                    return false;
+                regs[4] = module;
+                regs[5] = 1;
+                programCounter = XipExeCallDllJal;
+                System.Console.WriteLine("[Hive] force CallDLL ExtraROM ddi_nop module=0x" +
+                    module.ToString("X8") + " startip=0x" + ip.ToString("X8") +
+                    " a1=1 (do not skip; do not invent 0x81360000)");
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         public static bool TryForceXipExeCallDll(MipsBus bus, uint[] regs, ref uint programCounter)
         {
             if (bus == null || regs == null || regs.Length <= 30)
