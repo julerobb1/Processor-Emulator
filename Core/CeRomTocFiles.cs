@@ -394,10 +394,23 @@ namespace ProcessorEmulator.Core
             if ((type & MemReserve) != 0)
                 return false;
             regs[6] = type | MemReserve;
+            // CEDecompress step 0x1000 can lbu the next dest page
+            // (section 2 vsize 0xB04 read 0x019A9000 and took
+            // 0x80000180). Commit one extra page. Not ExtraROM XIP.
+            if (regs.Length > 5)
+            {
+                uint size = regs[5];
+                uint pages = (size + 0xFFFu) & ~0xFFFu;
+                if (pages < size + 0x1000)
+                    pages += 0x1000;
+                if (pages > size)
+                    regs[5] = pages;
+            }
             System.Console.WriteLine("[Hive] ExtraROM VALLOC a0=0x" +
                 dest.ToString("X8") + " type 0x" + type.ToString("X") +
                 " -> 0x" + regs[6].ToString("X") +
-                " (MEM_RESERVE|COMMIT; do not invent 0x81360000)");
+                " size 0x" + (regs.Length > 5 ? regs[5].ToString("X") : "0") +
+                " (MEM_RESERVE|COMMIT + extra page; do not invent 0x81360000)");
             return true;
         }
 
