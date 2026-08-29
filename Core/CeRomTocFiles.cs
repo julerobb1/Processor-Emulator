@@ -15,6 +15,14 @@ namespace ProcessorEmulator.Core
     public static class CeRomTocFiles
     {
         public const uint CreateFileFail = 0x8001D400;
+        // 0x8001D3A0 jal 0x8003D700 then bne v0,-1 at
+        // 0x8001D3F8. 0x8001D400 only runs on INVALID_HANDLE.
+        // wait59: OpenExe \mscoree.dll entered CreateFile and
+        // never hit 0x8001D400, so filesys returned a handle.
+        // NK/ExtraROM FILE tables and the volume have no
+        // mscoree.dll. That type-8 handle is 193. Force
+        // INVALID_HANDLE here so type-7 attaches TOC[46].
+        public const uint CreateFileWin32Chk = 0x8001D3F8;
         public const uint NameCopyContinue = 0x8001D464;
         // 0x80016AFC walks *(0x80342B10) ROMHDR nodes. ExtraROM
         // 0x8134DA84 is mapped but never linked, so LoadDriver of
@@ -2099,6 +2107,32 @@ namespace ProcessorEmulator.Core
             catch
             {
                 return 0;
+            }
+        }
+
+        public static void TryRejectMscoreeFileHandle(MipsBus bus, uint[] regs)
+        {
+            if (bus == null || regs == null || regs.Length <= 23)
+                return;
+            uint v0 = regs[2];
+            if (v0 == 0xFFFFFFFFu)
+                return;
+            try
+            {
+                string baseName = Basename(bus, regs[23]);
+                if (string.IsNullOrEmpty(baseName) && !string.IsNullOrEmpty(_pendingRomFile))
+                    baseName = _pendingRomFile;
+                if (!IsMscoreeDll(baseName) && regs[4] != 0)
+                    baseName = Basename(bus, regs[4]);
+                if (!IsMscoreeDll(baseName))
+                    return;
+                regs[2] = 0xFFFFFFFFu;
+                System.Console.WriteLine("[Hive] Win32 CreateFile mscoree.dll v0=0x" +
+                    v0.ToString("X8") +
+                    " (filesys handle; FILE table has no mscoree.dll; INVALID_HANDLE so TOC[46] type-7 attach)");
+            }
+            catch
+            {
             }
         }
 

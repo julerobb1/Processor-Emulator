@@ -124,6 +124,9 @@ namespace ProcessorEmulator.Emulation
                     continue;
                 }
 
+                if (programCounter == CeRomTocFiles.CreateFileWin32Chk)
+                    CeRomTocFiles.TryRejectMscoreeFileHandle(_bus, registers);
+
                 if (programCounter == CeRomTocFiles.CreateFileFail)
                 {
                     try
