@@ -489,6 +489,11 @@ namespace ProcessorEmulator.Core
                     return false;
                 }
             }
+            if (pc == CeRomTocFiles.MapO32VirtualCopy
+                && _logged.Contains("hive:ldde32")
+                && CeRomTocFiles.TryRedirectExtraRomVirtualCopyToDecompress(
+                    bus, registers, ref programCounter))
+                return false;
             ObserveGwesPath(pc, registers, bus);
             if (pc == FilesysCreateProcess
                 || (pc == KernelCreateProcess && _cprocRa == 0))
@@ -1615,7 +1620,6 @@ namespace ProcessorEmulator.Core
                 && _logged.Contains("hive:ldde32")
                 && registers != null && registers.Length > 5)
             {
-                CeRomTocFiles.TrySteerExtraRomMapO32(bus, registers[5]);
                 LogMapO32(registers, bus);
                 return;
             }

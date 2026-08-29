@@ -69,9 +69,9 @@ namespace ProcessorEmulator.Core
         public const uint ThreadPtr = 0xFFFFDAC0;
         public const uint ThreadStack = 0x24;
         public const uint O32Compressed = 0x4000;
-        // ExtraROM o32[0] 0x60002020: 0x2000 makes MapO32
-        // VirtualCopy compressed bytes as XIP. Clear it so
-        // 0x80028844 decompresses dataptr onto o32.real.
+        // ExtraROM o32[0] 0x60002020: 0x2000 lets CopyO32 accept
+        // unaligned dataptr 0x80764CE0. MapO32 still VirtualCopys
+        // those bytes as XIP unless 0x2000 is cleared on the lite.
         public const uint O32RomXip = 0x2000;
         public const uint O32Writable = 0x80000000;
         // 0x8001F12C andi s4, 0x8000 / beq skip CallDLL a1=1.
@@ -320,37 +320,48 @@ namespace ProcessorEmulator.Core
             }
         }
 
-        // CopyO32 already copied ROM o32 (0x2000 still set so the
-        // unaligned ExtraROM dataptr passed). Clear 0x2000 / WRITE
-        // on this lite so MapO32 0x8001AC30 jal 0x80028844.
-        public static void TrySteerExtraRomMapO32(MipsBus bus, uint o32Lite)
+        // MapO32 VALLOCs dest only when flags keep 0x2000 (the early
+        // 0x80028844 path does not). After that VALLOC it VirtualCopys
+        // compressed ExtraROM bytes as XIP. Rewrite that jal to
+        // 0x80028844 (dest, src, vsize, psize) so firmware decompresses
+        // onto the pages it just mapped. Do not host-alias XIP.
+        public static bool TryRedirectExtraRomVirtualCopyToDecompress(
+            MipsBus bus, uint[] regs, ref uint programCounter)
         {
-            if (bus == null || o32Lite == 0)
-                return;
+            if (bus == null || regs == null || regs.Length <= 7)
+                return false;
+            uint src = regs[4];
+            uint psize = regs[5];
+            uint dest = regs[6];
+            uint vsize = regs[7];
+            if (!IsExtraRomDdiNopDest(dest) && !IsExtraRomDdiNopData(src))
+                return false;
+            regs[4] = dest;
+            regs[5] = src;
+            regs[6] = vsize;
+            regs[7] = psize;
+            programCounter = MapO32Decompress;
+            System.Console.WriteLine("[Hive] ExtraROM VALLOC dest then 0x80028844 dest=0x" +
+                dest.ToString("X8") + " src=0x" + src.ToString("X8") +
+                " vsize=0x" + vsize.ToString("X") +
+                " psize=0x" + psize.ToString("X") +
+                " dest-" + (DestReadable(bus, dest) ? "mapped" : "unmapped") +
+                " (firmware decompress; do not XIP-alias)");
+            return true;
+        }
+
+        private static bool DestReadable(MipsBus bus, uint dest)
+        {
+            if (bus == null || dest == 0)
+                return false;
             try
             {
-                uint dest = bus.Read32(o32Lite + 8);
-                uint flags = bus.Read32(o32Lite + 0x10);
-                uint psize = bus.Read32(o32Lite + 0x14);
-                uint dataptr = bus.Read32(o32Lite + 0x18);
-                if (!IsExtraRomDdiNopDest(dest) && !IsExtraRomDdiNopData(dataptr))
-                    return;
-                uint next = flags | O32Compressed;
-                next &= ~O32RomXip;
-                if ((next & O32Writable) != 0)
-                    next &= ~O32Writable;
-                if (next == flags)
-                    return;
-                bus.Write32(o32Lite + 0x10, next);
-                System.Console.WriteLine("[Hive] ExtraROM MapO32 lite flags 0x" +
-                    flags.ToString("X8") + " -> 0x" + next.ToString("X8") +
-                    " dest=0x" + dest.ToString("X8") +
-                    " dataptr=0x" + dataptr.ToString("X8") +
-                    " psize=0x" + psize.ToString("X") +
-                    " (firmware 0x80028844; do not XIP-alias)");
+                bus.Read32(dest);
+                return true;
             }
             catch
             {
+                return false;
             }
         }
 
