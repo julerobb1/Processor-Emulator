@@ -319,7 +319,7 @@ namespace ProcessorEmulator.Core
                     tocEntry = _mscoreeTocEntry;
                     attr = _mscoreeAttr != 0 ? _mscoreeAttr : _mscoreeTocWords[0];
                 }
-                else if (!TryFindTocModule(bus, ExtraRomToc(bus), 128, baseName, out tocEntry, out attr))
+                else if (!TryFindTocModule(bus, ExtraRomToc(bus), 128, "mscoree.dll", out tocEntry, out attr))
                 {
                     System.Console.WriteLine("[Hive] TOC-attach ExtraROM mscoree.dll miss" +
                         " (FILE table has no mscoree.dll; do not invent a FILE)");
@@ -395,8 +395,9 @@ namespace ProcessorEmulator.Core
             if (IsMscoreeDll(baseName))
                 TryRestoreExtraRomMscoreeIfClobbered(bus);
             uint tocEntry = IsMscoreeDll(baseName) ? _mscoreeTocEntry : _ddiNopTocEntry;
+            string findName = IsMscoreeDll(baseName) ? "mscoree.dll" : baseName;
             if (tocEntry == 0
-                && !TryFindTocModule(bus, ExtraRomToc(bus), 128, baseName, out tocEntry, out _))
+                && !TryFindTocModule(bus, ExtraRomToc(bus), 128, findName, out tocEntry, out _))
             {
                 uint toc = ExtraRomToc(bus);
                 uint nmods = 0;
@@ -3237,23 +3238,13 @@ namespace ProcessorEmulator.Core
             return created;
         }
 
-        // ExtraROM TOC[46] only. Length 11: do not match
-        // mscoree3_5.dll (TOC[79], 15).
+        // ExtraROM TOC[46] only. wait61 retry is \mscoree.dll.dll
+        // (same class as wait53 tv2clientce.exe.exe). Do not match
+        // mscoree3_5.dll (TOC[79]).
         private static bool IsMscoreeDll(string name)
         {
-            if (string.IsNullOrEmpty(name) || name.Length != 11)
-                return false;
-            return (name[0] == 'm' || name[0] == 'M')
-                && (name[1] == 's' || name[1] == 'S')
-                && (name[2] == 'c' || name[2] == 'C')
-                && (name[3] == 'o' || name[3] == 'O')
-                && (name[4] == 'r' || name[4] == 'R')
-                && (name[5] == 'e' || name[5] == 'E')
-                && (name[6] == 'e' || name[6] == 'E')
-                && name[7] == '.'
-                && (name[8] == 'd' || name[8] == 'D')
-                && (name[9] == 'l' || name[9] == 'L')
-                && (name[10] == 'l' || name[10] == 'L');
+            return NamesEqual(name, "mscoree.dll")
+                || NamesEqual(name, "mscoree.dll.dll");
         }
 
         // wait53 retry is \Windows\tv2clientce.exe.exe
