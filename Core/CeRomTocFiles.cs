@@ -729,27 +729,6 @@ namespace ProcessorEmulator.Core
                 {
                 }
             }
-            int hits = 0;
-            try
-            {
-                uint n = 0x1743A & ~3u;
-                for (uint o = 0; o < n && hits < 4; o += 4)
-                {
-                    uint w = bus.Read32(dest + o);
-                    if (w >= 0x000E0000u && w < 0x000F0000u)
-                    {
-                        System.Console.WriteLine("[Hive] ExtraROM ddi_nop sec0 literal 0x" +
-                            w.ToString("X8") + " at dest+0x" + o.ToString("X") +
-                            " (image pointer, not a firmware VALLOC)");
-                        hits++;
-                    }
-                }
-            }
-            catch
-            {
-            }
-            if (hits == 0)
-                System.Console.WriteLine("[Hive] ExtraROM ddi_nop sec0 has no 0x000Exxxx literal (0x000E1970 is not an unrelocated o32 RVA; e32 vsize 0x2B000)");
         }
 
         private static bool _ddiNopBindHdr;

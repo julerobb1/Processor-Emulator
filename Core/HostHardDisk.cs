@@ -2266,6 +2266,7 @@ namespace ProcessorEmulator.Core
             {
             }
             uint gp = registers != null && registers.Length > 28 ? registers[28] : 0;
+            uint fp = registers != null && registers.Length > 30 ? registers[30] : 0;
             uint v0 = registers != null && registers.Length > 2 ? registers[2] : 0;
             uint v1 = registers != null && registers.Length > 3 ? registers[3] : 0;
             uint a0 = registers != null && registers.Length > 4 ? registers[4] : 0;
@@ -2292,6 +2293,7 @@ namespace ProcessorEmulator.Core
                 (insnOk ? " insn=0x" + insn.ToString("X8") : " insn-unmapped") +
                 " vaddr=0x" + vaddr.ToString("X8") +
                 " gp=0x" + gp.ToString("X8") +
+                " fp=0x" + fp.ToString("X8") +
                 " v0=0x" + v0.ToString("X8") +
                 " v1=0x" + v1.ToString("X8") +
                 " a0=0x" + a0.ToString("X8") +
@@ -2301,7 +2303,7 @@ namespace ProcessorEmulator.Core
                 " s0=0x" + s0.ToString("X8") +
                 " s1=0x" + s1.ToString("X8") +
                 (parentOk ? " disp=0x" + parent.ToString("X8") : " disp-unmapped") +
-                " (0x000E1970 is not o32 RVA / not sec1 BSS 0x01F57xxx; no VALLOC 0x000E0000; do not invent that map)");
+                " (jal delay sw $v0,0($fp); $fp is gwes GDI 0x000Exxxx, not o32 RVA / not sec1 BSS; no VALLOC 0x000E0000; do not invent that map)");
         }
 
         private static void LogDdiNopMapped(MipsBus bus)
