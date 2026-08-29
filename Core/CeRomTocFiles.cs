@@ -1529,8 +1529,10 @@ namespace ProcessorEmulator.Core
         // Not a dump ExtraROM page. Not a static 0x000E0000 map.
         // wait43/44: host-back of that 64K at HeapCreate copied=0
         // (no DestMapped words yet) hid the live firmware HEAP.
-        // Host-back only DestMapped pages, and retry after
-        // LocalAlloc when *heap=HeaP is readable.
+        // Host-back only DestMapped pages. Retry after LocalAlloc
+        // (wait45: 0x080E0000-0x080E2000, dest+0x520 gone) and
+        // again at LoadDriver ret / AV-site for later HEAP pages
+        // (wait45 miss 0x080E7ECC). Not a dump 0x000E0000 map.
         public static bool TryHostBackProcessHeap(MipsBus bus, uint heap)
         {
             if (bus == null || heap < 0x04000000u || heap >= 0x20000000u)
