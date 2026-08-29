@@ -257,6 +257,19 @@ namespace ProcessorEmulator.Core.Loaders
                             " o32=0x" + o32.ToString("X8") +
                             " (OpenExe; not a FILE; do not invent 0x81360000)");
                     }
+                    if (IsOle32(name))
+                    {
+                        uint tocAttr = memory.ReadMemory32(entry);
+                        uint e32 = memory.ReadMemory32(entry + 0x14);
+                        uint o32 = memory.ReadMemory32(entry + 0x18);
+                        CeRomTocFiles.CacheExtraRomOle32(memory, entry);
+                        Console.WriteLine("[NkBinLoader] ExtraROM TOC[" + i + "] ole32.dll entry=0x" +
+                            entry.ToString("X8") +
+                            " attr=0x" + tocAttr.ToString("X8") +
+                            " e32=0x" + e32.ToString("X8") +
+                            " o32=0x" + o32.ToString("X8") +
+                            " (OpenExe; not a FILE; do not invent 0x81360000)");
+                    }
                     if (shown < 24)
                     {
                         Console.WriteLine("[NkBinLoader] ExtraROM XIP " + name);
@@ -268,12 +281,27 @@ namespace ProcessorEmulator.Core.Loaders
                 {
                     uint first = romhdr + 0x54 + nummods * 32;
                     bool sawMscoreeFile = false;
+                    bool sawOle32File = false;
                     for (uint i = 0; i < nfiles; i++)
                     {
                         uint entry = first + i * 28;
                         string fname = ReadAscii(memory, memory.ReadMemory32(entry + 0x14));
                         if (string.IsNullOrEmpty(fname))
                             continue;
+                        if (IsOle32(fname))
+                        {
+                            sawOle32File = true;
+                            uint oReal = memory.ReadMemory32(entry + 0x0C);
+                            uint oComp = memory.ReadMemory32(entry + 0x10);
+                            uint oLoad = memory.ReadMemory32(entry + 0x18);
+                            Console.WriteLine("[NkBinLoader] ExtraROM FILE[" + i + "] " + fname +
+                                " entry=0x" + entry.ToString("X8") +
+                                " real=" + oReal +
+                                " comp=" + oComp +
+                                " load=0x" + oLoad.ToString("X8") +
+                                " (FILESentry; unexpected; do not invent)");
+                            continue;
+                        }
                         if (IsMscoree(fname))
                         {
                             sawMscoreeFile = true;
@@ -309,12 +337,30 @@ namespace ProcessorEmulator.Core.Loaders
                     if (!sawMscoreeFile)
                         Console.WriteLine("[NkBinLoader] ExtraROM FILE table has no mscoree.dll" +
                             " (TOC[46] is the dump module; do not invent a FILE)");
+                    if (!sawOle32File)
+                        Console.WriteLine("[NkBinLoader] ExtraROM FILE table has no ole32.dll" +
+                            " (TOC[34] is the dump module; do not invent a FILE)");
                 }
             }
             catch (Exception ex)
             {
                 Console.WriteLine("[NkBinLoader] ExtraROM ROMHDR log skipped: " + ex.Message);
             }
+        }
+
+        private static bool IsOle32(string name)
+        {
+            if (string.IsNullOrEmpty(name) || name.Length != 9)
+                return false;
+            return (name[0] == 'o' || name[0] == 'O')
+                && (name[1] == 'l' || name[1] == 'L')
+                && (name[2] == 'e' || name[2] == 'E')
+                && name[3] == '3'
+                && name[4] == '2'
+                && name[5] == '.'
+                && (name[6] == 'd' || name[6] == 'D')
+                && (name[7] == 'l' || name[7] == 'L')
+                && (name[8] == 'l' || name[8] == 'L');
         }
 
         private static bool IsMscoree(string name)
