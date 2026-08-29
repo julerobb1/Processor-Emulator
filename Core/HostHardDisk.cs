@@ -184,6 +184,14 @@ namespace ProcessorEmulator.Core
         public const uint GwesVaAvHelper = 0x0005377C;
         public const uint GwesVaAvCaller = 0x0005BCF8;
         public const uint GwesDispObj = 0x000BA954;
+        // 0x0005D24C addiu a0, 584; jal 0x000B4D20 (IAT 0x000B60D0).
+        // 0x0005D288 sw $v0, *0x000BA954. That $v0 is the GDI object
+        // later seen as 0x000E1700. Observe the alloc. Do not invent
+        // 0x000E0000.
+        public const uint GwesVaDispAlloc = 0x0005D250;
+        public const uint GwesVaDispAllocRet = 0x0005D258;
+        public const uint GwesVaDispStore = 0x0005D288;
+        public const uint GwesIatLocalAlloc = 0x000B60D0;
         public const uint GwesIatGetProc = 0x000B6008;
         public const uint GwesIatLoadLib = 0x000B600C;
         public const uint GwesIatHeapCreate = 0x000B621C;
@@ -406,14 +414,16 @@ namespace ProcessorEmulator.Core
                 return false;
             }
             if (pc == KernelValloc && (!string.IsNullOrEmpty(_cprocName)
-                || _logged.Contains("hive:ldde32")))
+                || _logged.Contains("hive:ldde32")
+                || _gwesWatch))
             {
                 if (_logged.Contains("hive:ldde32"))
                     CeRomTocFiles.TryReserveExtraRomValloc(registers);
                 uint a0 = registers[4];
                 uint a1 = registers[5];
                 uint a2 = registers[6];
-                string who = !string.IsNullOrEmpty(_cprocName) ? _cprocName : "LoadE32";
+                string who = !string.IsNullOrEmpty(_cprocName) ? _cprocName
+                    : (_gwesWatch && !_logged.Contains("hive:ldde32") ? "gwes.exe" : "LoadE32");
                 if (_logged.Add("hive:va:" + who + ":" + a0.ToString("X")))
                     System.Console.WriteLine("[Hive] VALLOC \"" + who +
                         "\" a0=0x" + a0.ToString("X8") +
@@ -1525,6 +1535,21 @@ namespace ProcessorEmulator.Core
                 LogGwesDispObj(bus, "display-parent");
                 return;
             }
+            if (pc == GwesVaDispAlloc || IsSlottedVa(pc, GwesVaDispAlloc))
+            {
+                LogGwesDispAlloc(pc, registers, bus, false);
+                return;
+            }
+            if (pc == GwesVaDispAllocRet || IsSlottedVa(pc, GwesVaDispAllocRet))
+            {
+                LogGwesDispAlloc(pc, registers, bus, true);
+                return;
+            }
+            if (pc == GwesVaDispStore || IsSlottedVa(pc, GwesVaDispStore))
+            {
+                LogGwesDispStore(pc, registers, bus);
+                return;
+            }
             if (pc == GwesVaWinMainSkip || IsSlottedVa(pc, GwesVaWinMainSkip))
             {
                 NoteGwesPc(pc, "WinMain-skip", GwesRomWinMain + (GwesVaWinMainSkip - GwesVaWinMain), bus);
@@ -1893,7 +1918,8 @@ namespace ProcessorEmulator.Core
             uint[] addrs =
             {
                 GwesIatGetProc, GwesIatLoadLib, 0x000B607C, GwesIatHeapCreate,
-                0x000B7A1C, GwesDispObj, GwesSlot | GwesIatGetProc, GwesSlot | 0x000B607C
+                GwesIatLocalAlloc, 0x000B7A1C, GwesDispObj,
+                GwesSlot | GwesIatGetProc, GwesSlot | 0x000B607C
             };
             for (int i = 0; i < addrs.Length; i++)
             {
@@ -1961,6 +1987,42 @@ namespace ProcessorEmulator.Core
                 " a0=0x" + a0.ToString("X8") +
                 " (lhu 8(a0) / *(gdi+0xC8))");
             LogGwesDispObj(bus, "AV-site");
+        }
+
+        private static void LogGwesDispAlloc(uint pc, uint[] registers, MipsBus bus, bool ret)
+        {
+            uint a0 = registers != null && registers.Length > 4 ? registers[4] : 0;
+            uint v0 = registers != null && registers.Length > 2 ? registers[2] : 0;
+            string key = ret ? "hive:dispalloc:ret" : "hive:dispalloc";
+            if (!_logged.Add(key))
+                return;
+            if (!ret)
+            {
+                System.Console.WriteLine("[Hive] gwes LocalAlloc-site pc=0x" +
+                    pc.ToString("X8") + " a0=" + a0 +
+                    " (size 584 -> *0x000BA954; do not invent 0x000E0000)");
+                return;
+            }
+            bool mapped = DestMapped(bus, v0);
+            System.Console.WriteLine("[Hive] gwes LocalAlloc-site ret pc=0x" +
+                pc.ToString("X8") + " v0=0x" + v0.ToString("X8") +
+                (mapped ? " mapped" : " unmapped") +
+                " (do not invent 0x000E0000)");
+        }
+
+        private static void LogGwesDispStore(uint pc, uint[] registers, MipsBus bus)
+        {
+            if (!_logged.Add("hive:dispstore"))
+                return;
+            uint v0 = registers != null && registers.Length > 2 ? registers[2] : 0;
+            uint s5 = registers != null && registers.Length > 21 ? registers[21] : 0;
+            bool mapped = DestMapped(bus, v0);
+            System.Console.WriteLine("[Hive] gwes *0x000BA954 store pc=0x" +
+                pc.ToString("X8") + " v0=0x" + v0.ToString("X8") +
+                " s5=0x" + s5.ToString("X8") +
+                (mapped ? " mapped" : " unmapped") +
+                " (LocalAlloc result; do not invent 0x000E0000)");
+            LogGwesDispObj(bus, "disp-store");
         }
 
         private static void LogGwesDispObj(MipsBus bus, string when)
