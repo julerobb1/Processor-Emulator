@@ -770,7 +770,8 @@ namespace ProcessorEmulator.Core
                 uint ip = bus.Read32(module + ModuleStartip);
                 uint vbase = bus.Read32(module + ProcModule);
                 bool ddi = (ip >= 0x01980000u && ip < 0x019B0000u)
-                    || (vbase >= DdiNopVbase && vbase < 0x04000000u)
+                    || ip == 0x03998014u
+                    || vbase == DdiNopVbase
                     || IsDdiNopTocObject(bus, module + ModuleFileObj);
                 if (!ddi || ip == 0)
                     return false;
