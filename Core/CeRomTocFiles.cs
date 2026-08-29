@@ -966,7 +966,9 @@ namespace ProcessorEmulator.Core
             if ((_ddiNopDecompRa == 0 && _tv2FileDecompRa == 0)
                 || regs == null || regs.Length <= 2)
                 return false;
-            if (_ddiNopInnerPages >= 8)
+            // TOC[46] o32[0] vsize 0xD4A1 is 14 pages. Cap was 8
+            // so wait64 hid the rest of this one decompress.
+            if (_ddiNopInnerPages >= 16)
                 return false;
             _ddiNopInnerPages++;
             uint v0 = regs[2];
