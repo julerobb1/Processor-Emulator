@@ -5,6 +5,9 @@ on:
     # every day at midnight UTC
     - cron: '0 0 * * *'
 
+permissions:
+  contents: read
+
 jobs:
   nightly:
     name: Nightly Dev Build
