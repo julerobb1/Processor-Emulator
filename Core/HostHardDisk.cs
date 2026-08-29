@@ -2321,6 +2321,8 @@ namespace ProcessorEmulator.Core
                 uint raw = obj + GwesDispC8Off;
                 uint slot = raw;
                 uint host = raw;
+                uint heap = 0;
+                TryReadWord(bus, CeRomTocFiles.ProcessHeapPtr, out heap);
                 try
                 {
                     slot = CeRomTocFiles.MapProcessHeapSlotVa(bus, raw);
@@ -2334,6 +2336,7 @@ namespace ProcessorEmulator.Core
                     " va=0x" + raw.ToString("X8") +
                     " slot=0x" + slot.ToString("X8") +
                     " host=0x" + host.ToString("X8") +
+                    " *0x01FFFFA0=0x" + heap.ToString("X8") +
                     " (" + when + ")");
             }
             catch
