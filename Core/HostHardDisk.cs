@@ -519,7 +519,7 @@ namespace ProcessorEmulator.Core
                 return false;
             if (_logged.Contains("hive:ldde32"))
                 CeRomTocFiles.TryNoteExtraRomBindImp(bus, registers, pc);
-            if (pc == CeRomTocFiles.MapO32VirtualCopy)
+            if (pc == CeRomTocFiles.MapO32VirtualCopy
                 && _logged.Contains("hive:ldde32")
                 && CeRomTocFiles.TryRedirectExtraRomVirtualCopyToDecompress(
                     bus, registers, ref programCounter))
