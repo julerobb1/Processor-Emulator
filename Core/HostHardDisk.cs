@@ -1697,6 +1697,10 @@ namespace ProcessorEmulator.Core
                         " last-error=" + ReadLastError(bus) +
                         " ddi_nop@0x03998014 " +
                         (DdiNopMapped(bus) ? "mapped" : "unmapped"));
+                // wait45: dest+0x520 0x080E1970 is gone. Next miss
+                // 0x080E7ECC is later HEAP (GDI +0xC8=0x000E8370).
+                // Retry DestMapped pages only. Not a dump 0x000E0000.
+                RetryProcessHeapHost(bus, "LoadDriver-ret");
                 return;
             }
             if (pc == CeRomTocFiles.LoadE32Rom
@@ -2037,6 +2041,7 @@ namespace ProcessorEmulator.Core
                 " a0=0x" + a0.ToString("X8") +
                 " (lhu 8(a0) / *(gdi+0xC8))");
             LogGwesDispObj(bus, "AV-site");
+            RetryProcessHeapHost(bus, "AV-site");
         }
 
         private static void LogGwesDispAlloc(uint pc, uint[] registers, MipsBus bus, bool ret)
@@ -2074,6 +2079,29 @@ namespace ProcessorEmulator.Core
             // LocalAlloc when the firmware HEAP page is DestMapped.
             if (heap != 0)
                 CeRomTocFiles.TryHostBackProcessHeap(bus, heap);
+        }
+
+        // wait45: 0x080E7ECC / GDI +0xC8=0x000E8370 are later
+        // pages in the same HEAP 64K. Host-back only if DestMapped.
+        // Not a dump ExtraROM page. Not a static 0x000E0000 map.
+        private static void RetryProcessHeapHost(MipsBus bus, string when)
+        {
+            uint heap = 0;
+            if (bus == null || !TryReadWord(bus, CeRomTocFiles.ProcessHeapPtr, out heap) || heap == 0)
+                return;
+            bool installed = CeRomTocFiles.TryHostBackProcessHeap(bus, heap);
+            if (!_logged.Add("hive:heappages:" + when))
+                return;
+            uint[] vas = { 0x080E1970u, 0x080E7ECCu, 0x000E7ECCu, 0x080E8370u, 0x000E8370u };
+            System.Console.Write("[Hive] process-heap pages " + when +
+                " heap=0x" + heap.ToString("X8") +
+                (installed ? " new-host-back" : " no-new"));
+            for (int i = 0; i < vas.Length; i++)
+            {
+                System.Console.Write(" 0x" + vas[i].ToString("X8") +
+                    (DestMapped(bus, vas[i]) ? "=mapped" : "=unmapped"));
+            }
+            System.Console.WriteLine(" (not a dump 0x000E0000 page)");
         }
 
         private static string HeapPtrNote(MipsBus bus)

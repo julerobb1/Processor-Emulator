@@ -1531,20 +1531,20 @@ namespace ProcessorEmulator.Core
         // (no DestMapped words yet) hid the live firmware HEAP.
         // Host-back only DestMapped pages, and retry after
         // LocalAlloc when *heap=HeaP is readable.
-        public static void TryHostBackProcessHeap(MipsBus bus, uint heap)
+        public static bool TryHostBackProcessHeap(MipsBus bus, uint heap)
         {
             if (bus == null || heap < 0x04000000u || heap >= 0x20000000u)
-                return;
+                return false;
             uint slot = heap & 0xFE000000u;
             uint heapOff = heap & 0x01FFFFFF;
             if (slot == 0 || heapOff < 0x000CB000u)
-                return;
+                return false;
             uint lo = heap & ~0xFFFFu;
             uint hi = lo + CeAllocGranularity;
             if (hi <= lo)
-                return;
+                return false;
             if (VallocHostCovers(lo, hi))
-                return;
+                return false;
             uint span = hi - lo;
             uint[] words = new uint[span / 4];
             bool[] pageOk = new bool[span / 0x1000];
@@ -1567,8 +1567,9 @@ namespace ProcessorEmulator.Core
                 System.Console.WriteLine("[Hive] process-heap host-back skip heap=0x" +
                     heap.ToString("X8") +
                     " copied=0 (wait43/44 empty 64K hid live HEAP; not a dump 0x000E0000 page)");
-                return;
+                return false;
             }
+            bool installed = false;
             int p = 0;
             while (p < pageOk.Length)
             {
@@ -1583,9 +1584,13 @@ namespace ProcessorEmulator.Core
                     q++;
                 uint runHi = lo + (uint)q * 0x1000u;
                 if (!VallocHostCovers(runLo, runHi))
+                {
                     InstallProcessHeapHost(bus, runLo, runHi, words, lo, heap, copied);
+                    installed = true;
+                }
                 p = q;
             }
+            return installed;
         }
 
         private static bool VallocHostCovers(uint lo, uint hi)
