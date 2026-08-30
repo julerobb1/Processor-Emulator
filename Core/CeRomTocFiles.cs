@@ -362,6 +362,8 @@ namespace ProcessorEmulator.Core
         private static bool _coredllLiveLogged;
         private static bool _coredllMapLogged;
         private static bool _coredllHighLogged;
+        private static bool _coredllZeroLogged;
+        private static bool _tv2ZeroContLogged;
         private static bool _tv2HighContLogged;
         private static uint _tv2ImplRa;
         private static uint _tv2ImplK1Before;
@@ -1798,6 +1800,8 @@ namespace ProcessorEmulator.Core
             _coredllLiveLogged = false;
             _coredllMapLogged = false;
             _coredllHighLogged = false;
+            _coredllZeroLogged = false;
+            _tv2ZeroContLogged = false;
             _tv2HighContLogged = false;
             _tv2ImplRa = 0;
             _tv2ImplK1Before = 0;
@@ -3631,23 +3635,34 @@ namespace ProcessorEmulator.Core
                 return false;
             if ((l2 & 2) == 0)
                 return false;
-            uint phys = (l2 >> 10) << 12;
-            uint dest = 0x80000000u | (phys & 0x1FFFFFFFu);
-            uint word = 0;
-            // wait77: pfn10 of 0x40002A1A is 0x0000A000
-            // (readable zeros). pfn6 is 0x000A8000 with
-            // dest-word 0x27BDFFD8. Require a nonzero word
-            // so empty low RAM does not win.
-            if (!TryPeekWord(bus, dest | (va & 0xFFFu), out word) || word == 0)
+            // pfn6 is the live dest. wait77: 0x40002A1A
+            // pfn10 is 0x0000A000 (empty low RAM);
+            // pfn6 is 0x000A8000 dest-word 0x27BDFFD8.
+            // wait81: 0x400023DA pfn6 is 0x0008F000,
+            // linear with 0x03F73000->0x00097000.
+            // dest-word at 0x8008FE10 is 0 (delay-slot
+            // nop in the ROM page), not a miss. Accept
+            // pfn6 when the dest is readable. Do not
+            // let pfn10 zeros win.
+            uint phys6 = (l2 >> 6) << 12;
+            uint dest6 = 0x80000000u | (phys6 & 0x1FFFFFFFu);
+            uint word6 = 0;
+            if (TryPeekWord(bus, dest6 | (va & 0xFFFu), out word6))
             {
-                phys = (l2 >> 6) << 12;
-                dest = 0x80000000u | (phys & 0x1FFFFFFFu);
-                if (!TryPeekWord(bus, dest | (va & 0xFFFu), out word) || word == 0)
-                    return false;
+                pfn = phys6;
+                kseg = dest6;
+                return true;
             }
-            pfn = phys;
-            kseg = dest;
-            return true;
+            uint phys10 = (l2 >> 10) << 12;
+            uint dest10 = 0x80000000u | (phys10 & 0x1FFFFFFFu);
+            uint word10 = 0;
+            if (TryPeekWord(bus, dest10 | (va & 0xFFFu), out word10) && word10 != 0)
+            {
+                pfn = phys10;
+                kseg = dest10;
+                return true;
+            }
+            return false;
         }
 
         public static void TryCacheLiveCoredllSec(MipsBus bus, uint pc)
@@ -3733,6 +3748,22 @@ namespace ProcessorEmulator.Core
                         " pfn=0x" + pfn.ToString("X8") +
                         " dest-word=0x" + word.ToString("X8") +
                         " (slot-1 past 0x03FA0000; firmware PTE; not invented 0x03FD0000)");
+                }
+                if (!_coredllZeroLogged)
+                {
+                    uint word = 0;
+                    TryPeekWord(bus, dest, out word);
+                    if (word == 0)
+                    {
+                        _coredllZeroLogged = true;
+                        System.Console.WriteLine("[Hive] FILE[25] coredll dest-word 0 0x" +
+                            va.ToString("X8") + " -> 0x" + dest.ToString("X8") +
+                            " sec=0x" + sec.ToString("X8") +
+                            " l1=0x" + l1.ToString("X8") +
+                            " l2=0x" + l2.ToString("X8") +
+                            " pfn=0x" + pfn.ToString("X8") +
+                            " (delay-slot nop; pfn6 live; not a miss; not a static slot map)");
+                    }
                 }
                 return dest;
             }
@@ -4167,6 +4198,32 @@ namespace ProcessorEmulator.Core
                 " from=0xFFFFF3DA CurThread=0x" + curThr.ToString("X8") +
                 " CurProc=0x" + cur.ToString("X8") +
                 " (past jalr 0xFFFFF3DA; not TV UI)");
+        }
+
+        public static void TryNoteTv2ZeroDestContinue(MipsBus bus, uint pc)
+        {
+            if (!_tv2FetchLogged || !_coredllZeroLogged || _tv2ZeroContLogged)
+                return;
+            if (pc != 0x03F6BE14u)
+                return;
+            _tv2ZeroContLogged = true;
+            uint cur = 0;
+            uint curThr = 0;
+            try
+            {
+                if (bus != null)
+                    cur = bus.Read32(CurProc);
+                if (bus != null)
+                    curThr = bus.Read32(ThreadPtr);
+            }
+            catch
+            {
+            }
+            System.Console.WriteLine("[Hive] FILE[25] dest-word-0 continue pc=0x" +
+                pc.ToString("X8") +
+                " from=0x03F6BE10 CurThread=0x" + curThr.ToString("X8") +
+                " CurProc=0x" + cur.ToString("X8") +
+                " (past delay-slot nop; not TV UI)");
         }
 
         public static void TryNoteTv2AfterExnContinue(MipsBus bus, uint pc)
