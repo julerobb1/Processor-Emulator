@@ -3534,11 +3534,15 @@ namespace ProcessorEmulator.Core
                 {
                     bus.Write32(_tv2Thread + ThreadCtxPc, resume);
                     TryKeepTv2UserStatus(bus);
-                    System.Console.WriteLine("[Hive] FILE[25] thread ctxPC: " + tag +
-                        " thr=0x" + _tv2Thread.ToString("X8") +
-                        " was=0x" + ctxPc.ToString("X8") +
-                        " now=0x" + resume.ToString("X8") +
-                        " (firmware leftover 0x8001588C; live user RA; not a mapped page 0)");
+                    if (!_tv2DispatchCtxLogged)
+                    {
+                        _tv2DispatchCtxLogged = true;
+                        System.Console.WriteLine("[Hive] FILE[25] thread ctxPC: " + tag +
+                            " thr=0x" + _tv2Thread.ToString("X8") +
+                            " was=0x" + ctxPc.ToString("X8") +
+                            " now=0x" + resume.ToString("X8") +
+                            " (firmware leftover 0x8001588C; live user RA; not a mapped page 0)");
+                    }
                 }
                 catch
                 {
