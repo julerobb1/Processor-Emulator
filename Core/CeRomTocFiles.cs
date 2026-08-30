@@ -406,6 +406,8 @@ namespace ProcessorEmulator.Core
         private static bool _tv2UserSrLogged;
         private static bool _tv2DispatchCtxLogged;
         private static bool _tv2UserSpLogged;
+        private static bool _tv2UserRaLogged;
+        private static uint _tv2StoreSp;
         private static bool _tv2StoreContLogged;
         private static bool _coredllMapBusy;
         private static bool _tv2ProcSwitchLogged;
@@ -1851,6 +1853,8 @@ namespace ProcessorEmulator.Core
             _tv2UserSrLogged = false;
             _tv2DispatchCtxLogged = false;
             _tv2UserSpLogged = false;
+            _tv2UserRaLogged = false;
+            _tv2StoreSp = 0;
             _tv2StoreContLogged = false;
             _coredllMapBusy = false;
             _tv2ProcSwitchLogged = false;
@@ -3563,7 +3567,10 @@ namespace ProcessorEmulator.Core
             // became 0xE4DA9A88. Firmware would
             // not ERET that leftover after user
             // continued. Resume last continued
-            // user PC. Do not map page 0.
+            // user PC. wait87 held 0x03F6CAC0.
+            // Next was jr $ra ra=0: +DC still 0
+            // (0x8001586C never hit 0x800152CC).
+            // Not a real CE jump. Do not map page 0.
             if (IsExnDispatchLeftover(ctxPc) && _tv2FetchLogged)
             {
                 uint resume = _tv2ImplResume != 0
@@ -3573,10 +3580,12 @@ namespace ProcessorEmulator.Core
                     return;
                 try
                 {
+                    uint dc = bus.Read32(_tv2Thread + ThreadCtxRa);
                     bus.Write32(_tv2Thread + ThreadCtxPc, resume);
                     TryKeepTv2UserStatus(bus);
                     TryKeepTv2UserS7(bus, null);
                     TryKeepTv2UserSp(bus, null);
+                    TryKeepTv2UserRa(bus, null);
                     if (!_tv2DispatchCtxLogged)
                     {
                         _tv2DispatchCtxLogged = true;
@@ -3584,8 +3593,9 @@ namespace ProcessorEmulator.Core
                             " thr=0x" + _tv2Thread.ToString("X8") +
                             " was=0x" + ctxPc.ToString("X8") +
                             " now=0x" + resume.ToString("X8") +
+                            " +DC=0x" + dc.ToString("X8") +
                             (_tv2StoreContLogged
-                                ? " (firmware leftover 0x8001588C; after 0x03F6CAC0; do not rewind 0x03F6C8F4; not dest 0xE4DA9AA4; not a mapped page 0)"
+                                ? " (firmware leftover 0x8001588C; after 0x03F6CAC0; +DC unsaved; do not rewind 0x03F6C8F4; not dest 0xE4DA9AA4; not a mapped page 0)"
                                 : (_tv2ImplContLogged
                                 ? " (firmware leftover 0x8001588C; after implicit-api continue; do not keep jr $ra; s7=0x5800; not a mapped page 0)"
                                 : " (firmware leftover 0x8001588C; live user RA; not a mapped page 0)")));
@@ -3732,10 +3742,92 @@ namespace ProcessorEmulator.Core
                 " (firmware 0x80014488 lw $sp,212(s0); leftover +0xD4; not 0xE4DA9AA4; not a mapped page 0)");
         }
 
+        // wait87: leftover 0x8001588C -> 0x03F6CAC0
+        // then jr $ra ra=0. +DC=0. Implicit-API
+        // 0x8001586C never hits 0x800152CC.
+        // 0x80020C30 zeros +DC. Firmware
+        // 0x80014434 lw $ra, 220(s0). First pass
+        // already sw $ra, 28($sp) at 0x03F6CABC
+        // (AFBF001C). Landing at 0x03F6CAC0 skips
+        // that sw. Restore from 28($sp) or live
+        // +DC. Do not write 0. Do not map page 0.
+        // Do not rewind leftover to 0x03F6C8F4.
+        public static void TryKeepTv2UserRa(MipsBus bus, uint[] regs)
+        {
+            if (!_tv2FileDestOn || !_tv2FetchLogged || !_tv2ImplContLogged)
+                return;
+            if (bus == null || _tv2Thread == 0)
+                return;
+            uint live = regs != null && regs.Length > 31 ? regs[31] : 0;
+            if (IsFirmwareUserOrCoredllVa(live))
+                return;
+            uint saved = 0;
+            uint savedSp = 0;
+            try
+            {
+                saved = bus.Read32(_tv2Thread + ThreadCtxRa);
+                savedSp = bus.Read32(_tv2Thread + ThreadCtxSp);
+            }
+            catch
+            {
+                return;
+            }
+            uint keep = 0;
+            uint sp = 0;
+            if (IsFirmwareUserSlotVa(_tv2StoreSp))
+                sp = _tv2StoreSp;
+            else if (regs != null && regs.Length > 29 && IsFirmwareUserSlotVa(regs[29]))
+                sp = regs[29];
+            else if (IsFirmwareUserSlotVa(savedSp))
+                sp = savedSp;
+            uint stacked = 0;
+            if (sp != 0 && TryPeekWord(bus, sp + 28, out stacked)
+                && IsFirmwareUserOrCoredllVa(stacked))
+                keep = stacked;
+            if (keep == 0 && IsFirmwareUserOrCoredllVa(saved))
+                keep = saved;
+            if (keep == 0 || keep == live)
+                return;
+            if (regs != null && regs.Length > 31)
+                regs[31] = keep;
+            if (saved == 0 || !IsFirmwareUserOrCoredllVa(saved))
+            {
+                try
+                {
+                    bus.Write32(_tv2Thread + ThreadCtxRa, keep);
+                }
+                catch
+                {
+                }
+            }
+            if (_tv2UserRaLogged || regs == null)
+                return;
+            _tv2UserRaLogged = true;
+            System.Console.WriteLine("[Hive] FILE[25] thread +DC: user ra=0x" +
+                keep.ToString("X8") +
+                " live=0x" + live.ToString("X8") +
+                " saved=0x" + saved.ToString("X8") +
+                " 28($sp)=0x" + stacked.ToString("X8") +
+                " thr=0x" + _tv2Thread.ToString("X8") +
+                " (firmware 0x80014434 lw $ra,220(s0); leftover +0xDC; first-pass 28($sp); not a mapped page 0)");
+        }
+
         private static bool IsFirmwareUserSlotVa(uint va)
         {
             uint slot = va >> 25;
             return va != 0 && va < 0x80000000u && slot >= 1 && slot <= 16;
+        }
+
+        private static bool IsFirmwareUserOrCoredllVa(uint va)
+        {
+            if (va == 0)
+                return false;
+            if (va >= CoredllSharedLo && va < CoredllSharedHi)
+                return true;
+            if (IsFirmwareUserSlotVa(va))
+                return true;
+            uint slot = va >> 25;
+            return slot == 0 && va >= 0x00010000u && va < 0x02000000u;
         }
 
         private static bool IsFirmwareUserKdataOrSlot(uint va)
@@ -3759,6 +3851,7 @@ namespace ProcessorEmulator.Core
             TryKeepTv2ThreadCtx(bus, pc == ThreadCtxRestore ? "ERET" : "ERET2");
             TryKeepTv2UserS7(bus, regs);
             TryKeepTv2UserSp(bus, regs);
+            TryKeepTv2UserRa(bus, regs);
             try
             {
                 uint ctxPc = bus.Read32(_tv2Thread + ThreadCtxPc);
@@ -4297,6 +4390,7 @@ namespace ProcessorEmulator.Core
             uint retpc = 0;
             uint ctxSr = 0;
             uint savedSp = 0;
+            uint savedRa = 0;
             uint thrStack = 0;
             uint epcWord = 0;
             bool epcMapped = false;
@@ -4310,6 +4404,8 @@ namespace ProcessorEmulator.Core
                     ctxSr = bus.Read32(_tv2Thread + ThreadCtxSr);
                 if (bus != null && _tv2Thread != 0)
                     savedSp = bus.Read32(_tv2Thread + ThreadCtxSp);
+                if (bus != null && _tv2Thread != 0)
+                    savedRa = bus.Read32(_tv2Thread + ThreadCtxRa);
                 if (bus != null && _tv2Thread != 0)
                     thrStack = bus.Read32(_tv2Thread + ThreadStack);
                 if (epc != 0)
@@ -4335,6 +4431,7 @@ namespace ProcessorEmulator.Core
                 " s7=0x" + s7.ToString("X8") +
                 " sp=0x" + sp.ToString("X8") +
                 " +D4=0x" + savedSp.ToString("X8") +
+                " +DC=0x" + savedRa.ToString("X8") +
                 " +24=0x" + thrStack.ToString("X8") +
                 " epc-" + (epcMapped ? "mapped" : "unmapped") +
                 " epc-word=0x" + epcWord.ToString("X8") +
@@ -4553,6 +4650,8 @@ namespace ProcessorEmulator.Core
                 return;
             _tv2StoreContLogged = true;
             _tv2ImplResume = pc;
+            if (regs != null && regs.Length > 29 && IsFirmwareUserSlotVa(regs[29]))
+                _tv2StoreSp = regs[29];
             uint cur = 0;
             uint curThr = 0;
             uint sp = regs != null && regs.Length > 29 ? regs[29] : 0;
