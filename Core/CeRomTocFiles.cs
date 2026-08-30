@@ -156,6 +156,8 @@ namespace ProcessorEmulator.Core
         // 0x800154DC sw $s7, 188(s0); 0x800155C4 lw.
         // Implicit-API 0x8001586C never hits that save.
         public const uint ThreadCtxS7 = 0xBC;
+        // dest 0x800908B0 / VA 0x03F6C8B0 addiu $s7, $0, 22528
+        public const uint UserKData = 0x5800;
         public const uint ThreadPrc = 0x0C;
         // 0x8001554C beq s0, v0, 0x800155A8 skips CurProc
         // update when the same thread is rescheduled.
@@ -392,7 +394,6 @@ namespace ProcessorEmulator.Core
         private static bool _tv2ImplPastLogged;
         private static bool _tv2UserSrLogged;
         private static bool _tv2DispatchCtxLogged;
-        private static bool _tv2DispatchSkipLogged;
         private static bool _coredllMapBusy;
         private static bool _tv2ProcSwitchLogged;
         private static bool _tv2CurThreadLogged;
@@ -1835,7 +1836,6 @@ namespace ProcessorEmulator.Core
             _tv2ImplPastLogged = false;
             _tv2UserSrLogged = false;
             _tv2DispatchCtxLogged = false;
-            _tv2DispatchSkipLogged = false;
             _coredllMapBusy = false;
             _tv2ProcSwitchLogged = false;
             _tv2CurThreadLogged = false;
@@ -3529,28 +3529,22 @@ namespace ProcessorEmulator.Core
             // is still 0 from 0x80020C30, so 0x80015A28
             // jr $ra fetches 0. 0x80020D80 a1=8 is Cause
             // code 2; ctxPC=0 is that EPC. Not a missing
-            // page. Resume the live user RA only before
-            // implicit-API continue. wait83: dest
-            // 0x800908B0 / VA 0x03F6C8B0 is addiu $s7,
-            // $0, 0x5800 then jalr; 0x03F6C8F4 is
-            // lw $a2, 0($s7). Rewriting leftover after
-            // continue rewinds to that lw with s7=0
-            // (0x8001586C skipped 0x800154DC; +0xBC
-            // stays 0). Do not map page 0.
+            // page. wait83: dest 0x800908B0 / VA
+            // 0x03F6C8B0 is addiu $s7, $0, 0x5800 then
+            // jalr; 0x03F6C8F4 is lw $a2, 0($s7).
+            // Rewriting leftover to that RA after
+            // continue rewinds the lw with s7=0.
+            // wait84: keeping leftover ERET to
+            // 0x8001588C. 0x800159B4 or $ra, $v0
+            // after 0x800397B0, then 0x80015A28
+            // jr $ra. +DC was 0x03F70830 (live);
+            // that or left ra=0. I-fetch 0. Do not
+            // keep leftover. Resume user RA; after
+            // continue also restore s7=0x5800 so
+            // 0x03F6C8F4 lw 0($s7) is not vaddr=0.
+            // Do not map page 0.
             if (IsExnDispatchLeftover(ctxPc) && _tv2FetchLogged)
             {
-                if (_tv2ImplContLogged)
-                {
-                    if (!_tv2DispatchSkipLogged)
-                    {
-                        _tv2DispatchSkipLogged = true;
-                        System.Console.WriteLine("[Hive] FILE[25] thread ctxPC: " + tag +
-                            " thr=0x" + _tv2Thread.ToString("X8") +
-                            " leftover=0x" + ctxPc.ToString("X8") +
-                            " keep (after implicit-api continue; do not rewind 0x03F6C8F4; firmware 0x03F6C8B0 s7=0x5800; not a mapped page 0)");
-                    }
-                    return;
-                }
                 uint resume = _tv2ImplRa != 0 ? _tv2ImplRa : startip;
                 if (resume == 0 || resume == ctxPc)
                     return;
@@ -3558,6 +3552,7 @@ namespace ProcessorEmulator.Core
                 {
                     bus.Write32(_tv2Thread + ThreadCtxPc, resume);
                     TryKeepTv2UserStatus(bus);
+                    TryKeepTv2UserS7(bus, null);
                     if (!_tv2DispatchCtxLogged)
                     {
                         _tv2DispatchCtxLogged = true;
@@ -3565,7 +3560,9 @@ namespace ProcessorEmulator.Core
                             " thr=0x" + _tv2Thread.ToString("X8") +
                             " was=0x" + ctxPc.ToString("X8") +
                             " now=0x" + resume.ToString("X8") +
-                            " (firmware leftover 0x8001588C; live user RA; not a mapped page 0)");
+                            (_tv2ImplContLogged
+                                ? " (firmware leftover 0x8001588C; after implicit-api continue; do not keep jr $ra; s7=0x5800; not a mapped page 0)"
+                                : " (firmware leftover 0x8001588C; live user RA; not a mapped page 0)"));
                     }
                 }
                 catch
@@ -3628,6 +3625,31 @@ namespace ProcessorEmulator.Core
             }
         }
 
+        // wait83 leftover rewrite to 0x03F6C8F4 had s7=0
+        // because 0x8001586C skipped 0x800154DC and
+        // 0x800155C4 loaded +0xBC. 0x80015404 does not
+        // restore s7. Firmware 0x03F6C8B0 is addiu $s7,
+        // $0, 0x5800. Do not map page 0. Do not poke
+        // CurProc.
+        public static void TryKeepTv2UserS7(MipsBus bus, uint[] regs)
+        {
+            if (!_tv2FileDestOn || !_tv2FetchLogged || !_tv2ImplContLogged)
+                return;
+            if (bus == null || _tv2Thread == 0)
+                return;
+            if (regs != null && regs.Length > 23 && regs[23] == 0)
+                regs[23] = UserKData;
+            try
+            {
+                uint saved = bus.Read32(_tv2Thread + ThreadCtxS7);
+                if (saved == 0)
+                    bus.Write32(_tv2Thread + ThreadCtxS7, UserKData);
+            }
+            catch
+            {
+            }
+        }
+
         public static void TryNoteTv2ThreadRestore(MipsBus bus, uint[] regs, uint pc)
         {
             if (!_tv2FileDestOn || _tv2Thread == 0 || bus == null || regs == null)
@@ -3642,6 +3664,7 @@ namespace ProcessorEmulator.Core
             TryKeepTv2UserStatus(bus);
             TryKeepTv2ThreadOwner(bus, pc == ThreadCtxRestore ? "ERET" : "ERET2");
             TryKeepTv2ThreadCtx(bus, pc == ThreadCtxRestore ? "ERET" : "ERET2");
+            TryKeepTv2UserS7(bus, regs);
             try
             {
                 uint ctxPc = bus.Read32(_tv2Thread + ThreadCtxPc);
