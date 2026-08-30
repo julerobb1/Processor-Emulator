@@ -417,6 +417,8 @@ namespace ProcessorEmulator.Core
         private static bool _tv2LeftoverLiveLogged;
         private static bool _tv2LeftoverPastLogged;
         private static bool _tv2LeftoverCae8Logged;
+        private static bool _tv2LeftoverSkipLogged;
+        private static bool _tv2LeftoverCaf0Logged;
         private static bool _tv2GwesFetchLogged;
         private static bool _tv2GwesContLogged;
         private static bool _tv2MscoreeSlotLogged;
@@ -1896,6 +1898,8 @@ namespace ProcessorEmulator.Core
             _tv2LeftoverLiveLogged = false;
             _tv2LeftoverPastLogged = false;
             _tv2LeftoverCae8Logged = false;
+            _tv2LeftoverSkipLogged = false;
+            _tv2LeftoverCaf0Logged = false;
             _tv2GwesFetchLogged = false;
             _tv2GwesContLogged = false;
             _tv2MscoreeSlotLogged = false;
@@ -3570,6 +3574,35 @@ namespace ProcessorEmulator.Core
                 return;
             if (pc != ExnAfterFetch)
                 return;
+            // wait98: leftover already continued past CAE8 on
+            // tv2. A later I-fetch 0x8001588C is firmware
+            // leftover still mid 0x8001586C (filesys TEE).
+            // Re-applying 0x03F6CAC0 rewinds leftover and
+            // yanks the current thread. Do not rewind.
+            if (_tv2LeftoverLiveLogged)
+            {
+                if (_tv2LeftoverSkipLogged)
+                    return;
+                _tv2LeftoverSkipLogged = true;
+                uint curThr = 0;
+                uint cur = 0;
+                try
+                {
+                    if (bus != null)
+                        curThr = bus.Read32(ThreadPtr);
+                    if (bus != null)
+                        cur = bus.Read32(CurProc);
+                }
+                catch
+                {
+                }
+                System.Console.WriteLine("[Hive] FILE[25] leftover skip-resume pc=0x8001588C CurThread=0x" +
+                    curThr.ToString("X8") +
+                    " CurProc=0x" + cur.ToString("X8") +
+                    " bound=0x" + _tv2Thread.ToString("X8") +
+                    " (firmware leftover still mid 0x8001586C after leftover-CAE8; do not rewind 0x03F6CAC0; do not skip to 28($sp); not TV UI)");
+                return;
+            }
             uint resume = _tv2ImplResume != 0
                 ? _tv2ImplResume
                 : 0x03F6CAC0u;
@@ -3668,6 +3701,10 @@ namespace ProcessorEmulator.Core
             // Not a real CE jump. Do not map page 0.
             if (IsExnDispatchLeftover(ctxPc) && _tv2FetchLogged)
             {
+                // wait98: leftover already continued past CAE8.
+                // Rewriting ctxPC back to 0x03F6CAC0 rewinds.
+                if (_tv2LeftoverCae8Logged)
+                    return;
                 uint resume = _tv2ImplResume != 0
                     ? _tv2ImplResume
                     : (_tv2ImplRa != 0 ? _tv2ImplRa : startip);
@@ -5004,6 +5041,36 @@ namespace ProcessorEmulator.Core
                 " dest-" + (mapped ? "mapped" : "unmapped") +
                 " dest-word=0x" + word.ToString("X8") +
                 " (past leftover lw $v0,0($s6); do not skip to 28($sp); not page 0; not TV UI)");
+        }
+
+        public static void TryNoteTv2LeftoverPastCaf0(MipsBus bus, uint pc)
+        {
+            if (!_tv2LeftoverCae8Logged || _tv2LeftoverCaf0Logged)
+                return;
+            if (pc != 0x03F6CAF0u)
+                return;
+            _tv2LeftoverCaf0Logged = true;
+            uint word = 0;
+            bool mapped = TryPeekWord(bus, pc, out word);
+            uint cur = 0;
+            uint curThr = 0;
+            try
+            {
+                if (bus != null)
+                    cur = bus.Read32(CurProc);
+                if (bus != null)
+                    curThr = bus.Read32(ThreadPtr);
+            }
+            catch
+            {
+            }
+            System.Console.WriteLine("[Hive] FILE[25] leftover past pc=0x" +
+                pc.ToString("X8") +
+                " from=0x03F6CAEC CurThread=0x" + curThr.ToString("X8") +
+                " CurProc=0x" + cur.ToString("X8") +
+                " dest-" + (mapped ? "mapped" : "unmapped") +
+                " dest-word=0x" + word.ToString("X8") +
+                " (past leftover beq $v0,$0,+12; do not rewind 0x03F6CAC0; do not skip to 28($sp); not TV UI)");
         }
 
         public static void TryNoteTv2GwesFetch(MipsBus bus, uint pc)
