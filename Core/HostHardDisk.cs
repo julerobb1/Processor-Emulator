@@ -643,9 +643,11 @@ namespace ProcessorEmulator.Core
                 && CeRomTocFiles.TryRedirectExtraRomVirtualCopyToDecompress(
                     bus, registers, ref programCounter))
                 return false;
+            CeRomTocFiles.TryCacheLiveCoredllSec(bus, pc);
             CeRomTocFiles.TryNoteTv2StartipFetch(bus, pc);
             CeRomTocFiles.TryNoteTv2StartipContinue(bus, pc);
             CeRomTocFiles.TryNoteTv2CoredllFetch(bus, pc);
+            CeRomTocFiles.TryNoteTv2CoredllContinue(bus, pc);
             CeRomTocFiles.TryNoteTv2ExnHelper(bus, registers, pc);
             CeRomTocFiles.TryNoteTv2CurThread(bus);
             ObserveGwesPath(pc, registers, bus);

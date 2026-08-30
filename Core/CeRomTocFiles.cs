@@ -344,6 +344,11 @@ namespace ProcessorEmulator.Core
         private static bool _tv2ExnHelperLogged;
         private static bool _tv2PostFetchExnLogged;
         private static bool _tv2CoredllLogged;
+        private static bool _tv2CoredllContLogged;
+        private static uint _coredllLiveSec;
+        private static bool _coredllLiveLogged;
+        private static bool _coredllMapLogged;
+        private static bool _coredllMapBusy;
         private static bool _tv2ProcSwitchLogged;
         private static bool _tv2CurThreadLogged;
         private static bool _tv2RestoreLogged;
@@ -1766,6 +1771,11 @@ namespace ProcessorEmulator.Core
             _tv2ExnHelperLogged = false;
             _tv2PostFetchExnLogged = false;
             _tv2CoredllLogged = false;
+            _tv2CoredllContLogged = false;
+            _coredllLiveSec = 0;
+            _coredllLiveLogged = false;
+            _coredllMapLogged = false;
+            _coredllMapBusy = false;
             _tv2ProcSwitchLogged = false;
             _tv2CurThreadLogged = false;
             _tv2RestoreLogged = false;
@@ -3574,6 +3584,113 @@ namespace ProcessorEmulator.Core
             }
         }
 
+        // 0x80040278 user walk: l1 = section[((va>>16)&0x1FF)*4],
+        // l2 = l1[(((va>>12)&0xF)+3)*4]. bit1 is valid. PFN is
+        // bits 10+. Do not invent a static 0x03F73000 map.
+        private static bool WalkFirmwarePte(MipsBus bus, uint section, uint va,
+            out uint l1, out uint l2, out uint pfn, out uint kseg)
+        {
+            l1 = 0;
+            l2 = 0;
+            pfn = 0;
+            kseg = 0;
+            if (bus == null || section == 0 || section == 1)
+                return false;
+            uint l1Ptr = section + (((va >> 16) & 0x1FFu) * 4);
+            if (!TryPeekWord(bus, l1Ptr, out l1) || l1 == 0 || l1 == 1)
+                return false;
+            uint l2Ptr = l1 + ((((va >> 12) & 0xFu) + 3) * 4);
+            if (!TryPeekWord(bus, l2Ptr, out l2) || l2 == 0)
+                return false;
+            if ((l2 & 2) == 0)
+                return false;
+            uint phys = (l2 >> 10) << 12;
+            uint dest = 0x80000000u | (phys & 0x1FFFFFFFu);
+            uint word = 0;
+            if (!TryPeekWord(bus, dest | (va & 0xFFFu), out word) || word == 0)
+            {
+                phys = (l2 >> 6) << 12;
+                dest = 0x80000000u | (phys & 0x1FFFFFFFu);
+                if (!TryPeekWord(bus, dest | (va & 0xFFFu), out word) || word == 0)
+                    return false;
+            }
+            pfn = phys;
+            kseg = dest;
+            return true;
+        }
+
+        public static void TryCacheLiveCoredllSec(MipsBus bus, uint pc)
+        {
+            if (_coredllLiveSec != 0 || _tv2FetchLogged || bus == null)
+                return;
+            if (!IsTv2CoredllShared(pc))
+                return;
+            uint word = 0;
+            if (!TryPeekWord(bus, pc, out word) || word == 0)
+                return;
+            uint sec1 = PeekSection(bus, 1);
+            if (sec1 == 0)
+                return;
+            _coredllLiveSec = sec1;
+            uint l1 = 0;
+            uint l2 = 0;
+            uint pfn = 0;
+            uint kseg = 0;
+            bool pte = WalkFirmwarePte(bus, sec1, pc, out l1, out l2, out pfn, out kseg);
+            if (_coredllLiveLogged)
+                return;
+            _coredllLiveLogged = true;
+            System.Console.WriteLine("[Hive] FILE[25] coredll live-sec=0x" +
+                sec1.ToString("X8") +
+                " pc=0x" + pc.ToString("X8") +
+                " dest-word=0x" + word.ToString("X8") +
+                " l1=0x" + l1.ToString("X8") +
+                " l2=0x" + l2.ToString("X8") +
+                " pfn=0x" + pfn.ToString("X8") +
+                " kseg=0x" + kseg.ToString("X8") +
+                (pte
+                    ? " (firmware 0x80040278 walk; not a static slot map)"
+                    : " (dest-mapped; PTE walk miss; do not invent a slot map)"));
+        }
+
+        public static uint MapCoredllSharedVa(MipsBus bus, uint va)
+        {
+            if (_coredllMapBusy || bus == null || !IsTv2CoredllShared(va))
+                return va;
+            uint sec = _coredllLiveSec != 0 ? _coredllLiveSec : PeekSection(bus, 1);
+            if (sec == 0)
+                return va;
+            try
+            {
+                _coredllMapBusy = true;
+                uint l1 = 0;
+                uint l2 = 0;
+                uint pfn = 0;
+                uint kseg = 0;
+                if (!WalkFirmwarePte(bus, sec, va, out l1, out l2, out pfn, out kseg))
+                    return va;
+                uint dest = kseg | (va & 0xFFFu);
+                if (dest == va)
+                    return va;
+                if (!_coredllMapLogged)
+                {
+                    _coredllMapLogged = true;
+                    System.Console.WriteLine("[Hive] FILE[25] coredll PTE 0x" +
+                        va.ToString("X8") + " -> 0x" + dest.ToString("X8") +
+                        " sec=0x" + sec.ToString("X8") +
+                        " l1=0x" + l1.ToString("X8") +
+                        " l2=0x" + l2.ToString("X8") +
+                        " pfn=0x" + pfn.ToString("X8") +
+                        " (firmware section; not a static slot map)");
+                }
+                return dest;
+            }
+            finally
+            {
+                _coredllMapBusy = false;
+            }
+        }
+
         public static void TryNoteTv2StartipFetch(MipsBus bus, uint pc)
         {
             if (_tv2Startip == 0 || pc != _tv2Startip || _tv2FetchLogged)
@@ -3715,6 +3832,12 @@ namespace ProcessorEmulator.Core
             uint sec6 = PeekSection(bus, 6);
             uint destWord = 0;
             bool mapped = TryPeekWord(bus, va, out destWord);
+            uint l1 = 0;
+            uint l2 = 0;
+            uint pfn = 0;
+            uint kseg = 0;
+            uint walkSec = _coredllLiveSec != 0 ? _coredllLiveSec : sec1;
+            bool pte = coredll && WalkFirmwarePte(bus, walkSec, va, out l1, out l2, out pfn, out kseg);
             string where;
             if (startip)
                 where = " (startip/mscoree dest; do not invent dest bytes)";
@@ -3735,6 +3858,12 @@ namespace ProcessorEmulator.Core
                 " sec0=0x" + sec0.ToString("X8") +
                 " sec1=0x" + sec1.ToString("X8") +
                 " sec6=0x" + sec6.ToString("X8") +
+                " live-sec=0x" + _coredllLiveSec.ToString("X8") +
+                " l1=0x" + l1.ToString("X8") +
+                " l2=0x" + l2.ToString("X8") +
+                " pfn=0x" + pfn.ToString("X8") +
+                " kseg=0x" + kseg.ToString("X8") +
+                (pte ? " pte-live" : " pte-miss") +
                 where);
         }
 
@@ -3752,6 +3881,12 @@ namespace ProcessorEmulator.Core
             uint sec0 = PeekSection(bus, 0);
             uint sec1 = PeekSection(bus, 1);
             uint sec6 = PeekSection(bus, 6);
+            uint l1 = 0;
+            uint l2 = 0;
+            uint pfn = 0;
+            uint kseg = 0;
+            uint walkSec = _coredllLiveSec != 0 ? _coredllLiveSec : sec1;
+            bool pte = WalkFirmwarePte(bus, walkSec, pc, out l1, out l2, out pfn, out kseg);
             try
             {
                 if (bus != null)
@@ -3776,7 +3911,42 @@ namespace ProcessorEmulator.Core
                 " sec0=0x" + sec0.ToString("X8") +
                 " sec1=0x" + sec1.ToString("X8") +
                 " sec6=0x" + sec6.ToString("X8") +
-                " (coredll shared 0x03F5xxxx; not mscoree; peek only; do not invent a slot map)");
+                " live-sec=0x" + _coredllLiveSec.ToString("X8") +
+                " l1=0x" + l1.ToString("X8") +
+                " l2=0x" + l2.ToString("X8") +
+                " pfn=0x" + pfn.ToString("X8") +
+                " kseg=0x" + kseg.ToString("X8") +
+                (pte ? " pte-live" : " pte-miss") +
+                " (coredll shared 0x03F5xxxx; not mscoree; firmware PTE; do not invent a slot map)");
+        }
+
+        public static void TryNoteTv2CoredllContinue(MipsBus bus, uint pc)
+        {
+            if (!_tv2CoredllLogged || _tv2CoredllContLogged)
+                return;
+            if (pc == 0x03F73380u)
+                return;
+            if (pc != 0x03F73384u
+                && (pc < 0x014B1000u || pc >= 0x014D0000u))
+                return;
+            _tv2CoredllContLogged = true;
+            uint cur = 0;
+            uint curThr = 0;
+            try
+            {
+                if (bus != null)
+                    cur = bus.Read32(CurProc);
+                if (bus != null)
+                    curThr = bus.Read32(ThreadPtr);
+            }
+            catch
+            {
+            }
+            System.Console.WriteLine("[Hive] FILE[25] coredll continue pc=0x" +
+                pc.ToString("X8") +
+                " from=0x03F73380 CurThread=0x" + curThr.ToString("X8") +
+                " CurProc=0x" + cur.ToString("X8") +
+                " (past coredll I-fetch; not TV UI)");
         }
 
         public static void TryNoteTv2ProcSwitch(MipsBus bus)
