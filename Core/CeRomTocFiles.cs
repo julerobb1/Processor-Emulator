@@ -147,6 +147,15 @@ namespace ProcessorEmulator.Core
         public const uint ThreadSwitchProcStore = 0x80015570;
         public const uint ExnAfterFetch = 0x8001588C;
         public const uint ExnAfterFetch2 = 0x80015B9C;
+        // wait74: after I-fetch, ctxPC=0x80040298 then
+        // ThreadExceptionExit. 0x800154EC beq a1,0 skips
+        // jal 0x80020D80; that jal 0x80040278. 0x80040298
+        // is sw $s2,40($sp) in that VM/PTE check. Not a
+        // vector. I-fetch log is before FetchInstruction.
+        public const uint SwitcherExnCall = 0x80020D80;
+        public const uint ExnVmCheck = 0x80040278;
+        public const uint ExnVmCheckMid = 0x80040298;
+        public const uint ExnVmCheckEnd = 0x80040400;
         public const uint ExeVbase = 0x00010000;
         public const uint ProcModule = 0x50;
         public const uint ProcSlot = 0x0C;
@@ -323,6 +332,9 @@ namespace ProcessorEmulator.Core
         private static uint _tv2Startip;
         private static uint _tv2Thread;
         private static bool _tv2FetchLogged;
+        private static bool _tv2ContinueLogged;
+        private static bool _tv2ExnHelperLogged;
+        private static bool _tv2PostFetchExnLogged;
         private static bool _tv2ProcSwitchLogged;
         private static bool _tv2CurThreadLogged;
         private static bool _tv2RestoreLogged;
@@ -1741,6 +1753,9 @@ namespace ProcessorEmulator.Core
             _tv2Startip = 0;
             _tv2Thread = 0;
             _tv2FetchLogged = false;
+            _tv2ContinueLogged = false;
+            _tv2ExnHelperLogged = false;
+            _tv2PostFetchExnLogged = false;
             _tv2ProcSwitchLogged = false;
             _tv2CurThreadLogged = false;
             _tv2RestoreLogged = false;
@@ -3504,6 +3519,16 @@ namespace ProcessorEmulator.Core
             }
         }
 
+        public static bool IsTv2StartipFault(uint va)
+        {
+            if (_tv2Startip != 0 && va == _tv2Startip)
+                return true;
+            if (_tv2Startip != 0
+                && (va & ~0xFFFu) == (_tv2Startip & ~0xFFFu))
+                return true;
+            return va >= 0x014B1000u && va < 0x014D0000u;
+        }
+
         public static void TryNoteTv2StartipFetch(MipsBus bus, uint pc)
         {
             if (_tv2Startip == 0 || pc != _tv2Startip || _tv2FetchLogged)
@@ -3513,6 +3538,8 @@ namespace ProcessorEmulator.Core
             uint owner = 0;
             uint slot = 0;
             uint curThr = 0;
+            uint word = 0;
+            bool mapped = false;
             try
             {
                 if (bus != null)
@@ -3523,9 +3550,16 @@ namespace ProcessorEmulator.Core
                     owner = bus.Read32(_tv2Thread + ThreadPrc);
                 if (bus != null && _tv2Proc != 0)
                     slot = bus.Read32(_tv2Proc + ProcSlot);
+                if (bus != null)
+                {
+                    mapped = DestReadable(bus, pc);
+                    if (mapped)
+                        word = bus.Read32(pc);
+                }
             }
             catch
             {
+                mapped = false;
             }
             System.Console.WriteLine("[Hive] FILE[25] I-fetch startip=0x" +
                 pc.ToString("X8") +
@@ -3534,8 +3568,106 @@ namespace ProcessorEmulator.Core
                 " CurProc=0x" + cur.ToString("X8") +
                 " thread+0C=0x" + owner.ToString("X8") +
                 " proc+0C=0x" + slot.ToString("X8") +
-                " (firmware dest; not invented 0x00017F54)");
+                " dest-" + (mapped ? "mapped" : "unmapped") +
+                " dest-word=0x" + word.ToString("X8") +
+                " (peek only; do not invent dest bytes)");
             TryNoteTv2ProcSwitch(bus);
+        }
+
+        public static void TryNoteTv2StartipContinue(MipsBus bus, uint pc)
+        {
+            if (!_tv2FetchLogged || _tv2ContinueLogged || _tv2Startip == 0)
+                return;
+            if (pc == _tv2Startip)
+                return;
+            if (pc != _tv2Startip + 4
+                && (pc < 0x014B1000u || pc >= 0x014D0000u))
+                return;
+            _tv2ContinueLogged = true;
+            uint cur = 0;
+            uint curThr = 0;
+            try
+            {
+                if (bus != null)
+                    cur = bus.Read32(CurProc);
+                if (bus != null)
+                    curThr = bus.Read32(ThreadPtr);
+            }
+            catch
+            {
+            }
+            System.Console.WriteLine("[Hive] FILE[25] startip continue pc=0x" +
+                pc.ToString("X8") +
+                " from=0x" + _tv2Startip.ToString("X8") +
+                " CurThread=0x" + curThr.ToString("X8") +
+                " CurProc=0x" + cur.ToString("X8") +
+                " (past first instruction; not TV UI)");
+        }
+
+        public static void TryNoteTv2ExnHelper(MipsBus bus, uint[] regs, uint pc)
+        {
+            if (!_tv2FetchLogged || _tv2ExnHelperLogged)
+                return;
+            if (pc != SwitcherExnCall
+                && (pc < ExnVmCheck || pc >= ExnVmCheckEnd))
+                return;
+            _tv2ExnHelperLogged = true;
+            uint a0 = regs != null && regs.Length > 4 ? regs[4] : 0;
+            uint a1 = regs != null && regs.Length > 5 ? regs[5] : 0;
+            uint cur = 0;
+            uint curThr = 0;
+            uint ctxPc = 0;
+            try
+            {
+                if (bus != null)
+                    cur = bus.Read32(CurProc);
+                if (bus != null)
+                    curThr = bus.Read32(ThreadPtr);
+                if (bus != null && _tv2Thread != 0)
+                    ctxPc = bus.Read32(_tv2Thread + ThreadCtxPc);
+            }
+            catch
+            {
+            }
+            System.Console.WriteLine("[Hive] FILE[25] switcher VM-check pc=0x" +
+                pc.ToString("X8") +
+                " a0=0x" + a0.ToString("X8") +
+                " a1=0x" + a1.ToString("X8") +
+                " CurThread=0x" + curThr.ToString("X8") +
+                " CurProc=0x" + cur.ToString("X8") +
+                " ctxPC=0x" + ctxPc.ToString("X8") +
+                " (0x80040278; not a vector; do not invent dest bytes)");
+        }
+
+        public static void TryNoteTv2PostFetchException(uint code, uint epc, uint vaddr,
+            uint vector, MipsBus bus)
+        {
+            if (!_tv2FetchLogged || _tv2PostFetchExnLogged || code == 0)
+                return;
+            _tv2PostFetchExnLogged = true;
+            uint cur = 0;
+            uint curThr = 0;
+            try
+            {
+                if (bus != null)
+                    cur = bus.Read32(CurProc);
+                if (bus != null)
+                    curThr = bus.Read32(ThreadPtr);
+            }
+            catch
+            {
+            }
+            bool startip = IsTv2StartipFault(epc) || IsTv2StartipFault(vaddr);
+            System.Console.WriteLine("[Hive] FILE[25] post-fetch exception code=" +
+                code +
+                " epc=0x" + epc.ToString("X8") +
+                " vaddr=0x" + vaddr.ToString("X8") +
+                " vec=0x" + vector.ToString("X8") +
+                " CurThread=0x" + curThr.ToString("X8") +
+                " CurProc=0x" + cur.ToString("X8") +
+                (startip
+                    ? " (startip/mscoree dest; do not invent dest bytes)"
+                    : " (after I-fetch; 0x80040278 is switcher VM check)"));
         }
 
         public static void TryNoteTv2ProcSwitch(MipsBus bus)
