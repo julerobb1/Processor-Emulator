@@ -214,7 +214,16 @@ namespace ProcessorEmulator.Emulation
 
                 if (programCounter == CeRomTocFiles.ThreadCtxRestore
                     || programCounter == CeRomTocFiles.ThreadCtxRestore2)
+                {
                     CeRomTocFiles.TryNoteTv2ThreadRestore(_bus, registers, programCounter);
+                    if (programCounter == CeRomTocFiles.ThreadCtxRestore2
+                        && CeRomTocFiles.TryForceTv2EretSlowPath(_bus, registers, ref programCounter))
+                    {
+                        _cp0.UpdateTimer(1);
+                        _bus.Tick(1);
+                        continue;
+                    }
+                }
 
                 if (programCounter == CeRomTocFiles.ThreadSwitchProcChk)
                 {

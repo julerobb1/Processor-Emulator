@@ -505,6 +505,9 @@ namespace ProcessorEmulator.Core
                 || pc == CeRomTocFiles.ThreadCtxRestore2)
             {
                 CeRomTocFiles.TryNoteTv2ThreadRestore(bus, registers, pc);
+                if (pc == CeRomTocFiles.ThreadCtxRestore2
+                    && CeRomTocFiles.TryForceTv2EretSlowPath(bus, registers, ref programCounter))
+                    return true;
                 return false;
             }
             if (pc == CeRomTocFiles.ThreadSwitchProcChk)

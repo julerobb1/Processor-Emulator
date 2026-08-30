@@ -3242,6 +3242,48 @@ namespace ProcessorEmulator.Core
             return true;
         }
 
+        // wait73: 0x800154FC can skip 0x8001554C and land on
+        // 0x800155A8; fast ERET 0x8001566C then restores startip
+        // with CurProc still filesys. Send that ERET through
+        // 0x80015550 (v0=s0) so firmware 0x80015570 re-reads +0C.
+        // Do not poke CurProc.
+        public static bool TryForceTv2EretSlowPath(MipsBus bus, uint[] regs, ref uint programCounter)
+        {
+            if (!_tv2FileDestOn || _tv2Thread == 0 || _tv2Proc == 0 || regs == null || regs.Length <= 16)
+                return false;
+            if (programCounter != ThreadCtxRestore2)
+                return false;
+            if (regs[16] != _tv2Thread)
+                return false;
+            if (!IsTv2PrimaryStartipReady(bus))
+                return false;
+            if (IsNkOrFilesysProc(_tv2Proc))
+                return false;
+            uint cur = 0;
+            if (bus != null)
+            {
+                try
+                {
+                    cur = bus.Read32(CurProc);
+                }
+                catch
+                {
+                    return false;
+                }
+                if (cur == _tv2Proc)
+                    return false;
+            }
+            regs[2] = regs[16];
+            programCounter = ThreadSwitchProcSlow;
+            _tv2SwitchStoreLogged = false;
+            System.Console.WriteLine("[Hive] FILE[25] ERET2 force-slow s0=0x" +
+                regs[16].ToString("X8") +
+                " CurProc=0x" + cur.ToString("X8") +
+                " owner=0x" + _tv2Proc.ToString("X8") +
+                " (firmware 0x80015550; not an invented slot map)");
+            return true;
+        }
+
         public static void TryNoteTv2ProcSwitchStore(MipsBus bus, uint[] regs, uint pc)
         {
             if (!_tv2FileDestOn || pc != ThreadSwitchProcStore || bus == null || regs == null)
@@ -3251,12 +3293,22 @@ namespace ProcessorEmulator.Core
             uint t0 = regs[8];
             if (t0 != _tv2Proc)
                 return;
+            uint cur = 0;
+            try
+            {
+                cur = bus.Read32(CurProc);
+            }
+            catch
+            {
+                return;
+            }
+            if (cur == _tv2Proc)
+                return;
             if (_tv2SwitchStoreLogged)
                 return;
             _tv2SwitchStoreLogged = true;
             try
             {
-                uint cur = bus.Read32(CurProc);
                 uint slot = 0;
                 if (_tv2Proc != 0)
                     slot = bus.Read32(_tv2Proc + ProcSlot);
