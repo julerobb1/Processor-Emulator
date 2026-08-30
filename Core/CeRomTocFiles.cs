@@ -157,12 +157,16 @@ namespace ProcessorEmulator.Core
         public const uint ExnVmCheckMid = 0x80040298;
         public const uint ExnVmCheckEnd = 0x80040400;
         // wait75: TLB I-fetch 0x03F73380 after startip+4.
-        // Slot 1. Coredll shared is 0x03F5xxxx (IsApiReady
-        // 0x03F73240, CreateThread 0x03F71E04). Not mscoree
-        // 0x014Bxxxx. Switcher 0x800155A4 sw section at
-        // 0xFFFFD8C0. Do not invent a slot map.
+        // Slot 1. Coredll code is 0x03F5xxxx (IsApiReady
+        // 0x03F73240, CreateThread 0x03F71E04). wait77:
+        // 0x80018580 lw 0(s5) in the module name walk
+        // (a0+0x50 vbase + e32 RVA). 0x03FAC0A0 /
+        // 0x03FB4A60 / 0x03FBF69C / 0x03FD1FD8 are that
+        // same slot-1 module past the 0x03FA0000 code cap.
+        // Walk the live section. Do not invent 0x03FD0000.
         public const uint CoredllSharedLo = 0x03F50000;
-        public const uint CoredllSharedHi = 0x03FA0000;
+        public const uint CoredllSharedHi = 0x03FE0000;
+        public const uint BindImpNameWalk = 0x80018580;
         public const uint KDataSection = 0xFFFFD8C0;
         public const uint ExeVbase = 0x00010000;
         public const uint ProcModule = 0x50;
@@ -348,6 +352,8 @@ namespace ProcessorEmulator.Core
         private static uint _coredllLiveSec;
         private static bool _coredllLiveLogged;
         private static bool _coredllMapLogged;
+        private static bool _coredllHighLogged;
+        private static bool _tv2HighContLogged;
         private static bool _coredllMapBusy;
         private static bool _tv2ProcSwitchLogged;
         private static bool _tv2CurThreadLogged;
@@ -1775,6 +1781,8 @@ namespace ProcessorEmulator.Core
             _coredllLiveSec = 0;
             _coredllLiveLogged = false;
             _coredllMapLogged = false;
+            _coredllHighLogged = false;
+            _tv2HighContLogged = false;
             _coredllMapBusy = false;
             _tv2ProcSwitchLogged = false;
             _tv2CurThreadLogged = false;
@@ -3607,11 +3615,11 @@ namespace ProcessorEmulator.Core
             uint phys = (l2 >> 10) << 12;
             uint dest = 0x80000000u | (phys & 0x1FFFFFFFu);
             uint word = 0;
-            if (!TryPeekWord(bus, dest | (va & 0xFFFu), out word) || word == 0)
+            if (!TryPeekWord(bus, dest | (va & 0xFFFu), out word))
             {
                 phys = (l2 >> 6) << 12;
                 dest = 0x80000000u | (phys & 0x1FFFFFFFu);
-                if (!TryPeekWord(bus, dest | (va & 0xFFFu), out word) || word == 0)
+                if (!TryPeekWord(bus, dest | (va & 0xFFFu), out word))
                     return false;
             }
             pfn = phys;
@@ -3682,6 +3690,20 @@ namespace ProcessorEmulator.Core
                         " l2=0x" + l2.ToString("X8") +
                         " pfn=0x" + pfn.ToString("X8") +
                         " (firmware section; not a static slot map)");
+                }
+                if (va >= 0x03FA0000u && !_coredllHighLogged)
+                {
+                    uint word = 0;
+                    TryPeekWord(bus, dest, out word);
+                    _coredllHighLogged = true;
+                    System.Console.WriteLine("[Hive] FILE[25] coredll high PTE 0x" +
+                        va.ToString("X8") + " -> 0x" + dest.ToString("X8") +
+                        " sec=0x" + sec.ToString("X8") +
+                        " l1=0x" + l1.ToString("X8") +
+                        " l2=0x" + l2.ToString("X8") +
+                        " pfn=0x" + pfn.ToString("X8") +
+                        " dest-word=0x" + word.ToString("X8") +
+                        " (slot-1 past 0x03FA0000; firmware PTE; not invented 0x03FD0000)");
                 }
                 return dest;
             }
@@ -3947,6 +3969,37 @@ namespace ProcessorEmulator.Core
                 " from=0x03F73380 CurThread=0x" + curThr.ToString("X8") +
                 " CurProc=0x" + cur.ToString("X8") +
                 " (past coredll I-fetch; not TV UI)");
+        }
+
+        public static void TryNoteTv2HighContinue(MipsBus bus, uint pc)
+        {
+            if (!_tv2FetchLogged || !_coredllHighLogged || _tv2HighContLogged)
+                return;
+            if (pc == BindImpNameWalk)
+                return;
+            bool afterLoad = pc == BindImpNameWalk + 4;
+            bool backExe = pc >= 0x014B1000u && pc < 0x014D0000u;
+            bool backCode = pc >= CoredllSharedLo && pc < 0x03FA0000u;
+            if (!afterLoad && !backExe && !backCode)
+                return;
+            _tv2HighContLogged = true;
+            uint cur = 0;
+            uint curThr = 0;
+            try
+            {
+                if (bus != null)
+                    cur = bus.Read32(CurProc);
+                if (bus != null)
+                    curThr = bus.Read32(ThreadPtr);
+            }
+            catch
+            {
+            }
+            System.Console.WriteLine("[Hive] FILE[25] coredll-high continue pc=0x" +
+                pc.ToString("X8") +
+                " from=0x03FD1FD8 CurThread=0x" + curThr.ToString("X8") +
+                " CurProc=0x" + cur.ToString("X8") +
+                " (past name-walk load; not TV UI)");
         }
 
         public static void TryNoteTv2ProcSwitch(MipsBus bus)

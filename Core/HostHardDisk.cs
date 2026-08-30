@@ -648,6 +648,7 @@ namespace ProcessorEmulator.Core
             CeRomTocFiles.TryNoteTv2StartipContinue(bus, pc);
             CeRomTocFiles.TryNoteTv2CoredllFetch(bus, pc);
             CeRomTocFiles.TryNoteTv2CoredllContinue(bus, pc);
+            CeRomTocFiles.TryNoteTv2HighContinue(bus, pc);
             CeRomTocFiles.TryNoteTv2ExnHelper(bus, registers, pc);
             CeRomTocFiles.TryNoteTv2CurThread(bus);
             ObserveGwesPath(pc, registers, bus);
