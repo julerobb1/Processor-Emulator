@@ -153,6 +153,9 @@ namespace ProcessorEmulator.Core
         // never hits 0x800152CC, so +0xDC stays 0.
         // 0x80015404 then lw ra, 220(s0) and ERET.
         public const uint ThreadCtxRa = 0xDC;
+        // 0x800154DC sw $s7, 188(s0); 0x800155C4 lw.
+        // Implicit-API 0x8001586C never hits that save.
+        public const uint ThreadCtxS7 = 0xBC;
         public const uint ThreadPrc = 0x0C;
         // 0x8001554C beq s0, v0, 0x800155A8 skips CurProc
         // update when the same thread is rescheduled.
@@ -389,6 +392,7 @@ namespace ProcessorEmulator.Core
         private static bool _tv2ImplPastLogged;
         private static bool _tv2UserSrLogged;
         private static bool _tv2DispatchCtxLogged;
+        private static bool _tv2DispatchSkipLogged;
         private static bool _coredllMapBusy;
         private static bool _tv2ProcSwitchLogged;
         private static bool _tv2CurThreadLogged;
@@ -1831,6 +1835,7 @@ namespace ProcessorEmulator.Core
             _tv2ImplPastLogged = false;
             _tv2UserSrLogged = false;
             _tv2DispatchCtxLogged = false;
+            _tv2DispatchSkipLogged = false;
             _coredllMapBusy = false;
             _tv2ProcSwitchLogged = false;
             _tv2CurThreadLogged = false;
@@ -3524,9 +3529,28 @@ namespace ProcessorEmulator.Core
             // is still 0 from 0x80020C30, so 0x80015A28
             // jr $ra fetches 0. 0x80020D80 a1=8 is Cause
             // code 2; ctxPC=0 is that EPC. Not a missing
-            // page. Resume the live user RA.
+            // page. Resume the live user RA only before
+            // implicit-API continue. wait83: dest
+            // 0x800908B0 / VA 0x03F6C8B0 is addiu $s7,
+            // $0, 0x5800 then jalr; 0x03F6C8F4 is
+            // lw $a2, 0($s7). Rewriting leftover after
+            // continue rewinds to that lw with s7=0
+            // (0x8001586C skipped 0x800154DC; +0xBC
+            // stays 0). Do not map page 0.
             if (IsExnDispatchLeftover(ctxPc) && _tv2FetchLogged)
             {
+                if (_tv2ImplContLogged)
+                {
+                    if (!_tv2DispatchSkipLogged)
+                    {
+                        _tv2DispatchSkipLogged = true;
+                        System.Console.WriteLine("[Hive] FILE[25] thread ctxPC: " + tag +
+                            " thr=0x" + _tv2Thread.ToString("X8") +
+                            " leftover=0x" + ctxPc.ToString("X8") +
+                            " keep (after implicit-api continue; do not rewind 0x03F6C8F4; firmware 0x03F6C8B0 s7=0x5800; not a mapped page 0)");
+                    }
+                    return;
+                }
                 uint resume = _tv2ImplRa != 0 ? _tv2ImplRa : startip;
                 if (resume == 0 || resume == ctxPc)
                     return;
@@ -4150,6 +4174,7 @@ namespace ProcessorEmulator.Core
             else
                 where = " (after jalr return; firmware PTE walk; not a static slot map)";
             uint v0 = regs != null && regs.Length > 2 ? regs[2] : 0;
+            uint s7 = regs != null && regs.Length > 23 ? regs[23] : 0;
             uint frame = 0;
             uint retpc = 0;
             uint ctxSr = 0;
@@ -4179,6 +4204,7 @@ namespace ProcessorEmulator.Core
                 " k1=0x" + k1.ToString("X8") +
                 " ra=0x" + ra.ToString("X8") +
                 " v0=0x" + v0.ToString("X8") +
+                " s7=0x" + s7.ToString("X8") +
                 " frame=0x" + frame.ToString("X8") +
                 " frame+4=0x" + retpc.ToString("X8") +
                 " +F0=0x" + ctxSr.ToString("X8") +
@@ -4307,6 +4333,11 @@ namespace ProcessorEmulator.Core
 
         public static void TryNoteTv2ImplicitContinue(MipsBus bus, uint pc)
         {
+            TryNoteTv2ImplicitContinue(bus, pc, null);
+        }
+
+        public static void TryNoteTv2ImplicitContinue(MipsBus bus, uint pc, uint[] regs)
+        {
             if (!_tv2FetchLogged || _tv2ImplContLogged || _tv2ImplRa == 0)
                 return;
             if (pc != _tv2ImplRa)
@@ -4314,6 +4345,7 @@ namespace ProcessorEmulator.Core
             _tv2ImplContLogged = true;
             uint cur = 0;
             uint curThr = 0;
+            uint s7 = regs != null && regs.Length > 23 ? regs[23] : 0;
             try
             {
                 if (bus != null)
@@ -4329,10 +4361,16 @@ namespace ProcessorEmulator.Core
                 " from=0x" + (_tv2ImplEpc != 0 ? _tv2ImplEpc.ToString("X8") : "FFFFF9B2") +
                 " CurThread=0x" + curThr.ToString("X8") +
                 " CurProc=0x" + cur.ToString("X8") +
+                " s7=0x" + s7.ToString("X8") +
                 " (past jalr implicit-API; not TV UI)");
         }
 
         public static void TryNoteTv2ImplicitPast(MipsBus bus, uint pc)
+        {
+            TryNoteTv2ImplicitPast(bus, pc, null);
+        }
+
+        public static void TryNoteTv2ImplicitPast(MipsBus bus, uint pc, uint[] regs)
         {
             if (!_tv2FetchLogged || !_tv2ImplContLogged || _tv2ImplPastLogged)
                 return;
@@ -4341,6 +4379,7 @@ namespace ProcessorEmulator.Core
             _tv2ImplPastLogged = true;
             uint cur = 0;
             uint curThr = 0;
+            uint s7 = regs != null && regs.Length > 23 ? regs[23] : 0;
             try
             {
                 if (bus != null)
@@ -4356,7 +4395,8 @@ namespace ProcessorEmulator.Core
                 " from=0x" + _tv2ImplRa.ToString("X8") +
                 " CurThread=0x" + curThr.ToString("X8") +
                 " CurProc=0x" + cur.ToString("X8") +
-                " (past null fetch; not a mapped page 0; not TV UI)");
+                " s7=0x" + s7.ToString("X8") +
+                " (past lw 0($s7); firmware 0x03F6C8B0 s7=0x5800; not a mapped page 0; not TV UI)");
         }
 
         public static void TryNoteTv2ZeroDestContinue(MipsBus bus, uint pc)
