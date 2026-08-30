@@ -409,6 +409,8 @@ namespace ProcessorEmulator.Core
         private static bool _tv2UserRaLogged;
         private static uint _tv2StoreSp;
         private static bool _tv2StoreContLogged;
+        private static bool _tv2LeftoverStoreFrame;
+        private static bool _tv2StoreFrameLogged;
         private static bool _coredllMapBusy;
         private static bool _tv2ProcSwitchLogged;
         private static bool _tv2CurThreadLogged;
@@ -1856,6 +1858,8 @@ namespace ProcessorEmulator.Core
             _tv2UserRaLogged = false;
             _tv2StoreSp = 0;
             _tv2StoreContLogged = false;
+            _tv2LeftoverStoreFrame = false;
+            _tv2StoreFrameLogged = false;
             _coredllMapBusy = false;
             _tv2ProcSwitchLogged = false;
             _tv2CurThreadLogged = false;
@@ -3568,8 +3572,10 @@ namespace ProcessorEmulator.Core
             // not ERET that leftover after user
             // continued. Resume last continued
             // user PC. wait87 held 0x03F6CAC0.
-            // Next was jr $ra ra=0: +DC still 0
-            // (0x8001586C never hit 0x800152CC).
+            // wait88: leftover hook ra=0x800159A0
+            // (mid 0x8001586C). 28($sp) was
+            // 0x03F731E4. +D4 $sp 0x0C03F518 is
+            // not that frame, so jr $ra ra=0.
             // Not a real CE jump. Do not map page 0.
             if (IsExnDispatchLeftover(ctxPc) && _tv2FetchLogged)
             {
@@ -3586,6 +3592,11 @@ namespace ProcessorEmulator.Core
                     TryKeepTv2UserS7(bus, null);
                     TryKeepTv2UserSp(bus, null);
                     TryKeepTv2UserRa(bus, null);
+                    if (_tv2StoreContLogged && resume == 0x03F6CAC0u)
+                    {
+                        _tv2LeftoverStoreFrame = true;
+                        TryKeepTv2StoreFrame(bus, null);
+                    }
                     if (!_tv2DispatchCtxLogged)
                     {
                         _tv2DispatchCtxLogged = true;
@@ -3812,6 +3823,91 @@ namespace ProcessorEmulator.Core
                 " (firmware 0x80014434 lw $ra,220(s0); leftover +0xDC; first-pass 28($sp); not a mapped page 0)");
         }
 
+        // wait88: leftover 0x8001588C -> 0x03F6CAC0
+        // skips sw $ra, 28($sp). +DC keep wrote
+        // 0x03F731E4; live ra was 0x800159A0
+        // (mid 0x8001586C). ERET used +D4
+        // 0x0C03F518, not first-pass 0x0C03F550,
+        // so lw 28($sp) then jr $ra fetched 0.
+        // Land with that frame and complete the
+        // skipped sw. Do not write 0. Do not map
+        // page 0. Do not rewind 0x03F6C8F4.
+        public static void TryKeepTv2StoreFrame(MipsBus bus, uint[] regs)
+        {
+            if (!_tv2LeftoverStoreFrame || !_tv2StoreContLogged)
+                return;
+            if (bus == null || _tv2Thread == 0)
+                return;
+            if (_tv2ImplResume != 0x03F6CAC0u)
+                return;
+            if (!IsFirmwareUserSlotVa(_tv2StoreSp))
+                return;
+            uint stacked = 0;
+            if (!TryPeekWord(bus, _tv2StoreSp + 28, out stacked))
+                return;
+            uint keep = 0;
+            if (IsFirmwareUserOrCoredllVa(stacked))
+                keep = stacked;
+            if (keep == 0)
+            {
+                uint saved = 0;
+                try
+                {
+                    saved = bus.Read32(_tv2Thread + ThreadCtxRa);
+                }
+                catch
+                {
+                    return;
+                }
+                if (IsFirmwareUserOrCoredllVa(saved))
+                    keep = saved;
+            }
+            if (keep == 0)
+                return;
+            if (!IsFirmwareUserOrCoredllVa(stacked))
+            {
+                try
+                {
+                    bus.Write32(_tv2StoreSp + 28, keep);
+                    stacked = keep;
+                }
+                catch
+                {
+                    return;
+                }
+            }
+            try
+            {
+                bus.Write32(_tv2Thread + ThreadCtxSp, _tv2StoreSp);
+            }
+            catch
+            {
+            }
+            if (regs != null && regs.Length > 29)
+                regs[29] = _tv2StoreSp;
+            if (regs != null && regs.Length > 31
+                && !IsFirmwareUserOrCoredllVa(regs[31]))
+                regs[31] = keep;
+            try
+            {
+                uint dc = bus.Read32(_tv2Thread + ThreadCtxRa);
+                if (dc == 0 || !IsFirmwareUserOrCoredllVa(dc))
+                    bus.Write32(_tv2Thread + ThreadCtxRa, keep);
+            }
+            catch
+            {
+            }
+            if (_tv2StoreFrameLogged || regs == null)
+                return;
+            _tv2StoreFrameLogged = true;
+            System.Console.WriteLine("[Hive] FILE[25] leftover store-frame sp=0x" +
+                _tv2StoreSp.ToString("X8") +
+                " ra=0x" + keep.ToString("X8") +
+                " 28($sp)=0x" + stacked.ToString("X8") +
+                " thr=0x" + _tv2Thread.ToString("X8") +
+                " (first-pass 0x03F6CABC sw $ra,28($sp); leftover 0x03F6CAC0; not rewind 0x03F6C8F4; not a mapped page 0)");
+        }
+
         private static bool IsFirmwareUserSlotVa(uint va)
         {
             uint slot = va >> 25;
@@ -3852,6 +3948,7 @@ namespace ProcessorEmulator.Core
             TryKeepTv2UserS7(bus, regs);
             TryKeepTv2UserSp(bus, regs);
             TryKeepTv2UserRa(bus, regs);
+            TryKeepTv2StoreFrame(bus, regs);
             try
             {
                 uint ctxPc = bus.Read32(_tv2Thread + ThreadCtxPc);
