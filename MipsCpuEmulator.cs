@@ -374,6 +374,7 @@ namespace ProcessorEmulator.Emulation
             cause &= 0x7FFFFFFF;
             _cp0.Cause = cause;
             _cp0.Status |= (1 << 1);
+            CeRomTocFiles.TryClearImplicitApiK1(registers, vaddr);
             bool bev = (_cp0.Status & (1 << 22)) != 0;
             programCounter = bev ? 0xBFC00380u : 0x80000180u;
             HostHardDisk.NoteCpuException(4, _cp0.EPC, vaddr, programCounter, registers, _bus);

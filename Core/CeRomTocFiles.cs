@@ -168,6 +168,11 @@ namespace ProcessorEmulator.Core
         public const uint CoredllSharedHi = 0x03FE0000;
         public const uint BindImpNameWalk = 0x80018580;
         public const uint KDataSection = 0xFFFFD8C0;
+        // 0x8001521C ori k1, epc, 0xFFFC / addiu 2 / beq
+        // syscall. 0xFFFFF3DA is coredll 0x80095A98
+        // addiu $v0, $0, -3110 / jalr $v0. Same class as
+        // SetFilePointer 0xFFFFDFEE. Not KData. Not a slot.
+        public const uint KDataNest = 0xFFFFD885;
         public const uint ExeVbase = 0x00010000;
         public const uint ProcModule = 0x50;
         public const uint ProcSlot = 0x0C;
@@ -354,6 +359,9 @@ namespace ProcessorEmulator.Core
         private static bool _coredllMapLogged;
         private static bool _coredllHighLogged;
         private static bool _tv2HighContLogged;
+        private static uint _tv2ImplRa;
+        private static uint _tv2ImplK1Before;
+        private static bool _tv2ImplContLogged;
         private static bool _coredllMapBusy;
         private static bool _tv2ProcSwitchLogged;
         private static bool _tv2CurThreadLogged;
@@ -1783,6 +1791,9 @@ namespace ProcessorEmulator.Core
             _coredllMapLogged = false;
             _coredllHighLogged = false;
             _tv2HighContLogged = false;
+            _tv2ImplRa = 0;
+            _tv2ImplK1Before = 0;
+            _tv2ImplContLogged = false;
             _coredllMapBusy = false;
             _tv2ProcSwitchLogged = false;
             _tv2CurThreadLogged = false;
@@ -3837,24 +3848,64 @@ namespace ProcessorEmulator.Core
                 " (0x80040278; not a vector; do not invent dest bytes)");
         }
 
+        // 0x8001521C: (EPC | 0xFFFC) + 2 == 0. Any
+        // 0xFFFF???? with bits 1:0 == 2 is a jalr trap
+        // (0x80095A98 addiu/jalr; 0xFFFFDFEE SetFilePointer).
+        public static bool IsFirmwareImplicitApi(uint epc)
+        {
+            return ((epc | 0xFFFCu) + 2u) == 0;
+        }
+
+        // 0x8001567C clears k1 before ERET. Copied
+        // 0x80000180 is 0x80015210: bne k1, 0 skips the
+        // syscall ori/addiu/beq and 0x80015484 overwrites
+        // EPC with t0. Stale k1 makes 0xFFFFF3DA a fatal
+        // AdEL. Do not poke CurProc.
+        public static bool TryClearImplicitApiK1(uint[] regs, uint vaddr)
+        {
+            if (!_tv2FetchLogged || regs == null || regs.Length <= 27)
+                return false;
+            if (!IsFirmwareImplicitApi(vaddr))
+                return false;
+            _tv2ImplK1Before = regs[27];
+            regs[27] = 0;
+            return true;
+        }
+
         public static void TryNoteTv2PostFetchException(uint code, uint epc, uint vaddr,
             uint vector, MipsBus bus)
+        {
+            TryNoteTv2PostFetchException(code, epc, vaddr, vector, bus, null);
+        }
+
+        public static void TryNoteTv2PostFetchException(uint code, uint epc, uint vaddr,
+            uint vector, MipsBus bus, uint[] regs)
         {
             if (!_tv2FetchLogged || _tv2PostFetchExnLogged || code == 0)
                 return;
             _tv2PostFetchExnLogged = true;
             uint cur = 0;
             uint curThr = 0;
+            uint nest = 0;
+            uint k1 = _tv2ImplK1Before != 0
+                ? _tv2ImplK1Before
+                : (regs != null && regs.Length > 27 ? regs[27] : 0);
+            uint ra = regs != null && regs.Length > 31 ? regs[31] : 0;
             try
             {
                 if (bus != null)
                     cur = bus.Read32(CurProc);
                 if (bus != null)
                     curThr = bus.Read32(ThreadPtr);
+                if (bus != null)
+                    nest = bus.Read8(KDataNest);
             }
             catch
             {
             }
+            bool implicitApi = IsFirmwareImplicitApi(epc) || IsFirmwareImplicitApi(vaddr);
+            if (implicitApi && ra != 0 && _tv2ImplRa == 0)
+                _tv2ImplRa = ra;
             bool startip = IsTv2StartipFault(epc) || IsTv2StartipFault(vaddr);
             bool coredll = IsTv2CoredllShared(epc) || IsTv2CoredllShared(vaddr);
             uint va = IsTv2CoredllShared(vaddr) ? vaddr : epc;
@@ -3871,7 +3922,9 @@ namespace ProcessorEmulator.Core
             uint walkSec = _coredllLiveSec != 0 ? _coredllLiveSec : sec1;
             bool pte = coredll && WalkFirmwarePte(bus, walkSec, va, out l1, out l2, out pfn, out kseg);
             string where;
-            if (startip)
+            if (implicitApi)
+                where = " (coredll jalr 0xFFFFFxxx; firmware 0x8001521C; not KData; not a slot map)";
+            else if (startip)
                 where = " (startip/mscoree dest; do not invent dest bytes)";
             else if (coredll)
                 where = " (coredll shared slot-1; not mscoree; do not invent a slot map)";
@@ -3887,6 +3940,10 @@ namespace ProcessorEmulator.Core
                 " slot=" + slot +
                 " dest-" + (mapped ? "mapped" : "unmapped") +
                 " dest-word=0x" + destWord.ToString("X8") +
+                " nest=0x" + nest.ToString("X2") +
+                " k1=0x" + k1.ToString("X8") +
+                " ra=0x" + ra.ToString("X8") +
+                " implicit=" + implicitApi +
                 " sec0=0x" + sec0.ToString("X8") +
                 " sec1=0x" + sec1.ToString("X8") +
                 " sec6=0x" + sec6.ToString("X8") +
@@ -4005,6 +4062,32 @@ namespace ProcessorEmulator.Core
                 " from=0x03FD1FD8 CurThread=0x" + curThr.ToString("X8") +
                 " CurProc=0x" + cur.ToString("X8") +
                 " (past name-walk load; not TV UI)");
+        }
+
+        public static void TryNoteTv2ImplicitContinue(MipsBus bus, uint pc)
+        {
+            if (!_tv2FetchLogged || _tv2ImplContLogged || _tv2ImplRa == 0)
+                return;
+            if (pc != _tv2ImplRa)
+                return;
+            _tv2ImplContLogged = true;
+            uint cur = 0;
+            uint curThr = 0;
+            try
+            {
+                if (bus != null)
+                    cur = bus.Read32(CurProc);
+                if (bus != null)
+                    curThr = bus.Read32(ThreadPtr);
+            }
+            catch
+            {
+            }
+            System.Console.WriteLine("[Hive] FILE[25] implicit-api continue pc=0x" +
+                pc.ToString("X8") +
+                " from=0xFFFFF3DA CurThread=0x" + curThr.ToString("X8") +
+                " CurProc=0x" + cur.ToString("X8") +
+                " (past jalr 0xFFFFF3DA; not TV UI)");
         }
 
         public static void TryNoteTv2ProcSwitch(MipsBus bus)

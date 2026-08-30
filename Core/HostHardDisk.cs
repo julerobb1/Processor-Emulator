@@ -649,6 +649,7 @@ namespace ProcessorEmulator.Core
             CeRomTocFiles.TryNoteTv2CoredllFetch(bus, pc);
             CeRomTocFiles.TryNoteTv2CoredllContinue(bus, pc);
             CeRomTocFiles.TryNoteTv2HighContinue(bus, pc);
+            CeRomTocFiles.TryNoteTv2ImplicitContinue(bus, pc);
             CeRomTocFiles.TryNoteTv2ExnHelper(bus, registers, pc);
             CeRomTocFiles.TryNoteTv2CurThread(bus);
             ObserveGwesPath(pc, registers, bus);
@@ -2729,7 +2730,7 @@ namespace ProcessorEmulator.Core
                     " startip=0x" + startip.ToString("X8") +
                     " (dump PE dest; do not invent 0x81360000)");
             }
-            CeRomTocFiles.TryNoteTv2PostFetchException(code, epc, vaddr, vector, bus);
+            CeRomTocFiles.TryNoteTv2PostFetchException(code, epc, vaddr, vector, bus, registers);
             if (!_gwesWatch || !_logged.Contains("hive:gpc:WinMain"))
                 return;
             // 0 is a timer interrupt. Those ate the cap and hid the AV.
