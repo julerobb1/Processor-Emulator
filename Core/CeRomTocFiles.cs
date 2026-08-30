@@ -411,6 +411,7 @@ namespace ProcessorEmulator.Core
         private static bool _tv2StoreContLogged;
         private static bool _tv2LeftoverStoreFrame;
         private static bool _tv2StoreFrameLogged;
+        private static bool _tv2MscoreeSlotLogged;
         private static bool _coredllMapBusy;
         private static bool _tv2ProcSwitchLogged;
         private static bool _tv2CurThreadLogged;
@@ -1860,6 +1861,7 @@ namespace ProcessorEmulator.Core
             _tv2StoreContLogged = false;
             _tv2LeftoverStoreFrame = false;
             _tv2StoreFrameLogged = false;
+            _tv2MscoreeSlotLogged = false;
             _coredllMapBusy = false;
             _tv2ProcSwitchLogged = false;
             _tv2CurThreadLogged = false;
@@ -4012,7 +4014,11 @@ namespace ProcessorEmulator.Core
             if (_tv2Startip != 0
                 && (va & ~0xFFFu) == (_tv2Startip & ~0xFFFu))
                 return true;
-            return va >= 0x014B1000u && va < 0x014D0000u;
+            if (va >= 0x014B1000u && va < 0x014D0000u)
+                return true;
+            uint slot0 = va & SlotMask;
+            return _mscoreeDestOn
+                && slot0 >= 0x014B1000u && slot0 < 0x014D0000u;
         }
 
         public static bool IsTv2CoredllShared(uint va)
@@ -4991,14 +4997,30 @@ namespace ProcessorEmulator.Core
                 if (va >= 0x01F57000u && va < 0x01F67000u)
                     return ExtraRomDestKseg1 + (va - 0x01F57000u);
             }
-            if (_mscoreeDestOn && _mscoreeVbase != 0 && _mscoreeSlot0 != 0)
+            // wait89: RI at 0x034B7DA8 dest-word 0x603E984F.
+            // TOC[46] vbase 0x034B0000. MapO32 steered
+            // 0x034B1000 -> 0x014B1000. startip 0x014B9D98
+            // already fetched that dest (0x27BDFFA8). Linked
+            // 0x034B7DA8 is the same RVA. Slot-1 firmware
+            // PTE is miss (coredll sec). Use the steered
+            // dest. Do not invent dest bytes. Do not map
+            // page 0. Do not invent a slot map.
+            if (_mscoreeDestOn)
             {
-                uint vbase = _mscoreeVbase;
-                uint vbaseEnd = vbase + 0x20000u;
-                if (va >= vbase && va < vbaseEnd)
-                    va = _mscoreeSlot0 + (va - vbase);
-                if (va >= 0x014B0000u && va < 0x014D0000u)
-                    return ExtraRomDestKsegMscoree + (va - 0x014B0000u);
+                uint slot0 = va & SlotMask;
+                if (slot0 >= 0x014B0000u && slot0 < 0x014D0000u)
+                {
+                    uint dest = ExtraRomDestKsegMscoree + (slot0 - 0x014B0000u);
+                    if (!_tv2MscoreeSlotLogged && slot0 != va)
+                    {
+                        _tv2MscoreeSlotLogged = true;
+                        System.Console.WriteLine("[Hive] FILE[25] mscoree dest 0x" +
+                            va.ToString("X8") + " -> 0x" + dest.ToString("X8") +
+                            " slot0=0x" + slot0.ToString("X8") +
+                            " (MapO32 0x034B1000->0x014B1000; firmware CEDecompressROM; not invented dest; not a slot map)");
+                    }
+                    return dest;
+                }
                 if (va >= 0x01F32000u && va < 0x01F33000u)
                     return ExtraRomDestKsegMscoree1 + (va - 0x01F32000u);
             }
