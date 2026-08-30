@@ -185,6 +185,8 @@ namespace ProcessorEmulator.Core
         // 0x80015A08 mtc0 $t4,EPC; 0x80015A24 ERET.
         public const uint LeftoverOrRa = 0x800159B4;
         public const uint LeftoverMtc0Epc = 0x80015A08;
+        public const uint LeftoverJrRa = 0x80015A28;
+        public const uint LeftoverEret = 0x80015A24;
         public const uint LeftoverContinue = 0x03F6CAF0;
         // wait74: after I-fetch, ctxPC=0x80040298 then
         // ThreadExceptionExit. 0x800154EC beq a1,0 skips
@@ -3668,23 +3670,17 @@ namespace ProcessorEmulator.Core
                 return;
             if (!_tv2LeftoverCae8Logged)
                 return;
-            if (pc != LeftoverOrRa && pc != LeftoverMtc0Epc)
+            if (pc != LeftoverOrRa && pc != LeftoverMtc0Epc && pc != LeftoverJrRa)
                 return;
             if (regs == null || regs.Length <= 31)
                 return;
-            uint was = pc == LeftoverOrRa ? regs[2] : regs[12];
+            uint was = pc == LeftoverOrRa ? regs[2] : (pc == LeftoverMtc0Epc ? regs[12] : regs[31]);
             if (IsFirmwareUserOrCoredllVa(was) && was != 0)
                 return;
-            uint dest = LeftoverContinue;
+            uint dest = 0;
             uint word = 0;
-            bool live = TryPeekWord(bus, dest, out word);
-            if (!live)
-            {
-                if (!_tv2LeftoverCaf0Peeked)
-                    return;
-                word = _tv2LeftoverCaf0Word;
-            }
-            if ((dest & 0x1FFFFFFFu) < 0x00010000u)
+            bool live = false;
+            if (!TryResolveLeftoverContinue(bus, out dest, out word, out live))
                 return;
             if (pc == LeftoverOrRa)
                 regs[2] = dest;
@@ -3701,6 +3697,46 @@ namespace ProcessorEmulator.Core
                 " dest-word=0x" + word.ToString("X8") +
                 (live ? " dest-live" : " dest-cae8") +
                 " (jal 0x800397B0 returned -1; leftover ERET dest; do not rewrite 0x80015B9C; do not rewind 0x03F6CAC0; not TV UI)");
+        }
+
+        public static bool TryFixTv2LeftoverJump(MipsBus bus, uint[] regs, ref uint target)
+        {
+            if (_tv2LeftoverEretLogged || !_tv2LeftoverCae8Logged)
+                return false;
+            if (target != 0xFFFFFFFFu)
+                return false;
+            uint dest = 0;
+            uint word = 0;
+            bool live = false;
+            if (!TryResolveLeftoverContinue(bus, out dest, out word, out live))
+                return false;
+            target = dest;
+            if (regs != null && regs.Length > 31)
+            {
+                regs[12] = dest;
+                regs[31] = dest;
+            }
+            _tv2LeftoverEretLogged = true;
+            System.Console.WriteLine("[Hive] FILE[25] leftover eret-restore was=0xFFFFFFFF at=jr dest=0x" +
+                dest.ToString("X8") +
+                " dest-word=0x" + word.ToString("X8") +
+                (live ? " dest-live" : " dest-cae8") +
+                " (jal 0x800397B0 returned -1; leftover jr $ra; do not rewrite 0x80015B9C; do not rewind 0x03F6CAC0; not TV UI)");
+            return true;
+        }
+
+        private static bool TryResolveLeftoverContinue(MipsBus bus, out uint dest, out uint word, out bool live)
+        {
+            dest = LeftoverContinue;
+            word = 0;
+            live = TryPeekWord(bus, dest, out word);
+            if (!live)
+            {
+                if (!_tv2LeftoverCaf0Peeked)
+                    return false;
+                word = _tv2LeftoverCaf0Word;
+            }
+            return (dest & 0x1FFFFFFFu) >= 0x00010000u;
         }
 
         public static void TryKeepTv2ThreadCtx(MipsBus bus, string tag)

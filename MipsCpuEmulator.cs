@@ -639,6 +639,7 @@ namespace ProcessorEmulator.Emulation
             _inDelaySlot = true;
             try
             {
+                CeRomTocFiles.TryRestoreTv2LeftoverEret(_bus, registers, programCounter);
                 uint delayInstr = FetchInstruction();
                 DecodeAndExecute(delayInstr);
                 programCounter = target;
@@ -695,7 +696,11 @@ namespace ProcessorEmulator.Emulation
                             // 1. Clear Status.EXL bit
                             _cp0.Status &= ~(1u << 1); 
                             // 2. Jump back to where the exception occurred
-                            programCounter = _cp0.EPC;
+                            uint eretPc = _cp0.EPC;
+                            if (_currentPc == CeRomTocFiles.LeftoverEret
+                                && CeRomTocFiles.TryFixTv2LeftoverJump(_bus, registers, ref eretPc))
+                                _cp0.EPC = eretPc;
+                            programCounter = eretPc;
                             break;
                         default:
                             System.Diagnostics.Debug.WriteLine($"[MIPS] Unhandled COP0 funct: 0x{funct:X}");
@@ -1212,6 +1217,8 @@ namespace ProcessorEmulator.Emulation
             uint oldPc = programCounter;
             uint rs = (instruction >> 21) & 0x1F;
             uint target = registers[rs];
+            if (CeRomTocFiles.TryFixTv2LeftoverJump(_bus, registers, ref target) && rs != 0)
+                registers[rs] = target;
             ExecuteDelaySlotThenJump(target);
             LogBranch(oldPc, programCounter, "JR");
         }
