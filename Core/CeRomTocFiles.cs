@@ -3685,10 +3685,10 @@ namespace ProcessorEmulator.Core
                 return;
             uint dest = LeftoverContinue;
             uint word = 0;
-            bool live = TryPeekWord(bus, dest, out word) && word != 0;
+            bool live = TryPeekWord(bus, dest, out word);
             if (!live)
             {
-                if (!_tv2LeftoverCaf0Peeked || _tv2LeftoverCaf0Word == 0)
+                if (!_tv2LeftoverCaf0Peeked)
                     return;
                 word = _tv2LeftoverCaf0Word;
             }
@@ -5091,7 +5091,7 @@ namespace ProcessorEmulator.Core
             uint word = 0;
             bool mapped = TryPeekWord(bus, pc, out word);
             uint nextWord = 0;
-            if (TryPeekWord(bus, LeftoverContinue, out nextWord) && nextWord != 0
+            if (TryPeekWord(bus, LeftoverContinue, out nextWord)
                 && (LeftoverContinue & 0x1FFFFFFFu) >= 0x00010000u)
             {
                 _tv2LeftoverCaf0Peeked = true;
