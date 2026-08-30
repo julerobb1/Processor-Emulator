@@ -388,6 +388,7 @@ namespace ProcessorEmulator.Core
         private static bool _tv2ImplContLogged;
         private static bool _tv2ImplPastLogged;
         private static bool _tv2UserSrLogged;
+        private static bool _tv2DispatchCtxLogged;
         private static bool _coredllMapBusy;
         private static bool _tv2ProcSwitchLogged;
         private static bool _tv2CurThreadLogged;
@@ -1829,6 +1830,7 @@ namespace ProcessorEmulator.Core
             _tv2ImplContLogged = false;
             _tv2ImplPastLogged = false;
             _tv2UserSrLogged = false;
+            _tv2DispatchCtxLogged = false;
             _coredllMapBusy = false;
             _tv2ProcSwitchLogged = false;
             _tv2CurThreadLogged = false;
@@ -3479,7 +3481,10 @@ namespace ProcessorEmulator.Core
 
         public static bool IsExnDispatchLeftover(uint pc)
         {
-            return pc == ExnAfterFetch || pc == ExnAfterFetch2;
+            // wait82: 0x80015404 ctxPC=0x8001588C only.
+            // 0x80015B9C is the live ERET2 frame; rewriting
+            // it loops the switcher. Do not touch that.
+            return pc == ExnAfterFetch;
         }
 
         public static void TryKeepTv2ThreadCtx(MipsBus bus, string tag)
