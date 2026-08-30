@@ -425,6 +425,8 @@ namespace ProcessorEmulator.Core
         private static bool _tv2LeftoverCae8Logged;
         private static bool _tv2LeftoverSkipLogged;
         private static bool _tv2LeftoverCaf0Logged;
+        private static bool _tv2LeftoverCaf0Peeked;
+        private static uint _tv2LeftoverCaf0Word;
         private static bool _tv2LeftoverEretLogged;
         private static bool _tv2GwesFetchLogged;
         private static bool _tv2GwesContLogged;
@@ -1907,6 +1909,8 @@ namespace ProcessorEmulator.Core
             _tv2LeftoverCae8Logged = false;
             _tv2LeftoverSkipLogged = false;
             _tv2LeftoverCaf0Logged = false;
+            _tv2LeftoverCaf0Peeked = false;
+            _tv2LeftoverCaf0Word = 0;
             _tv2LeftoverEretLogged = false;
             _tv2GwesFetchLogged = false;
             _tv2GwesContLogged = false;
@@ -3663,13 +3667,31 @@ namespace ProcessorEmulator.Core
                 return;
             if (regs == null || regs.Length <= 31)
                 return;
+            if (_tv2Thread == 0)
+                return;
+            uint curThr = 0;
+            try
+            {
+                if (bus != null)
+                    curThr = bus.Read32(ThreadPtr);
+            }
+            catch
+            {
+            }
+            if (curThr != _tv2Thread)
+                return;
             uint v0 = regs[2];
             if (IsFirmwareUserOrCoredllVa(v0) && v0 != 0)
                 return;
             uint dest = LeftoverContinue;
             uint word = 0;
-            if (!TryPeekWord(bus, dest, out word))
-                return;
+            bool live = TryPeekWord(bus, dest, out word) && word != 0;
+            if (!live)
+            {
+                if (!_tv2LeftoverCaf0Peeked || _tv2LeftoverCaf0Word == 0)
+                    return;
+                word = _tv2LeftoverCaf0Word;
+            }
             if ((dest & 0x1FFFFFFFu) < 0x00010000u)
                 return;
             regs[2] = dest;
@@ -3680,6 +3702,7 @@ namespace ProcessorEmulator.Core
                 v0.ToString("X8") +
                 " dest=0x" + dest.ToString("X8") +
                 " dest-word=0x" + word.ToString("X8") +
+                (live ? " dest-live" : " dest-cae8") +
                 " (jal 0x800397B0 returned -1; leftover or $ra,$v0; do not rewrite 0x80015B9C; do not rewind 0x03F6CAC0; not TV UI)");
         }
 
@@ -5067,6 +5090,13 @@ namespace ProcessorEmulator.Core
             _tv2LeftoverCae8Logged = true;
             uint word = 0;
             bool mapped = TryPeekWord(bus, pc, out word);
+            uint nextWord = 0;
+            if (TryPeekWord(bus, LeftoverContinue, out nextWord) && nextWord != 0
+                && (LeftoverContinue & 0x1FFFFFFFu) >= 0x00010000u)
+            {
+                _tv2LeftoverCaf0Peeked = true;
+                _tv2LeftoverCaf0Word = nextWord;
+            }
             uint cur = 0;
             uint curThr = 0;
             try
@@ -5085,6 +5115,7 @@ namespace ProcessorEmulator.Core
                 " CurProc=0x" + cur.ToString("X8") +
                 " dest-" + (mapped ? "mapped" : "unmapped") +
                 " dest-word=0x" + word.ToString("X8") +
+                " next=0x03F6CAF0 next-word=0x" + nextWord.ToString("X8") +
                 " (past leftover lw $v0,0($s6); do not skip to 28($sp); not page 0; not TV UI)");
         }
 
