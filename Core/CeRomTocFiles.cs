@@ -352,6 +352,10 @@ namespace ProcessorEmulator.Core
         private static bool _tv2ContinueLogged;
         private static bool _tv2ExnHelperLogged;
         private static bool _tv2PostFetchExnLogged;
+        private static bool _tv2ImplAdelLogged;
+        private static bool _tv2AfterExnContLogged;
+        private static bool _pteMapBusy;
+        private static bool _pteMapLogged;
         private static bool _tv2CoredllLogged;
         private static bool _tv2CoredllContLogged;
         private static uint _coredllLiveSec;
@@ -1784,6 +1788,10 @@ namespace ProcessorEmulator.Core
             _tv2ContinueLogged = false;
             _tv2ExnHelperLogged = false;
             _tv2PostFetchExnLogged = false;
+            _tv2ImplAdelLogged = false;
+            _tv2AfterExnContLogged = false;
+            _pteMapBusy = false;
+            _pteMapLogged = false;
             _tv2CoredllLogged = false;
             _tv2CoredllContLogged = false;
             _coredllLiveSec = 0;
@@ -3734,6 +3742,61 @@ namespace ProcessorEmulator.Core
             }
         }
 
+        // After the 0xFFFFF3DA jalr, a1=0xC at 0x80020D80 is
+        // Cause for TLB store (code 3). nest was 2 so the
+        // general path built a frame at sp-248 (0x0C03E930)
+        // and jal 0x80040278. Walk that VA's live section.
+        // Slot 1 is coredll. Slot 6 is tv2 proc+0C.
+        // Do not invent a static slot map.
+        public static uint MapFirmwareSlotVa(MipsBus bus, uint va)
+        {
+            if (_pteMapBusy || bus == null || _tv2ImplRa == 0)
+                return va;
+            if (va >= 0x80000000u)
+                return va;
+            if (IsTv2CoredllShared(va))
+                return va;
+            uint slot = va >> 25;
+            if (slot != 1 && slot != 6)
+                return va;
+            uint sec = PeekSection(bus, slot);
+            if (sec == 0)
+                return va;
+            try
+            {
+                _pteMapBusy = true;
+                uint l1 = 0;
+                uint l2 = 0;
+                uint pfn = 0;
+                uint kseg = 0;
+                if (!WalkFirmwarePte(bus, sec, va, out l1, out l2, out pfn, out kseg))
+                    return va;
+                uint dest = kseg | (va & 0xFFFu);
+                if (dest == va)
+                    return va;
+                if (!_pteMapLogged)
+                {
+                    uint word = 0;
+                    TryPeekWord(bus, dest, out word);
+                    _pteMapLogged = true;
+                    System.Console.WriteLine("[Hive] FILE[25] slot PTE 0x" +
+                        va.ToString("X8") + " -> 0x" + dest.ToString("X8") +
+                        " slot=" + slot +
+                        " sec=0x" + sec.ToString("X8") +
+                        " l1=0x" + l1.ToString("X8") +
+                        " l2=0x" + l2.ToString("X8") +
+                        " pfn=0x" + pfn.ToString("X8") +
+                        " dest-word=0x" + word.ToString("X8") +
+                        " (firmware 0x80040278 walk after jalr; not a static slot map)");
+                }
+                return dest;
+            }
+            finally
+            {
+                _pteMapBusy = false;
+            }
+        }
+
         public static void TryNoteTv2StartipFetch(MipsBus bus, uint pc)
         {
             if (_tv2Startip == 0 || pc != _tv2Startip || _tv2FetchLogged)
@@ -3881,16 +3944,30 @@ namespace ProcessorEmulator.Core
         public static void TryNoteTv2PostFetchException(uint code, uint epc, uint vaddr,
             uint vector, MipsBus bus, uint[] regs)
         {
-            if (!_tv2FetchLogged || _tv2PostFetchExnLogged || code == 0)
+            if (!_tv2FetchLogged || code == 0)
                 return;
-            _tv2PostFetchExnLogged = true;
+            bool implicitApi = IsFirmwareImplicitApi(epc) || IsFirmwareImplicitApi(vaddr);
+            uint ra = regs != null && regs.Length > 31 ? regs[31] : 0;
+            if (implicitApi && ra != 0 && _tv2ImplRa == 0)
+                _tv2ImplRa = ra;
+            if (implicitApi)
+            {
+                if (_tv2ImplAdelLogged)
+                    return;
+                _tv2ImplAdelLogged = true;
+            }
+            else
+            {
+                if (_tv2PostFetchExnLogged)
+                    return;
+                _tv2PostFetchExnLogged = true;
+            }
             uint cur = 0;
             uint curThr = 0;
             uint nest = 0;
             uint k1 = _tv2ImplK1Before != 0
                 ? _tv2ImplK1Before
                 : (regs != null && regs.Length > 27 ? regs[27] : 0);
-            uint ra = regs != null && regs.Length > 31 ? regs[31] : 0;
             try
             {
                 if (bus != null)
@@ -3903,12 +3980,9 @@ namespace ProcessorEmulator.Core
             catch
             {
             }
-            bool implicitApi = IsFirmwareImplicitApi(epc) || IsFirmwareImplicitApi(vaddr);
-            if (implicitApi && ra != 0 && _tv2ImplRa == 0)
-                _tv2ImplRa = ra;
             bool startip = IsTv2StartipFault(epc) || IsTv2StartipFault(vaddr);
             bool coredll = IsTv2CoredllShared(epc) || IsTv2CoredllShared(vaddr);
-            uint va = IsTv2CoredllShared(vaddr) ? vaddr : epc;
+            uint va = (vaddr != 0 && vaddr != epc) ? vaddr : epc;
             uint slot = va >> 25;
             uint sec0 = PeekSection(bus, 0);
             uint sec1 = PeekSection(bus, 1);
@@ -3919,8 +3993,11 @@ namespace ProcessorEmulator.Core
             uint l2 = 0;
             uint pfn = 0;
             uint kseg = 0;
-            uint walkSec = _coredllLiveSec != 0 ? _coredllLiveSec : sec1;
-            bool pte = coredll && WalkFirmwarePte(bus, walkSec, va, out l1, out l2, out pfn, out kseg);
+            uint walkSlot = (va < 0x80000000u && slot >= 1 && slot <= 16) ? slot : 1u;
+            uint walkSec = PeekSection(bus, walkSlot);
+            if (walkSec == 0)
+                walkSec = _coredllLiveSec != 0 ? _coredllLiveSec : sec1;
+            bool pte = WalkFirmwarePte(bus, walkSec, va, out l1, out l2, out pfn, out kseg);
             string where;
             if (implicitApi)
                 where = " (coredll jalr 0xFFFFFxxx; firmware 0x8001521C; not KData; not a slot map)";
@@ -3929,7 +4006,7 @@ namespace ProcessorEmulator.Core
             else if (coredll)
                 where = " (coredll shared slot-1; not mscoree; do not invent a slot map)";
             else
-                where = " (after I-fetch; 0x80040278 is switcher VM check)";
+                where = " (after jalr return; firmware PTE walk; not a static slot map)";
             System.Console.WriteLine("[Hive] FILE[25] post-fetch exception code=" +
                 code +
                 " epc=0x" + epc.ToString("X8") +
@@ -3944,6 +4021,8 @@ namespace ProcessorEmulator.Core
                 " k1=0x" + k1.ToString("X8") +
                 " ra=0x" + ra.ToString("X8") +
                 " implicit=" + implicitApi +
+                " walk-slot=" + walkSlot +
+                " walk-sec=0x" + walkSec.ToString("X8") +
                 " sec0=0x" + sec0.ToString("X8") +
                 " sec1=0x" + sec1.ToString("X8") +
                 " sec6=0x" + sec6.ToString("X8") +
@@ -4088,6 +4167,32 @@ namespace ProcessorEmulator.Core
                 " from=0xFFFFF3DA CurThread=0x" + curThr.ToString("X8") +
                 " CurProc=0x" + cur.ToString("X8") +
                 " (past jalr 0xFFFFF3DA; not TV UI)");
+        }
+
+        public static void TryNoteTv2AfterExnContinue(MipsBus bus, uint pc)
+        {
+            if (!_tv2PostFetchExnLogged || _tv2AfterExnContLogged)
+                return;
+            if (pc < 0x014B1000u || pc >= 0x014D0000u)
+                return;
+            _tv2AfterExnContLogged = true;
+            uint cur = 0;
+            uint curThr = 0;
+            try
+            {
+                if (bus != null)
+                    cur = bus.Read32(CurProc);
+                if (bus != null)
+                    curThr = bus.Read32(ThreadPtr);
+            }
+            catch
+            {
+            }
+            System.Console.WriteLine("[Hive] FILE[25] after-exn continue pc=0x" +
+                pc.ToString("X8") +
+                " CurThread=0x" + curThr.ToString("X8") +
+                " CurProc=0x" + cur.ToString("X8") +
+                " (past post-jalr exception; not TV UI)");
         }
 
         public static void TryNoteTv2ProcSwitch(MipsBus bus)
