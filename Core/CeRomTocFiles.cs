@@ -148,6 +148,11 @@ namespace ProcessorEmulator.Core
         public const uint ThreadCtxSrKernel = 3;
         public const uint ThreadCtxSrUser = 0x13;
         public const uint ThreadSyscallFrame = 0x18;
+        // 0x80020C30 / 0x80020D10 sw $0, 220(a0) at
+        // ThreadContextSetup. Implicit-API 0x8001586C
+        // never hits 0x800152CC, so +0xDC stays 0.
+        // 0x80015404 then lw ra, 220(s0) and ERET.
+        public const uint ThreadCtxRa = 0xDC;
         public const uint ThreadPrc = 0x0C;
         // 0x8001554C beq s0, v0, 0x800155A8 skips CurProc
         // update when the same thread is rescheduled.
@@ -3472,6 +3477,11 @@ namespace ProcessorEmulator.Core
             return pc >= BinaryDecompressInner && pc < 0x80053000u;
         }
 
+        public static bool IsExnDispatchLeftover(uint pc)
+        {
+            return pc == ExnAfterFetch || pc == ExnAfterFetch2;
+        }
+
         public static void TryKeepTv2ThreadCtx(MipsBus bus, string tag)
         {
             if (!_tv2FileDestOn || bus == null || _tv2Thread == 0)
@@ -3504,6 +3514,32 @@ namespace ProcessorEmulator.Core
             }
             if (ctxPc == startip)
                 return;
+            // wait82: after 0x03F6C8F8, 0x80015404 ERET
+            // ctxPC=0x8001588C (mid 0x8001586C). +0xDC
+            // is still 0 from 0x80020C30, so 0x80015A28
+            // jr $ra fetches 0. 0x80020D80 a1=8 is Cause
+            // code 2; ctxPC=0 is that EPC. Not a missing
+            // page. Resume the live user RA.
+            if (IsExnDispatchLeftover(ctxPc) && _tv2FetchLogged)
+            {
+                uint resume = _tv2ImplRa != 0 ? _tv2ImplRa : startip;
+                if (resume == 0 || resume == ctxPc)
+                    return;
+                try
+                {
+                    bus.Write32(_tv2Thread + ThreadCtxPc, resume);
+                    TryKeepTv2UserStatus(bus);
+                    System.Console.WriteLine("[Hive] FILE[25] thread ctxPC: " + tag +
+                        " thr=0x" + _tv2Thread.ToString("X8") +
+                        " was=0x" + ctxPc.ToString("X8") +
+                        " now=0x" + resume.ToString("X8") +
+                        " (firmware leftover 0x8001588C; live user RA; not a mapped page 0)");
+                }
+                catch
+                {
+                }
+                return;
+            }
             if (!IsDecompressLeftoverPc(ctxPc) && ctxPc != 0)
                 return;
             try
@@ -3579,9 +3615,11 @@ namespace ProcessorEmulator.Core
                 uint startip = bus.Read32(_tv2Thread + ThreadStartip);
                 uint cur = bus.Read32(CurProc);
                 uint owner = bus.Read32(_tv2Thread + ThreadPrc);
+                uint savedRa = bus.Read32(_tv2Thread + ThreadCtxRa);
                 bool notable = ctxPc == _tv2Startip
                     || ctxPc == ExnAfterFetch
                     || ctxPc == ExnAfterFetch2
+                    || ctxPc == _tv2ImplRa
                     || !_tv2RestoreLogged;
                 if (notable)
                 {
@@ -3592,6 +3630,7 @@ namespace ProcessorEmulator.Core
                         " ctxPC=0x" + ctxPc.ToString("X8") +
                         " +5C=0x" + startip.ToString("X8") +
                         " +0C=0x" + owner.ToString("X8") +
+                        " +DC=0x" + savedRa.ToString("X8") +
                         " CurProc=0x" + cur.ToString("X8"));
                 }
             }
