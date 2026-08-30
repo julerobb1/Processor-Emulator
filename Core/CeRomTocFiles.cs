@@ -156,6 +156,14 @@ namespace ProcessorEmulator.Core
         public const uint ExnVmCheck = 0x80040278;
         public const uint ExnVmCheckMid = 0x80040298;
         public const uint ExnVmCheckEnd = 0x80040400;
+        // wait75: TLB I-fetch 0x03F73380 after startip+4.
+        // Slot 1. Coredll shared is 0x03F5xxxx (IsApiReady
+        // 0x03F73240, CreateThread 0x03F71E04). Not mscoree
+        // 0x014Bxxxx. Switcher 0x800155A4 sw section at
+        // 0xFFFFD8C0. Do not invent a slot map.
+        public const uint CoredllSharedLo = 0x03F50000;
+        public const uint CoredllSharedHi = 0x03FA0000;
+        public const uint KDataSection = 0xFFFFD8C0;
         public const uint ExeVbase = 0x00010000;
         public const uint ProcModule = 0x50;
         public const uint ProcSlot = 0x0C;
@@ -335,6 +343,7 @@ namespace ProcessorEmulator.Core
         private static bool _tv2ContinueLogged;
         private static bool _tv2ExnHelperLogged;
         private static bool _tv2PostFetchExnLogged;
+        private static bool _tv2CoredllLogged;
         private static bool _tv2ProcSwitchLogged;
         private static bool _tv2CurThreadLogged;
         private static bool _tv2RestoreLogged;
@@ -1756,6 +1765,7 @@ namespace ProcessorEmulator.Core
             _tv2ContinueLogged = false;
             _tv2ExnHelperLogged = false;
             _tv2PostFetchExnLogged = false;
+            _tv2CoredllLogged = false;
             _tv2ProcSwitchLogged = false;
             _tv2CurThreadLogged = false;
             _tv2RestoreLogged = false;
@@ -3529,6 +3539,41 @@ namespace ProcessorEmulator.Core
             return va >= 0x014B1000u && va < 0x014D0000u;
         }
 
+        public static bool IsTv2CoredllShared(uint va)
+        {
+            return va >= CoredllSharedLo && va < CoredllSharedHi;
+        }
+
+        private static uint PeekSection(MipsBus bus, uint slot)
+        {
+            if (bus == null || slot > 16)
+                return 0;
+            try
+            {
+                return bus.Read32(KDataSection + (slot * 4));
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
+        private static bool TryPeekWord(MipsBus bus, uint va, out uint word)
+        {
+            word = 0;
+            if (bus == null || va == 0)
+                return false;
+            try
+            {
+                word = bus.Read32(va);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         public static void TryNoteTv2StartipFetch(MipsBus bus, uint pc)
         {
             if (_tv2Startip == 0 || pc != _tv2Startip || _tv2FetchLogged)
@@ -3586,6 +3631,8 @@ namespace ProcessorEmulator.Core
             _tv2ContinueLogged = true;
             uint cur = 0;
             uint curThr = 0;
+            uint word = 0;
+            bool mapped = TryPeekWord(bus, pc, out word);
             try
             {
                 if (bus != null)
@@ -3601,7 +3648,9 @@ namespace ProcessorEmulator.Core
                 " from=0x" + _tv2Startip.ToString("X8") +
                 " CurThread=0x" + curThr.ToString("X8") +
                 " CurProc=0x" + cur.ToString("X8") +
-                " (past first instruction; not TV UI)");
+                " dest-" + (mapped ? "mapped" : "unmapped") +
+                " dest-word=0x" + word.ToString("X8") +
+                " (past first instruction; peek only; not TV UI)");
         }
 
         public static void TryNoteTv2ExnHelper(MipsBus bus, uint[] regs, uint pc)
@@ -3658,6 +3707,21 @@ namespace ProcessorEmulator.Core
             {
             }
             bool startip = IsTv2StartipFault(epc) || IsTv2StartipFault(vaddr);
+            bool coredll = IsTv2CoredllShared(epc) || IsTv2CoredllShared(vaddr);
+            uint va = IsTv2CoredllShared(vaddr) ? vaddr : epc;
+            uint slot = va >> 25;
+            uint sec0 = PeekSection(bus, 0);
+            uint sec1 = PeekSection(bus, 1);
+            uint sec6 = PeekSection(bus, 6);
+            uint destWord = 0;
+            bool mapped = TryPeekWord(bus, va, out destWord);
+            string where;
+            if (startip)
+                where = " (startip/mscoree dest; do not invent dest bytes)";
+            else if (coredll)
+                where = " (coredll shared slot-1; not mscoree; do not invent a slot map)";
+            else
+                where = " (after I-fetch; 0x80040278 is switcher VM check)";
             System.Console.WriteLine("[Hive] FILE[25] post-fetch exception code=" +
                 code +
                 " epc=0x" + epc.ToString("X8") +
@@ -3665,9 +3729,54 @@ namespace ProcessorEmulator.Core
                 " vec=0x" + vector.ToString("X8") +
                 " CurThread=0x" + curThr.ToString("X8") +
                 " CurProc=0x" + cur.ToString("X8") +
-                (startip
-                    ? " (startip/mscoree dest; do not invent dest bytes)"
-                    : " (after I-fetch; 0x80040278 is switcher VM check)"));
+                " slot=" + slot +
+                " dest-" + (mapped ? "mapped" : "unmapped") +
+                " dest-word=0x" + destWord.ToString("X8") +
+                " sec0=0x" + sec0.ToString("X8") +
+                " sec1=0x" + sec1.ToString("X8") +
+                " sec6=0x" + sec6.ToString("X8") +
+                where);
+        }
+
+        public static void TryNoteTv2CoredllFetch(MipsBus bus, uint pc)
+        {
+            if (!_tv2FetchLogged || _tv2CoredllLogged || !IsTv2CoredllShared(pc))
+                return;
+            _tv2CoredllLogged = true;
+            uint cur = 0;
+            uint curThr = 0;
+            uint procSlot = 0;
+            uint word = 0;
+            bool mapped = TryPeekWord(bus, pc, out word);
+            uint slot = pc >> 25;
+            uint sec0 = PeekSection(bus, 0);
+            uint sec1 = PeekSection(bus, 1);
+            uint sec6 = PeekSection(bus, 6);
+            try
+            {
+                if (bus != null)
+                    cur = bus.Read32(CurProc);
+                if (bus != null)
+                    curThr = bus.Read32(ThreadPtr);
+                if (bus != null && _tv2Proc != 0)
+                    procSlot = bus.Read32(_tv2Proc + ProcSlot);
+            }
+            catch
+            {
+            }
+            System.Console.WriteLine("[Hive] FILE[25] I-fetch coredll=0x" +
+                pc.ToString("X8") +
+                " page=0x" + (pc & ~0xFFFu).ToString("X8") +
+                " slot=" + slot +
+                " CurThread=0x" + curThr.ToString("X8") +
+                " CurProc=0x" + cur.ToString("X8") +
+                " proc+0C=0x" + procSlot.ToString("X8") +
+                " dest-" + (mapped ? "mapped" : "unmapped") +
+                " dest-word=0x" + word.ToString("X8") +
+                " sec0=0x" + sec0.ToString("X8") +
+                " sec1=0x" + sec1.ToString("X8") +
+                " sec6=0x" + sec6.ToString("X8") +
+                " (coredll shared 0x03F5xxxx; not mscoree; peek only; do not invent a slot map)");
         }
 
         public static void TryNoteTv2ProcSwitch(MipsBus bus)
