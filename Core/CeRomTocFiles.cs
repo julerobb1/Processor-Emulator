@@ -179,6 +179,12 @@ namespace ProcessorEmulator.Core
         public const uint ThreadSwitchProcStore = 0x80015570;
         public const uint ExnAfterFetch = 0x8001588C;
         public const uint ExnAfterFetch2 = 0x80015B9C;
+        // leftover 0x800159A8 jal 0x800397B0 then
+        // 0x800159B4 or $ra,$v0,$0. wait99: that jal
+        // returned -1 so EPC became 0xFFFFFFFF.
+        // 0x80015A08 mtc0 $t4,EPC; 0x80015A24 ERET.
+        public const uint LeftoverOrRa = 0x800159B4;
+        public const uint LeftoverContinue = 0x03F6CAF0;
         // wait74: after I-fetch, ctxPC=0x80040298 then
         // ThreadExceptionExit. 0x800154EC beq a1,0 skips
         // jal 0x80020D80; that jal 0x80040278. 0x80040298
@@ -419,6 +425,7 @@ namespace ProcessorEmulator.Core
         private static bool _tv2LeftoverCae8Logged;
         private static bool _tv2LeftoverSkipLogged;
         private static bool _tv2LeftoverCaf0Logged;
+        private static bool _tv2LeftoverEretLogged;
         private static bool _tv2GwesFetchLogged;
         private static bool _tv2GwesContLogged;
         private static bool _tv2MscoreeSlotLogged;
@@ -1900,6 +1907,7 @@ namespace ProcessorEmulator.Core
             _tv2LeftoverCae8Logged = false;
             _tv2LeftoverSkipLogged = false;
             _tv2LeftoverCaf0Logged = false;
+            _tv2LeftoverEretLogged = false;
             _tv2GwesFetchLogged = false;
             _tv2GwesContLogged = false;
             _tv2MscoreeSlotLogged = false;
@@ -3636,6 +3644,43 @@ namespace ProcessorEmulator.Core
                 " v0=0x" + liveV0.ToString("X8") +
                 " t9=0x" + liveT9.ToString("X8") +
                 " (firmware leftover still mid 0x8001586C; 0x80015A24 ERET uses $v0 not ctxPC; do not skip 0x03F6CAC0 to 28($sp); do not yank startip; not dest 0xE4DA9AA4; not a mapped page 0)");
+        }
+
+        // wait99: leftover skip-resume left firmware at
+        // 0x8001588C. jal 0x800397B0 returned -1.
+        // 0x800159B4 or $ra,$v0,$0 then mtc0 $t4,EPC
+        // set EPC/ra to 0xFFFFFFFF. Not a real CE jump.
+        // Before that or, set $v0 to leftover continue
+        // 0x03F6CAF0 after dest peek. Leftover ERET
+        // 0x80015A24 then returns to that insn. Do not
+        // rewrite 0x80015B9C. Do not rewind 0x03F6CAC0.
+        // Do not skip to 28($sp). Do not invent dest.
+        public static void TryRestoreTv2LeftoverEret(MipsBus bus, uint[] regs, uint pc)
+        {
+            if (!_tv2LeftoverCae8Logged || !_tv2LeftoverSkipLogged)
+                return;
+            if (pc != LeftoverOrRa)
+                return;
+            if (regs == null || regs.Length <= 31)
+                return;
+            uint v0 = regs[2];
+            if (IsFirmwareUserOrCoredllVa(v0) && v0 != 0)
+                return;
+            uint dest = LeftoverContinue;
+            uint word = 0;
+            if (!TryPeekWord(bus, dest, out word))
+                return;
+            if ((dest & 0x1FFFFFFFu) < 0x00010000u)
+                return;
+            regs[2] = dest;
+            if (_tv2LeftoverEretLogged)
+                return;
+            _tv2LeftoverEretLogged = true;
+            System.Console.WriteLine("[Hive] FILE[25] leftover eret-restore was-v0=0x" +
+                v0.ToString("X8") +
+                " dest=0x" + dest.ToString("X8") +
+                " dest-word=0x" + word.ToString("X8") +
+                " (jal 0x800397B0 returned -1; leftover or $ra,$v0; do not rewrite 0x80015B9C; do not rewind 0x03F6CAC0; not TV UI)");
         }
 
         public static void TryKeepTv2ThreadCtx(MipsBus bus, string tag)
