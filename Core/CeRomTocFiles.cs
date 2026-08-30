@@ -3665,6 +3665,12 @@ namespace ProcessorEmulator.Core
         {
             if (_coredllMapBusy || bus == null || !IsTv2CoredllShared(va))
                 return va;
+            // wait77 code 0x03F5xxxx-0x03FA0000 is safe from
+            // first I-fetch. 0x03FDxxxx during NK CallDLL hung
+            // OEMIdle before filesys. Walk those pages only
+            // after tv2 startip. Not a static 0x03FD0000 map.
+            if (va >= 0x03FA0000u && !_tv2FetchLogged)
+                return va;
             uint sec = _coredllLiveSec != 0 ? _coredllLiveSec : PeekSection(bus, 1);
             if (sec == 0)
                 return va;
@@ -3975,12 +3981,7 @@ namespace ProcessorEmulator.Core
         {
             if (!_tv2FetchLogged || !_coredllHighLogged || _tv2HighContLogged)
                 return;
-            if (pc == BindImpNameWalk)
-                return;
-            bool afterLoad = pc == BindImpNameWalk + 4;
-            bool backExe = pc >= 0x014B1000u && pc < 0x014D0000u;
-            bool backCode = pc >= CoredllSharedLo && pc < 0x03FA0000u;
-            if (!afterLoad && !backExe && !backCode)
+            if (pc != BindImpNameWalk + 4)
                 return;
             _tv2HighContLogged = true;
             uint cur = 0;
