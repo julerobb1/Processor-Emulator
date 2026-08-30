@@ -388,6 +388,7 @@ namespace ProcessorEmulator.Core
         private static bool _tv2AfterExnContLogged;
         private static bool _pteMapBusy;
         private static bool _pteMapLogged;
+        private static bool _slot2MapLogged;
         private static bool _tv2CoredllLogged;
         private static bool _tv2CoredllContLogged;
         private static uint _coredllLiveSec;
@@ -412,6 +413,7 @@ namespace ProcessorEmulator.Core
         private static bool _tv2LeftoverStoreFrame;
         private static bool _tv2StoreFrameLogged;
         private static bool _tv2LeftoverLiveLogged;
+        private static bool _tv2LeftoverPastLogged;
         private static bool _tv2MscoreeSlotLogged;
         private static bool _coredllMapBusy;
         private static bool _tv2ProcSwitchLogged;
@@ -1860,6 +1862,7 @@ namespace ProcessorEmulator.Core
             _tv2AfterExnContLogged = false;
             _pteMapBusy = false;
             _pteMapLogged = false;
+            _slot2MapLogged = false;
             _tv2CoredllLogged = false;
             _tv2CoredllContLogged = false;
             _coredllLiveSec = 0;
@@ -1884,6 +1887,7 @@ namespace ProcessorEmulator.Core
             _tv2LeftoverStoreFrame = false;
             _tv2StoreFrameLogged = false;
             _tv2LeftoverLiveLogged = false;
+            _tv2LeftoverPastLogged = false;
             _tv2MscoreeSlotLogged = false;
             _coredllMapBusy = false;
             _tv2ProcSwitchLogged = false;
@@ -4292,7 +4296,11 @@ namespace ProcessorEmulator.Core
         // general path built a frame at sp-248 (0x0C03E930)
         // and jal 0x80040278. Walk that VA's live section.
         // Slot 1 is coredll. Slot 6 is tv2 proc+0C.
-        // Do not invent a static slot map.
+        // Slot 2 (filesys) after leftover live-pc only: wait95
+        // dest-unmapped 0x0407F6DC while dest 0x86FAA6DC already
+        // holds 0x86FA5000 (pte-live). wait77 walked slot-2 after
+        // store-continue and hung in OEMIdle.
+        // Do not invent dest. Do not invent a static slot map.
         public static uint MapFirmwareSlotVa(MipsBus bus, uint va)
         {
             if (_pteMapBusy || bus == null || _tv2ImplRa == 0)
@@ -4302,7 +4310,8 @@ namespace ProcessorEmulator.Core
             if (IsTv2CoredllShared(va))
                 return va;
             uint slot = va >> 25;
-            if (slot != 1 && slot != 6)
+            bool walkSlot2 = slot == 2 && _tv2LeftoverLiveLogged;
+            if (slot != 1 && slot != 6 && !walkSlot2)
                 return va;
             uint sec = PeekSection(bus, slot);
             if (sec == 0)
@@ -4319,7 +4328,23 @@ namespace ProcessorEmulator.Core
                 uint dest = kseg | (va & 0xFFFu);
                 if (dest == va)
                     return va;
-                if (!_pteMapLogged)
+                if (walkSlot2 && !_slot2MapLogged)
+                {
+                    uint word = 0;
+                    TryPeekWord(bus, dest, out word);
+                    _slot2MapLogged = true;
+                    _pteMapLogged = true;
+                    System.Console.WriteLine("[Hive] FILE[25] slot-2 PTE 0x" +
+                        va.ToString("X8") + " -> 0x" + dest.ToString("X8") +
+                        " slot=" + slot +
+                        " sec=0x" + sec.ToString("X8") +
+                        " l1=0x" + l1.ToString("X8") +
+                        " l2=0x" + l2.ToString("X8") +
+                        " pfn=0x" + pfn.ToString("X8") +
+                        " dest-word=0x" + word.ToString("X8") +
+                        " (filesys leftover-live; firmware 0x80040278; dest already expanded; do not invent dest bytes)");
+                }
+                else if (!_pteMapLogged)
                 {
                     uint word = 0;
                     TryPeekWord(bus, dest, out word);
@@ -4851,6 +4876,36 @@ namespace ProcessorEmulator.Core
                 " sp=0x" + sp.ToString("X8") +
                 " s7=0x" + s7.ToString("X8") +
                 " (past leftover $sp store; firmware thread+0x24; not dest 0xE4DA9AA4; not TV UI)");
+        }
+
+        public static void TryNoteTv2LeftoverPast(MipsBus bus, uint pc)
+        {
+            if (!_tv2LeftoverLiveLogged || _tv2LeftoverPastLogged)
+                return;
+            if (pc != 0x03F6CAC4u)
+                return;
+            _tv2LeftoverPastLogged = true;
+            uint word = 0;
+            bool mapped = TryPeekWord(bus, pc, out word);
+            uint cur = 0;
+            uint curThr = 0;
+            try
+            {
+                if (bus != null)
+                    cur = bus.Read32(CurProc);
+                if (bus != null)
+                    curThr = bus.Read32(ThreadPtr);
+            }
+            catch
+            {
+            }
+            System.Console.WriteLine("[Hive] FILE[25] leftover past pc=0x" +
+                pc.ToString("X8") +
+                " from=0x03F6CAC0 CurThread=0x" + curThr.ToString("X8") +
+                " CurProc=0x" + cur.ToString("X8") +
+                " dest-" + (mapped ? "mapped" : "unmapped") +
+                " dest-word=0x" + word.ToString("X8") +
+                " (past leftover sw $fp,16($sp); do not skip to 28($sp); not TV UI)");
         }
 
         public static void TryNoteTv2ZeroDestContinue(MipsBus bus, uint pc)
