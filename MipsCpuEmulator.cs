@@ -629,6 +629,7 @@ namespace ProcessorEmulator.Emulation
 
         private void ExecuteDelaySlotThenJump(uint target)
         {
+            CeRomTocFiles.TryRestoreTv2CorExeMainFetch(_bus, ref target);
             if (_inDelaySlot)
             {
                 programCounter = target;
@@ -640,6 +641,7 @@ namespace ProcessorEmulator.Emulation
             {
                 uint delayInstr = FetchInstruction();
                 DecodeAndExecute(delayInstr);
+                CeRomTocFiles.TryRestoreTv2CorExeMainFetch(_bus, ref target);
                 programCounter = target;
             }
             catch (TlbMissException ex)

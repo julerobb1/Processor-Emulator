@@ -4308,13 +4308,16 @@ namespace ProcessorEmulator.Core
             if (!_tv2FetchLogged || !_tv2StoreContLogged)
                 return;
             uint slot0 = pc & SlotMask;
-            if (slot0 != 0x014B7DA8u)
+            // wait92: TriggerException EPC is PC+4. RI
+            // epc 0x034B7DA8 is the fetch of 0x034B7DA4
+            // in the Vers-data blob (rva7D7C=0x73726556).
+            if (slot0 < 0x014B7D70u || slot0 > 0x014B7DB0u)
                 return;
             uint word = 0;
             if (!TryPeekWord(bus, pc, out word))
                 return;
             uint op = word >> 26;
-            if (op != 0x18u && op != 0x1Cu)
+            if (op < 0x18u || op > 0x1Fu)
                 return;
             uint startip = _tv2Startip != 0 ? _tv2Startip : 0x014B9D98u;
             if (startip == 0 || startip == pc)
