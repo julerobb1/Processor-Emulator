@@ -3651,20 +3651,22 @@ namespace ProcessorEmulator.Core
                 " (firmware leftover still mid 0x8001586C; 0x80015A24 ERET uses $v0 not ctxPC; do not skip 0x03F6CAC0 to 28($sp); do not yank startip; not dest 0xE4DA9AA4; not a mapped page 0)");
         }
 
-        // wait99: leftover skip-resume left firmware at
-        // 0x8001588C. jal 0x800397B0 returned -1.
+        // wait99: leftover still mid 0x8001586C after
+        // leftover-CAE8. jal 0x800397B0 returned -1.
         // 0x800159B4 or $ra,$v0,$0 then mtc0 $t4,EPC
-        // set EPC/ra to 0xFFFFFFFF. Not a real CE jump.
-        // Before that or, set $v0 to leftover continue
-        // 0x03F6CAF0 after dest peek. Leftover ERET
-        // 0x80015A24 then returns to that insn. Do not
-        // rewrite 0x80015B9C. Do not rewind 0x03F6CAC0.
-        // Do not skip to 28($sp). Do not invent dest.
+        // set EPC/ra to 0xFFFFFFFF. That or can run
+        // before the skip-resume I-fetch log. After
+        // leftover-CAE8, set $v0/$t4 to leftover
+        // continue 0x03F6CAF0 after dest peek.
+        // Leftover ERET 0x80015A24 then returns to
+        // that insn. Do not rewrite 0x80015B9C. Do
+        // not rewind 0x03F6CAC0. Do not skip to
+        // 28($sp). Do not invent dest.
         public static void TryRestoreTv2LeftoverEret(MipsBus bus, uint[] regs, uint pc)
         {
             if (_tv2LeftoverEretLogged)
                 return;
-            if (!_tv2LeftoverCae8Logged || !_tv2LeftoverSkipLogged)
+            if (!_tv2LeftoverCae8Logged)
                 return;
             if (pc != LeftoverOrRa && pc != LeftoverMtc0Epc)
                 return;
