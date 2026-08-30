@@ -188,6 +188,12 @@ namespace ProcessorEmulator.Core
         public const uint LeftoverJrRa = 0x80015A28;
         public const uint LeftoverEret = 0x80015A24;
         public const uint LeftoverContinue = 0x03F6CAF0;
+        // wait100: leftover jr to CAF0 (nop delay of
+        // beq $v0,$0,+12 at CAEC). Fallthrough CAF4
+        // with the beq skipped I-fetched 0. Taken
+        // target is CAFC. Do not map page 0.
+        public const uint LeftoverAfterCaf0 = 0x03F6CAF4;
+        public const uint LeftoverBeqTaken = 0x03F6CAFC;
         // wait74: after I-fetch, ctxPC=0x80040298 then
         // ThreadExceptionExit. 0x800154EC beq a1,0 skips
         // jal 0x80020D80; that jal 0x80040278. 0x80040298
@@ -430,6 +436,14 @@ namespace ProcessorEmulator.Core
         private static bool _tv2LeftoverCaf0Logged;
         private static bool _tv2LeftoverCaf0Peeked;
         private static uint _tv2LeftoverCaf0Word;
+        private static bool _tv2LeftoverCae8V0Set;
+        private static uint _tv2LeftoverCae8V0;
+        private static bool _tv2LeftoverCaf4Peeked;
+        private static uint _tv2LeftoverCaf4Word;
+        private static bool _tv2LeftoverCafcPeeked;
+        private static uint _tv2LeftoverCafcWord;
+        private static bool _tv2LeftoverAfterCaf0Logged;
+        private static bool _tv2LeftoverPastAfterLogged;
         private static bool _tv2LeftoverEretLogged;
         private static bool _tv2GwesFetchLogged;
         private static bool _tv2GwesContLogged;
@@ -1914,6 +1928,14 @@ namespace ProcessorEmulator.Core
             _tv2LeftoverCaf0Logged = false;
             _tv2LeftoverCaf0Peeked = false;
             _tv2LeftoverCaf0Word = 0;
+            _tv2LeftoverCae8V0Set = false;
+            _tv2LeftoverCae8V0 = 0;
+            _tv2LeftoverCaf4Peeked = false;
+            _tv2LeftoverCaf4Word = 0;
+            _tv2LeftoverCafcPeeked = false;
+            _tv2LeftoverCafcWord = 0;
+            _tv2LeftoverAfterCaf0Logged = false;
+            _tv2LeftoverPastAfterLogged = false;
             _tv2LeftoverEretLogged = false;
             _tv2GwesFetchLogged = false;
             _tv2GwesContLogged = false;
@@ -3739,6 +3761,86 @@ namespace ProcessorEmulator.Core
             return (dest & 0x1FFFFFFFu) >= 0x00010000u;
         }
 
+        // wait100: leftover jr to CAF0 executed the nop
+        // delay and fell through, skipping beq at CAEC.
+        // I-fetch 0. Not leftover mid 0x8001586C. Not
+        // jr $ra ra=0 (ra was 0x03F6CB08). After CAF0,
+        // continue at CAFC if leftover-CAE8 $v0==0 else
+        // CAF4. Dest peek only. Do not map page 0.
+        public static void TryResumeTv2LeftoverAfterCaf0(MipsBus bus, uint[] regs, ref uint pc)
+        {
+            if (_tv2LeftoverAfterCaf0Logged)
+                return;
+            if (!_tv2LeftoverCae8Logged)
+                return;
+            if (pc != LeftoverContinue)
+                return;
+            uint dest = 0;
+            uint word = 0;
+            bool live = false;
+            if (!TryResolveLeftoverAfterCaf0(bus, out dest, out word, out live))
+                return;
+            pc = dest;
+            _tv2LeftoverAfterCaf0Logged = true;
+            uint v0 = _tv2LeftoverCae8V0Set ? _tv2LeftoverCae8V0 : 0xFFFFFFFFu;
+            System.Console.WriteLine("[Hive] FILE[25] leftover after-caf0 was=0x03F6CAF0 now=0x" +
+                dest.ToString("X8") +
+                " dest-word=0x" + word.ToString("X8") +
+                (live ? " dest-live" : " dest-cae8") +
+                " cae8-v0=0x" + v0.ToString("X8") +
+                " (dest nop then fallthrough skipped beq $v0,$0,+12; do not map page 0; do not rewind 0x03F6CAC0; not TV UI)");
+        }
+
+        private static bool TryResolveLeftoverAfterCaf0(MipsBus bus, out uint dest, out uint word, out bool live)
+        {
+            dest = 0;
+            word = 0;
+            live = false;
+            uint prefer = LeftoverAfterCaf0;
+            uint other = LeftoverBeqTaken;
+            if (_tv2LeftoverCae8V0Set && _tv2LeftoverCae8V0 == 0)
+            {
+                prefer = LeftoverBeqTaken;
+                other = LeftoverAfterCaf0;
+            }
+            if (TryAcceptLeftoverAfterDest(bus, prefer, out dest, out word, out live))
+                return true;
+            return TryAcceptLeftoverAfterDest(bus, other, out dest, out word, out live);
+        }
+
+        private static bool TryAcceptLeftoverAfterDest(MipsBus bus, uint va, out uint dest, out uint word, out bool live)
+        {
+            dest = va;
+            word = 0;
+            live = TryPeekWord(bus, va, out word);
+            if (!live)
+            {
+                if (va == LeftoverAfterCaf0 && _tv2LeftoverCaf4Peeked)
+                    word = _tv2LeftoverCaf4Word;
+                else if (va == LeftoverBeqTaken && _tv2LeftoverCafcPeeked)
+                    word = _tv2LeftoverCafcWord;
+                else
+                    return false;
+            }
+            if ((va & 0x1FFFFFFFu) < 0x00010000u)
+                return false;
+            if (word == 0 || IsFirmwareJumpToZero(word))
+                return false;
+            return true;
+        }
+
+        private static bool IsFirmwareJumpToZero(uint word)
+        {
+            uint op = word >> 26;
+            uint rs = (word >> 21) & 31;
+            uint funct = word & 63;
+            if (op == 0 && rs == 0 && (funct == 8 || funct == 9))
+                return true;
+            if (op == 2 && (word & 0x3FFFFFFu) == 0)
+                return true;
+            return false;
+        }
+
         public static void TryKeepTv2ThreadCtx(MipsBus bus, string tag)
         {
             if (!_tv2FileDestOn || bus == null || _tv2Thread == 0)
@@ -5114,13 +5216,18 @@ namespace ProcessorEmulator.Core
                 " (past leftover sw $fp,16($sp); do not skip to 28($sp); not TV UI)");
         }
 
-        public static void TryNoteTv2LeftoverPastCae8(MipsBus bus, uint pc)
+        public static void TryNoteTv2LeftoverPastCae8(MipsBus bus, uint[] regs, uint pc)
         {
             if (!_tv2LeftoverPastLogged || _tv2LeftoverCae8Logged)
                 return;
             if (pc != 0x03F6CAECu)
                 return;
             _tv2LeftoverCae8Logged = true;
+            if (regs != null && regs.Length > 2)
+            {
+                _tv2LeftoverCae8V0Set = true;
+                _tv2LeftoverCae8V0 = regs[2];
+            }
             uint word = 0;
             bool mapped = TryPeekWord(bus, pc, out word);
             uint nextWord = 0;
@@ -5129,6 +5236,20 @@ namespace ProcessorEmulator.Core
             {
                 _tv2LeftoverCaf0Peeked = true;
                 _tv2LeftoverCaf0Word = nextWord;
+            }
+            uint caf4 = 0;
+            if (TryPeekWord(bus, LeftoverAfterCaf0, out caf4)
+                && (LeftoverAfterCaf0 & 0x1FFFFFFFu) >= 0x00010000u)
+            {
+                _tv2LeftoverCaf4Peeked = true;
+                _tv2LeftoverCaf4Word = caf4;
+            }
+            uint cafc = 0;
+            if (TryPeekWord(bus, LeftoverBeqTaken, out cafc)
+                && (LeftoverBeqTaken & 0x1FFFFFFFu) >= 0x00010000u)
+            {
+                _tv2LeftoverCafcPeeked = true;
+                _tv2LeftoverCafcWord = cafc;
             }
             uint cur = 0;
             uint curThr = 0;
@@ -5149,6 +5270,9 @@ namespace ProcessorEmulator.Core
                 " dest-" + (mapped ? "mapped" : "unmapped") +
                 " dest-word=0x" + word.ToString("X8") +
                 " next=0x03F6CAF0 next-word=0x" + nextWord.ToString("X8") +
+                " caf4-word=0x" + caf4.ToString("X8") +
+                " cafc-word=0x" + cafc.ToString("X8") +
+                " v0=0x" + (_tv2LeftoverCae8V0Set ? _tv2LeftoverCae8V0.ToString("X8") : "unset") +
                 " (past leftover lw $v0,0($s6); do not skip to 28($sp); not page 0; not TV UI)");
         }
 
@@ -5180,6 +5304,36 @@ namespace ProcessorEmulator.Core
                 " dest-" + (mapped ? "mapped" : "unmapped") +
                 " dest-word=0x" + word.ToString("X8") +
                 " (past leftover beq $v0,$0,+12; do not rewind 0x03F6CAC0; do not skip to 28($sp); not TV UI)");
+        }
+
+        public static void TryNoteTv2LeftoverPastAfterCaf0(MipsBus bus, uint pc)
+        {
+            if (!_tv2LeftoverAfterCaf0Logged || _tv2LeftoverPastAfterLogged)
+                return;
+            if (pc != LeftoverAfterCaf0 && pc != LeftoverBeqTaken)
+                return;
+            _tv2LeftoverPastAfterLogged = true;
+            uint word = 0;
+            bool mapped = TryPeekWord(bus, pc, out word);
+            uint cur = 0;
+            uint curThr = 0;
+            try
+            {
+                if (bus != null)
+                    cur = bus.Read32(CurProc);
+                if (bus != null)
+                    curThr = bus.Read32(ThreadPtr);
+            }
+            catch
+            {
+            }
+            System.Console.WriteLine("[Hive] FILE[25] leftover past pc=0x" +
+                pc.ToString("X8") +
+                " from=0x03F6CAF0 CurThread=0x" + curThr.ToString("X8") +
+                " CurProc=0x" + cur.ToString("X8") +
+                " dest-" + (mapped ? "mapped" : "unmapped") +
+                " dest-word=0x" + word.ToString("X8") +
+                " (past leftover CAF0 nop; do not map page 0; do not rewind 0x03F6CAC0; not TV UI)");
         }
 
         public static void TryNoteTv2GwesFetch(MipsBus bus, uint pc)
