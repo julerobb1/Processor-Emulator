@@ -398,6 +398,7 @@ namespace ProcessorEmulator.Core
         private static bool _tv2ZeroContLogged;
         private static bool _tv2HighContLogged;
         private static uint _tv2ImplRa;
+        private static uint _tv2ImplResume;
         private static uint _tv2ImplEpc;
         private static uint _tv2ImplK1Before;
         private static bool _tv2ImplContLogged;
@@ -1842,6 +1843,7 @@ namespace ProcessorEmulator.Core
             _tv2ZeroContLogged = false;
             _tv2HighContLogged = false;
             _tv2ImplRa = 0;
+            _tv2ImplResume = 0;
             _tv2ImplEpc = 0;
             _tv2ImplK1Before = 0;
             _tv2ImplContLogged = false;
@@ -3553,13 +3555,20 @@ namespace ProcessorEmulator.Core
             // after 0x800397B0, then 0x80015A28
             // jr $ra. +DC was 0x03F70830 (live);
             // that or left ra=0. I-fetch 0. Do not
-            // keep leftover. Resume user RA; after
-            // continue also restore s7=0x5800 so
-            // 0x03F6C8F4 lw 0($s7) is not vaddr=0.
-            // Do not map page 0.
+            // keep leftover. wait85: resume user
+            // RA 0x03F6C8F4. wait86: first pass
+            // already continued 0x03F6CAC0 with
+            // slot-6 $sp; leftover rewrite to
+            // 0x03F6C8F4 rewound and live $sp
+            // became 0xE4DA9A88. Firmware would
+            // not ERET that leftover after user
+            // continued. Resume last continued
+            // user PC. Do not map page 0.
             if (IsExnDispatchLeftover(ctxPc) && _tv2FetchLogged)
             {
-                uint resume = _tv2ImplRa != 0 ? _tv2ImplRa : startip;
+                uint resume = _tv2ImplResume != 0
+                    ? _tv2ImplResume
+                    : (_tv2ImplRa != 0 ? _tv2ImplRa : startip);
                 if (resume == 0 || resume == ctxPc)
                     return;
                 try
@@ -3575,9 +3584,11 @@ namespace ProcessorEmulator.Core
                             " thr=0x" + _tv2Thread.ToString("X8") +
                             " was=0x" + ctxPc.ToString("X8") +
                             " now=0x" + resume.ToString("X8") +
-                            (_tv2ImplContLogged
+                            (_tv2StoreContLogged
+                                ? " (firmware leftover 0x8001588C; after 0x03F6CAC0; do not rewind 0x03F6C8F4; not dest 0xE4DA9AA4; not a mapped page 0)"
+                                : (_tv2ImplContLogged
                                 ? " (firmware leftover 0x8001588C; after implicit-api continue; do not keep jr $ra; s7=0x5800; not a mapped page 0)"
-                                : " (firmware leftover 0x8001588C; live user RA; not a mapped page 0)"));
+                                : " (firmware leftover 0x8001588C; live user RA; not a mapped page 0)")));
                     }
                 }
                 catch
@@ -3690,7 +3701,8 @@ namespace ProcessorEmulator.Core
             {
                 return;
             }
-            if (!IsFirmwareUserSlotVa(stack))
+            uint src = IsFirmwareUserSlotVa(saved) ? saved : stack;
+            if (!IsFirmwareUserSlotVa(src))
                 return;
             uint live = regs != null && regs.Length > 29 ? regs[29] : 0;
             bool fixLive = regs != null && regs.Length > 29 && !IsFirmwareUserSlotVa(live);
@@ -3698,12 +3710,12 @@ namespace ProcessorEmulator.Core
             if (!fixLive && !fixSaved)
                 return;
             if (fixLive)
-                regs[29] = stack;
+                regs[29] = src;
             if (fixSaved)
             {
                 try
                 {
-                    bus.Write32(_tv2Thread + ThreadCtxSp, stack);
+                    bus.Write32(_tv2Thread + ThreadCtxSp, src);
                 }
                 catch
                 {
@@ -3713,7 +3725,7 @@ namespace ProcessorEmulator.Core
                 return;
             _tv2UserSpLogged = true;
             System.Console.WriteLine("[Hive] FILE[25] thread +D4: user sp=0x" +
-                stack.ToString("X8") +
+                src.ToString("X8") +
                 " live=0x" + live.ToString("X8") +
                 " saved=0x" + saved.ToString("X8") +
                 " thr=0x" + _tv2Thread.ToString("X8") +
@@ -4464,6 +4476,8 @@ namespace ProcessorEmulator.Core
             if (pc != _tv2ImplRa)
                 return;
             _tv2ImplContLogged = true;
+            if (_tv2ImplRa != 0)
+                _tv2ImplResume = _tv2ImplRa;
             TryKeepTv2UserS7(bus, regs);
             TryKeepTv2UserSp(bus, regs);
             uint cur = 0;
@@ -4500,6 +4514,8 @@ namespace ProcessorEmulator.Core
             if (_tv2ImplRa == 0 || pc != _tv2ImplRa + 4)
                 return;
             _tv2ImplPastLogged = true;
+            if (_tv2ImplRa != 0)
+                _tv2ImplResume = _tv2ImplRa + 4;
             TryKeepTv2UserS7(bus, regs);
             TryKeepTv2UserSp(bus, regs);
             uint cur = 0;
@@ -4536,6 +4552,7 @@ namespace ProcessorEmulator.Core
             if (pc != 0x03F6CAC0u)
                 return;
             _tv2StoreContLogged = true;
+            _tv2ImplResume = pc;
             uint cur = 0;
             uint curThr = 0;
             uint sp = regs != null && regs.Length > 29 ? regs[29] : 0;
