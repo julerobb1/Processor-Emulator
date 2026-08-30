@@ -184,6 +184,7 @@ namespace ProcessorEmulator.Core
         // returned -1 so EPC became 0xFFFFFFFF.
         // 0x80015A08 mtc0 $t4,EPC; 0x80015A24 ERET.
         public const uint LeftoverOrRa = 0x800159B4;
+        public const uint LeftoverMtc0Epc = 0x80015A08;
         public const uint LeftoverContinue = 0x03F6CAF0;
         // wait74: after I-fetch, ctxPC=0x80040298 then
         // ThreadExceptionExit. 0x800154EC beq a1,0 skips
@@ -3661,27 +3662,16 @@ namespace ProcessorEmulator.Core
         // Do not skip to 28($sp). Do not invent dest.
         public static void TryRestoreTv2LeftoverEret(MipsBus bus, uint[] regs, uint pc)
         {
+            if (_tv2LeftoverEretLogged)
+                return;
             if (!_tv2LeftoverCae8Logged || !_tv2LeftoverSkipLogged)
                 return;
-            if (pc != LeftoverOrRa)
+            if (pc != LeftoverOrRa && pc != LeftoverMtc0Epc)
                 return;
             if (regs == null || regs.Length <= 31)
                 return;
-            if (_tv2Thread == 0)
-                return;
-            uint curThr = 0;
-            try
-            {
-                if (bus != null)
-                    curThr = bus.Read32(ThreadPtr);
-            }
-            catch
-            {
-            }
-            if (curThr != _tv2Thread)
-                return;
-            uint v0 = regs[2];
-            if (IsFirmwareUserOrCoredllVa(v0) && v0 != 0)
+            uint was = pc == LeftoverOrRa ? regs[2] : regs[12];
+            if (IsFirmwareUserOrCoredllVa(was) && was != 0)
                 return;
             uint dest = LeftoverContinue;
             uint word = 0;
@@ -3694,16 +3684,21 @@ namespace ProcessorEmulator.Core
             }
             if ((dest & 0x1FFFFFFFu) < 0x00010000u)
                 return;
-            regs[2] = dest;
-            if (_tv2LeftoverEretLogged)
-                return;
+            if (pc == LeftoverOrRa)
+                regs[2] = dest;
+            else
+            {
+                regs[12] = dest;
+                regs[31] = dest;
+            }
             _tv2LeftoverEretLogged = true;
-            System.Console.WriteLine("[Hive] FILE[25] leftover eret-restore was-v0=0x" +
-                v0.ToString("X8") +
+            System.Console.WriteLine("[Hive] FILE[25] leftover eret-restore was=0x" +
+                was.ToString("X8") +
+                " at=0x" + pc.ToString("X8") +
                 " dest=0x" + dest.ToString("X8") +
                 " dest-word=0x" + word.ToString("X8") +
                 (live ? " dest-live" : " dest-cae8") +
-                " (jal 0x800397B0 returned -1; leftover or $ra,$v0; do not rewrite 0x80015B9C; do not rewind 0x03F6CAC0; not TV UI)");
+                " (jal 0x800397B0 returned -1; leftover ERET dest; do not rewrite 0x80015B9C; do not rewind 0x03F6CAC0; not TV UI)");
         }
 
         public static void TryKeepTv2ThreadCtx(MipsBus bus, string tag)
