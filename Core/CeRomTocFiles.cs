@@ -136,6 +136,18 @@ namespace ProcessorEmulator.Core
         public const uint ThreadCtxPc = 0xEC;
         public const uint ThreadStartip = 0x5C;
         public const uint ThreadCtxSr = 0xF0;
+        // 0x800397B0 stores +F0=3 when the syscall
+        // frame is kernel, +F0=0x13 when it is user
+        // (0x8003980C addiu $v0, $0, 19). 0x8001589C
+        // andi Status, 0x10: bit 4 takes the user
+        // frame/ERET path. 3 skips that and 0x80015A28
+        // jr $ra of *(thread+0x18)+4. wait81 that
+        // return was 0, I-fetch 0, ra=0. Not a null
+        // user RA (that was 0x03F6C8F4). Do not map
+        // page 0.
+        public const uint ThreadCtxSrKernel = 3;
+        public const uint ThreadCtxSrUser = 0x13;
+        public const uint ThreadSyscallFrame = 0x18;
         public const uint ThreadPrc = 0x0C;
         // 0x8001554C beq s0, v0, 0x800155A8 skips CurProc
         // update when the same thread is rescheduled.
@@ -366,8 +378,11 @@ namespace ProcessorEmulator.Core
         private static bool _tv2ZeroContLogged;
         private static bool _tv2HighContLogged;
         private static uint _tv2ImplRa;
+        private static uint _tv2ImplEpc;
         private static uint _tv2ImplK1Before;
         private static bool _tv2ImplContLogged;
+        private static bool _tv2ImplPastLogged;
+        private static bool _tv2UserSrLogged;
         private static bool _coredllMapBusy;
         private static bool _tv2ProcSwitchLogged;
         private static bool _tv2CurThreadLogged;
@@ -1804,8 +1819,11 @@ namespace ProcessorEmulator.Core
             _tv2ZeroContLogged = false;
             _tv2HighContLogged = false;
             _tv2ImplRa = 0;
+            _tv2ImplEpc = 0;
             _tv2ImplK1Before = 0;
             _tv2ImplContLogged = false;
+            _tv2ImplPastLogged = false;
+            _tv2UserSrLogged = false;
             _coredllMapBusy = false;
             _tv2ProcSwitchLogged = false;
             _tv2CurThreadLogged = false;
@@ -3441,6 +3459,7 @@ namespace ProcessorEmulator.Core
                     " kept=0x" + _tv2Startip.ToString("X8") +
                     " (tv2 proc, not CurProc/filesys)");
                 TryKeepTv2ThreadOwner(bus, "CreateProcess-ret");
+                TryKeepTv2UserStatus(bus);
                 TryKeepTv2ThreadCtx(bus, "CreateProcess-ret");
             }
             catch
@@ -3490,14 +3509,50 @@ namespace ProcessorEmulator.Core
             try
             {
                 bus.Write32(_tv2Thread + ThreadCtxPc, startip);
-                uint sr = bus.Read32(_tv2Thread + ThreadCtxSr);
-                if (sr == 0)
-                    bus.Write32(_tv2Thread + ThreadCtxSr, 3);
+                TryKeepTv2UserStatus(bus);
                 System.Console.WriteLine("[Hive] FILE[25] thread ctxPC: " + tag +
                     " thr=0x" + _tv2Thread.ToString("X8") +
                     " was=0x" + ctxPc.ToString("X8") +
                     " now=0x" + startip.ToString("X8") +
                     " (firmware +5C; CEDecompressROM leftover; not invented 0x00017F54)");
+            }
+            catch
+            {
+            }
+        }
+
+        // 0x80015370 mtc0 thread+0xF0. 3 is kernel
+        // (bit 4 clear). 0x13 is firmware user so
+        // 0x8001589C takes the frame/ERET path.
+        // Do not map page 0. Do not poke CurProc.
+        public static void TryKeepTv2UserStatus(MipsBus bus)
+        {
+            if (!_tv2FileDestOn || bus == null || _tv2Thread == 0)
+                return;
+            if (!IsTv2PrimaryStartipReady(bus))
+                return;
+            uint sr;
+            try
+            {
+                sr = bus.Read32(_tv2Thread + ThreadCtxSr);
+            }
+            catch
+            {
+                return;
+            }
+            if (sr != 0 && sr != ThreadCtxSrKernel)
+                return;
+            try
+            {
+                bus.Write32(_tv2Thread + ThreadCtxSr, ThreadCtxSrUser);
+                if (_tv2UserSrLogged)
+                    return;
+                _tv2UserSrLogged = true;
+                System.Console.WriteLine("[Hive] FILE[25] thread +F0: user 0x" +
+                    ThreadCtxSrUser.ToString("X8") +
+                    " was=0x" + sr.ToString("X8") +
+                    " thr=0x" + _tv2Thread.ToString("X8") +
+                    " (firmware 0x8003980C; bit 4; not kernel 3; not a mapped page 0)");
             }
             catch
             {
@@ -3515,6 +3570,7 @@ namespace ProcessorEmulator.Core
             uint s0 = regs[16];
             if (s0 != _tv2Thread)
                 return;
+            TryKeepTv2UserStatus(bus);
             TryKeepTv2ThreadOwner(bus, pc == ThreadCtxRestore ? "ERET" : "ERET2");
             TryKeepTv2ThreadCtx(bus, pc == ThreadCtxRestore ? "ERET" : "ERET2");
             try
@@ -3980,7 +4036,10 @@ namespace ProcessorEmulator.Core
             bool implicitApi = IsFirmwareImplicitApi(epc) || IsFirmwareImplicitApi(vaddr);
             uint ra = regs != null && regs.Length > 31 ? regs[31] : 0;
             if (implicitApi && ra != 0 && _tv2ImplRa == 0)
+            {
                 _tv2ImplRa = ra;
+                _tv2ImplEpc = epc != 0 ? epc : vaddr;
+            }
             if (implicitApi)
             {
                 if (_tv2ImplAdelLogged)
@@ -4036,8 +4095,26 @@ namespace ProcessorEmulator.Core
                 where = " (startip/mscoree dest; do not invent dest bytes)";
             else if (coredll)
                 where = " (coredll shared slot-1; not mscoree; do not invent a slot map)";
+            else if (epc == 0 && vaddr == 0)
+                where = " (jr $ra of frame+4; firmware 0x80015A28; not a null user RA; do not map page 0)";
             else
                 where = " (after jalr return; firmware PTE walk; not a static slot map)";
+            uint v0 = regs != null && regs.Length > 2 ? regs[2] : 0;
+            uint frame = 0;
+            uint retpc = 0;
+            uint ctxSr = 0;
+            try
+            {
+                if (bus != null && curThr != 0)
+                    frame = bus.Read32(curThr + ThreadSyscallFrame);
+                if (frame != 0)
+                    TryPeekWord(bus, frame + 4, out retpc);
+                if (bus != null && _tv2Thread != 0)
+                    ctxSr = bus.Read32(_tv2Thread + ThreadCtxSr);
+            }
+            catch
+            {
+            }
             System.Console.WriteLine("[Hive] FILE[25] post-fetch exception code=" +
                 code +
                 " epc=0x" + epc.ToString("X8") +
@@ -4051,6 +4128,10 @@ namespace ProcessorEmulator.Core
                 " nest=0x" + nest.ToString("X2") +
                 " k1=0x" + k1.ToString("X8") +
                 " ra=0x" + ra.ToString("X8") +
+                " v0=0x" + v0.ToString("X8") +
+                " frame=0x" + frame.ToString("X8") +
+                " frame+4=0x" + retpc.ToString("X8") +
+                " +F0=0x" + ctxSr.ToString("X8") +
                 " implicit=" + implicitApi +
                 " walk-slot=" + walkSlot +
                 " walk-sec=0x" + walkSec.ToString("X8") +
@@ -4195,9 +4276,37 @@ namespace ProcessorEmulator.Core
             }
             System.Console.WriteLine("[Hive] FILE[25] implicit-api continue pc=0x" +
                 pc.ToString("X8") +
-                " from=0xFFFFF3DA CurThread=0x" + curThr.ToString("X8") +
+                " from=0x" + (_tv2ImplEpc != 0 ? _tv2ImplEpc.ToString("X8") : "FFFFF9B2") +
+                " CurThread=0x" + curThr.ToString("X8") +
                 " CurProc=0x" + cur.ToString("X8") +
-                " (past jalr 0xFFFFF3DA; not TV UI)");
+                " (past jalr implicit-API; not TV UI)");
+        }
+
+        public static void TryNoteTv2ImplicitPast(MipsBus bus, uint pc)
+        {
+            if (!_tv2FetchLogged || !_tv2ImplContLogged || _tv2ImplPastLogged)
+                return;
+            if (_tv2ImplRa == 0 || pc != _tv2ImplRa + 4)
+                return;
+            _tv2ImplPastLogged = true;
+            uint cur = 0;
+            uint curThr = 0;
+            try
+            {
+                if (bus != null)
+                    cur = bus.Read32(CurProc);
+                if (bus != null)
+                    curThr = bus.Read32(ThreadPtr);
+            }
+            catch
+            {
+            }
+            System.Console.WriteLine("[Hive] FILE[25] implicit-api past pc=0x" +
+                pc.ToString("X8") +
+                " from=0x" + _tv2ImplRa.ToString("X8") +
+                " CurThread=0x" + curThr.ToString("X8") +
+                " CurProc=0x" + cur.ToString("X8") +
+                " (past null fetch; not a mapped page 0; not TV UI)");
         }
 
         public static void TryNoteTv2ZeroDestContinue(MipsBus bus, uint pc)
