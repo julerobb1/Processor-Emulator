@@ -4305,20 +4305,19 @@ namespace ProcessorEmulator.Core
         // Do not map page 0.
         public static void TryRestoreTv2CorExeMainFetch(MipsBus bus, ref uint pc)
         {
-            if (!_tv2FetchLogged || !_tv2StoreContLogged)
+            if (!_tv2FetchLogged)
                 return;
             uint slot0 = pc & SlotMask;
-            // wait92: TriggerException EPC is PC+4. RI
-            // epc 0x034B7DA8 is the fetch of 0x034B7DA4
-            // in the Vers-data blob (rva7D7C=0x73726556).
+            // wait92/93: RI epc 0x034B7DA8 dest-word
+            // 0x603E984F. FetchInstruction is the only
+            // path that I-fetches that dest. Vers-data
+            // blob RVA 0x7D7C..0x7DA8. Do not require
+            // leftover store-cont; delay-slot fetches
+            // skip TryStep.
             if (slot0 < 0x014B7D70u || slot0 > 0x014B7DB0u)
                 return;
             uint word = 0;
-            if (!TryPeekWord(bus, pc, out word))
-                return;
-            uint op = word >> 26;
-            if (op < 0x18u || op > 0x1Fu)
-                return;
+            TryPeekWord(bus, pc, out word);
             uint startip = _tv2Startip != 0 ? _tv2Startip : 0x014B9D98u;
             if (startip == 0 || startip == pc)
                 return;
@@ -4333,7 +4332,7 @@ namespace ProcessorEmulator.Core
                 was.ToString("X8") +
                 " now=0x" + startip.ToString("X8") +
                 " dest-word=0x" + word.ToString("X8") +
-                " (firmware o32[0] RVA 0x7DA8 reserved; MapO32 rva7D7C=Vers data; startip _CorExeMain; do not invent dest; not a second alias; not rewind 0x03F6C8F4; not a mapped page 0)");
+                " (firmware o32[0] Vers-data RVA 0x7Dxx; startip _CorExeMain; do not invent dest; not a second alias; not rewind 0x03F6C8F4; not a mapped page 0)");
         }
 
         public static void TryNoteTv2StartipFetch(MipsBus bus, uint pc)

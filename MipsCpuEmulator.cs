@@ -384,6 +384,7 @@ namespace ProcessorEmulator.Emulation
 
         private uint FetchInstruction()
         {
+            CeRomTocFiles.TryRestoreTv2CorExeMainFetch(_bus, ref programCounter);
             if ((programCounter & 3) != 0)
                 throw new CpuAlignmentException($"Unaligned fetch PC=0x{programCounter:X8}");
             uint instruction = ReadMemory32(programCounter);
