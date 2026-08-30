@@ -390,6 +390,7 @@ namespace ProcessorEmulator.Core
         private static bool _pteMapLogged;
         private static bool _slot2MapLogged;
         private static bool _slot0InfoMapLogged;
+        private static bool _slot0FetchMapLogged;
         private static bool _tv2CoredllLogged;
         private static bool _tv2CoredllContLogged;
         private static uint _coredllLiveSec;
@@ -416,6 +417,8 @@ namespace ProcessorEmulator.Core
         private static bool _tv2LeftoverLiveLogged;
         private static bool _tv2LeftoverPastLogged;
         private static bool _tv2LeftoverCae8Logged;
+        private static bool _tv2GwesFetchLogged;
+        private static bool _tv2GwesContLogged;
         private static bool _tv2MscoreeSlotLogged;
         private static bool _coredllMapBusy;
         private static bool _tv2ProcSwitchLogged;
@@ -1866,6 +1869,7 @@ namespace ProcessorEmulator.Core
             _pteMapLogged = false;
             _slot2MapLogged = false;
             _slot0InfoMapLogged = false;
+            _slot0FetchMapLogged = false;
             _tv2CoredllLogged = false;
             _tv2CoredllContLogged = false;
             _coredllLiveSec = 0;
@@ -1892,6 +1896,8 @@ namespace ProcessorEmulator.Core
             _tv2LeftoverLiveLogged = false;
             _tv2LeftoverPastLogged = false;
             _tv2LeftoverCae8Logged = false;
+            _tv2GwesFetchLogged = false;
+            _tv2GwesContLogged = false;
             _tv2MscoreeSlotLogged = false;
             _coredllMapBusy = false;
             _tv2ProcSwitchLogged = false;
@@ -4308,7 +4314,10 @@ namespace ProcessorEmulator.Core
         // wait96 dest-unmapped 0x01FFFCA4 (same page as
         // 0x01FFFFA0). leftover 0x03F6CAE8 lw $v0,0($s6)
         // dest-word 0x8EC20000. Not leftover mid 0x8001586C.
-        // Not page 0. Do not invent dest. Do not invent a slot map.
+        // Slot 0 I-fetch after leftover-CAE8 only: wait97
+        // dest-unmapped 0x00044154 while dest 0x80179154 is
+        // pte-live (kseg 0x80179000). Not page 0.
+        // Do not invent dest. Do not invent a slot map.
         public static uint MapFirmwareSlotVa(MipsBus bus, uint va)
         {
             if (_pteMapBusy || bus == null || _tv2ImplRa == 0)
@@ -4323,7 +4332,11 @@ namespace ProcessorEmulator.Core
                 && _tv2LeftoverPastLogged
                 && va >= 0x01FFF000u
                 && va < 0x02000000u;
-            if (slot != 1 && slot != 6 && !walkSlot2 && !walkSlot0Info)
+            bool walkSlot0Fetch = slot == 0
+                && _tv2LeftoverCae8Logged
+                && va >= 0x00010000u
+                && va < 0x01FFF000u;
+            if (slot != 1 && slot != 6 && !walkSlot2 && !walkSlot0Info && !walkSlot0Fetch)
                 return va;
             uint sec = PeekSection(bus, slot);
             if (sec == 0)
@@ -4358,6 +4371,22 @@ namespace ProcessorEmulator.Core
                         " pfn=0x" + pfn.ToString("X8") +
                         " dest-word=0x" + word.ToString("X8") +
                         " (process-info leftover-past; firmware 0x80040278; dest already expanded; do not map page 0; do not invent dest bytes)");
+                }
+                else if (walkSlot0Fetch && !_slot0FetchMapLogged)
+                {
+                    uint word = 0;
+                    TryPeekWord(bus, dest, out word);
+                    _slot0FetchMapLogged = true;
+                    _pteMapLogged = true;
+                    System.Console.WriteLine("[Hive] FILE[25] slot-0 fetch PTE 0x" +
+                        va.ToString("X8") + " -> 0x" + dest.ToString("X8") +
+                        " slot=" + slot +
+                        " sec=0x" + sec.ToString("X8") +
+                        " l1=0x" + l1.ToString("X8") +
+                        " l2=0x" + l2.ToString("X8") +
+                        " pfn=0x" + pfn.ToString("X8") +
+                        " dest-word=0x" + word.ToString("X8") +
+                        " (gwes leftover-CAE8; firmware 0x80040278; dest already expanded; do not map page 0; do not invent dest bytes)");
                 }
                 else if (walkSlot2 && !_slot2MapLogged)
                 {
@@ -4975,6 +5004,66 @@ namespace ProcessorEmulator.Core
                 " dest-" + (mapped ? "mapped" : "unmapped") +
                 " dest-word=0x" + word.ToString("X8") +
                 " (past leftover lw $v0,0($s6); do not skip to 28($sp); not page 0; not TV UI)");
+        }
+
+        public static void TryNoteTv2GwesFetch(MipsBus bus, uint pc)
+        {
+            if (!_tv2LeftoverCae8Logged || _tv2GwesFetchLogged)
+                return;
+            if (pc != 0x00044154u)
+                return;
+            _tv2GwesFetchLogged = true;
+            uint word = 0;
+            bool mapped = TryPeekWord(bus, pc, out word);
+            uint cur = 0;
+            uint curThr = 0;
+            try
+            {
+                if (bus != null)
+                    cur = bus.Read32(CurProc);
+                if (bus != null)
+                    curThr = bus.Read32(ThreadPtr);
+            }
+            catch
+            {
+            }
+            System.Console.WriteLine("[Hive] FILE[25] I-fetch gwes=0x" +
+                pc.ToString("X8") +
+                " CurThread=0x" + curThr.ToString("X8") +
+                " CurProc=0x" + cur.ToString("X8") +
+                " dest-" + (mapped ? "mapped" : "unmapped") +
+                " dest-word=0x" + word.ToString("X8") +
+                " (slot-0 leftover-CAE8; firmware PTE dest 0x80179154; do not map page 0; do not invent dest bytes)");
+        }
+
+        public static void TryNoteTv2GwesContinue(MipsBus bus, uint pc)
+        {
+            if (!_tv2GwesFetchLogged || _tv2GwesContLogged)
+                return;
+            if (pc != 0x00044158u)
+                return;
+            _tv2GwesContLogged = true;
+            uint word = 0;
+            bool mapped = TryPeekWord(bus, pc, out word);
+            uint cur = 0;
+            uint curThr = 0;
+            try
+            {
+                if (bus != null)
+                    cur = bus.Read32(CurProc);
+                if (bus != null)
+                    curThr = bus.Read32(ThreadPtr);
+            }
+            catch
+            {
+            }
+            System.Console.WriteLine("[Hive] FILE[25] gwes continue pc=0x" +
+                pc.ToString("X8") +
+                " from=0x00044154 CurThread=0x" + curThr.ToString("X8") +
+                " CurProc=0x" + cur.ToString("X8") +
+                " dest-" + (mapped ? "mapped" : "unmapped") +
+                " dest-word=0x" + word.ToString("X8") +
+                " (past gwes I-fetch; leftover/_CorExeMain not skipped; not page 0; not TV UI)");
         }
 
         public static void TryNoteTv2ZeroDestContinue(MipsBus bus, uint pc)
