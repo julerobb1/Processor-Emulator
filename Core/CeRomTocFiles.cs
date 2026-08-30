@@ -411,6 +411,7 @@ namespace ProcessorEmulator.Core
         private static bool _tv2StoreContLogged;
         private static bool _tv2LeftoverStoreFrame;
         private static bool _tv2StoreFrameLogged;
+        private static bool _tv2LeftoverRetLogged;
         private static bool _tv2MscoreeSlotLogged;
         private static bool _coredllMapBusy;
         private static bool _tv2ProcSwitchLogged;
@@ -908,6 +909,27 @@ namespace ProcessorEmulator.Core
                 (mapped && (word != 0 || word4 != 0)
                     ? " (firmware dest after MapO32)"
                     : " (dest still empty)"));
+            // wait90: RI dest-word 0x603E984F at RVA 0x7DA8.
+            // o32[0] dest 0x014B1000 is RVA 0x1000. Peek the
+            // same CEDecompressROM dest at RVA 0x7D7C / 0x7DA8
+            // / startip 0x9D98. Do not write dest. Do not
+            // alias that dest a second time.
+            if (mapped && IsExtraRomMscoreeDest(dest)
+                && (dest & SlotMask) == 0x014B1000u)
+            {
+                uint jal = 0;
+                uint ri = 0;
+                uint startip = 0;
+                TryPeekWord(bus, dest + 0x6D7Cu, out jal);
+                TryPeekWord(bus, dest + 0x6DA8u, out ri);
+                TryPeekWord(bus, dest + 0x8D98u, out startip);
+                System.Console.WriteLine("[Hive] ExtraROM MapO32 mscoree o32[0] dest=0x" +
+                    dest.ToString("X8") +
+                    " rva7D7C=0x" + jal.ToString("X8") +
+                    " rva7DA8=0x" + ri.ToString("X8") +
+                    " rva9D98=0x" + startip.ToString("X8") +
+                    " (peek only; same CEDecompressROM dest as startip; do not invent dest bytes; not a second alias)");
+            }
         }
 
         // kseg0 scratch for an aligned copy of ExtraROM compressed
@@ -1861,6 +1883,7 @@ namespace ProcessorEmulator.Core
             _tv2StoreContLogged = false;
             _tv2LeftoverStoreFrame = false;
             _tv2StoreFrameLogged = false;
+            _tv2LeftoverRetLogged = false;
             _tv2MscoreeSlotLogged = false;
             _coredllMapBusy = false;
             _tv2ProcSwitchLogged = false;
@@ -3598,6 +3621,36 @@ namespace ProcessorEmulator.Core
                     {
                         _tv2LeftoverStoreFrame = true;
                         TryKeepTv2StoreFrame(bus, null);
+                        // wait90: leftover 0x8001588C -> 0x03F6CAC0
+                        // then I-fetch 0x034B7DA8 dest-word
+                        // 0x603E984F (opcode 0x18 reserved).
+                        // ra=0x034B7D84 is jal+8 at 0x034B7D7C.
+                        // That dest is firmware o32[0], not a
+                        // wrong page. Re-entering the store
+                        // callee jals there instead of a real
+                        // _CorExeMain insn. Resume first-pass
+                        // 28($sp). Do not invent dest bytes.
+                        // Do not alias that dest a second time.
+                        // Do not rewind 0x03F6C8F4.
+                        uint ret = 0;
+                        if (IsFirmwareUserSlotVa(_tv2StoreSp)
+                            && TryPeekWord(bus, _tv2StoreSp + 28, out ret)
+                            && IsFirmwareUserOrCoredllVa(ret)
+                            && ret != 0x03F6CAC0u
+                            && ret != 0x03F6C8F4u)
+                        {
+                            resume = ret;
+                            bus.Write32(_tv2Thread + ThreadCtxPc, resume);
+                            _tv2ImplResume = resume;
+                            if (!_tv2LeftoverRetLogged)
+                            {
+                                _tv2LeftoverRetLogged = true;
+                                System.Console.WriteLine("[Hive] FILE[25] leftover fetch-pc was=0x03F6CAC0 now=0x" +
+                                    resume.ToString("X8") +
+                                    " 28($sp)=0x" + ret.ToString("X8") +
+                                    " (first-pass saved $ra; dest 0x034B7DA8 is firmware reserved; do not invent dest; not a second alias; not rewind 0x03F6C8F4)");
+                            }
+                        }
                     }
                     if (!_tv2DispatchCtxLogged)
                     {
@@ -3607,11 +3660,13 @@ namespace ProcessorEmulator.Core
                             " was=0x" + ctxPc.ToString("X8") +
                             " now=0x" + resume.ToString("X8") +
                             " +DC=0x" + dc.ToString("X8") +
-                            (_tv2StoreContLogged
+                            (_tv2LeftoverRetLogged
+                                ? " (firmware leftover 0x8001588C; first-pass 28($sp); do not re-enter 0x03F6CAC0; do not rewind 0x03F6C8F4; not dest 0xE4DA9AA4; not a mapped page 0)"
+                                : (_tv2StoreContLogged
                                 ? " (firmware leftover 0x8001588C; after 0x03F6CAC0; +DC unsaved; do not rewind 0x03F6C8F4; not dest 0xE4DA9AA4; not a mapped page 0)"
                                 : (_tv2ImplContLogged
                                 ? " (firmware leftover 0x8001588C; after implicit-api continue; do not keep jr $ra; s7=0x5800; not a mapped page 0)"
-                                : " (firmware leftover 0x8001588C; live user RA; not a mapped page 0)")));
+                                : " (firmware leftover 0x8001588C; live user RA; not a mapped page 0)"))));
                     }
                 }
                 catch
@@ -4487,6 +4542,7 @@ namespace ProcessorEmulator.Core
             else
                 where = " (after jalr return; firmware PTE walk; not a static slot map)";
             uint v0 = regs != null && regs.Length > 2 ? regs[2] : 0;
+            uint t9 = regs != null && regs.Length > 25 ? regs[25] : 0;
             uint s7 = regs != null && regs.Length > 23 ? regs[23] : 0;
             uint sp = regs != null && regs.Length > 29 ? regs[29] : 0;
             uint frame = 0;
@@ -4531,6 +4587,7 @@ namespace ProcessorEmulator.Core
                 " k1=0x" + k1.ToString("X8") +
                 " ra=0x" + ra.ToString("X8") +
                 " v0=0x" + v0.ToString("X8") +
+                " t9=0x" + t9.ToString("X8") +
                 " s7=0x" + s7.ToString("X8") +
                 " sp=0x" + sp.ToString("X8") +
                 " +D4=0x" + savedSp.ToString("X8") +
