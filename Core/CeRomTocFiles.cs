@@ -3615,11 +3615,15 @@ namespace ProcessorEmulator.Core
             uint phys = (l2 >> 10) << 12;
             uint dest = 0x80000000u | (phys & 0x1FFFFFFFu);
             uint word = 0;
-            if (!TryPeekWord(bus, dest | (va & 0xFFFu), out word))
+            // wait77: pfn10 of 0x40002A1A is 0x0000A000
+            // (readable zeros). pfn6 is 0x000A8000 with
+            // dest-word 0x27BDFFD8. Require a nonzero word
+            // so empty low RAM does not win.
+            if (!TryPeekWord(bus, dest | (va & 0xFFFu), out word) || word == 0)
             {
                 phys = (l2 >> 6) << 12;
                 dest = 0x80000000u | (phys & 0x1FFFFFFFu);
-                if (!TryPeekWord(bus, dest | (va & 0xFFFu), out word))
+                if (!TryPeekWord(bus, dest | (va & 0xFFFu), out word) || word == 0)
                     return false;
             }
             pfn = phys;
