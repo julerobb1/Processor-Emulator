@@ -411,6 +411,7 @@ namespace ProcessorEmulator.Core
         private static bool _tv2StoreContLogged;
         private static bool _tv2LeftoverStoreFrame;
         private static bool _tv2StoreFrameLogged;
+        private static bool _tv2LeftoverLiveLogged;
         private static bool _tv2MscoreeSlotLogged;
         private static bool _coredllMapBusy;
         private static bool _tv2ProcSwitchLogged;
@@ -1882,6 +1883,7 @@ namespace ProcessorEmulator.Core
             _tv2StoreContLogged = false;
             _tv2LeftoverStoreFrame = false;
             _tv2StoreFrameLogged = false;
+            _tv2LeftoverLiveLogged = false;
             _tv2MscoreeSlotLogged = false;
             _coredllMapBusy = false;
             _tv2ProcSwitchLogged = false;
@@ -3537,6 +3539,56 @@ namespace ProcessorEmulator.Core
             // 0x80015B9C is the live ERET2 frame; rewriting
             // it loops the switcher. Do not touch that.
             return pc == ExnAfterFetch;
+        }
+
+        // wait91-94: leftover 0x8001588C is still mid
+        // 0x8001586C. 0x800159B4 or $ra,$v0 then
+        // 0x80015A24 ERET mtc0 $t4,EPC ($t4=$ra=$v0).
+        // That is not thread+0xEC. 0x800153E8 already
+        // lw $ra,220($s0) before the 0x80015404 hook.
+        // I-fetch of leftover after startip/store
+        // continue returns to 0x03F6CAC0 (real insn).
+        // Do not skip that to 28($sp). Do not yank
+        // startip. Do not invent dest bytes.
+        public static void TryResumeTv2LeftoverFetch(MipsBus bus, uint[] regs, ref uint pc)
+        {
+            if (!_tv2FetchLogged || !_tv2StoreContLogged)
+                return;
+            if (pc != ExnAfterFetch)
+                return;
+            uint resume = _tv2ImplResume != 0
+                ? _tv2ImplResume
+                : 0x03F6CAC0u;
+            if (resume != 0x03F6CAC0u)
+                return;
+            uint destWord = 0;
+            TryPeekWord(bus, resume, out destWord);
+            uint liveRa = regs != null && regs.Length > 31 ? regs[31] : 0;
+            uint liveV0 = regs != null && regs.Length > 2 ? regs[2] : 0;
+            uint liveT9 = regs != null && regs.Length > 25 ? regs[25] : 0;
+            pc = resume;
+            if (_tv2Thread != 0 && bus != null)
+            {
+                try
+                {
+                    bus.Write32(_tv2Thread + ThreadCtxPc, resume);
+                }
+                catch
+                {
+                }
+            }
+            _tv2LeftoverStoreFrame = true;
+            TryKeepTv2StoreFrame(bus, regs);
+            if (_tv2LeftoverLiveLogged)
+                return;
+            _tv2LeftoverLiveLogged = true;
+            System.Console.WriteLine("[Hive] FILE[25] leftover live-pc was=0x8001588C now=0x" +
+                resume.ToString("X8") +
+                " dest-word=0x" + destWord.ToString("X8") +
+                " ra=0x" + liveRa.ToString("X8") +
+                " v0=0x" + liveV0.ToString("X8") +
+                " t9=0x" + liveT9.ToString("X8") +
+                " (firmware leftover still mid 0x8001586C; 0x80015A24 ERET uses $v0 not ctxPC; do not skip 0x03F6CAC0 to 28($sp); do not yank startip; not dest 0xE4DA9AA4; not a mapped page 0)");
         }
 
         public static void TryKeepTv2ThreadCtx(MipsBus bus, string tag)

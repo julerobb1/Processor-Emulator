@@ -397,6 +397,8 @@ namespace ProcessorEmulator.Core
 
             uint pc = programCounter;
             _stepPc = pc;
+            CeRomTocFiles.TryResumeTv2LeftoverFetch(bus, registers, ref programCounter);
+            pc = programCounter;
             if (pc == BinfsInheritFill)
             {
                 uint plus14 = registers[12];

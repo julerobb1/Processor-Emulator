@@ -288,6 +288,7 @@ namespace ProcessorEmulator.Emulation
                     }
                 }
 
+                CeRomTocFiles.TryResumeTv2LeftoverFetch(_bus, registers, ref programCounter);
                 _currentPc = programCounter;
                 try
                 {
