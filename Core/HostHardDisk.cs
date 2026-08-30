@@ -397,8 +397,6 @@ namespace ProcessorEmulator.Core
 
             uint pc = programCounter;
             _stepPc = pc;
-            CeRomTocFiles.TryRestoreTv2CorExeMainFetch(bus, ref programCounter);
-            pc = programCounter;
             if (pc == BinfsInheritFill)
             {
                 uint plus14 = registers[12];
@@ -646,8 +644,6 @@ namespace ProcessorEmulator.Core
                     bus, registers, ref programCounter))
                 return false;
             CeRomTocFiles.TryCacheLiveCoredllSec(bus, pc);
-            CeRomTocFiles.TryRestoreTv2CorExeMainFetch(bus, ref programCounter);
-            pc = programCounter;
             CeRomTocFiles.TryNoteTv2StartipFetch(bus, pc);
             CeRomTocFiles.TryNoteTv2StartipContinue(bus, pc);
             CeRomTocFiles.TryNoteTv2CoredllFetch(bus, pc);

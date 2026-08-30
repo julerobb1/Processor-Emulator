@@ -411,7 +411,6 @@ namespace ProcessorEmulator.Core
         private static bool _tv2StoreContLogged;
         private static bool _tv2LeftoverStoreFrame;
         private static bool _tv2StoreFrameLogged;
-        private static bool _tv2CorExeRestoreLogged;
         private static bool _tv2MscoreeSlotLogged;
         private static bool _coredllMapBusy;
         private static bool _tv2ProcSwitchLogged;
@@ -1883,7 +1882,6 @@ namespace ProcessorEmulator.Core
             _tv2StoreContLogged = false;
             _tv2LeftoverStoreFrame = false;
             _tv2StoreFrameLogged = false;
-            _tv2CorExeRestoreLogged = false;
             _tv2MscoreeSlotLogged = false;
             _coredllMapBusy = false;
             _tv2ProcSwitchLogged = false;
@@ -4290,49 +4288,6 @@ namespace ProcessorEmulator.Core
             {
                 _pteMapBusy = false;
             }
-        }
-
-        // wait91: MapO32-ret dest+0x6DA8 is firmware
-        // 0x603E984F (opcode 0x18 reserved). dest+0x6D7C
-        // is 0x73726556 ("Vers" data). dest+0x8D98 is
-        // startip 0x27BDFFA8. Leftover 0x8001588C ->
-        // 0x03F6CAC0 then I-fetch 0x034B7DA8. That is
-        // data, not a _CorExeMain insn. Skipping the
-        // store callee to 28($sp) I-fetched 0. Restore
-        // startip when that reserved dest is fetched.
-        // Do not invent dest bytes. Do not alias that
-        // dest a second time. Do not rewind 0x03F6C8F4.
-        // Do not map page 0.
-        public static void TryRestoreTv2CorExeMainFetch(MipsBus bus, ref uint pc)
-        {
-            if (!_tv2FetchLogged)
-                return;
-            uint slot0 = pc & SlotMask;
-            // wait92/93: RI epc 0x034B7DA8 dest-word
-            // 0x603E984F. FetchInstruction is the only
-            // path that I-fetches that dest. Vers-data
-            // blob RVA 0x7D7C..0x7DA8. Do not require
-            // leftover store-cont; delay-slot fetches
-            // skip TryStep.
-            if (slot0 < 0x014B7D70u || slot0 > 0x014B7DB0u)
-                return;
-            uint word = 0;
-            TryPeekWord(bus, pc, out word);
-            uint startip = _tv2Startip != 0 ? _tv2Startip : 0x014B9D98u;
-            if (startip == 0 || startip == pc)
-                return;
-            if (!IsAllowedTv2Startip(startip))
-                return;
-            uint was = pc;
-            pc = startip;
-            if (_tv2CorExeRestoreLogged)
-                return;
-            _tv2CorExeRestoreLogged = true;
-            System.Console.WriteLine("[Hive] FILE[25] restore fetch-pc was=0x" +
-                was.ToString("X8") +
-                " now=0x" + startip.ToString("X8") +
-                " dest-word=0x" + word.ToString("X8") +
-                " (firmware o32[0] Vers-data RVA 0x7Dxx; startip _CorExeMain; do not invent dest; not a second alias; not rewind 0x03F6C8F4; not a mapped page 0)");
         }
 
         public static void TryNoteTv2StartipFetch(MipsBus bus, uint pc)

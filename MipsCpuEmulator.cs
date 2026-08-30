@@ -288,7 +288,6 @@ namespace ProcessorEmulator.Emulation
                     }
                 }
 
-                CeRomTocFiles.TryRestoreTv2CorExeMainFetch(_bus, ref programCounter);
                 _currentPc = programCounter;
                 try
                 {
@@ -384,7 +383,6 @@ namespace ProcessorEmulator.Emulation
 
         private uint FetchInstruction()
         {
-            CeRomTocFiles.TryRestoreTv2CorExeMainFetch(_bus, ref programCounter);
             if ((programCounter & 3) != 0)
                 throw new CpuAlignmentException($"Unaligned fetch PC=0x{programCounter:X8}");
             uint instruction = ReadMemory32(programCounter);
@@ -630,7 +628,6 @@ namespace ProcessorEmulator.Emulation
 
         private void ExecuteDelaySlotThenJump(uint target)
         {
-            CeRomTocFiles.TryRestoreTv2CorExeMainFetch(_bus, ref target);
             if (_inDelaySlot)
             {
                 programCounter = target;
@@ -642,7 +639,6 @@ namespace ProcessorEmulator.Emulation
             {
                 uint delayInstr = FetchInstruction();
                 DecodeAndExecute(delayInstr);
-                CeRomTocFiles.TryRestoreTv2CorExeMainFetch(_bus, ref target);
                 programCounter = target;
             }
             catch (TlbMissException ex)
