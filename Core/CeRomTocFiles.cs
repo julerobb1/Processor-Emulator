@@ -4096,7 +4096,9 @@ namespace ProcessorEmulator.Core
             else if (coredll)
                 where = " (coredll shared slot-1; not mscoree; do not invent a slot map)";
             else if (epc == 0 && vaddr == 0)
-                where = " (jr $ra of frame+4; firmware 0x80015A28; not a null user RA; do not map page 0)";
+                where = ra == 0
+                    ? " (jr $ra ra=0; not a null user RA; do not map page 0)"
+                    : " (I-fetch 0; do not map page 0)";
             else
                 where = " (after jalr return; firmware PTE walk; not a static slot map)";
             uint v0 = regs != null && regs.Length > 2 ? regs[2] : 0;
