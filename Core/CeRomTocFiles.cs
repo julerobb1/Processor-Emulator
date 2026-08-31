@@ -4274,24 +4274,26 @@ namespace ProcessorEmulator.Core
                 " (ERET2/leftover mid after leftover CB48; dest-live delay slot 0x03F6CB4C; do not rewrite 0x80015B9C; do not rewind 0x03F6CAC0; not TV UI)");
         }
 
-        // wait109: after leftover delay slot CB4C,
-        // complete jr $ra with live $ra (CB44
-        // lw $ra,28($sp)). Peek dest at live $ra.
-        // Do not invent dest. Do not rewrite
-        // 0x80015B9C. Do not rewind leftover.
+        // wait110: leftover past CB4C then leftover
+        // left. after-cb48 already one-shot. I-fetch
+        // of ERET2 or leftover 0x8001588C follows
+        // dest-live user $ra from peeked 28($sp)
+        // (CB44 lw $ra,28($sp)). Do not invent dest
+        // at 0x03F731E4. Do not follow leftover-
+        // dispatch $ra. Do not rewrite 0x80015B9C.
+        // Do not rewind leftover to 0x03F6C8F4.
         public static void TryResumeTv2LeftoverAfterCb4c(MipsBus bus, uint[] regs, ref uint pc)
         {
             if (_tv2LeftoverAfterCb4cLogged)
                 return;
             if (!_tv2LeftoverPastCb4cLogged)
                 return;
-            if (pc != ExnAfterFetch2 && pc != ExnAfterFetch && pc != LeftoverCb4c + 4)
+            if (pc != ExnAfterFetch2 && pc != ExnAfterFetch)
                 return;
-            uint ra = 0;
-            if (pc == LeftoverCb4c + 4 && regs != null && regs.Length >= 32)
-                ra = regs[31];
-            if (ra == 0 && _tv2LeftoverUserRaSet)
-                ra = _tv2LeftoverUserRa;
+            TryCaptureLeftoverUserRa(bus, regs);
+            if (!_tv2LeftoverUserRaSet)
+                return;
+            uint ra = _tv2LeftoverUserRa;
             if (ra == 0 || ra == 0xFFFFFFFFu || ra == 0xFFFFFFECu)
                 return;
             if ((ra & 0x1FFFFFFFu) < 0x00010000u)
@@ -4313,7 +4315,7 @@ namespace ProcessorEmulator.Core
                 " dest-word=0x" + word.ToString("X8") +
                 " ra=0x" + ra.ToString("X8") +
                 (live ? " dest-live" : " dest-ra") +
-                " (ERET2/leftover mid after leftover CB4C; follow live $ra; do not rewrite 0x80015B9C; do not rewind 0x03F6CAC0; not TV UI)");
+                " (ERET2/leftover mid after leftover CB4C; follow dest-live user $ra from 28($sp); do not invent 0x03F731E4; do not rewrite 0x80015B9C; do not rewind 0x03F6C8F4; not TV UI)");
         }
 
         private static bool TryResolveLeftoverAfterCaf0(MipsBus bus, out uint dest, out uint word, out bool live)
@@ -6187,6 +6189,7 @@ namespace ProcessorEmulator.Core
             if (pc != LeftoverCb44)
                 return;
             _tv2LeftoverPastCb44Logged = true;
+            TryCaptureLeftoverUserRa(bus, null);
             uint word = 0;
             bool mapped = TryPeekWord(bus, pc, out word);
             uint cb48 = 0;
@@ -6218,21 +6221,41 @@ namespace ProcessorEmulator.Core
                 " (past leftover lw $s6,24($sp); do not rewrite 0x80015B9C; do not rewind 0x03F6CAC0; not TV UI)");
         }
 
-        private static void TryCaptureLeftoverUserRa(uint[] regs)
+        private static bool IsLeftoverUserRa(uint ra)
+        {
+            if (ra == 0 || ra == 0xFFFFFFFFu || ra == 0xFFFFFFECu)
+                return false;
+            if ((ra & 0x1FFFFFFFu) < 0x00010000u)
+                return false;
+            if (ra >= 0x03F6C8F4u && ra <= LeftoverCb4c)
+                return false;
+            return true;
+        }
+
+        private static void TryCaptureLeftoverUserRa(MipsBus bus, uint[] regs)
         {
             if (_tv2LeftoverUserRaSet)
                 return;
-            if (regs == null || regs.Length < 32)
+            uint sp = 0;
+            if (IsFirmwareUserSlotVa(_tv2StoreSp))
+                sp = _tv2StoreSp;
+            if (sp == 0 && regs != null && regs.Length > 29
+                && IsFirmwareUserSlotVa(regs[29]))
+                sp = regs[29];
+            uint stacked = 0;
+            if (sp != 0 && TryPeekWord(bus, sp + 28, out stacked)
+                && IsLeftoverUserRa(stacked))
+            {
+                _tv2LeftoverUserRa = stacked;
+                _tv2LeftoverUserRaSet = true;
                 return;
-            uint ra = regs[31];
-            if (ra == 0 || ra == 0xFFFFFFFFu || ra == 0xFFFFFFECu)
-                return;
-            if ((ra & 0x1FFFFFFFu) < 0x00010000u)
-                return;
-            if (ra >= 0x03F6C8F4u && ra <= LeftoverCb4c)
-                return;
-            _tv2LeftoverUserRa = ra;
-            _tv2LeftoverUserRaSet = true;
+            }
+            if (regs != null && regs.Length >= 32
+                && IsLeftoverUserRa(regs[31]))
+            {
+                _tv2LeftoverUserRa = regs[31];
+                _tv2LeftoverUserRaSet = true;
+            }
         }
 
         public static void TryNoteTv2LeftoverPastCb48(MipsBus bus, uint[] regs, uint pc)
@@ -6242,7 +6265,7 @@ namespace ProcessorEmulator.Core
             if (pc != LeftoverCb48)
                 return;
             _tv2LeftoverPastCb48Logged = true;
-            TryCaptureLeftoverUserRa(regs);
+            TryCaptureLeftoverUserRa(bus, regs);
             uint word = 0;
             bool mapped = TryPeekWord(bus, pc, out word);
             uint cb4c = 0;
@@ -6282,7 +6305,7 @@ namespace ProcessorEmulator.Core
             if (pc != LeftoverCb4c)
                 return;
             _tv2LeftoverPastCb4cLogged = true;
-            TryCaptureLeftoverUserRa(regs);
+            TryCaptureLeftoverUserRa(bus, regs);
             uint word = 0;
             bool mapped = TryPeekWord(bus, pc, out word);
             uint cur = 0;
@@ -6303,7 +6326,8 @@ namespace ProcessorEmulator.Core
                 " CurProc=0x" + cur.ToString("X8") +
                 " dest-" + (mapped ? "mapped" : "unmapped") +
                 " dest-word=0x" + word.ToString("X8") +
-                " (past leftover jr $ra delay slot; do not rewrite 0x80015B9C; do not rewind 0x03F6CAC0; not TV UI)");
+                " ra=0x" + (_tv2LeftoverUserRaSet ? _tv2LeftoverUserRa.ToString("X8") : "unset") +
+                " (past leftover jr $ra delay slot; peeked 28($sp); do not invent 0x03F731E4; do not rewrite 0x80015B9C; do not rewind 0x03F6C8F4; not TV UI)");
         }
 
         public static void TryNoteTv2LeftoverPastJrRa(MipsBus bus, uint pc)
