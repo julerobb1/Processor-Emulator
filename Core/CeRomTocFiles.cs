@@ -4839,12 +4839,20 @@ namespace ProcessorEmulator.Core
                 return;
             if ((dest & 0x1FFFFFFFu) < 0x00010000u)
                 return;
+            if (dest == LeftoverS4Next || dest == 0x03F731E4u)
+                return;
+            if (dest == ExnAfterFetch || dest == ExnAfterFetch2)
+                return;
+            if (!IsTv2CoredllShared(dest))
+                return;
             try
             {
                 uint ctx = bus.Read32(_tv2Thread + ThreadCtxPc);
-                if (ctx != ExnAfterFetch && ctx != ExnAfterFetch2 && ctx != dest)
-                    return;
                 if (ctx == dest)
+                    return;
+                bool yanked = ctx == ExnAfterFetch || ctx == ExnAfterFetch2;
+                bool destLive = IsTv2CoredllShared(ctx);
+                if (!yanked && !destLive)
                     return;
                 bus.Write32(_tv2Thread + ThreadCtxPc, dest);
             }
@@ -7341,6 +7349,8 @@ namespace ProcessorEmulator.Core
                 if (_tv2LeftoverDestLiveNext == 0)
                     _tv2LeftoverDestLiveNext = LeftoverEpilogueNext;
             }
+            if (_tv2LeftoverDestLiveNext != 0)
+                TryKeepLeftoverDestLiveCtx(bus, _tv2LeftoverDestLiveNext);
             uint cur = 0;
             uint curThr = 0;
             try
@@ -7380,6 +7390,8 @@ namespace ProcessorEmulator.Core
             TryCaptureLeftoverEpilogueRa(bus, regs);
             if (IsFirmwareJrRa(word))
                 _tv2LeftoverDestLiveNext = LeftoverEpilogueNext + 4;
+            if (_tv2LeftoverDestLiveNext != 0)
+                TryKeepLeftoverDestLiveCtx(bus, _tv2LeftoverDestLiveNext);
             uint cur = 0;
             uint curThr = 0;
             try
@@ -7413,6 +7425,7 @@ namespace ProcessorEmulator.Core
             // next is PC+4 after this delay, not dest-
             // live $ra 0x03F731E4 (already walked).
             _tv2LeftoverDestLiveNext = pc + 4;
+            TryKeepLeftoverDestLiveCtx(bus, _tv2LeftoverDestLiveNext);
             uint word = 0;
             bool mapped = TryPeekWord(bus, pc, out word);
             uint cur = 0;
