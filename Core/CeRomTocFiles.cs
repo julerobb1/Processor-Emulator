@@ -346,6 +346,15 @@ namespace ProcessorEmulator.Core
         // not invent dest. Do not rewrite
         // 0x80015B9C. Do not rewind leftover.
         public const uint LeftoverS6Next = 0x03F7322C;
+        // wait118: leftover dest after leftover-past-
+        // 0x03F7322C (lw $s5,28($sp)). leftover left.
+        // after-s6 already one-shot. Next runner
+        // is ERET2 0x80015B9C / leftover mid
+        // 0x8001588C. Resume at dest-live next
+        // insn 0x03F73230 after dest peek. Do
+        // not invent dest. Do not rewrite
+        // 0x80015B9C. Do not rewind leftover.
+        public const uint LeftoverS5Next = 0x03F73230;
         // wait74: after I-fetch, ctxPC=0x80040298 then
         // ThreadExceptionExit. 0x800154EC beq a1,0 skips
         // jal 0x80020D80; that jal 0x80040278. 0x80040298
@@ -667,6 +676,10 @@ namespace ProcessorEmulator.Core
         private static uint _tv2LeftoverS6NextWord;
         private static bool _tv2LeftoverAfterS6Logged;
         private static bool _tv2LeftoverPastS6NextLogged;
+        private static bool _tv2LeftoverS5NextPeeked;
+        private static uint _tv2LeftoverS5NextWord;
+        private static bool _tv2LeftoverAfterS5Logged;
+        private static bool _tv2LeftoverPastS5NextLogged;
         private static bool _tv2LeftoverUserRaSet;
         private static uint _tv2LeftoverUserRa;
         private static bool _tv2LeftoverEretLogged;
@@ -2232,6 +2245,10 @@ namespace ProcessorEmulator.Core
             _tv2LeftoverS6NextWord = 0;
             _tv2LeftoverAfterS6Logged = false;
             _tv2LeftoverPastS6NextLogged = false;
+            _tv2LeftoverS5NextPeeked = false;
+            _tv2LeftoverS5NextWord = 0;
+            _tv2LeftoverAfterS5Logged = false;
+            _tv2LeftoverPastS5NextLogged = false;
             _tv2LeftoverUserRaSet = false;
             _tv2LeftoverUserRa = 0;
             _tv2LeftoverEretLogged = false;
@@ -4667,6 +4684,39 @@ namespace ProcessorEmulator.Core
                 " (ERET2/leftover mid after leftover 0x03F73228; dest-live next 0x03F7322C; do not invent dest; do not rewrite 0x80015B9C; do not rewind 0x03F6C8F4; not TV UI)");
         }
 
+        // wait118: leftover past 0x03F7322C then
+        // leftover left. after-s6 already one-shot.
+        // I-fetch of ERET2 or leftover 0x8001588C
+        // follows dest-live next insn 0x03F73230
+        // after dest peek. Do not invent dest. Do
+        // not rewrite 0x80015B9C. Do not rewind
+        // leftover.
+        public static void TryResumeTv2LeftoverAfterS5(MipsBus bus, uint[] regs, ref uint pc)
+        {
+            if (_tv2LeftoverAfterS5Logged)
+                return;
+            if (!_tv2LeftoverPastS6NextLogged)
+                return;
+            if (_tv2LeftoverPastS5NextLogged)
+                return;
+            if (pc != ExnAfterFetch2 && pc != ExnAfterFetch)
+                return;
+            uint dest = 0;
+            uint word = 0;
+            bool live = false;
+            if (!TryAcceptLeftoverAfterDest(bus, LeftoverS5Next, out dest, out word, out live))
+                return;
+            uint was = pc;
+            pc = dest;
+            _tv2LeftoverAfterS5Logged = true;
+            System.Console.WriteLine("[Hive] FILE[25] leftover after-s5 was=0x" +
+                was.ToString("X8") +
+                " now=0x" + dest.ToString("X8") +
+                " dest-word=0x" + word.ToString("X8") +
+                (live ? " dest-live" : " dest-s5") +
+                " (ERET2/leftover mid after leftover 0x03F7322C; dest-live next 0x03F73230; do not invent dest; do not rewrite 0x80015B9C; do not rewind 0x03F6C8F4; not TV UI)");
+        }
+
         private static bool TryResolveLeftoverAfterCaf0(MipsBus bus, out uint dest, out uint word, out bool live)
         {
             dest = 0;
@@ -4727,6 +4777,8 @@ namespace ProcessorEmulator.Core
                     word = _tv2LeftoverS7NextWord;
                 else if (va == LeftoverS6Next && _tv2LeftoverS6NextPeeked)
                     word = _tv2LeftoverS6NextWord;
+                else if (va == LeftoverS5Next && _tv2LeftoverS5NextPeeked)
+                    word = _tv2LeftoverS5NextWord;
                 else
                     return false;
             }
@@ -7054,6 +7106,13 @@ namespace ProcessorEmulator.Core
                 _tv2LeftoverS6NextPeeked = true;
                 _tv2LeftoverS6NextWord = word;
             }
+            uint next = 0;
+            if (TryPeekWord(bus, LeftoverS5Next, out next)
+                && (LeftoverS5Next & 0x1FFFFFFFu) >= 0x00010000u)
+            {
+                _tv2LeftoverS5NextPeeked = true;
+                _tv2LeftoverS5NextWord = next;
+            }
             uint cur = 0;
             uint curThr = 0;
             try
@@ -7072,7 +7131,43 @@ namespace ProcessorEmulator.Core
                 " CurProc=0x" + cur.ToString("X8") +
                 " dest-" + (mapped ? "mapped" : "unmapped") +
                 " dest-word=0x" + word.ToString("X8") +
-                " (past leftover lw $s6,24($sp); do not invent dest; do not rewrite 0x80015B9C; do not rewind 0x03F6C8F4; not TV UI)");
+                " next-word=0x" + next.ToString("X8") +
+                " (past leftover lw $s6,24($sp); peek 0x03F73230; do not invent dest; do not rewrite 0x80015B9C; do not rewind 0x03F6C8F4; not TV UI)");
+        }
+
+        public static void TryNoteTv2LeftoverPastS5Next(MipsBus bus, uint pc)
+        {
+            if (!_tv2LeftoverPastS6NextLogged || _tv2LeftoverPastS5NextLogged)
+                return;
+            if (pc != LeftoverS5Next)
+                return;
+            _tv2LeftoverPastS5NextLogged = true;
+            uint word = 0;
+            bool mapped = TryPeekWord(bus, pc, out word);
+            if (mapped && (pc & 0x1FFFFFFFu) >= 0x00010000u)
+            {
+                _tv2LeftoverS5NextPeeked = true;
+                _tv2LeftoverS5NextWord = word;
+            }
+            uint cur = 0;
+            uint curThr = 0;
+            try
+            {
+                if (bus != null)
+                    cur = bus.Read32(CurProc);
+                if (bus != null)
+                    curThr = bus.Read32(ThreadPtr);
+            }
+            catch
+            {
+            }
+            System.Console.WriteLine("[Hive] FILE[25] leftover past pc=0x" +
+                pc.ToString("X8") +
+                " from=0x03F7322C CurThread=0x" + curThr.ToString("X8") +
+                " CurProc=0x" + cur.ToString("X8") +
+                " dest-" + (mapped ? "mapped" : "unmapped") +
+                " dest-word=0x" + word.ToString("X8") +
+                " (past leftover lw $s5,28($sp); do not invent dest; do not rewrite 0x80015B9C; do not rewind 0x03F6C8F4; not TV UI)");
         }
 
         public static void TryNoteTv2GwesFetch(MipsBus bus, uint pc)
