@@ -378,19 +378,27 @@ namespace ProcessorEmulator.Core
         // leftover dest-live continue leftover ERET $v0
         // restore dest-live next. leftover dest-live
         // continue stays live after leftover dest-live
-        // delay. After dest-live delay, dest-live next
-        // is the live dest-live $ra (peeked), not PC+4.
-        // leftover dest-live ERET $v0 restore after
-        // dest-live delay so leftover ERET returns
-        // dest-live $ra and leftover I-fetches dest-live
-        // $ra, not ERET2. prior peek named 0x03F731E4
-        // as evidence only; do not invent dest. leftover
-        // DISPATCH after leftover dest-live I-fetch must
-        // not yank leftover ctxPC to ERET2. leftover
-        // restore re-apply is too early (restore I-fetch,
-        // not dispatch). dest-live I-fetch stays dest-live
-        // next / dest-live $ra, not ERET2. Do not hop
-        // 0x03F73238. Do not rewrite 0x80015B9C.
+        // delay. wait124: leftover dest-live ERET $v0
+        // restore after dest-live delay wrote dest-live
+        // $ra. leftover already past dest-live $ra
+        // (leftover past jr $ra). dest-live $ra is
+        // already walked. leftover I-fetch after
+        // dest-live delay is leftover mid / leftover
+        // dest-live delay's live leftover next first,
+        // not dest-live $ra. leftover still I-fetches
+        // ERET2 and PC+4. After dest-live delay,
+        // dest-live next is leftover dest-live delay's
+        // live leftover next (leftover $ra at dest-live
+        // jr $ra if live leftover dest), not dest-live
+        // $ra, not PC+4. leftover dest-live ERET $v0
+        // restore writes leftover $v0 to leftover
+        // dest-live delay's live leftover next. prior
+        // peek named 0x03F731E4 as evidence only; do
+        // not invent dest. Do not follow dest-live $ra
+        // blindly. leftover DISPATCH after leftover
+        // dest-live I-fetch must not yank leftover
+        // ctxPC to ERET2. Do not hop 0x03F73238. Do
+        // not rewrite 0x80015B9C.
         // wait74: after I-fetch, ctxPC=0x80040298 then
         // ThreadExceptionExit. 0x800154EC beq a1,0 skips
         // jal 0x80020D80; that jal 0x80040278. 0x80040298
@@ -4828,13 +4836,18 @@ namespace ProcessorEmulator.Core
         // I-fetch must not yank leftover ctxPC to ERET2.
         // leftover restore re-apply is too early (restore
         // I-fetch, not dispatch). dest-live I-fetch stays
-        // dest-live next / PC+4, not ERET2. Do not follow
-        // dest-live $ra 0x03F731E4 before dest-live delay
-        // (already walked; rewind). After dest-live delay,
-        // dest-live next is the live dest-live $ra (peeked),
-        // not PC+4. prior peek named 0x03F731E4 as evidence
-        // only; do not invent dest. Do not add a one-shot
-        // hop at 0x03F73238.
+        // dest-live next, not ERET2. Do not follow
+        // dest-live $ra before dest-live delay (already
+        // walked; rewind). wait124: dest-live $ra is
+        // still already walked after dest-live delay.
+        // After dest-live delay, dest-live next is
+        // leftover dest-live delay's live leftover next
+        // (leftover $ra at dest-live jr $ra if live
+        // leftover dest), not dest-live $ra, not PC+4.
+        // prior peek named 0x03F731E4 as evidence only;
+        // do not invent dest. Do not follow dest-live $ra
+        // blindly. Do not add a one-shot hop at
+        // 0x03F73238.
         public static void TryResumeTv2LeftoverDestLiveContinue(MipsBus bus, uint[] regs, ref uint pc)
         {
             if (!_tv2LeftoverPastS4NextLogged)
@@ -4848,17 +4861,20 @@ namespace ProcessorEmulator.Core
                 dest = LeftoverEpilogueNext + 4;
             if (_tv2LeftoverPastEpilogueDelayLogged)
             {
-                if (_tv2LeftoverUserRaSet && IsLeftoverUserRa(_tv2LeftoverUserRa)
-                    && (dest == LeftoverEpilogueNext + 4
-                        || dest == LeftoverEpilogueNext + 8
-                        || dest == 0))
-                    dest = _tv2LeftoverUserRa;
-                else if (dest == LeftoverEpilogueNext + 4)
+                // dest-live $ra is already walked (leftover
+                // past dest-live $ra). dest-live next after
+                // dest-live delay is leftover dest-live
+                // delay's live leftover next, not dest-live
+                // $ra, not PC+4.
+                if (_tv2LeftoverPastJrRaLogged
+                    && dest == _tv2LeftoverUserRa)
+                    dest = LeftoverEpilogueNext + 8;
+                else if (dest == LeftoverEpilogueNext + 4 || dest == 0)
                     dest = LeftoverEpilogueNext + 8;
             }
             if (dest == LeftoverS4Next)
                 return;
-            if (dest == 0x03F731E4u && !_tv2LeftoverPastEpilogueDelayLogged)
+            if (dest == 0x03F731E4u)
                 return;
             uint word = 0;
             bool live = false;
@@ -4886,7 +4902,7 @@ namespace ProcessorEmulator.Core
                 return;
             if (dest == LeftoverS4Next)
                 return;
-            if (dest == 0x03F731E4u && !_tv2LeftoverPastEpilogueDelayLogged)
+            if (dest == 0x03F731E4u)
                 return;
             if (dest == ExnAfterFetch || dest == ExnAfterFetch2)
                 return;
@@ -4917,17 +4933,15 @@ namespace ProcessorEmulator.Core
                 dest = LeftoverEpilogueNext + 4;
             if (_tv2LeftoverPastEpilogueDelayLogged)
             {
-                if (_tv2LeftoverUserRaSet && IsLeftoverUserRa(_tv2LeftoverUserRa)
-                    && (dest == LeftoverEpilogueNext + 4
-                        || dest == LeftoverEpilogueNext + 8
-                        || dest == 0))
-                    dest = _tv2LeftoverUserRa;
-                else if (dest == LeftoverEpilogueNext + 4)
+                if (_tv2LeftoverPastJrRaLogged
+                    && dest == _tv2LeftoverUserRa)
+                    dest = LeftoverEpilogueNext + 8;
+                else if (dest == LeftoverEpilogueNext + 4 || dest == 0)
                     dest = LeftoverEpilogueNext + 8;
             }
             if (dest == LeftoverS4Next)
                 return false;
-            if (dest == 0x03F731E4u && !_tv2LeftoverPastEpilogueDelayLogged)
+            if (dest == 0x03F731E4u)
                 return false;
             return dest != 0 && (dest & 0x1FFFFFFFu) >= 0x00010000u;
         }
@@ -4949,19 +4963,19 @@ namespace ProcessorEmulator.Core
             if (pc != ExnAfterFetch && pc != ExnAfterFetch2
                 && IsTv2CoredllShared(pc)
                 && pc != LeftoverS4Next
-                && (pc != 0x03F731E4u || _tv2LeftoverPastEpilogueDelayLogged))
+                && pc != 0x03F731E4u)
             {
                 if (dest == pc)
                     dest = pc + 4;
                 if (dest != LeftoverS4Next
-                    && (dest != 0x03F731E4u || _tv2LeftoverPastEpilogueDelayLogged)
+                    && dest != 0x03F731E4u
                     && dest != ExnAfterFetch && dest != ExnAfterFetch2
                     && (dest & 0x1FFFFFFFu) >= 0x00010000u)
                     _tv2LeftoverDestLiveNext = dest;
             }
             if (dest == LeftoverS4Next)
                 return;
-            if (dest == 0x03F731E4u && !_tv2LeftoverPastEpilogueDelayLogged)
+            if (dest == 0x03F731E4u)
                 return;
             if (dest == ExnAfterFetch || dest == ExnAfterFetch2)
                 return;
@@ -5031,16 +5045,19 @@ namespace ProcessorEmulator.Core
         // resume hijacks leftover mid / ERET2 I-fetch.
         // leftover dest-live continue leftover ERET $v0
         // restore dest-live next so leftover ERET returns
-        // dest-live next. After dest-live delay, dest-live
-        // next is the live dest-live $ra (peeked), not
-        // PC+4. leftover dest-live ERET $v0 restore after
-        // dest-live delay so leftover ERET returns dest-live
-        // $ra and leftover I-fetches dest-live $ra, not
-        // ERET2. leftover mid / ERET2 after dest-live delay
-        // is leftover ERET $v0 restore, not leftover ERET
+        // dest-live next. wait124: dest-live $ra is already
+        // walked after dest-live delay. After dest-live
+        // delay, dest-live next is leftover dest-live
+        // delay's live leftover next, not dest-live $ra,
+        // not PC+4. leftover dest-live ERET $v0 restore
+        // after dest-live delay writes leftover $v0 to
+        // leftover dest-live delay's live leftover next.
+        // leftover mid / ERET2 after dest-live delay is
+        // leftover ERET $v0 restore, not leftover ERET
         // path. prior peek named 0x03F731E4 as evidence
-        // only; do not invent dest. Do not hop 0x03F73238.
-        // Do not rewrite 0x80015B9C.
+        // only; do not invent dest. Do not follow dest-live
+        // $ra blindly. Do not hop 0x03F73238. Do not
+        // rewrite 0x80015B9C.
         public static void TryRestoreTv2LeftoverDestLiveEret(MipsBus bus, uint[] regs, uint pc)
         {
             if (!_tv2LeftoverPastS4NextLogged)
@@ -5063,7 +5080,7 @@ namespace ProcessorEmulator.Core
                 return;
             if (dest == LeftoverS4Next)
                 return;
-            if (dest == 0x03F731E4u && !_tv2LeftoverPastEpilogueDelayLogged)
+            if (dest == 0x03F731E4u)
                 return;
             uint was = leftoverMidAfterDelay
                 ? regs[2]
@@ -7687,20 +7704,30 @@ namespace ProcessorEmulator.Core
             _tv2LeftoverPastEpilogueDelayLogged = true;
             TryCaptureLeftoverEpilogueRa(bus, regs);
             // dest-live continue stays live. dest-live
-            // next after dest-live delay is the live
-            // dest-live $ra (peeked), not PC+4. prior
-            // peek named 0x03F731E4 as evidence only;
-            // do not invent dest. Do not hop 0x03F73238.
-            if (_tv2LeftoverUserRaSet && IsLeftoverUserRa(_tv2LeftoverUserRa))
-                _tv2LeftoverDestLiveNext = _tv2LeftoverUserRa;
-            else
-                _tv2LeftoverDestLiveNext = pc + 4;
+            // $ra is already walked (leftover past dest-live
+            // $ra). dest-live next after dest-live delay is
+            // leftover dest-live delay's live leftover next
+            // (leftover $ra at dest-live jr $ra if live
+            // leftover dest), not dest-live $ra, not PC+4.
+            // prior peek named 0x03F731E4 as evidence only;
+            // do not invent dest. Do not follow dest-live
+            // $ra blindly. Do not hop 0x03F73238.
+            uint next = 0;
+            if (regs != null && regs.Length > 31 && IsLeftoverUserRa(regs[31])
+                && (!_tv2LeftoverPastJrRaLogged || regs[31] != _tv2LeftoverUserRa))
+                next = regs[31];
+            if (next == 0)
+                next = pc + 4;
+            _tv2LeftoverDestLiveNext = next;
             TryKeepLeftoverDestLiveCtx(bus, _tv2LeftoverDestLiveNext);
             // leftover ERET 0x80015A24 uses $v0, not leftover
             // ctxPC. leftover dest-live ERET $v0 restore after
-            // dest-live delay so leftover ERET returns dest-live
-            // $ra and leftover I-fetches dest-live $ra, not
-            // ERET2. Do not invent dest. Do not hop 0x03F73238.
+            // dest-live delay writes leftover $v0 to leftover
+            // dest-live delay's live leftover next so leftover
+            // ERET / dest-live continue hops leftover mid /
+            // ERET2 to leftover dest-live delay's live leftover
+            // next, not dest-live $ra, not ERET2, not PC+4.
+            // Do not invent dest. Do not hop 0x03F73238.
             // Do not rewrite 0x80015B9C.
             TryRestoreTv2LeftoverDestLiveEret(bus, regs, pc);
             uint word = 0;
