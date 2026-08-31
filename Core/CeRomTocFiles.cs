@@ -5387,6 +5387,16 @@ namespace ProcessorEmulator.Core
             TryKeepTv2UserStatus(bus);
             TryKeepTv2ThreadOwner(bus, pc == ThreadCtxRestore ? "ERET" : "ERET2");
             TryKeepTv2ThreadCtx(bus, pc == ThreadCtxRestore ? "ERET" : "ERET2");
+            // wait121: leftover-left / leftover restore
+            // overwrites leftover ctxPC to ERET2 after
+            // leftover-past dest-live. Re-apply dest-live
+            // next so leftover restore I-fetches dest-live
+            // next / PC+4, not ERET2. Do not follow
+            // dest-live $ra 0x03F731E4. Do not rewrite
+            // ERET2. Do not add a one-shot hop at
+            // 0x03F73238.
+            if (_tv2LeftoverPastS4NextLogged && _tv2LeftoverDestLiveNext != 0)
+                TryKeepLeftoverDestLiveCtx(bus, _tv2LeftoverDestLiveNext);
             TryKeepTv2UserS7(bus, regs);
             TryKeepTv2UserSp(bus, regs);
             TryKeepTv2UserRa(bus, regs);
