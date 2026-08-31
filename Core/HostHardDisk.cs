@@ -676,6 +676,10 @@ namespace ProcessorEmulator.Core
             CeRomTocFiles.TryNoteTv2LeftoverPastCb44(bus, programCounter);
             CeRomTocFiles.TryResumeTv2LeftoverAfterCb44(bus, registers, ref programCounter);
             CeRomTocFiles.TryNoteTv2LeftoverPastCb48(bus, programCounter);
+            CeRomTocFiles.TryResumeTv2LeftoverAfterCb48(bus, registers, ref programCounter);
+            CeRomTocFiles.TryNoteTv2LeftoverPastCb4c(bus, programCounter);
+            CeRomTocFiles.TryResumeTv2LeftoverAfterCb4c(bus, registers, ref programCounter);
+            CeRomTocFiles.TryNoteTv2LeftoverPastJrRa(bus, programCounter);
             CeRomTocFiles.TryNoteTv2GwesFetch(bus, pc);
             CeRomTocFiles.TryNoteTv2GwesContinue(bus, pc);
             CeRomTocFiles.TryNoteTv2ZeroDestContinue(bus, pc);
