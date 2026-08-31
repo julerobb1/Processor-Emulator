@@ -369,6 +369,18 @@ namespace ProcessorEmulator.Core
         // invent dest. leftover dest-live continue, not a
         // one-shot-per-insn.
         public const uint LeftoverEpilogueNext = 0x03F73238;
+        // leftover-drop: leftover dest-live resume hijacks
+        // leftover mid / ERET2 I-fetch. leftover ERET
+        // 0x80015A24 uses $v0 not leftover ctxPC. leftover
+        // $v0 restore is one-shot leftover-CAE8 dest. After
+        // leftover dest-live lw leftover $v0 stays leftover
+        // mid. leftover ERET returns leftover mid / ERET2.
+        // leftover dest-live continue leftover ERET $v0
+        // restore dest-live next. leftover dest-live
+        // continue stays live after leftover dest-live
+        // delay. dest-live next is leftover dest-live
+        // continue dest-live next / PC+4, not leftover
+        // $ra 0x03F731E4. Do not rewrite 0x80015B9C.
         // wait74: after I-fetch, ctxPC=0x80040298 then
         // ThreadExceptionExit. 0x800154EC beq a1,0 skips
         // jal 0x80020D80; that jal 0x80040278. 0x80040298
@@ -706,6 +718,8 @@ namespace ProcessorEmulator.Core
         private static bool _tv2LeftoverUserRaSet;
         private static uint _tv2LeftoverUserRa;
         private static bool _tv2LeftoverEretLogged;
+        private static bool _tv2LeftoverDropLogged;
+        private static bool _tv2LeftoverDestLiveEretLogged;
         private static bool _tv2GwesFetchLogged;
         private static bool _tv2GwesContLogged;
         private static bool _tv2MscoreeSlotLogged;
@@ -2284,6 +2298,8 @@ namespace ProcessorEmulator.Core
             _tv2LeftoverUserRaSet = false;
             _tv2LeftoverUserRa = 0;
             _tv2LeftoverEretLogged = false;
+            _tv2LeftoverDropLogged = false;
+            _tv2LeftoverDestLiveEretLogged = false;
             _tv2GwesFetchLogged = false;
             _tv2GwesContLogged = false;
             _tv2MscoreeSlotLogged = false;
@@ -4859,6 +4875,124 @@ namespace ProcessorEmulator.Core
             catch
             {
             }
+        }
+
+        private static bool TryResolveLeftoverDestLiveNext(out uint dest)
+        {
+            dest = _tv2LeftoverDestLiveNext;
+            if (dest == 0)
+                dest = LeftoverEpilogueNext;
+            if (_tv2LeftoverPastEpilogueLogged && dest == LeftoverEpilogueNext)
+                dest = LeftoverEpilogueNext + 4;
+            if (_tv2LeftoverPastEpilogueDelayLogged
+                && dest == LeftoverEpilogueNext + 4)
+                dest = LeftoverEpilogueNext + 8;
+            if (dest == LeftoverS4Next || dest == 0x03F731E4u)
+                return false;
+            return dest != 0 && (dest & 0x1FFFFFFFu) >= 0x00010000u;
+        }
+
+        // leftover-drop: leftover dest-live resume hijacks
+        // leftover mid / ERET2 I-fetch. leftover ctxPC stays
+        // leftover mid / ERET2. leftover ERET 0x80015A24
+        // uses $v0 not leftover ctxPC. leftover $v0 restore
+        // is one-shot leftover-CAE8 dest. After leftover
+        // dest-live lw leftover $v0 stays leftover mid.
+        // leftover ERET returns leftover mid / ERET2.
+        // leftover dest-live continue leftover ERET $v0
+        // restore dest-live next. Stay-off after leftover
+        // dest-live delay. Do not rewind leftover $ra
+        // 0x03F731E4. Do not rewrite 0x80015B9C.
+        public static void TryNoteTv2LeftoverDrop(MipsBus bus, uint[] regs, uint pc)
+        {
+            if (_tv2LeftoverDropLogged)
+                return;
+            if (!_tv2LeftoverPastS4NextLogged)
+                return;
+            if (pc != ExnAfterFetch2 && pc != ExnAfterFetch)
+                return;
+            uint v0 = regs != null && regs.Length > 2 ? regs[2] : 0;
+            uint t4 = regs != null && regs.Length > 12 ? regs[12] : 0;
+            uint ra = regs != null && regs.Length > 31 ? regs[31] : 0;
+            uint ctx = 0;
+            uint cur = 0;
+            uint curThr = 0;
+            try
+            {
+                if (bus != null && _tv2Thread != 0)
+                    ctx = bus.Read32(_tv2Thread + ThreadCtxPc);
+                if (bus != null)
+                    cur = bus.Read32(CurProc);
+                if (bus != null)
+                    curThr = bus.Read32(ThreadPtr);
+            }
+            catch
+            {
+            }
+            _tv2LeftoverDropLogged = true;
+            System.Console.WriteLine("[Hive] FILE[25] leftover-drop pc=0x" +
+                pc.ToString("X8") +
+                " v0=0x" + v0.ToString("X8") +
+                " t4=0x" + t4.ToString("X8") +
+                " ra=0x" + ra.ToString("X8") +
+                " ctxPC=0x" + ctx.ToString("X8") +
+                " dest-live-next=0x" + _tv2LeftoverDestLiveNext.ToString("X8") +
+                " CurThread=0x" + curThr.ToString("X8") +
+                " CurProc=0x" + cur.ToString("X8") +
+                " (leftover mid/ERET2 after leftover dest-live; leftover ERET 0x80015A24 uses $v0 not leftover ctxPC; leftover $v0 restore is one-shot leftover-CAE8 dest; leftover dest-live continue leftover ERET $v0 restore dest-live next; do not invent dest; do not rewrite 0x80015B9C; do not rewind leftover $ra 0x03F731E4; not TV UI)");
+        }
+
+        // leftover dest-live continue leftover ERET $v0
+        // restore dest-live next. leftover ERET 0x80015A24
+        // mtc0 $t4,EPC ($t4=$ra=$v0). leftover dest-live
+        // resume hijacks leftover mid / ERET2 I-fetch.
+        // leftover dest-live continue leftover ERET $v0
+        // restore dest-live next so leftover ERET returns
+        // dest-live+4. leftover dest-live continue stays
+        // live after leftover dest-live delay. dest-live
+        // next is leftover dest-live continue dest-live
+        // next / PC+4, not leftover $ra 0x03F731E4.
+        // Do not rewrite 0x80015B9C.
+        public static void TryRestoreTv2LeftoverDestLiveEret(MipsBus bus, uint[] regs, uint pc)
+        {
+            if (!_tv2LeftoverPastS4NextLogged)
+                return;
+            if (pc != LeftoverOrRa && pc != LeftoverMtc0Epc && pc != LeftoverJrRa && pc != LeftoverEret)
+                return;
+            if (regs == null || regs.Length <= 31)
+                return;
+            uint dest;
+            if (!TryResolveLeftoverDestLiveNext(out dest))
+                return;
+            uint word = 0;
+            bool live = false;
+            if (!TryAcceptLeftoverAfterDest(bus, dest, out dest, out word, out live))
+                return;
+            if (dest == LeftoverS4Next || dest == 0x03F731E4u)
+                return;
+            uint was = pc == LeftoverOrRa ? regs[2] : (pc == LeftoverMtc0Epc ? regs[12] : regs[31]);
+            if (was == dest)
+                return;
+            if (pc == LeftoverOrRa)
+                regs[2] = dest;
+            else
+            {
+                regs[12] = dest;
+                regs[31] = dest;
+                if (pc == LeftoverEret)
+                    regs[2] = dest;
+            }
+            TryKeepLeftoverDestLiveCtx(bus, dest);
+            if (_tv2LeftoverDestLiveEretLogged)
+                return;
+            _tv2LeftoverDestLiveEretLogged = true;
+            System.Console.WriteLine("[Hive] FILE[25] leftover dest-live eret-restore was=0x" +
+                was.ToString("X8") +
+                " at=0x" + pc.ToString("X8") +
+                " dest=0x" + dest.ToString("X8") +
+                " dest-word=0x" + word.ToString("X8") +
+                (live ? " dest-live" : " dest-epilogue") +
+                " (leftover ERET 0x80015A24 uses $v0 not leftover ctxPC; leftover dest-live continue leftover ERET $v0 restore dest-live next; do not invent dest; do not rewrite 0x80015B9C; do not rewind leftover $ra 0x03F731E4; not TV UI)");
         }
 
         private static bool TryResolveLeftoverAfterCaf0(MipsBus bus, out uint dest, out uint word, out bool live)

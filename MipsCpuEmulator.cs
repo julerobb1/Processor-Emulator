@@ -290,6 +290,7 @@ namespace ProcessorEmulator.Emulation
 
                 CeRomTocFiles.TryResumeTv2LeftoverFetch(_bus, registers, ref programCounter);
                 CeRomTocFiles.TryRestoreTv2LeftoverEret(_bus, registers, programCounter);
+                CeRomTocFiles.TryRestoreTv2LeftoverDestLiveEret(_bus, registers, programCounter);
                 CeRomTocFiles.TryResumeTv2LeftoverAfterCaf0(_bus, registers, ref programCounter);
                 CeRomTocFiles.TryKeepTv2LeftoverS6(_bus, registers, programCounter);
                 CeRomTocFiles.TryResumeTv2LeftoverAfterCb10(_bus, registers, ref programCounter);
@@ -309,6 +310,7 @@ namespace ProcessorEmulator.Emulation
                 CeRomTocFiles.TryResumeTv2LeftoverAfterS6(_bus, registers, ref programCounter);
                 CeRomTocFiles.TryResumeTv2LeftoverAfterS5(_bus, registers, ref programCounter);
                 CeRomTocFiles.TryResumeTv2LeftoverAfterS4(_bus, registers, ref programCounter);
+                CeRomTocFiles.TryNoteTv2LeftoverDrop(_bus, registers, programCounter);
                 CeRomTocFiles.TryResumeTv2LeftoverDestLiveContinue(_bus, registers, ref programCounter);
                 _currentPc = programCounter;
                 try
@@ -660,6 +662,7 @@ namespace ProcessorEmulator.Emulation
             try
             {
                 CeRomTocFiles.TryRestoreTv2LeftoverEret(_bus, registers, programCounter);
+                CeRomTocFiles.TryRestoreTv2LeftoverDestLiveEret(_bus, registers, programCounter);
                 uint delayInstr = FetchInstruction();
                 DecodeAndExecute(delayInstr);
                 programCounter = target;
