@@ -4824,8 +4824,12 @@ namespace ProcessorEmulator.Core
         // leftover restore re-apply is too early (restore
         // I-fetch, not dispatch). dest-live I-fetch stays
         // dest-live next / PC+4, not ERET2. Do not follow
-        // dest-live $ra 0x03F731E4 (already walked; rewind).
-        // Do not add a one-shot hop at 0x03F73238.
+        // dest-live $ra 0x03F731E4 before dest-live delay
+        // (already walked; rewind). After dest-live delay,
+        // dest-live next is the live dest-live $ra (peeked),
+        // not PC+4. prior peek named 0x03F731E4 as evidence
+        // only; do not invent dest. Do not add a one-shot
+        // hop at 0x03F73238.
         public static void TryResumeTv2LeftoverDestLiveContinue(MipsBus bus, uint[] regs, ref uint pc)
         {
             if (!_tv2LeftoverPastS4NextLogged)
@@ -4837,10 +4841,19 @@ namespace ProcessorEmulator.Core
                 dest = LeftoverEpilogueNext;
             if (_tv2LeftoverPastEpilogueLogged && dest == LeftoverEpilogueNext)
                 dest = LeftoverEpilogueNext + 4;
-            if (_tv2LeftoverPastEpilogueDelayLogged
-                && dest == LeftoverEpilogueNext + 4)
-                dest = LeftoverEpilogueNext + 8;
-            if (dest == LeftoverS4Next || dest == 0x03F731E4u)
+            if (_tv2LeftoverPastEpilogueDelayLogged)
+            {
+                if (_tv2LeftoverUserRaSet && IsLeftoverUserRa(_tv2LeftoverUserRa)
+                    && (dest == LeftoverEpilogueNext + 4
+                        || dest == LeftoverEpilogueNext + 8
+                        || dest == 0))
+                    dest = _tv2LeftoverUserRa;
+                else if (dest == LeftoverEpilogueNext + 4)
+                    dest = LeftoverEpilogueNext + 8;
+            }
+            if (dest == LeftoverS4Next)
+                return;
+            if (dest == 0x03F731E4u && !_tv2LeftoverPastEpilogueDelayLogged)
                 return;
             uint word = 0;
             bool live = false;
@@ -4866,7 +4879,9 @@ namespace ProcessorEmulator.Core
                 return;
             if ((dest & 0x1FFFFFFFu) < 0x00010000u)
                 return;
-            if (dest == LeftoverS4Next || dest == 0x03F731E4u)
+            if (dest == LeftoverS4Next)
+                return;
+            if (dest == 0x03F731E4u && !_tv2LeftoverPastEpilogueDelayLogged)
                 return;
             if (dest == ExnAfterFetch || dest == ExnAfterFetch2)
                 return;
@@ -4895,10 +4910,19 @@ namespace ProcessorEmulator.Core
                 dest = LeftoverEpilogueNext;
             if (_tv2LeftoverPastEpilogueLogged && dest == LeftoverEpilogueNext)
                 dest = LeftoverEpilogueNext + 4;
-            if (_tv2LeftoverPastEpilogueDelayLogged
-                && dest == LeftoverEpilogueNext + 4)
-                dest = LeftoverEpilogueNext + 8;
-            if (dest == LeftoverS4Next || dest == 0x03F731E4u)
+            if (_tv2LeftoverPastEpilogueDelayLogged)
+            {
+                if (_tv2LeftoverUserRaSet && IsLeftoverUserRa(_tv2LeftoverUserRa)
+                    && (dest == LeftoverEpilogueNext + 4
+                        || dest == LeftoverEpilogueNext + 8
+                        || dest == 0))
+                    dest = _tv2LeftoverUserRa;
+                else if (dest == LeftoverEpilogueNext + 4)
+                    dest = LeftoverEpilogueNext + 8;
+            }
+            if (dest == LeftoverS4Next)
+                return false;
+            if (dest == 0x03F731E4u && !_tv2LeftoverPastEpilogueDelayLogged)
                 return false;
             return dest != 0 && (dest & 0x1FFFFFFFu) >= 0x00010000u;
         }
@@ -4919,16 +4943,20 @@ namespace ProcessorEmulator.Core
                 return;
             if (pc != ExnAfterFetch && pc != ExnAfterFetch2
                 && IsTv2CoredllShared(pc)
-                && pc != LeftoverS4Next && pc != 0x03F731E4u)
+                && pc != LeftoverS4Next
+                && (pc != 0x03F731E4u || _tv2LeftoverPastEpilogueDelayLogged))
             {
                 if (dest == pc)
                     dest = pc + 4;
-                if (dest != LeftoverS4Next && dest != 0x03F731E4u
+                if (dest != LeftoverS4Next
+                    && (dest != 0x03F731E4u || _tv2LeftoverPastEpilogueDelayLogged)
                     && dest != ExnAfterFetch && dest != ExnAfterFetch2
                     && (dest & 0x1FFFFFFFu) >= 0x00010000u)
                     _tv2LeftoverDestLiveNext = dest;
             }
-            if (dest == LeftoverS4Next || dest == 0x03F731E4u)
+            if (dest == LeftoverS4Next)
+                return;
+            if (dest == 0x03F731E4u && !_tv2LeftoverPastEpilogueDelayLogged)
                 return;
             if (dest == ExnAfterFetch || dest == ExnAfterFetch2)
                 return;
@@ -5018,7 +5046,9 @@ namespace ProcessorEmulator.Core
             bool live = false;
             if (!TryAcceptLeftoverAfterDest(bus, dest, out dest, out word, out live))
                 return;
-            if (dest == LeftoverS4Next || dest == 0x03F731E4u)
+            if (dest == LeftoverS4Next)
+                return;
+            if (dest == 0x03F731E4u && !_tv2LeftoverPastEpilogueDelayLogged)
                 return;
             uint was = pc == LeftoverOrRa ? regs[2] : (pc == LeftoverMtc0Epc ? regs[12] : regs[31]);
             if (was == dest)
@@ -7634,9 +7664,14 @@ namespace ProcessorEmulator.Core
             _tv2LeftoverPastEpilogueDelayLogged = true;
             TryCaptureLeftoverEpilogueRa(bus, regs);
             // dest-live continue stays live. dest-live
-            // next is PC+4 after this delay, not dest-
-            // live $ra 0x03F731E4 (already walked).
-            _tv2LeftoverDestLiveNext = pc + 4;
+            // next after dest-live delay is the live
+            // dest-live $ra (peeked), not PC+4. prior
+            // peek named 0x03F731E4 as evidence only;
+            // do not invent dest. Do not hop 0x03F73238.
+            if (_tv2LeftoverUserRaSet && IsLeftoverUserRa(_tv2LeftoverUserRa))
+                _tv2LeftoverDestLiveNext = _tv2LeftoverUserRa;
+            else
+                _tv2LeftoverDestLiveNext = pc + 4;
             TryKeepLeftoverDestLiveCtx(bus, _tv2LeftoverDestLiveNext);
             uint word = 0;
             bool mapped = TryPeekWord(bus, pc, out word);
