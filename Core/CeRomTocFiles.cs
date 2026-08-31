@@ -4791,11 +4791,17 @@ namespace ProcessorEmulator.Core
         // ctxPC to dest-live next so leftover does not
         // leave after every lw. Do not rewrite
         // 0x80015B9C. Do not invent dest.
+        // wait121: dest-live continue stays live after
+        // leftover-past dest-live delay. after-* only
+        // rewrites one I-fetch. leftover-left /
+        // leftover ctxPC / EPC yank leftover to ERET2
+        // unless dest-live next keeps PC+4 after dest
+        // peek. Do not follow dest-live $ra 0x03F731E4
+        // (already walked; rewind). Do not add a
+        // one-shot hop at 0x03F73238.
         public static void TryResumeTv2LeftoverDestLiveContinue(MipsBus bus, uint[] regs, ref uint pc)
         {
             if (!_tv2LeftoverPastS4NextLogged)
-                return;
-            if (_tv2LeftoverPastEpilogueDelayLogged)
                 return;
             if (pc != ExnAfterFetch2 && pc != ExnAfterFetch)
                 return;
@@ -4804,6 +4810,9 @@ namespace ProcessorEmulator.Core
                 dest = LeftoverEpilogueNext;
             if (_tv2LeftoverPastEpilogueLogged && dest == LeftoverEpilogueNext)
                 dest = LeftoverEpilogueNext + 4;
+            if (_tv2LeftoverPastEpilogueDelayLogged
+                && dest == LeftoverEpilogueNext + 4)
+                dest = LeftoverEpilogueNext + 8;
             if (dest == LeftoverS4Next || dest == 0x03F731E4u)
                 return;
             uint word = 0;
@@ -4814,7 +4823,7 @@ namespace ProcessorEmulator.Core
                 return;
             uint was = pc;
             pc = dest;
-            _tv2LeftoverDestLiveNext = dest;
+            _tv2LeftoverDestLiveNext = dest + 4;
             TryKeepLeftoverDestLiveCtx(bus, dest);
             System.Console.WriteLine("[Hive] FILE[25] leftover dest-live continue was=0x" +
                 was.ToString("X8") +
@@ -7400,8 +7409,10 @@ namespace ProcessorEmulator.Core
                 return;
             _tv2LeftoverPastEpilogueDelayLogged = true;
             TryCaptureLeftoverEpilogueRa(bus, regs);
-            if (_tv2LeftoverUserRaSet && IsLeftoverUserRa(_tv2LeftoverUserRa))
-                _tv2LeftoverDestLiveNext = _tv2LeftoverUserRa;
+            // dest-live continue stays live. dest-live
+            // next is PC+4 after this delay, not dest-
+            // live $ra 0x03F731E4 (already walked).
+            _tv2LeftoverDestLiveNext = pc + 4;
             uint word = 0;
             bool mapped = TryPeekWord(bus, pc, out word);
             uint cur = 0;
