@@ -4795,22 +4795,16 @@ namespace ProcessorEmulator.Core
         {
             if (!_tv2LeftoverPastS4NextLogged)
                 return;
+            if (_tv2LeftoverPastEpilogueDelayLogged)
+                return;
             if (pc != ExnAfterFetch2 && pc != ExnAfterFetch)
                 return;
             uint dest = _tv2LeftoverDestLiveNext;
             if (dest == 0)
                 dest = LeftoverEpilogueNext;
             if (_tv2LeftoverPastEpilogueLogged && dest == LeftoverEpilogueNext)
-            {
                 dest = LeftoverEpilogueNext + 4;
-                if (_tv2LeftoverPastEpilogueDelayLogged)
-                {
-                    if (!_tv2LeftoverUserRaSet || !IsLeftoverUserRa(_tv2LeftoverUserRa))
-                        return;
-                    dest = _tv2LeftoverUserRa;
-                }
-            }
-            if (dest == LeftoverS4Next)
+            if (dest == LeftoverS4Next || dest == 0x03F731E4u)
                 return;
             uint word = 0;
             bool live = false;
