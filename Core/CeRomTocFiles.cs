@@ -4720,6 +4720,11 @@ namespace ProcessorEmulator.Core
             uint keep = 0;
             if (IsFirmwareUserOrCoredllVa(stacked))
                 keep = stacked;
+            if (IsLeftoverUserRa(stacked))
+            {
+                _tv2LeftoverUserRa = stacked;
+                _tv2LeftoverUserRaSet = true;
+            }
             if (keep == 0)
             {
                 uint saved = 0;
@@ -6229,31 +6234,22 @@ namespace ProcessorEmulator.Core
                 return false;
             if (ra >= 0x03F6C8F4u && ra <= LeftoverCb4c)
                 return false;
-            return true;
+            if ((ra & 0xFF000000u) == 0x0C000000u)
+                return false;
+            return IsFirmwareUserOrCoredllVa(ra);
         }
 
         private static void TryCaptureLeftoverUserRa(MipsBus bus, uint[] regs)
         {
             if (_tv2LeftoverUserRaSet)
                 return;
-            uint sp = 0;
-            if (IsFirmwareUserSlotVa(_tv2StoreSp))
-                sp = _tv2StoreSp;
-            if (sp == 0 && regs != null && regs.Length > 29
-                && IsFirmwareUserSlotVa(regs[29]))
-                sp = regs[29];
+            if (!IsFirmwareUserSlotVa(_tv2StoreSp))
+                return;
             uint stacked = 0;
-            if (sp != 0 && TryPeekWord(bus, sp + 28, out stacked)
+            if (TryPeekWord(bus, _tv2StoreSp + 28, out stacked)
                 && IsLeftoverUserRa(stacked))
             {
                 _tv2LeftoverUserRa = stacked;
-                _tv2LeftoverUserRaSet = true;
-                return;
-            }
-            if (regs != null && regs.Length >= 32
-                && IsLeftoverUserRa(regs[31]))
-            {
-                _tv2LeftoverUserRa = regs[31];
                 _tv2LeftoverUserRaSet = true;
             }
         }
