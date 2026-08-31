@@ -566,6 +566,8 @@ namespace ProcessorEmulator.Core
         private static bool _tv2LeftoverAfterCb4cLogged;
         private static bool _tv2LeftoverPastJrRaLogged;
         private static uint _tv2LeftoverJrRaDest;
+        private static bool _tv2LeftoverUserRaSet;
+        private static uint _tv2LeftoverUserRa;
         private static bool _tv2LeftoverEretLogged;
         private static bool _tv2GwesFetchLogged;
         private static bool _tv2GwesContLogged;
@@ -2097,6 +2099,8 @@ namespace ProcessorEmulator.Core
             _tv2LeftoverAfterCb4cLogged = false;
             _tv2LeftoverPastJrRaLogged = false;
             _tv2LeftoverJrRaDest = 0;
+            _tv2LeftoverUserRaSet = false;
+            _tv2LeftoverUserRa = 0;
             _tv2LeftoverEretLogged = false;
             _tv2GwesFetchLogged = false;
             _tv2GwesContLogged = false;
@@ -4283,14 +4287,16 @@ namespace ProcessorEmulator.Core
                 return;
             if (pc != ExnAfterFetch2 && pc != ExnAfterFetch && pc != LeftoverCb4c + 4)
                 return;
-            if (regs == null || regs.Length < 32)
-                return;
-            uint ra = regs[31];
+            uint ra = 0;
+            if (pc == LeftoverCb4c + 4 && regs != null && regs.Length >= 32)
+                ra = regs[31];
+            if (ra == 0 && _tv2LeftoverUserRaSet)
+                ra = _tv2LeftoverUserRa;
             if (ra == 0 || ra == 0xFFFFFFFFu || ra == 0xFFFFFFECu)
                 return;
             if ((ra & 0x1FFFFFFFu) < 0x00010000u)
                 return;
-            if (ra >= 0x03F6CAC0u && ra <= LeftoverCb4c)
+            if (ra >= 0x03F6C8F4u && ra <= LeftoverCb4c)
                 return;
             uint dest = 0;
             uint word = 0;
@@ -6212,13 +6218,31 @@ namespace ProcessorEmulator.Core
                 " (past leftover lw $s6,24($sp); do not rewrite 0x80015B9C; do not rewind 0x03F6CAC0; not TV UI)");
         }
 
-        public static void TryNoteTv2LeftoverPastCb48(MipsBus bus, uint pc)
+        private static void TryCaptureLeftoverUserRa(uint[] regs)
+        {
+            if (_tv2LeftoverUserRaSet)
+                return;
+            if (regs == null || regs.Length < 32)
+                return;
+            uint ra = regs[31];
+            if (ra == 0 || ra == 0xFFFFFFFFu || ra == 0xFFFFFFECu)
+                return;
+            if ((ra & 0x1FFFFFFFu) < 0x00010000u)
+                return;
+            if (ra >= 0x03F6C8F4u && ra <= LeftoverCb4c)
+                return;
+            _tv2LeftoverUserRa = ra;
+            _tv2LeftoverUserRaSet = true;
+        }
+
+        public static void TryNoteTv2LeftoverPastCb48(MipsBus bus, uint[] regs, uint pc)
         {
             if (!_tv2LeftoverPastCb44Logged || _tv2LeftoverPastCb48Logged)
                 return;
             if (pc != LeftoverCb48)
                 return;
             _tv2LeftoverPastCb48Logged = true;
+            TryCaptureLeftoverUserRa(regs);
             uint word = 0;
             bool mapped = TryPeekWord(bus, pc, out word);
             uint cb4c = 0;
@@ -6247,16 +6271,18 @@ namespace ProcessorEmulator.Core
                 " dest-" + (mapped ? "mapped" : "unmapped") +
                 " dest-word=0x" + word.ToString("X8") +
                 " cb4c-word=0x" + cb4c.ToString("X8") +
+                " ra=0x" + (_tv2LeftoverUserRaSet ? _tv2LeftoverUserRa.ToString("X8") : "unset") +
                 " (past leftover lw $ra,28($sp); do not rewrite 0x80015B9C; do not rewind 0x03F6CAC0; not TV UI)");
         }
 
-        public static void TryNoteTv2LeftoverPastCb4c(MipsBus bus, uint pc)
+        public static void TryNoteTv2LeftoverPastCb4c(MipsBus bus, uint[] regs, uint pc)
         {
             if (!_tv2LeftoverPastCb48Logged || _tv2LeftoverPastCb4cLogged)
                 return;
             if (pc != LeftoverCb4c)
                 return;
             _tv2LeftoverPastCb4cLogged = true;
+            TryCaptureLeftoverUserRa(regs);
             uint word = 0;
             bool mapped = TryPeekWord(bus, pc, out word);
             uint cur = 0;
