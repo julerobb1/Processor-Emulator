@@ -294,6 +294,7 @@ namespace ProcessorEmulator.Emulation
                 CeRomTocFiles.TryKeepTv2LeftoverS6(_bus, registers, programCounter);
                 CeRomTocFiles.TryResumeTv2LeftoverAfterCb10(_bus, registers, ref programCounter);
                 CeRomTocFiles.TryResumeTv2LeftoverAfterCb14(_bus, registers, ref programCounter);
+                CeRomTocFiles.TryResumeTv2LeftoverAfterCb34(_bus, registers, ref programCounter);
                 _currentPc = programCounter;
                 try
                 {
