@@ -316,7 +316,9 @@ namespace ProcessorEmulator.Emulation
                 try
                 {
                     uint instruction = FetchInstruction();
+                    CeRomTocFiles.TryKeepLeftoverDestLiveDispatch(_bus, _currentPc);
                     DecodeAndExecute(instruction);
+                    CeRomTocFiles.TryKeepLeftoverDestLiveDispatch(_bus, _currentPc);
                 }
                 catch (TlbMissException ex)
                 {
@@ -664,7 +666,9 @@ namespace ProcessorEmulator.Emulation
                 CeRomTocFiles.TryRestoreTv2LeftoverEret(_bus, registers, programCounter);
                 CeRomTocFiles.TryRestoreTv2LeftoverDestLiveEret(_bus, registers, programCounter);
                 uint delayInstr = FetchInstruction();
+                CeRomTocFiles.TryKeepLeftoverDestLiveDispatch(_bus, programCounter);
                 DecodeAndExecute(delayInstr);
+                CeRomTocFiles.TryKeepLeftoverDestLiveDispatch(_bus, programCounter);
                 programCounter = target;
             }
             catch (TlbMissException ex)

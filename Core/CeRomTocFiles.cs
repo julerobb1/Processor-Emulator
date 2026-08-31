@@ -380,7 +380,12 @@ namespace ProcessorEmulator.Core
         // continue stays live after leftover dest-live
         // delay. dest-live next is leftover dest-live
         // continue dest-live next / PC+4, not leftover
-        // $ra 0x03F731E4. Do not rewrite 0x80015B9C.
+        // $ra 0x03F731E4. leftover DISPATCH after leftover
+        // dest-live I-fetch must not yank leftover ctxPC
+        // to ERET2. leftover restore re-apply is too
+        // early (restore I-fetch, not dispatch). dest-live
+        // I-fetch stays dest-live next / PC+4, not ERET2.
+        // Do not rewrite 0x80015B9C.
         // wait74: after I-fetch, ctxPC=0x80040298 then
         // ThreadExceptionExit. 0x800154EC beq a1,0 skips
         // jal 0x80020D80; that jal 0x80040278. 0x80040298
@@ -720,6 +725,7 @@ namespace ProcessorEmulator.Core
         private static bool _tv2LeftoverEretLogged;
         private static bool _tv2LeftoverDropLogged;
         private static bool _tv2LeftoverDestLiveEretLogged;
+        private static bool _tv2LeftoverDispatchLogged;
         private static bool _tv2GwesFetchLogged;
         private static bool _tv2GwesContLogged;
         private static bool _tv2MscoreeSlotLogged;
@@ -2300,6 +2306,7 @@ namespace ProcessorEmulator.Core
             _tv2LeftoverEretLogged = false;
             _tv2LeftoverDropLogged = false;
             _tv2LeftoverDestLiveEretLogged = false;
+            _tv2LeftoverDispatchLogged = false;
             _tv2GwesFetchLogged = false;
             _tv2GwesContLogged = false;
             _tv2MscoreeSlotLogged = false;
@@ -4812,9 +4819,13 @@ namespace ProcessorEmulator.Core
         // rewrites one I-fetch. leftover-left /
         // leftover ctxPC / EPC yank leftover to ERET2
         // unless dest-live next keeps PC+4 after dest
-        // peek. Do not follow dest-live $ra 0x03F731E4
-        // (already walked; rewind). Do not add a
-        // one-shot hop at 0x03F73238.
+        // peek. leftover DISPATCH after leftover dest-live
+        // I-fetch must not yank leftover ctxPC to ERET2.
+        // leftover restore re-apply is too early (restore
+        // I-fetch, not dispatch). dest-live I-fetch stays
+        // dest-live next / PC+4, not ERET2. Do not follow
+        // dest-live $ra 0x03F731E4 (already walked; rewind).
+        // Do not add a one-shot hop at 0x03F73238.
         public static void TryResumeTv2LeftoverDestLiveContinue(MipsBus bus, uint[] regs, ref uint pc)
         {
             if (!_tv2LeftoverPastS4NextLogged)
@@ -4890,6 +4901,45 @@ namespace ProcessorEmulator.Core
             if (dest == LeftoverS4Next || dest == 0x03F731E4u)
                 return false;
             return dest != 0 && (dest & 0x1FFFFFFFu) >= 0x00010000u;
+        }
+
+        // leftover DISPATCH after leftover dest-live I-fetch
+        // must not yank leftover ctxPC to ERET2. dest-live
+        // I-fetch stays dest-live next / PC+4, not ERET2.
+        // leftover restore re-apply is too early (restore
+        // I-fetch, not dispatch). Do not follow dest-live
+        // $ra 0x03F731E4. Do not rewrite 0x80015B9C. Do
+        // not add a one-shot hop at 0x03F73238.
+        public static void TryKeepLeftoverDestLiveDispatch(MipsBus bus, uint pc)
+        {
+            if (!_tv2LeftoverPastS4NextLogged)
+                return;
+            uint dest;
+            if (!TryResolveLeftoverDestLiveNext(out dest))
+                return;
+            if (pc != ExnAfterFetch && pc != ExnAfterFetch2
+                && IsTv2CoredllShared(pc)
+                && pc != LeftoverS4Next && pc != 0x03F731E4u)
+            {
+                if (dest == pc)
+                    dest = pc + 4;
+                if (dest != LeftoverS4Next && dest != 0x03F731E4u
+                    && dest != ExnAfterFetch && dest != ExnAfterFetch2
+                    && (dest & 0x1FFFFFFFu) >= 0x00010000u)
+                    _tv2LeftoverDestLiveNext = dest;
+            }
+            if (dest == LeftoverS4Next || dest == 0x03F731E4u)
+                return;
+            if (dest == ExnAfterFetch || dest == ExnAfterFetch2)
+                return;
+            TryKeepLeftoverDestLiveCtx(bus, dest);
+            if (_tv2LeftoverDispatchLogged)
+                return;
+            _tv2LeftoverDispatchLogged = true;
+            System.Console.WriteLine("[Hive] FILE[25] leftover dest-live dispatch keep dest=0x" +
+                dest.ToString("X8") +
+                " after=0x" + pc.ToString("X8") +
+                " (leftover DISPATCH after leftover dest-live I-fetch; dest-live I-fetch stays dest-live next / PC+4, not ERET2; leftover restore re-apply is too early; do not invent dest; do not rewrite 0x80015B9C; do not rewind leftover $ra 0x03F731E4; not TV UI)");
         }
 
         // leftover-drop: leftover dest-live resume hijacks
@@ -5144,6 +5194,21 @@ namespace ProcessorEmulator.Core
             // 0x03F731E4. +D4 $sp 0x0C03F518 is
             // not that frame, so jr $ra ra=0.
             // Not a real CE jump. Do not map page 0.
+            if (_tv2LeftoverPastS4NextLogged && _tv2LeftoverDestLiveNext != 0
+                && (ctxPc == ExnAfterFetch || ctxPc == ExnAfterFetch2
+                    || IsExnDispatchLeftover(ctxPc)
+                    || IsTv2CoredllShared(ctxPc)))
+            {
+                // leftover DISPATCH after leftover dest-live
+                // I-fetch must not yank leftover ctxPC to
+                // ERET2. dest-live I-fetch stays dest-live
+                // next / PC+4. leftover restore re-apply is
+                // too early (restore I-fetch, not dispatch).
+                TryKeepLeftoverDestLiveDispatch(bus, ctxPc);
+                if (ctxPc == ExnAfterFetch || ctxPc == ExnAfterFetch2
+                    || IsExnDispatchLeftover(ctxPc))
+                    return;
+            }
             if (IsExnDispatchLeftover(ctxPc) && _tv2FetchLogged)
             {
                 // wait98: leftover already continued past CAE8.
@@ -5523,14 +5588,17 @@ namespace ProcessorEmulator.Core
             TryKeepTv2ThreadCtx(bus, pc == ThreadCtxRestore ? "ERET" : "ERET2");
             // wait121: leftover-left / leftover restore
             // overwrites leftover ctxPC to ERET2 after
-            // leftover-past dest-live. Re-apply dest-live
-            // next so leftover restore I-fetches dest-live
-            // next / PC+4, not ERET2. Do not follow
-            // dest-live $ra 0x03F731E4. Do not rewrite
-            // ERET2. Do not add a one-shot hop at
-            // 0x03F73238.
+            // leftover-past dest-live. leftover restore
+            // re-apply is too early (restore I-fetch, not
+            // dispatch). leftover DISPATCH after leftover
+            // dest-live I-fetch must not yank leftover
+            // ctxPC to ERET2. dest-live I-fetch stays
+            // dest-live next / PC+4, not ERET2. Do not
+            // follow dest-live $ra 0x03F731E4. Do not
+            // rewrite ERET2. Do not add a one-shot hop
+            // at 0x03F73238.
             if (_tv2LeftoverPastS4NextLogged && _tv2LeftoverDestLiveNext != 0)
-                TryKeepLeftoverDestLiveCtx(bus, _tv2LeftoverDestLiveNext);
+                TryKeepLeftoverDestLiveDispatch(bus, pc);
             TryKeepTv2UserS7(bus, regs);
             TryKeepTv2UserSp(bus, regs);
             TryKeepTv2UserRa(bus, regs);
