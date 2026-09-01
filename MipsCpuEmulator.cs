@@ -1283,7 +1283,8 @@ namespace ProcessorEmulator.Emulation
             if (rd != 0)
                 registers[rd] = programCounter + 4;
             if (target == CeRomTocFiles.Win32SetFilePointer
-                && CeRomTocFiles.IsTv2FileHandle(registers[4]))
+                && (CeRomTocFiles.IsTv2FileHandle(registers[4])
+                    || CeRomTocFiles.IsExtraRomOpenFileHandle(registers[4])))
             {
                 if (_inDelaySlot)
                 {

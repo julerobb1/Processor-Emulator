@@ -320,7 +320,8 @@ namespace ProcessorEmulator.Core.Loaders
                             && (fname[0] == 't' || fname[0] == 'T')
                             && (fname[1] == 'v' || fname[1] == 'V')
                             && fname[2] == '2';
-                        if (!tv2)
+                        bool openFile = CeRomTocFiles.IsExtraRomOpenFile(fname);
+                        if (!tv2 && !openFile)
                             continue;
                         uint realSz = memory.ReadMemory32(entry + 0x0C);
                         uint compSz = memory.ReadMemory32(entry + 0x10);
@@ -333,6 +334,8 @@ namespace ProcessorEmulator.Core.Loaders
                             " (FILESentry; do not invent 0x81360000)");
                         if (IsTv2ClientCeExe(fname))
                             CeRomTocFiles.CacheExtraRomTv2File(memory, entry);
+                        else if (openFile)
+                            CeRomTocFiles.CacheExtraRomOpenFile(memory, entry, fname);
                     }
                     if (!sawMscoreeFile)
                         Console.WriteLine("[NkBinLoader] ExtraROM FILE table has no mscoree.dll" +
