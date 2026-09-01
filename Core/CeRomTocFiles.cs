@@ -4861,6 +4861,16 @@ namespace ProcessorEmulator.Core
             // delay+4 walk. leftover after dest-live delay+4
             // walk stays dest-live next / PC+4, not leftover
             // mid / ERET2.
+            // wait128: leftover dest-live keep hops leftover
+            // I-fetch / leftover FetchInstruction leftover mid /
+            // ERET2 0x80015B9C after dest-live delay+4 to
+            // dest-live next / leftover dest-live next /
+            // leftover ctxPC / leftover PC+4 before leftover
+            // FetchInstruction. leftover dest-live continue
+            // after leftover interrupt is too late. leftover
+            // after dest-live delay+4, including leftover
+            // interrupt, stays dest-live next / PC+4, not
+            // leftover mid / ERET2.
             if (pc != ExnAfterFetch2 && pc != ExnAfterFetch
                 && !(_tv2LeftoverPastEpilogueDelayLogged && pc == 0x80000180u))
                 return;

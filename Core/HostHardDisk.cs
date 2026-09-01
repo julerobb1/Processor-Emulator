@@ -398,6 +398,17 @@ namespace ProcessorEmulator.Core
             uint pc = programCounter;
             _stepPc = pc;
             CeRomTocFiles.TryResumeTv2LeftoverFetch(bus, registers, ref programCounter);
+            // wait128: leftover dest-live I-fetch of leftover
+            // mid / ERET2 is logged here before leftover
+            // FetchInstruction. leftover dest-live keep hops
+            // leftover dest-live next / leftover ctxPC /
+            // leftover PC to dest-live next / PC+4 before
+            // leftover I-fetches leftover mid / ERET2.
+            // leftover after dest-live delay+4, including
+            // leftover interrupt, stays dest-live next /
+            // PC+4, not leftover mid / ERET2.
+            CeRomTocFiles.TryResumeTv2LeftoverDestLiveContinue(bus, registers, ref programCounter);
+            CeRomTocFiles.TryKeepLeftoverDestLiveDispatch(bus, programCounter);
             pc = programCounter;
             if (pc == BinfsInheritFill)
             {

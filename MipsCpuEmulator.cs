@@ -421,6 +421,16 @@ namespace ProcessorEmulator.Emulation
 
         private uint FetchInstruction()
         {
+            // wait128: leftover dest-live keep hops leftover
+            // I-fetch of leftover mid / ERET2 after dest-live
+            // delay+4 to dest-live next / PC+4 before leftover
+            // FetchInstruction. leftover dest-live continue
+            // after leftover interrupt is too late: leftover
+            // I-fetch of leftover mid / ERET2 is already
+            // logged. leftover after dest-live delay+4 stays
+            // dest-live next / PC+4, not leftover mid / ERET2.
+            CeRomTocFiles.TryResumeTv2LeftoverDestLiveContinue(_bus, registers, ref programCounter);
+            CeRomTocFiles.TryKeepLeftoverDestLiveDispatch(_bus, programCounter);
             if ((programCounter & 3) != 0)
                 throw new CpuAlignmentException($"Unaligned fetch PC=0x{programCounter:X8}");
             uint instruction = ReadMemory32(programCounter);
