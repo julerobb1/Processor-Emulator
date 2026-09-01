@@ -3217,34 +3217,39 @@ namespace ProcessorEmulator.Core
             return true;
         }
 
+        private static bool TryFinishExtraRomOpenFileDecompress(MipsBus bus, uint[] regs, uint pc)
+        {
+            if (_romFileDecompRa == 0 || pc != _romFileDecompRa)
+                return false;
+            _romFileDecompRa = 0;
+            if (regs != null && regs.Length > 29 && _romFileSavedSp != 0)
+                regs[29] = _romFileSavedSp;
+            _romFileSavedSp = 0;
+            uint ret = regs != null && regs.Length > 2 ? regs[2] : 0;
+            uint dest0 = 0;
+            ExtraRomOpenFile slot = _romFile;
+            try
+            {
+                if (bus != null)
+                    dest0 = bus.Read32(ExtraRomFileDest);
+            }
+            catch
+            {
+            }
+            System.Console.WriteLine("[Hive] ExtraROM FILE CEDecompressROM ret " +
+                (slot != null ? slot.Label : "") +
+                " v0=0x" + ret.ToString("X8") +
+                " dest=0x" + ExtraRomFileDest.ToString("X8") +
+                " word=0x" + dest0.ToString("X8") +
+                (slot != null && ret == slot.Real ? " (firmware expanded FILE real)" : "") +
+                " (do not invent e32; FILE[26] tv2clientcorece.dll is 6398464)");
+            return true;
+        }
+
         public static bool TryFinishTv2FileDecompress(MipsBus bus, uint[] regs, uint pc)
         {
-            if (_romFileDecompRa != 0 && pc == _romFileDecompRa)
-            {
-                _romFileDecompRa = 0;
-                if (regs != null && regs.Length > 29 && _romFileSavedSp != 0)
-                    regs[29] = _romFileSavedSp;
-                _romFileSavedSp = 0;
-                uint v0 = regs != null && regs.Length > 2 ? regs[2] : 0;
-                uint word = 0;
-                ExtraRomOpenFile slot = _romFile;
-                try
-                {
-                    if (bus != null)
-                        word = bus.Read32(ExtraRomFileDest);
-                }
-                catch
-                {
-                }
-                System.Console.WriteLine("[Hive] ExtraROM FILE CEDecompressROM ret " +
-                    (slot != null ? slot.Label : "") +
-                    " v0=0x" + v0.ToString("X8") +
-                    " dest=0x" + ExtraRomFileDest.ToString("X8") +
-                    " word=0x" + word.ToString("X8") +
-                    (slot != null && v0 == slot.Real ? " (firmware expanded FILE real)" : "") +
-                    " (do not invent e32; FILE[26] tv2clientcorece.dll is 6398464)");
+            if (TryFinishExtraRomOpenFileDecompress(bus, regs, pc))
                 return false;
-            }
             if (_tv2FileDecompRa == 0 || pc != _tv2FileDecompRa)
                 return false;
             _tv2FileDecompRa = 0;
