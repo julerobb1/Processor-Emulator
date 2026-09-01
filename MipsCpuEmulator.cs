@@ -364,6 +364,16 @@ namespace ProcessorEmulator.Emulation
                 programCounter = 0x80000180;
             }
             HostHardDisk.NoteCpuException(exceptionCode, _cp0.EPC, 0, programCounter, registers, _bus);
+            // wait127: leftover dest-live I-fetch of dest-live
+            // next / PC+4 after dest-live delay+4 walk takes
+            // leftover interrupt. leftover exception handler
+            // I-fetches leftover mid / ERET2. leftover dest-live
+            // continue hops leftover exception / leftover mid /
+            // ERET2 to dest-live next / PC+4 before leftover
+            // I-fetches leftover mid / ERET2. leftover after
+            // dest-live delay+4 walk stays dest-live next /
+            // PC+4, not leftover mid / ERET2.
+            CeRomTocFiles.TryResumeTv2LeftoverDestLiveContinue(_bus, registers, ref programCounter);
         }
 
         private void TriggerTlbException(TlbMissException ex)
