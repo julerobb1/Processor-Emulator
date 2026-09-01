@@ -317,8 +317,10 @@ namespace ProcessorEmulator.Emulation
                 {
                     uint instruction = FetchInstruction();
                     CeRomTocFiles.TryKeepLeftoverDestLiveDispatch(_bus, _currentPc);
+                    CeRomTocFiles.TryResumeTv2LeftoverDestLiveContinue(_bus, registers, ref programCounter);
                     DecodeAndExecute(instruction);
                     CeRomTocFiles.TryKeepLeftoverDestLiveDispatch(_bus, _currentPc);
+                    CeRomTocFiles.TryResumeTv2LeftoverDestLiveContinue(_bus, registers, ref programCounter);
                 }
                 catch (TlbMissException ex)
                 {
@@ -667,8 +669,10 @@ namespace ProcessorEmulator.Emulation
                 CeRomTocFiles.TryRestoreTv2LeftoverDestLiveEret(_bus, registers, programCounter);
                 uint delayInstr = FetchInstruction();
                 CeRomTocFiles.TryKeepLeftoverDestLiveDispatch(_bus, programCounter);
+                CeRomTocFiles.TryResumeTv2LeftoverDestLiveContinue(_bus, registers, ref programCounter);
                 DecodeAndExecute(delayInstr);
                 CeRomTocFiles.TryKeepLeftoverDestLiveDispatch(_bus, programCounter);
+                CeRomTocFiles.TryResumeTv2LeftoverDestLiveContinue(_bus, registers, ref programCounter);
                 programCounter = target;
             }
             catch (TlbMissException ex)

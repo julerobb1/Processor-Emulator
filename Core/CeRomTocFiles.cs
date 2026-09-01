@@ -4865,8 +4865,21 @@ namespace ProcessorEmulator.Core
                 // past dest-live $ra). dest-live next after
                 // dest-live delay is leftover dest-live
                 // delay's live leftover next, not dest-live
-                // $ra, not PC+4.
-                if (_tv2LeftoverPastJrRaLogged
+                // $ra, not PC+4. wait126: after leftover
+                // dest-live continue hops leftover mid to
+                // dest-live delay+4 / dest-live next /
+                // PC+4, leftover dest-live next stays
+                // dest-live next / PC+4. leftover dest-live
+                // continue hops leftover mid / ERET2 to
+                // dest-live next / PC+4, not dest-live
+                // delay+4.
+                if (dest == LeftoverEpilogueNext + 8
+                    || dest == LeftoverEpilogueNext + 12
+                    || dest > LeftoverEpilogueNext + 8)
+                {
+                    // dest-live delay+4 already walked.
+                }
+                else if (_tv2LeftoverPastJrRaLogged
                     && dest == _tv2LeftoverUserRa)
                     dest = LeftoverEpilogueNext + 8;
                 else if (dest == LeftoverEpilogueNext + 4 || dest == 0)
@@ -4933,7 +4946,19 @@ namespace ProcessorEmulator.Core
                 dest = LeftoverEpilogueNext + 4;
             if (_tv2LeftoverPastEpilogueDelayLogged)
             {
-                if (_tv2LeftoverPastJrRaLogged
+                // wait126: after leftover dest-live continue
+                // hops leftover mid to dest-live delay+4 /
+                // dest-live next / PC+4, leftover dest-live
+                // next stays dest-live next / PC+4. leftover
+                // DISPATCH dest is dest-live next / PC+4,
+                // not dest-live delay+4.
+                if (dest == LeftoverEpilogueNext + 8
+                    || dest == LeftoverEpilogueNext + 12
+                    || dest > LeftoverEpilogueNext + 8)
+                {
+                    // dest-live delay+4 already walked.
+                }
+                else if (_tv2LeftoverPastJrRaLogged
                     && dest == _tv2LeftoverUserRa)
                     dest = LeftoverEpilogueNext + 8;
                 else if (dest == LeftoverEpilogueNext + 4 || dest == 0)
@@ -4950,9 +4975,21 @@ namespace ProcessorEmulator.Core
         // must not yank leftover ctxPC to ERET2. dest-live
         // I-fetch stays dest-live next / PC+4, not ERET2.
         // leftover restore re-apply is too early (restore
-        // I-fetch, not dispatch). Do not follow dest-live
-        // $ra 0x03F731E4. Do not rewrite 0x80015B9C. Do
-        // not add a one-shot hop at 0x03F73238.
+        // I-fetch, not dispatch). wait126: leftover dest-live
+        // continue hops leftover mid to dest-live delay+4 /
+        // PC+4. leftover DISPATCH after leftover dest-live
+        // I-fetch of dest-live delay+4 / PC+4 yanks leftover
+        // ctxPC. leftover later I-fetches ERET2. leftover
+        // DISPATCH after leftover dest-live I-fetch of
+        // dest-live delay+4 / PC+4 writes leftover ctxPC
+        // to dest-live next / PC+4, not ERET2. leftover
+        // dest-live continue after leftover dest-live
+        // I-fetch hops leftover mid / ERET2 to dest-live
+        // next / PC+4. leftover dest-live next after
+        // dest-live delay+4 walk stays dest-live next /
+        // PC+4, not ERET2. Do not follow dest-live $ra.
+        // Do not rewrite 0x80015B9C. Do not add a one-shot
+        // hop at 0x03F73238.
         public static void TryKeepLeftoverDestLiveDispatch(MipsBus bus, uint pc)
         {
             if (!_tv2LeftoverPastS4NextLogged)
@@ -4965,6 +5002,22 @@ namespace ProcessorEmulator.Core
                 && pc != LeftoverS4Next
                 && pc != 0x03F731E4u)
             {
+                // wait126: leftover dest-live continue hops
+                // leftover mid to dest-live delay+4 /
+                // dest-live next / PC+4. leftover DISPATCH
+                // after leftover dest-live I-fetch of
+                // dest-live delay+4 / dest-live next /
+                // PC+4 must not yank leftover dest-live
+                // next / leftover ctxPC back to dest-live
+                // delay+4 / leftover dest-live delay's
+                // live leftover next. leftover dest-live
+                // next stays dest-live next / PC+4.
+                if (_tv2LeftoverPastEpilogueDelayLogged
+                    && dest != 0 && dest != pc && dest != pc + 4
+                    && dest < pc
+                    && dest != LeftoverS4Next
+                    && dest != 0x03F731E4u)
+                    dest = pc;
                 if (dest == pc)
                     dest = pc + 4;
                 if (dest != LeftoverS4Next
