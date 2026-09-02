@@ -277,16 +277,6 @@ namespace ProcessorEmulator.Core
         private static bool _opened;
         private static bool _fatSeen;
         private static readonly HashSet<string> _logged = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        private static bool ExtraRomTocLoadWatch()
-        {
-            foreach (string key in _logged)
-            {
-                if (key.StartsWith("hive:ldde32", StringComparison.OrdinalIgnoreCase))
-                    return true;
-            }
-            return false;
-        }
         private static bool _inheritListLogged;
         private static readonly HashSet<uint> _vallocLogged = new HashSet<uint>();
         private static bool _extractLogged;
@@ -462,11 +452,13 @@ namespace ProcessorEmulator.Core
                 return false;
             }
             if (pc == KernelValloc && (!string.IsNullOrEmpty(_cprocName)
-                || ExtraRomTocLoadWatch()
+                || _logged.Contains("hive:ldde32")
                 || _gwesWatch
                 || CeRomTocFiles.IsTv2FileExpanded()))
             {
-                if (ExtraRomTocLoadWatch())
+                if (_logged.Contains("hive:ldde32")
+                    || _logged.Contains("hive:ldde32:mscoree")
+                    || _logged.Contains("hive:ldde32:ole32"))
                     CeRomTocFiles.TryReserveExtraRomValloc(registers);
                 uint a0 = registers[4];
                 uint a1 = registers[5];
@@ -507,7 +499,9 @@ namespace ProcessorEmulator.Core
                 return false;
             }
             if (pc == CeRomTocFiles.MapO32VallocRet
-                && ExtraRomTocLoadWatch()
+                && (_logged.Contains("hive:ldde32")
+                    || _logged.Contains("hive:ldde32:mscoree")
+                    || _logged.Contains("hive:ldde32:ole32"))
                 && registers != null && registers.Length > 4)
             {
                 uint dest = registers.Length > 20 ? registers[20] : 0;
@@ -2099,28 +2093,24 @@ namespace ProcessorEmulator.Core
                 return;
             }
             if (pc == CeRomTocFiles.CopyO32Rom
-                && ExtraRomTocLoadWatch())
+                && _logged.Contains("hive:ldde32"))
             {
-                if (_logged.Contains("hive:ldde32"))
-                    CeRomTocFiles.TryMarkExtraRomO32Compressed(bus, CeRomTocFiles.DdiNopTocEntry);
-                string copyName;
-                int copyIndex;
-                uint copyEntry;
-                uint copyDest;
-                if (CeRomTocFiles.TryPeekLoadE32(out copyName, out copyIndex)
-                    && CeRomTocFiles.TryGetCachedExtraRomToc(copyName, out copyIndex, out copyEntry, out copyDest))
-                    CeRomTocFiles.TryMarkExtraRomO32Compressed(bus, copyEntry);
-                if (_logged.Contains("hive:ldde32") && _logged.Add("hive:copyo32"))
+                CeRomTocFiles.TryMarkExtraRomO32Compressed(bus, CeRomTocFiles.DdiNopTocEntry);
+                if (_logged.Add("hive:copyo32"))
                     System.Console.WriteLine("[Hive] 0x8001AFA4 CopyO32 ExtraROM ddi_nop" +
                         " (firmware MapO32; do not XIP-alias 0x80764CE0)");
                 return;
             }
             if (pc == CeRomTocFiles.MapO32Rom
                 && registers != null && registers.Length > 5
-                && (ExtraRomTocLoadWatch()
+                && (_logged.Contains("hive:ldde32")
+                    || _logged.Contains("hive:ldde32:mscoree")
+                    || _logged.Contains("hive:ldde32:ole32")
                     || CeRomTocFiles.IsTv2FileExpanded()))
             {
-                if (ExtraRomTocLoadWatch())
+                if (_logged.Contains("hive:ldde32")
+                    || _logged.Contains("hive:ldde32:mscoree")
+                    || _logged.Contains("hive:ldde32:ole32"))
                     CeRomTocFiles.TrySteerExtraRomMapO32(bus, registers[5]);
                 if (_logged.Contains("hive:ldde32:mscoree")
                     || _logged.Contains("hive:ldde32:ole32"))
@@ -2141,7 +2131,7 @@ namespace ProcessorEmulator.Core
                 return;
             }
             if (pc == CeRomTocFiles.MapO32DecompressCommitChk
-                && ExtraRomTocLoadWatch())
+                && _logged.Contains("hive:ldde32"))
             {
                 CeRomTocFiles.TryAcceptExtraRomDestCommit(registers);
                 return;
@@ -2175,7 +2165,9 @@ namespace ProcessorEmulator.Core
                 return;
             }
             if (pc == CeRomTocFiles.MapO32Decompress
-                && ExtraRomTocLoadWatch()
+                && (_logged.Contains("hive:ldde32")
+                    || _logged.Contains("hive:ldde32:mscoree")
+                    || _logged.Contains("hive:ldde32:ole32"))
                 && registers != null && registers.Length > 4)
             {
                 uint dest = registers[4];
