@@ -736,6 +736,8 @@ namespace ProcessorEmulator.Core
             if (pc == KernelCreateFile)
             {
                 string kn = ReadUtf16(bus, registers[4]);
+                if (!string.IsNullOrEmpty(kn))
+                    CeRomTocFiles.NotePendingRomFile(kn);
                 if ((_notified || IsHardDiskPath(kn)) && _logged.Add("k:" + kn))
                     System.Console.WriteLine($"[HardDisk] kCreateFile \"{kn}\"");
                 if (BootLog.IsGuestIoName(kn) && _logged.Add("rom:cf:" + kn))
@@ -1175,7 +1177,10 @@ namespace ProcessorEmulator.Core
                 " (wait52 TLB; do not invent 0x040851E8)");
             string failName = !string.IsNullOrEmpty(pathS7) ? pathS7 : pathA0;
             if (!string.IsNullOrEmpty(failName))
+            {
+                CeRomTocFiles.NotePendingRomFile(failName);
                 BootLog.Write("[Hive] CreateFileFail \"" + failName + "\" pc=0x8001D400");
+            }
             LogSlotAliasVa(bus, s7, "CreateFileFail s7");
             if (slot0 != s7)
                 LogSlotAliasVa(bus, slot0, "CreateFileFail slot0");

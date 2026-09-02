@@ -295,7 +295,9 @@ namespace ProcessorEmulator.Core.Loaders
                         }
                         if (IsCom16550(name))
                             sawCom16550Toc = true;
-                        if (BootLog.IsGuestIoName(name) && !IsDdiNop(name))
+                        if (IsIptvHal(name) || IsIptvDriver(name))
+                            why = "TOC[" + i + "] type-7; Prefix BTV; pixels IPTVDriver/iptvhal; Display stays ddi_nop.dll; ExtraROM has no second GDI DDI; do not invent a Display REG_SZ";
+                        else if (BootLog.IsGuestIoName(name) && !IsDdiNop(name))
                             why = GuestIoWhy(name, i, true);
                         BootLog.Rom("ok", "ExtraROM", "TOC", (int)i, name, 7, dest, vsize, psize, why);
                     }
@@ -328,7 +330,9 @@ namespace ProcessorEmulator.Core.Loaders
                         }
                         if (IsCom16550(fname))
                             sawCom16550File = true;
-                        if (BootLog.IsGuestIoName(fname))
+                        if (IsIptvHal(fname) || IsIptvDriver(fname))
+                            why = "FILE[" + i + "] type-8; Prefix BTV; pixels IPTVDriver/iptvhal; Display stays ddi_nop.dll; do not invent a Display REG_SZ";
+                        else if (BootLog.IsGuestIoName(fname))
                             why = GuestIoWhy(fname, i, false);
                         BootLog.Rom("ok", "ExtraROM", "FILE", (int)i, fname, 8, load, realSz, compSz, why);
                         if (IsTv2ClientCeExe(fname))
@@ -352,6 +356,18 @@ namespace ProcessorEmulator.Core.Loaders
             {
                 Log("[NkBinLoader] ExtraROM ROMHDR log skipped: " + ex.Message);
             }
+        }
+
+        private static bool IsIptvHal(string name)
+        {
+            return name != null
+                && name.IndexOf("iptvhal", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsIptvDriver(string name)
+        {
+            return name != null
+                && name.IndexOf("iptvdriver", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static bool IsCom16550(string name)
@@ -384,9 +400,11 @@ namespace ProcessorEmulator.Core.Loaders
                 return kind + "; hive Dllcom16550.dll; ExtraROM has this name";
             if (name != null && (name.IndexOf("rtl8139", StringComparison.OrdinalIgnoreCase) >= 0
                 || name.IndexOf("bcm7038mac", StringComparison.OrdinalIgnoreCase) >= 0
-                || name.IndexOf("ndis", StringComparison.OrdinalIgnoreCase) >= 0
-                || name.IndexOf("iptvdriver", StringComparison.OrdinalIgnoreCase) >= 0))
+                || name.IndexOf("ndis", StringComparison.OrdinalIgnoreCase) >= 0))
                 return kind + "; hive ImagePath; no NIC on the MIPS bus; log only; do not invent a NIC";
+            if (name != null && (name.IndexOf("iptvhal", StringComparison.OrdinalIgnoreCase) >= 0
+                || name.IndexOf("iptvdriver", StringComparison.OrdinalIgnoreCase) >= 0))
+                return kind + "; Prefix BTV; pixels IPTVDriver/iptvhal; Display stays ddi_nop.dll; do not invent a Display REG_SZ";
             return kind + "; guest IO name; do not invent a NIC or UART";
         }
 

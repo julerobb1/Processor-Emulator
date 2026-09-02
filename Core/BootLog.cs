@@ -178,7 +178,6 @@ namespace ProcessorEmulator.Core
             return ContainsFold(name, "rtl8139")
                 || ContainsFold(name, "bcm7038mac")
                 || ContainsFold(name, "ndis")
-                || ContainsFold(name, "iptvdriver")
                 || ContainsFold(name, "bcmuart")
                 || ContainsFold(name, "com16550")
                 || ContainsFold(name, "serial.dll")

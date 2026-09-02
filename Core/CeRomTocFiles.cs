@@ -831,7 +831,9 @@ namespace ProcessorEmulator.Core
             // dest/cache. Do not turn those names into TOC type-7.
             // ExtraROM TOC type-7 attach is any dump ROMHDR TOC
             // name (ddi_nop/mscoree/ole32 plus bcmuart/ndis/sipcfg
-            // and the rest). Names not in ExtraROM TOC or FILE skip.
+            // /iptvhal_*/iptvdriver and the rest). Do not skip
+            // those as "not ExtraROM FILE". Names not in ExtraROM
+            // TOC or FILE skip. Display stays ddi_nop.dll.
             // wait53: CreateFile \Windows\tv2clientce.exe is
             // INVALID_HANDLE. ExtraROM FILE[25] is that name
             // (5120/2421 at 0x81050DCC), not a TOC module and
@@ -2319,6 +2321,40 @@ namespace ProcessorEmulator.Core
                 BootLog.Rom("miss", "ExtraROM", "", -1, n, 0, 0, 0, 0,
                     "not in ExtraROM TOC/FILE; honest miss; do not invent");
             }
+            LogCachedExtraRomFragment("iptvhal");
+        }
+
+        // ExtraROM has iptvhal_* TOC names, not a bare iptvhal.dll.
+        // Log the dump names so CreateFile/LoadLibrary can attach
+        // them type-7. Do not invent iptvhal.dll or a Display REG_SZ.
+        private static void LogCachedExtraRomFragment(string fragment)
+        {
+            if (string.IsNullOrEmpty(fragment))
+                return;
+            int hits = 0;
+            for (int i = 0; i < _romTocCount; i++)
+            {
+                ExtraRomTocMod m = _romTocMods[i];
+                if (m == null || string.IsNullOrEmpty(m.Name)
+                    || m.Name.IndexOf(fragment, System.StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+                hits++;
+                BootLog.Rom("ok", "ExtraROM", "TOC", m.Index, m.Name, 7, m.Dest, 0, 0,
+                    "cached iptvhal_* for CreateFileFail/OpenFile/LoadLibrary type-7; Display stays ddi_nop.dll");
+            }
+            for (int i = 0; i < _romFileCount; i++)
+            {
+                ExtraRomOpenFile f = _romFiles[i];
+                if (f == null || string.IsNullOrEmpty(f.Label)
+                    || f.Label.IndexOf(fragment, System.StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+                hits++;
+                BootLog.Rom("ok", "ExtraROM", "FILE", f.Index, f.Label, 8, f.Load, 0, 0,
+                    "FILE type-8 dest/cache; not ExtraROM TOC type-7");
+            }
+            if (hits == 0)
+                BootLog.Rom("miss", "ExtraROM", "", -1, fragment, 0, 0, 0, 0,
+                    "no ExtraROM TOC/FILE *" + fragment + "* ; honest miss; do not invent iptvhal.dll or a Display REG_SZ");
         }
 
         public static void NoteExtraRom(uint imageStart)
@@ -4059,6 +4095,9 @@ namespace ProcessorEmulator.Core
             if (_romTocMods == null || string.IsNullOrEmpty(name))
                 return null;
             string look = RomLookupName(name);
+            ExtraRomTocMod family = null;
+            int familyHits = 0;
+            bool wantIptvHal = IsIptvHalAsk(name) || IsIptvHalAsk(look);
             for (int i = 0; i < _romTocCount; i++)
             {
                 ExtraRomTocMod slot = _romTocMods[i];
@@ -4066,7 +4105,18 @@ namespace ProcessorEmulator.Core
                     continue;
                 if (NamesMatchRom(name, slot.Name) || NamesMatchRom(look, slot.Name))
                     return slot;
+                if (wantIptvHal && IsIptvHalAsk(slot.Name))
+                {
+                    familyHits++;
+                    if (family == null)
+                        family = slot;
+                }
             }
+            // CE may say iptvhal.dll while ExtraROM only has
+            // iptvhal_*. Attach the one dump name. Two hits stay
+            // a miss so we do not pick a module CE did not name.
+            if (familyHits == 1)
+                return family;
             return null;
         }
 
@@ -10037,7 +10087,43 @@ namespace ProcessorEmulator.Core
                 return true;
             if (string.IsNullOrEmpty(asked) || string.IsNullOrEmpty(have))
                 return false;
-            return NamesEqual(RomLookupName(asked), have);
+            if (NamesEqual(RomLookupName(asked), have))
+                return true;
+            string askStem = StripRomExt(RomLookupName(asked));
+            string haveStem = StripRomExt(have);
+            return NamesEqual(askStem, haveStem);
+        }
+
+        // ExtraROM iptvhal_* TOC names. CE may CreateFile/LoadLibrary
+        // iptvhal.dll or iptvhal_*.dll. Do not invent a second GDI DDI.
+        private static bool IsIptvHalAsk(string name)
+        {
+            string stem = StripRomExt(RomLookupName(name));
+            if (string.IsNullOrEmpty(stem) || stem.Length < 7)
+                return false;
+            return (stem[0] == 'i' || stem[0] == 'I')
+                && (stem[1] == 'p' || stem[1] == 'P')
+                && (stem[2] == 't' || stem[2] == 'T')
+                && (stem[3] == 'v' || stem[3] == 'V')
+                && (stem[4] == 'h' || stem[4] == 'H')
+                && (stem[5] == 'a' || stem[5] == 'A')
+                && (stem[6] == 'l' || stem[6] == 'L');
+        }
+
+        private static string StripRomExt(string name)
+        {
+            if (string.IsNullOrEmpty(name) || name.Length < 5)
+                return name;
+            int n = name.Length;
+            if (n >= 4 && name[n - 4] == '.'
+                && ((name[n - 3] == 'd' || name[n - 3] == 'D')
+                    && (name[n - 2] == 'l' || name[n - 2] == 'L')
+                    && (name[n - 1] == 'l' || name[n - 1] == 'L')
+                    || (name[n - 3] == 'e' || name[n - 3] == 'E')
+                    && (name[n - 2] == 'x' || name[n - 2] == 'X')
+                    && (name[n - 1] == 'e' || name[n - 1] == 'E')))
+                return name.Substring(0, n - 4);
+            return name;
         }
 
         private static bool NamesEqual(string a, string b)
