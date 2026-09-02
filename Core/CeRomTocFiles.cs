@@ -42,20 +42,23 @@ namespace ProcessorEmulator.Core
         public const uint LoadE32Rom = 0x800196E4;
         public const uint LoadE32RomRet = 0x8001E3E8;
         // After e32_lite objcnt/vbase/vsize copy, firmware jals
-        // 0x80058B24 (e32_lite+0x1C <- e32_rom+0x24 units, a2=0x38)
+        // 0x80058B24 (e32_lite+0x1C <- e32_rom+0x24, a2=0x38)
         // then ProbeO32Rom 0x80055DB0:
         //   a0 = 0xFFFF03FF (mask)
-        //   a1 = first o32_rom (e32+0x5C packed, retry e32+0x44)
+        //   a1 = first o32_rom (firmware uses e32+0x5C)
         //   a2 = sizeof(o32_rom) = 0x18 (or 0 = empty span)
         //   word = *a1 = o32[0].o32_vsize; must be nonzero
-        // 25d74cb: ExtraROM a1=LiveE32+0x5C / +0x44 word=0
-        // v0=0. Dump ExtraROM e32+0x5C is 0 because o32 lives
-        // at TOC+0x18 (host LiveO32 = LiveE32+0x80), not packed
-        // after e32. NK TOC type-7 e32 bytes are not in-repo.
-        // Do not invent a pointer at +0x5C. Do not jal. Do not
-        // rewrite. Do not force v0=1.
+        // Public CE e32_rom is 0x24; o32[objcnt] starts at +0x24.
+        // 25d74cb unit-copy src=LiveE32+0x24. ProbeO32Rom a1=
+        // LiveE32+0x5C is 0x38 past first o32 (o32[2] interior
+        // when objcnt=3), not a missing dump pointer. Dump
+        // e32+0x5C is 0. Host dump o32 at LiveE32+0x5C so
+        // firmware sees dump o32_vsize. Do not invent a
+        // pointer at +0x5C. Do not rewrite jal a1. Do not jal.
+        // Do not force v0=1.
         public const uint LoadE32UnitCopy = 0x80058B24;
         public const uint LoadE32RomFieldChk = 0x80055DB0;
+        public const uint E32RomPublicSize = 0x24;
         public const uint E32RomPackedSize = 0x5C;
         public const uint E32RomRetryOff = 0x44;
         // After OpenE32, 0x8001E418 jal 0x800165DC then
@@ -515,10 +518,10 @@ namespace ProcessorEmulator.Core
         public const int ExtraRomFileMax = 48;
         public const uint O32RomSize = 0x18;
         public const uint O32LiteSize = 0x1C;
-        // e32_rom before first packed o32_rom. Header 0x20 +
-        // 7 info units (0x38) + pad. CE pehdr ROM_EXTRA=9 would
-        // put IMD.size at +0x5C, but a2=0x18 is O32RomSize not
-        // sizeof(info)=8, so the call site is one o32_rom.
+        // Public CE: e32_rom is 0x24, then o32_rom[objcnt].
+        // Firmware ProbeO32Rom still adds 0x5C (0x24+0x38).
+        // Host dump o32 at +0x5C. Leave dump e32[0x00..0x5C)
+        // dump-real so the unit copy at +0x24 is unchanged.
         // coredll 0x03F7A960 bne v0,0 / delay sw v0, (0x01FFFFA0).
         // HeapCreate(0,0,0) returned 0 in device.exe and the delay
         // slot wrote that 0 over the heap filesys already stored.
@@ -4432,7 +4435,7 @@ namespace ProcessorEmulator.Core
         {
             if (bus == null || slot == null || slot.TocWords == null || slot.E32Words == null)
                 return false;
-            uint e32Bytes = (uint)slot.E32Words.Length * 4;
+            uint e32Bytes = ExtraRomHostE32Bytes(slot);
             uint o32Bytes = slot.O32Words != null ? (uint)slot.O32Words.Length * 4 : 0;
             string name = slot.Name ?? "";
             uint nameBytes = ((uint)name.Length + 4) & ~3u;
@@ -4463,10 +4466,16 @@ namespace ProcessorEmulator.Core
             uint o32Real = slot.O32Words != null && slot.O32Words.Length > 4 ? slot.O32Words[4] : 0;
             uint dump5c = slot.E32Words.Length > 23 ? slot.E32Words[E32RomPackedSize / 4] : 0;
             uint dump44 = slot.E32Words.Length > 17 ? slot.E32Words[E32RomRetryOff / 4] : 0;
+            uint dump24 = slot.E32Words.Length > 9 ? slot.E32Words[E32RomPublicSize / 4] : 0;
+            bool fwO32 = slot.LiveO32 != 0 && slot.LiveE32 != 0
+                && slot.LiveO32 == slot.LiveE32 + E32RomPackedSize;
             string packed = dump5c != 0
                 ? " e32+0x5C dump-real 0x" + dump5c.ToString("X8") + " already hosted"
-                : " e32+0x5C dump=0; ProbeO32Rom word must be o32_vsize; o32 at TOC+0x18 LiveO32=0x" +
-                    slot.LiveO32.ToString("X8") + "; do not invent a unit pointer";
+                : (fwO32 && o32Vsize != 0
+                    ? " e32+0x5C hosts dump o32[0] vsize=0x" + o32Vsize.ToString("X") +
+                        " (ProbeO32Rom a1; dump e32+0x5C was 0; not an invented pointer)"
+                    : " e32+0x5C dump=0; ProbeO32Rom word must be o32_vsize; o32 at TOC+0x18 LiveO32=0x" +
+                        slot.LiveO32.ToString("X8") + "; do not invent a unit pointer");
             System.Console.WriteLine("[Hive] ExtraROM TOC[" + slot.Index + "] " +
                 slot.Name + " e32_rom=0x" + slot.LiveE32.ToString("X8") +
                 " o32=0x" + slot.LiveO32.ToString("X8") +
@@ -4477,15 +4486,17 @@ namespace ProcessorEmulator.Core
                 " vsize=0x" + o32Vsize.ToString("X") +
                 " o32.real=0x" + o32Real.ToString("X8") +
                 " toc=0x" + slot.LiveEntry.ToString("X8") +
+                " e32+0x24=0x" + dump24.ToString("X8") +
                 " e32+0x44=0x" + dump44.ToString("X8") +
                 packed +
-                " (dump e32/o32 copy; dump o32 dataptr/comp; do not invent 0x81360000)");
+                " (dump e32/o32 copy; public e32=0x24 o32 at +0x24; firmware first o32 at +0x5C; do not invent 0x81360000)");
             BootLog.Rom("ok", "ExtraROM", "TOC", slot.Index, slot.Name, 7, slot.Dest, o32Real, o32Psize,
                 "LoadE32 dump e32_rom+o32 at 0x" + slot.LiveE32.ToString("X8") +
+                " o32=0x" + slot.LiveO32.ToString("X8") +
                 " vbase=0x" + vbase.ToString("X8") +
                 " dataptr=0x" + o32Ptr.ToString("X8") +
                 " psize=0x" + o32Psize.ToString("X") +
-                " (dump o32; uncompressed psize=0 is not CEDecompressROM; do not invent e32)");
+                " (dump o32 at firmware +0x5C; uncompressed psize=0 is not CEDecompressROM; do not invent e32)");
             return true;
         }
 
@@ -5176,7 +5187,8 @@ namespace ProcessorEmulator.Core
         }
 
         // ProbeO32Rom (0x80055DB0) ABI from 25d74cb. a1 is the
-        // first o32_rom, a2 is sizeof(o32_rom), word is o32_vsize.
+        // first o32_rom (firmware e32+0x5C), a2 is sizeof(o32_rom),
+        // word is o32_vsize. Public CE packs o32 at e32+0x24.
         private static string NameProbeO32Must(uint word, uint a2, uint o32v)
         {
             string a2ok = a2 == O32RomSize
@@ -5408,13 +5420,20 @@ namespace ProcessorEmulator.Core
             string span = !string.IsNullOrEmpty(_loadE32ChkSpan)
                 ? " a1-o32 " + _loadE32ChkSpan : "";
             string dumpO32 = FormatDumpO32(slot);
-            string honest = dumpWord == 0
-                ? " dump ExtraROM e32+0x" + off.ToString("X") +
+            bool fwO32 = live != 0 && liveO32 == live + E32RomPackedSize && o32v != 0;
+            string honest;
+            if (dumpWord != 0)
+                honest = " dump ExtraROM e32+0x" + off.ToString("X") +
+                    " dump-real 0x" + dumpWord.ToString("X8") + " already hosted";
+            else if (fwO32 && off == E32RomPackedSize)
+                honest = " dump ExtraROM e32+0x5C is 0 (not a pointer); " + dumpO32 +
+                    " hosted at LiveE32+0x5C=0x" + liveO32.ToString("X8") +
+                    " for ProbeO32Rom; public o32 at +0x24; do not invent a pointer";
+            else
+                honest = " dump ExtraROM e32+0x" + off.ToString("X") +
                     " is 0; " + dumpO32 +
                     " at TOC+0x18 LiveO32=0x" + liveO32.ToString("X8") +
-                    "; do not invent a unit pointer; copy skipped"
-                : " dump ExtraROM e32+0x" + off.ToString("X") +
-                    " dump-real 0x" + dumpWord.ToString("X8") + " already hosted";
+                    "; do not invent a unit pointer";
             string nk = !string.IsNullOrEmpty(_nkLoadE32Ok)
                 ? " NK-ok " + _nkLoadE32Ok
                 : " NK-ok pending fsdmgr/coredll/ceddk (NK e32 not in-repo)";
@@ -5816,6 +5835,27 @@ namespace ProcessorEmulator.Core
             return true;
         }
 
+        // Firmware ProbeO32Rom a1 = e32+0x5C. Dump ExtraROM
+        // e32+0x5C is 0 (not a pointer). When dump o32_vsize
+        // is nonzero, host e32 as 0x5C and write dump o32
+        // there. Leave dump e32[0x00..0x5C) so unit-copy
+        // +0x24 stays dump-real. Do not invent a pointer.
+        private static uint ExtraRomHostE32Bytes(ExtraRomTocMod slot)
+        {
+            if (slot == null || slot.E32Words == null || slot.E32Words.Length == 0)
+                return 0;
+            uint cached = (uint)slot.E32Words.Length * 4;
+            uint dump5c = slot.E32Words.Length > 23
+                ? slot.E32Words[E32RomPackedSize / 4] : 0;
+            if (dump5c != 0)
+                return cached;
+            uint o32v = slot.O32Words != null && slot.O32Words.Length > 0
+                ? slot.O32Words[0] : 0;
+            if (o32v != 0)
+                return E32RomPackedSize;
+            return cached;
+        }
+
         private static bool WriteHostExtraRomE32O32(MipsBus bus, ExtraRomTocMod slot, string name)
         {
             try
@@ -5826,7 +5866,11 @@ namespace ProcessorEmulator.Core
                 bus.Write32(slot.LiveEntry + 0x18, slot.LiveO32);
                 if (slot.LiveName != 0)
                     bus.Write32(slot.LiveEntry + 0x10, slot.LiveName);
-                for (int i = 0; i < slot.E32Words.Length; i++)
+                uint e32Bytes = ExtraRomHostE32Bytes(slot);
+                int e32n = (int)(e32Bytes / 4);
+                if (e32n > slot.E32Words.Length)
+                    e32n = slot.E32Words.Length;
+                for (int i = 0; i < e32n; i++)
                     bus.Write32(slot.LiveE32 + (uint)(i * 4), slot.E32Words[i]);
                 if (slot.O32Words != null && slot.LiveO32 != 0)
                 {
