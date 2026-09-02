@@ -145,6 +145,8 @@ namespace ProcessorEmulator.Emulation
                             _bus.Write8(obj + 4, attachType);
                             if (attachType == CeRomTocFiles.FileAttachType)
                                 _bus.Write8(obj + 5, 1);
+                            if (attachType == CeRomTocFiles.TocAttachType)
+                                CeRomTocFiles.TryPrepareExtraRomBuiltInLikeDdiNop(_bus, obj);
                             _bus.Write32(registers[29] + 40, attr);
                             registers[3] = attr;
                             if (attachType == CeRomTocFiles.FileAttachType
