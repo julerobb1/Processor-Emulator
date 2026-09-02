@@ -41,42 +41,37 @@ namespace ProcessorEmulator.Core
         public const uint TocWalkMissContinue = 0x80016B78;
         public const uint LoadE32Rom = 0x800196E4;
         public const uint LoadE32RomRet = 0x8001E3E8;
-        // After e32_lite objcnt/vbase/vsize copy, firmware jals
-        // 0x80058B24 (e32_lite+0x1C <- e32_rom+0x24, a2=0x38)
-        // then ProbeO32Rom 0x80055DB0:
-        //   a0 = 0xFFFF03FF (mask)
-        //   a1 = first o32_rom (firmware uses e32+0x5C)
-        //   a2 = sizeof(o32_rom) = 0x18 (or 0 = empty span)
-        //   word = *a1 = o32[0].o32_vsize; must be nonzero
-        // Public CE e32_rom is 0x24; o32[objcnt] starts at +0x24.
-        // 25d74cb unit-copy src=LiveE32+0x24. ProbeO32Rom a1=
-        // LiveE32+0x5C is 0x38 past first o32 (o32[2] interior
-        // when objcnt=3), not a missing dump pointer. Dump
-        // e32+0x5C is 0. Host dump o32 at LiveE32+0x5C so
-        // firmware sees dump o32_vsize. Do not invent a
-        // pointer at +0x5C. Do not rewrite jal a1. Do not jal.
-        // Do not force v0=1.
+        // LoadE32 0x800196E4: addiu sp,-0x1A0; lbu v0,4(a0);
+        // andi v1,v0,2. Bit 1 of object+4 is the ROM path
+        // (type 7 has it; type 8 FILE does not). Then e32
+        // copy and jal memcpy 0x80058B24 (e32_lite+0x1C <-
+        // e32_rom+0x24, a2=0x38). Dump nk.exe: 0x80055DB0
+        // is CurMSec / OEM tick, not an o32 probe. Incoming
+        // a0/a1/a2 are leftover LoadE32 regs; jal a1 is
+        // overwritten. Do not treat CurMSec v0=0 as LoadE32
+        // fail. Do not invent a +0x5C pointer.
         public const uint LoadE32UnitCopy = 0x80058B24;
-        public const uint LoadE32RomFieldChk = 0x80055DB0;
+        public const uint LoadE32Frame = 0x1A0;
+        public const uint LoadE32RomBit = 2;
+        public const uint LoadE32BodyLim = 0x8001A800;
         public const uint E32RomPublicSize = 0x24;
         public const uint E32RomPackedSize = 0x5C;
         public const uint E32RomRetryOff = 0x44;
-        // 25d74cb jals AFTER ProbeO32Rom. NK OAL bytes are
-        // not in-repo. Names from ABI + in-repo maps:
-        // OEMInit 0x800568AC, calib 0x80057054, ISR 0x800574A8,
-        // walker 0x80056500, SetCompare 0x80059CAC, OEMIdleLoop
-        // 0x80059D20, OEMIdle 0x80059E98. Observe only.
-        // 0x8005730C: same a0=0xFFFF03FF a1=ProbeO32Rom a1.
-        // 0x80057314/1C are +8/+16 siblings (Count stall).
-        // 0x800557F4: a0=0 a1=0x2BF06 (near ProbeO32Rom).
-        // 0x80059CE8: a0=0x20C a1=0x400 (SetCompare/OEMIdle).
-        // 0x8002C070: kernel; a1 may be jalr target.
-        public const uint LoadE32ProbeO32Mask = 0x8005730C;
-        public const uint LoadE32OalArg = 0x800557F4;
-        public const uint LoadE32OemCountDelay = 0x80059CE8;
-        public const uint LoadE32OalCountDelay = 0x80057314;
-        public const uint LoadE32OalCountScale = 0x8005731C;
-        public const uint LoadE32NkCount = 0x8002C070;
+        // Dump nk.exe ImageBase 0x80010000 PE R4000 LE:
+        // 0x8005730C jr ra; mfc0 v0,Count
+        // 0x80057314 jr ra; mfc0 v0,Compare
+        // 0x8005731C jr ra; mtc0 a0,Compare
+        // 0x8002C070 jr ra; move v0,a0
+        // 0x80055DB0 CurMSec (jal ReadCount; 0x803392B0 /
+        // 0x80342C60 scale). 0x800557F4 tick vs 0x80338F70;
+        // MMIO 0xB04007D4. 0x80059CE8 Count+Compare stall.
+        public const uint OemCurMSec = 0x80055DB0;
+        public const uint OemReadCount = 0x8005730C;
+        public const uint OemReadCompare = 0x80057314;
+        public const uint OemWriteCompare = 0x8005731C;
+        public const uint OemTickDelta = 0x800557F4;
+        public const uint OemCountStall = 0x80059CE8;
+        public const uint NkMoveV0A0 = 0x8002C070;
         // After OpenE32, 0x8001E418 jal 0x800165DC then
         // 0x8001E750 jal 0x8001AFA4 (CopyO32). MapO32
         // 0x8001AC30 jal 0x80028844 only when flags lack
@@ -535,9 +530,8 @@ namespace ProcessorEmulator.Core
         public const uint O32RomSize = 0x18;
         public const uint O32LiteSize = 0x1C;
         // Public CE: e32_rom is 0x24, then o32_rom[objcnt].
-        // Firmware ProbeO32Rom still adds 0x5C (0x24+0x38).
-        // Host dump o32 at +0x5C. Leave dump e32[0x00..0x5C)
-        // dump-real so the unit copy at +0x24 is unchanged.
+        // Host dump e32 then dump o32 after that copy. Do not
+        // pack o32 at +0x5C (that was leftover CurMSec a1).
         // coredll 0x03F7A960 bne v0,0 / delay sw v0, (0x01FFFFA0).
         // HeapCreate(0,0,0) returned 0 in device.exe and the delay
         // slot wrote that 0 over the heap filesys already stored.
@@ -873,12 +867,25 @@ namespace ProcessorEmulator.Core
         private static string _loadE32ChkSpan;
         private static bool _loadE32CopySeen;
         private static bool _loadE32ChkSeen;
+        private static uint _loadE32RomBit;
+        private static uint _loadE32CmpPc;
+        private static string _loadE32CmpOp;
+        private static uint _loadE32CmpLhs;
+        private static uint _loadE32CmpRhs;
+        private static uint _loadE32CmpFirstPc;
+        private static string _loadE32CmpFirstOp;
+        private static uint _loadE32CmpFirstLhs;
+        private static uint _loadE32CmpFirstRhs;
+        private static uint _loadE32CmpAfterPc;
+        private static string _loadE32CmpAfterOp;
+        private static uint _loadE32CmpAfterLhs;
+        private static uint _loadE32CmpAfterRhs;
+        private static int _loadE32CmpN;
+        private static string _loadE32CmpLog;
         private static bool _nkLoadE32Watch;
         private static string _nkLoadE32Name;
         private static uint _nkLoadE32E32;
         private static uint _nkLoadE32O32;
-        private static uint _nkLoadE32W44;
-        private static uint _nkLoadE32W5C;
         private static uint _nkLoadE32O32Vsize;
         private static uint _nkLoadE32O32Ptr;
         private static uint _nkChkRa;
@@ -889,9 +896,18 @@ namespace ProcessorEmulator.Core
         private static uint _nkChkV0;
         private static string _nkChkSpan;
         private static bool _nkChkSeen;
+        private static uint _nkRomBit;
+        private static uint _nkCmpPc;
+        private static string _nkCmpOp;
+        private static uint _nkCmpLhs;
+        private static uint _nkCmpRhs;
+        private static uint _nkCmpFirstPc;
+        private static string _nkCmpFirstOp;
+        private static uint _nkCmpFirstLhs;
+        private static uint _nkCmpFirstRhs;
         private static int _nkLoadE32Logged;
         private static string _nkLoadE32Ok;
-        private static bool _probeO32DisasmLogged;
+        private static bool _curMSecDisasmLogged;
         private const int LoadE32AfterMax = 8;
         private static readonly uint[] _afterRa = new uint[LoadE32AfterMax];
         private static readonly string[] _afterName = new string[LoadE32AfterMax];
@@ -902,7 +918,6 @@ namespace ProcessorEmulator.Core
         private static readonly string[] _afterNeed = new string[LoadE32AfterMax];
         private static int _afterN;
         private static string _afterRets;
-        private static string _afterFail;
         private static string _afterDisasm;
 
         private static string _lastRomAttachKey;
@@ -2777,7 +2792,7 @@ namespace ProcessorEmulator.Core
             ClearNkLoadE32Watch();
             _nkLoadE32Logged = 0;
             _nkLoadE32Ok = null;
-            _probeO32DisasmLogged = false;
+            _curMSecDisasmLogged = false;
             ClearAfterLoadE32();
             _afterDisasm = null;
         }
@@ -4494,18 +4509,7 @@ namespace ProcessorEmulator.Core
             uint o32Psize = slot.O32Words != null && slot.O32Words.Length > 2 ? slot.O32Words[2] : 0;
             uint o32Ptr = slot.O32Words != null && slot.O32Words.Length > 3 ? slot.O32Words[3] : 0;
             uint o32Real = slot.O32Words != null && slot.O32Words.Length > 4 ? slot.O32Words[4] : 0;
-            uint dump5c = slot.E32Words.Length > 23 ? slot.E32Words[E32RomPackedSize / 4] : 0;
-            uint dump44 = slot.E32Words.Length > 17 ? slot.E32Words[E32RomRetryOff / 4] : 0;
             uint dump24 = slot.E32Words.Length > 9 ? slot.E32Words[E32RomPublicSize / 4] : 0;
-            bool fwO32 = slot.LiveO32 != 0 && slot.LiveE32 != 0
-                && slot.LiveO32 == slot.LiveE32 + E32RomPackedSize;
-            string packed = dump5c != 0
-                ? " e32+0x5C dump-real 0x" + dump5c.ToString("X8") + " already hosted"
-                : (fwO32 && o32Vsize != 0
-                    ? " e32+0x5C hosts dump o32[0] vsize=0x" + o32Vsize.ToString("X") +
-                        " (ProbeO32Rom a1; dump e32+0x5C was 0; not an invented pointer)"
-                    : " e32+0x5C dump=0; ProbeO32Rom word must be o32_vsize; o32 at TOC+0x18 LiveO32=0x" +
-                        slot.LiveO32.ToString("X8") + "; do not invent a unit pointer");
             System.Console.WriteLine("[Hive] ExtraROM TOC[" + slot.Index + "] " +
                 slot.Name + " e32_rom=0x" + slot.LiveE32.ToString("X8") +
                 " o32=0x" + slot.LiveO32.ToString("X8") +
@@ -4517,16 +4521,14 @@ namespace ProcessorEmulator.Core
                 " o32.real=0x" + o32Real.ToString("X8") +
                 " toc=0x" + slot.LiveEntry.ToString("X8") +
                 " e32+0x24=0x" + dump24.ToString("X8") +
-                " e32+0x44=0x" + dump44.ToString("X8") +
-                packed +
-                " (dump e32/o32 copy; public e32=0x24 o32 at +0x24; firmware first o32 at +0x5C; do not invent 0x81360000)");
+                " (dump e32 then dump o32 after; +0x5C is CurMSec leftover a1 not an o32 pointer; do not invent 0x81360000)");
             BootLog.Rom("ok", "ExtraROM", "TOC", slot.Index, slot.Name, 7, slot.Dest, o32Real, o32Psize,
                 "LoadE32 dump e32_rom+o32 at 0x" + slot.LiveE32.ToString("X8") +
                 " o32=0x" + slot.LiveO32.ToString("X8") +
                 " vbase=0x" + vbase.ToString("X8") +
                 " dataptr=0x" + o32Ptr.ToString("X8") +
                 " psize=0x" + o32Psize.ToString("X") +
-                " (dump o32 at firmware +0x5C; uncompressed psize=0 is not CEDecompressROM; do not invent e32)");
+                " (dump o32 after e32; +0x5C is not a pointer; do not invent e32)");
             return true;
         }
 
@@ -4639,6 +4641,7 @@ namespace ProcessorEmulator.Core
                 " obj=0x" + obj.ToString("X8") +
                 " obj+0=0x" + entry.ToString("X8") +
                 " obj+4=" + type +
+                " rombit=(obj+4)&2=" + (type & LoadE32RomBit) +
                 " obj+6=" + obj6 +
                 " a0=0x" + a0.ToString("X8") +
                 " a1=0x" + a1.ToString("X8") +
@@ -4665,6 +4668,7 @@ namespace ProcessorEmulator.Core
             {
                 line += " last-error=" + FormatLastError(err);
                 BeginLoadE32Watch(slot, regs, err);
+                _loadE32RomBit = type & LoadE32RomBit;
             }
             else
             {
@@ -4681,11 +4685,10 @@ namespace ProcessorEmulator.Core
         }
 
         // NK TOC type-7 that already LoadE32-succeeds (fsdmgr /
-        // coredll / ceddk). Log ProbeO32Rom a1/a2/word at
-        // e32+0x5C / +0x44 so ExtraROM can name the compare.
-        // NK e32 bytes are not in-repo; the later Boot fills
-        // this. Do not invent an ExtraROM unit pointer when
-        // dump e32+0x5C is 0.
+        // coredll / ceddk). Log object+4 ROM bit and the last
+        // beq/bne/sltiu in LoadE32 body after e32_rom copy so
+        // ExtraROM can name the real fail compare. CurMSec
+        // leftover a1 is not o32. NK e32 bytes are not in-repo.
         public static void TryBeginNkLoadE32(MipsBus bus, uint[] regs)
         {
             if (_loadE32Watch || _nkLoadE32Watch || bus == null || regs == null || regs.Length <= 4)
@@ -4724,16 +4727,12 @@ namespace ProcessorEmulator.Core
                 return;
             if (!WantNkLoadE32Log(name) && _nkLoadE32Logged >= 8)
                 return;
-            uint w44 = PeekLoadE32Word(bus, e32 != 0 ? e32 + 0x44 : 0);
-            uint w5c = PeekLoadE32Word(bus, e32 != 0 ? e32 + 0x5C : 0);
             uint o32v = PeekLoadE32Word(bus, o32);
             uint o32p = PeekLoadE32Word(bus, o32 != 0 ? o32 + 0xC : 0);
             _nkLoadE32Watch = true;
             _nkLoadE32Name = name;
             _nkLoadE32E32 = e32;
             _nkLoadE32O32 = o32;
-            _nkLoadE32W44 = w44;
-            _nkLoadE32W5C = w5c;
             _nkLoadE32O32Vsize = o32v;
             _nkLoadE32O32Ptr = o32p;
             _nkChkRa = 0;
@@ -4744,6 +4743,15 @@ namespace ProcessorEmulator.Core
             _nkChkV0 = 0xFFFFFFFFu;
             _nkChkSpan = null;
             _nkChkSeen = false;
+            _nkRomBit = LoadE32RomBit;
+            _nkCmpPc = 0;
+            _nkCmpOp = null;
+            _nkCmpLhs = 0;
+            _nkCmpRhs = 0;
+            _nkCmpFirstPc = 0;
+            _nkCmpFirstOp = null;
+            _nkCmpFirstLhs = 0;
+            _nkCmpFirstRhs = 0;
         }
 
         public static void TryFinishNkLoadE32(MipsBus bus, uint[] regs)
@@ -4751,46 +4759,33 @@ namespace ProcessorEmulator.Core
             if (!_nkLoadE32Watch)
                 return;
             uint v0 = regs != null && regs.Length > 2 ? regs[2] : 0;
-            uint off = 0;
-            if (_nkChkA1 != 0 && _nkLoadE32E32 != 0 && _nkChkA1 >= _nkLoadE32E32
-                && _nkChkA1 < _nkLoadE32E32 + 0x80)
-                off = _nkChkA1 - _nkLoadE32E32;
-            bool pack5c = _nkLoadE32O32 != 0 && _nkLoadE32E32 != 0
-                && _nkLoadE32O32 == _nkLoadE32E32 + 0x5C;
-            bool pack44 = _nkLoadE32O32 != 0 && _nkLoadE32E32 != 0
-                && _nkLoadE32O32 == _nkLoadE32E32 + 0x44;
-            string pack = pack5c ? " o32=e32+0x5C packed"
-                : (pack44 ? " o32=e32+0x44 packed"
-                    : " o32=0x" + _nkLoadE32O32.ToString("X8") + " separate");
-            string a2name = _nkChkA2 == O32RomSize ? " a2=0x18 O32RomSize"
-                : " a2=0x" + _nkChkA2.ToString("X");
-            string must = NameProbeO32Must(_nkChkWord, _nkChkA2, _nkLoadE32O32Vsize);
+            string first = FormatLoadE32Cmp(_nkCmpFirstPc, _nkCmpFirstOp, _nkCmpFirstLhs, _nkCmpFirstRhs);
+            string last = FormatLoadE32Cmp(_nkCmpPc, _nkCmpOp, _nkCmpLhs, _nkCmpRhs);
+            string leftover = _nkChkSeen
+                ? " CurMSec leftover a0=0x" + _nkChkA0.ToString("X8") +
+                    " a1=0x" + _nkChkA1.ToString("X8") +
+                    " a2=0x" + _nkChkA2.ToString("X") +
+                    " word=0x" + _nkChkWord.ToString("X8") +
+                    " tick-v0=0x" + _nkChkV0.ToString("X8") +
+                    " (incoming LoadE32 regs; jal a1 overwritten; not o32 ABI)"
+                : " CurMSec not observed";
             string line = "[Hive] LoadE32 NK " + _nkLoadE32Name +
                 " ret v0=0x" + v0.ToString("X8") +
                 " e32=0x" + _nkLoadE32E32.ToString("X8") +
-                " e32+0x44=0x" + _nkLoadE32W44.ToString("X8") +
-                " e32+0x5C=0x" + _nkLoadE32W5C.ToString("X8") +
+                " o32=0x" + _nkLoadE32O32.ToString("X8") +
                 " o32vsize=0x" + _nkLoadE32O32Vsize.ToString("X") +
                 " o32dataptr=0x" + _nkLoadE32O32Ptr.ToString("X8") +
-                pack +
-                " ProbeO32Rom a0=0x" + _nkChkA0.ToString("X8") +
-                " a1=0x" + _nkChkA1.ToString("X8") +
-                (off != 0 ? " e32+0x" + off.ToString("X") : "") +
-                a2name +
-                " word=0x" + _nkChkWord.ToString("X8") +
-                " chk-v0=0x" + _nkChkV0.ToString("X8") +
-                (!string.IsNullOrEmpty(_nkChkSpan) ? " a1-o32 " + _nkChkSpan : "") +
-                " " + must +
-                " (NK TOC type-7; ExtraROM dump e32+0x5C is 0; NK e32 not in-repo; do not invent a unit pointer)";
+                " rombit=(obj+4)&2=" + _nkRomBit +
+                " first-cmp " + first +
+                " last-cmp " + last +
+                leftover +
+                " (NK TOC type-7; name ExtraROM fail from last-cmp after e32_rom copy; CurMSec v0=0 is not LoadE32 fail; do not invent +0x5C)";
             BootLog.Write(line);
             if (v0 != 0)
             {
                 _nkLoadE32Ok = _nkLoadE32Name +
-                    " e32+0x5C=0x" + _nkLoadE32W5C.ToString("X8") +
-                    " e32+0x44=0x" + _nkLoadE32W44.ToString("X8") +
-                    " word=0x" + _nkChkWord.ToString("X8") +
-                    a2name + pack +
-                    " chk-v0=0x" + _nkChkV0.ToString("X8") +
+                    " rombit=" + _nkRomBit +
+                    " last-cmp " + last +
                     " LoadE32 v0=0x" + v0.ToString("X8");
             }
             _nkLoadE32Logged++;
@@ -4817,7 +4812,7 @@ namespace ProcessorEmulator.Core
             _nkChkA2 = regs != null && regs.Length > 6 ? regs[6] : 0;
             _nkChkWord = PeekLoadE32Word(bus, _nkChkA1);
             _nkChkSpan = FormatO32RomPeek(bus, _nkChkA1);
-            TryLogProbeO32RomDecompile(bus);
+            TryLogCurMSecDecompile(bus);
         }
 
         // Observe firmware LoadE32 ExtraROM only. Poll last-error
@@ -4856,19 +4851,13 @@ namespace ProcessorEmulator.Core
             {
                 _loadE32ChkV0 = regs.Length > 2 ? regs[2] : 0;
                 _loadE32ChkRa = 0;
-                ExtraRomTocMod chkSlot = FindCachedExtraRomToc(_loadE32WatchName);
-                uint dumpV = chkSlot != null && chkSlot.O32Words != null && chkSlot.O32Words.Length > 0
-                    ? chkSlot.O32Words[0] : 0;
                 BootLog.Write("[Hive] LoadE32 ExtraROM TOC[" + _loadE32WatchIndex + "] " +
-                    _loadE32WatchName + " ProbeO32Rom e32+0x" + _loadE32ChkOff.ToString("X") +
-                    " ret v0=0x" + _loadE32ChkV0.ToString("X8") +
-                    " a0=0x" + _loadE32ChkA0.ToString("X8") +
+                    _loadE32WatchName + " CurMSec leftover a0=0x" + _loadE32ChkA0.ToString("X8") +
                     " a1=0x" + _loadE32ChkA1.ToString("X8") +
                     " a2=0x" + _loadE32ChkA2.ToString("X8") +
                     " word=0x" + _loadE32ChkWord.ToString("X8") +
-                    (!string.IsNullOrEmpty(_loadE32ChkSpan) ? " a1-o32 " + _loadE32ChkSpan : "") +
-                    " " + NameProbeO32Must(_loadE32ChkWord, _loadE32ChkA2, dumpV) +
-                    " (after e32_rom copy; observe only; do not jal; do not force v0=1)");
+                    " ret v0=0x" + _loadE32ChkV0.ToString("X8") +
+                    " (OEM tick; incoming LoadE32 regs overwritten; not o32 ABI; v0=0 is not LoadE32 fail; do not jal)");
             }
             if (regs != null)
                 FinishLoadE32AfterJal(regs, pc);
@@ -4906,15 +4895,16 @@ namespace ProcessorEmulator.Core
                 target = (pc & 0xF0000000u) | ((instr & 0x3FFFFFFu) << 2);
             else if (op == 0 && (instr & 0x3Fu) == 9 && regs.Length > ((int)((instr >> 21) & 0x1F)))
                 target = regs[(int)((instr >> 21) & 0x1F)];
+            NoteLoadE32BodyCmp(bus, regs, pc, instr);
             if (target == 0)
                 return;
-            if (_nkLoadE32Watch && target == LoadE32RomFieldChk && !_nkChkSeen)
+            if (_nkLoadE32Watch && target == OemCurMSec && !_nkChkSeen)
                 NoteNkLoadE32FieldJal(bus, regs, pc);
             if (!_loadE32Watch)
                 return;
-            if (target == LoadE32UnitCopy || target == LoadE32RomFieldChk)
+            if (target == LoadE32UnitCopy || target == OemCurMSec)
                 NoteLoadE32FieldJal(bus, regs, pc, target);
-            if (IsLoadE32AfterProbeJal(target))
+            if (IsLoadE32OemTickJal(target))
                 NoteLoadE32AfterJal(bus, regs, pc, target);
             string name = NameLoadE32Jal(target);
             if (string.IsNullOrEmpty(name))
@@ -4972,6 +4962,7 @@ namespace ProcessorEmulator.Core
             _loadE32ChkSpan = null;
             _loadE32CopySeen = false;
             _loadE32ChkSeen = false;
+            ClearLoadE32Cmp();
         }
 
         private static void ClearNkLoadE32Watch()
@@ -4980,8 +4971,6 @@ namespace ProcessorEmulator.Core
             _nkLoadE32Name = null;
             _nkLoadE32E32 = 0;
             _nkLoadE32O32 = 0;
-            _nkLoadE32W44 = 0;
-            _nkLoadE32W5C = 0;
             _nkLoadE32O32Vsize = 0;
             _nkLoadE32O32Ptr = 0;
             _nkChkRa = 0;
@@ -4992,6 +4981,15 @@ namespace ProcessorEmulator.Core
             _nkChkV0 = 0xFFFFFFFFu;
             _nkChkSpan = null;
             _nkChkSeen = false;
+            _nkRomBit = 0;
+            _nkCmpPc = 0;
+            _nkCmpOp = null;
+            _nkCmpLhs = 0;
+            _nkCmpRhs = 0;
+            _nkCmpFirstPc = 0;
+            _nkCmpFirstOp = null;
+            _nkCmpFirstLhs = 0;
+            _nkCmpFirstRhs = 0;
         }
 
         private static void ClearLoadE32Watch()
@@ -5028,6 +5026,26 @@ namespace ProcessorEmulator.Core
             _loadE32ChkSpan = null;
             _loadE32CopySeen = false;
             _loadE32ChkSeen = false;
+            ClearLoadE32Cmp();
+        }
+
+        private static void ClearLoadE32Cmp()
+        {
+            _loadE32RomBit = 0;
+            _loadE32CmpPc = 0;
+            _loadE32CmpOp = null;
+            _loadE32CmpLhs = 0;
+            _loadE32CmpRhs = 0;
+            _loadE32CmpFirstPc = 0;
+            _loadE32CmpFirstOp = null;
+            _loadE32CmpFirstLhs = 0;
+            _loadE32CmpFirstRhs = 0;
+            _loadE32CmpAfterPc = 0;
+            _loadE32CmpAfterOp = null;
+            _loadE32CmpAfterLhs = 0;
+            _loadE32CmpAfterRhs = 0;
+            _loadE32CmpN = 0;
+            _loadE32CmpLog = null;
         }
 
         private static uint ReadThreadLastError(MipsBus bus)
@@ -5086,15 +5104,13 @@ namespace ProcessorEmulator.Core
             if (v0 != 0)
                 fail = " v0-nonzero";
             else if (lite.IndexOf("empty", System.StringComparison.Ordinal) >= 0)
-                fail = _loadE32WatchErrHits > 0
-                    ? " fail=before-e32_rom-copy " + errAt
-                    : " fail=before-e32_rom-copy field-check or tocptr/type " + errAt;
-            else if (!string.IsNullOrEmpty(_afterFail) && _loadE32ChkV0 != 0)
-                fail = " fail=after-ProbeO32Rom " + _afterFail + errAt;
-            else if (_loadE32WatchErrHits > 0)
-                fail = " fail=after-e32_rom-copy " + errAt + " (not an e32 field compare)";
+                fail = " fail=before-e32_rom-copy rombit=(obj+4)&2=" + _loadE32RomBit +
+                    " first-cmp " +
+                    FormatLoadE32Cmp(_loadE32CmpFirstPc, _loadE32CmpFirstOp,
+                        _loadE32CmpFirstLhs, _loadE32CmpFirstRhs) +
+                    " " + errAt;
             else
-                fail = " " + NameLoadE32FieldCheck(slot) + errAt;
+                fail = " " + NameLoadE32Cmp(slot) + errAt;
             return lite + copy + jal + fail;
         }
 
@@ -5171,53 +5187,51 @@ namespace ProcessorEmulator.Core
                 return "";
             if (target == LoadE32UnitCopy)
                 return "e32_unit_copy";
-            if (target == LoadE32RomFieldChk)
-                return "ProbeO32Rom";
-            if (target == LoadE32ProbeO32Mask)
-                return "ProbeO32Mask";
-            if (target == LoadE32OalArg)
-                return "OalLoadE32Arg";
-            if (target == LoadE32OemCountDelay)
-                return "OemCountDelay";
-            if (target == LoadE32OalCountDelay)
-                return "OalCountDelay";
-            if (target == LoadE32OalCountScale)
-                return "OalCountScale";
-            if (target == LoadE32NkCount)
-                return "NkLoadE32Count";
+            if (target == OemCurMSec)
+                return "CurMSec";
+            if (target == OemReadCount)
+                return "ReadCount";
+            if (target == OemTickDelta)
+                return "TickDelta";
+            if (target == OemCountStall)
+                return "CountStall";
+            if (target == OemReadCompare)
+                return "ReadCompare";
+            if (target == OemWriteCompare)
+                return "WriteCompare";
+            if (target == NkMoveV0A0)
+                return "MoveV0A0";
             return "0x" + target.ToString("X8");
         }
 
-        private static bool IsLoadE32AfterProbeJal(uint target)
+        private static bool IsLoadE32OemTickJal(uint target)
         {
-            return target == LoadE32ProbeO32Mask
-                || target == LoadE32OalArg
-                || target == LoadE32OemCountDelay
-                || target == LoadE32OalCountDelay
-                || target == LoadE32OalCountScale
-                || target == LoadE32NkCount;
+            return target == OemReadCount
+                || target == OemTickDelta
+                || target == OemCountStall
+                || target == OemReadCompare
+                || target == OemWriteCompare
+                || target == NkMoveV0A0;
         }
 
         private static string NameLoadE32AfterNeed(uint target, uint a0, uint a1, uint word)
         {
-            if (target == LoadE32ProbeO32Mask)
-                return word != 0
-                    ? "word=0x" + word.ToString("X") + " at a1 (dump o32_vsize; same a1 as ProbeO32Rom)"
-                    : "needs *a1 dump o32_vsize nonzero (same a1 as ProbeO32Rom; 7182ee4 hosts dump o32 at +0x5C)";
-            if (target == LoadE32OalArg)
-                return a0 == 0
-                    ? "needs dump-real a0/a1; a0=0 a1=0x" + a1.ToString("X") +
-                        " (do not invent dest; do not steer dest)"
-                    : "a0=0x" + a0.ToString("X8") + " a1=0x" + a1.ToString("X8");
-            if (target == LoadE32OemCountDelay)
-                return "needs Count delay a0=0x20C a1=0x400 (SetCompare/OEMIdle cluster)";
-            if (target == LoadE32OalCountDelay)
-                return "needs same stall args as OemCountDelay (ProbeO32Mask+8)";
-            if (target == LoadE32OalCountScale)
-                return "needs Count-scale a0 from prior stall (calib Count<<4; ProbeO32Mask+16)";
-            if (target == LoadE32NkCount)
-                return "needs a0=Count-scale from OAL; a1 may be jalr target";
-            return "needs observe-only ret";
+            if (target == OemReadCount)
+                return "mfc0 Count leftover; not a LoadE32 compare";
+            if (target == OemReadCompare)
+                return "mfc0 Compare leftover; not a LoadE32 compare";
+            if (target == OemWriteCompare)
+                return "mtc0 Compare leftover; not a LoadE32 compare";
+            if (target == OemTickDelta)
+                return "tick vs 0x80338F70 leftover; later MMIO 0xB04007D4; not OalLoadE32Arg dest";
+            if (target == OemCountStall)
+                return "Count+Compare stall leftover; not a LoadE32 compare";
+            if (target == NkMoveV0A0)
+                return "move v0,a0 leftover; not a LoadE32 compare";
+            return "OEM tick leftover a0=0x" + a0.ToString("X8") +
+                " a1=0x" + a1.ToString("X8") +
+                " word=0x" + word.ToString("X8") +
+                "; not a LoadE32 compare";
         }
 
         private static void NoteLoadE32AfterJal(MipsBus bus, uint[] regs, uint pc, uint target)
@@ -5253,8 +5267,7 @@ namespace ProcessorEmulator.Core
                     _afterRets = ret;
                 else
                     _afterRets += "; " + ret;
-                if (v0 == 0 && string.IsNullOrEmpty(_afterFail))
-                    _afterFail = _afterName[i] + " v0=0 " + _afterNeed[i];
+                // OEM tick / Count / Compare v0=0 is not LoadE32 fail.
                 BootLog.Write("[Hive] LoadE32 ExtraROM TOC[" + _loadE32WatchIndex + "] " +
                     _loadE32WatchName + " " + _afterName[i] +
                     " ret v0=0x" + v0.ToString("X8") +
@@ -5280,7 +5293,6 @@ namespace ProcessorEmulator.Core
             }
             _afterN = 0;
             _afterRets = null;
-            _afterFail = null;
         }
 
         private static void NoteLoadE32FieldJal(MipsBus bus, uint[] regs, uint pc, uint target)
@@ -5300,7 +5312,7 @@ namespace ProcessorEmulator.Core
                 _loadE32CopyWord = word;
                 return;
             }
-            if (target != LoadE32RomFieldChk || _loadE32ChkSeen)
+            if (target != OemCurMSec || _loadE32ChkSeen)
                 return;
             _loadE32ChkSeen = true;
             _loadE32ChkRa = ra;
@@ -5314,9 +5326,7 @@ namespace ProcessorEmulator.Core
             uint live = slot != null ? slot.LiveE32 : 0;
             if (a1 != 0 && live != 0 && a1 >= live && a1 < live + 0x80)
                 _loadE32ChkOff = a1 - live;
-            else if (a1 == 0)
-                _loadE32ChkOff = E32RomPackedSize;
-            TryLogProbeO32RomDecompile(bus);
+            TryLogCurMSecDecompile(bus);
         }
 
         private static uint PeekLoadE32Word(MipsBus bus, uint va)
@@ -5333,23 +5343,154 @@ namespace ProcessorEmulator.Core
             }
         }
 
-        // ProbeO32Rom (0x80055DB0) ABI from 25d74cb. a1 is the
-        // first o32_rom (firmware e32+0x5C), a2 is sizeof(o32_rom),
-        // word is o32_vsize. Public CE packs o32 at e32+0x24.
-        private static string NameProbeO32Must(uint word, uint a2, uint o32v)
+        private static string FormatLoadE32Cmp(uint pc, string op, uint lhs, uint rhs)
         {
-            string a2ok = a2 == O32RomSize
-                ? "a2=0x18 O32RomSize ok"
-                : "a2=0x" + a2.ToString("X") + " must be 0x18 O32RomSize";
-            string wordok;
-            if (word != 0 && o32v != 0 && word == o32v)
-                wordok = "word=o32_vsize 0x" + word.ToString("X") + " ok";
-            else if (word != 0)
-                wordok = "word=0x" + word.ToString("X8") + " nonzero";
+            if (string.IsNullOrEmpty(op) || pc == 0)
+                return "none";
+            return "pc=0x" + pc.ToString("X8") + " " + op +
+                " lhs=0x" + lhs.ToString("X8") +
+                " rhs=0x" + rhs.ToString("X8");
+        }
+
+        private static bool TryDecodeLoadE32Cmp(uint[] regs, uint instr,
+            out string op, out uint lhs, out uint rhs)
+        {
+            op = null;
+            lhs = 0;
+            rhs = 0;
+            uint opcode = instr >> 26;
+            uint rs = (instr >> 21) & 31;
+            uint rt = (instr >> 16) & 31;
+            uint fn = instr & 0x3F;
+            int simm = (short)(instr & 0xFFFF);
+            uint rsV = regs != null && regs.Length > (int)rs ? regs[(int)rs] : 0;
+            uint rtV = regs != null && regs.Length > (int)rt ? regs[(int)rt] : 0;
+            if (opcode == 4)
+            {
+                op = "beq";
+                lhs = rsV;
+                rhs = rtV;
+                return true;
+            }
+            if (opcode == 5)
+            {
+                op = "bne";
+                lhs = rsV;
+                rhs = rtV;
+                return true;
+            }
+            if (opcode == 6)
+            {
+                op = "blez";
+                lhs = rsV;
+                rhs = 0;
+                return true;
+            }
+            if (opcode == 7)
+            {
+                op = "bgtz";
+                lhs = rsV;
+                rhs = 0;
+                return true;
+            }
+            if (opcode == 0xA)
+            {
+                op = "slti";
+                lhs = rsV;
+                rhs = (uint)simm;
+                return true;
+            }
+            if (opcode == 0xB)
+            {
+                op = "sltiu";
+                lhs = rsV;
+                rhs = (uint)simm;
+                return true;
+            }
+            if (opcode == 0 && fn == 0x2A)
+            {
+                op = "slt";
+                lhs = rsV;
+                rhs = rtV;
+                return true;
+            }
+            if (opcode == 0 && fn == 0x2B)
+            {
+                op = "sltu";
+                lhs = rsV;
+                rhs = rtV;
+                return true;
+            }
+            if (opcode == 0xC && (instr & 0xFFFF) == LoadE32RomBit)
+            {
+                op = "andi-rombit";
+                lhs = rsV;
+                rhs = LoadE32RomBit;
+                return true;
+            }
+            return false;
+        }
+
+        private static void NoteLoadE32BodyCmp(MipsBus bus, uint[] regs, uint pc, uint instr)
+        {
+            if (pc < LoadE32Rom || pc >= LoadE32BodyLim)
+                return;
+            string op;
+            uint lhs;
+            uint rhs;
+            if (!TryDecodeLoadE32Cmp(regs, instr, out op, out lhs, out rhs))
+                return;
+            if (_nkLoadE32Watch)
+            {
+                if (string.IsNullOrEmpty(_nkCmpFirstOp))
+                {
+                    _nkCmpFirstPc = pc;
+                    _nkCmpFirstOp = op;
+                    _nkCmpFirstLhs = lhs;
+                    _nkCmpFirstRhs = rhs;
+                }
+                _nkCmpPc = pc;
+                _nkCmpOp = op;
+                _nkCmpLhs = lhs;
+                _nkCmpRhs = rhs;
+            }
+            if (!_loadE32Watch)
+                return;
+            if (string.IsNullOrEmpty(_loadE32CmpFirstOp))
+            {
+                _loadE32CmpFirstPc = pc;
+                _loadE32CmpFirstOp = op;
+                _loadE32CmpFirstLhs = lhs;
+                _loadE32CmpFirstRhs = rhs;
+            }
+            _loadE32CmpPc = pc;
+            _loadE32CmpOp = op;
+            _loadE32CmpLhs = lhs;
+            _loadE32CmpRhs = rhs;
+            bool afterCopy = _loadE32CopySeen && _loadE32CopyRa == 0;
+            if (!afterCopy)
+                return;
+            _loadE32CmpAfterPc = pc;
+            _loadE32CmpAfterOp = op;
+            _loadE32CmpAfterLhs = lhs;
+            _loadE32CmpAfterRhs = rhs;
+            string key = "0x" + pc.ToString("X8");
+            if (!string.IsNullOrEmpty(_loadE32CmpLog)
+                && _loadE32CmpLog.IndexOf(key, System.StringComparison.Ordinal) >= 0)
+                return;
+            if (_loadE32CmpN >= 8)
+                return;
+            if (string.IsNullOrEmpty(_loadE32CmpLog))
+                _loadE32CmpLog = key;
             else
-                wordok = "word=0 must be o32_vsize" +
-                    (o32v != 0 ? " 0x" + o32v.ToString("X") : "");
-            return "ProbeO32Rom a1 must be first o32_rom; " + a2ok + "; " + wordok;
+                _loadE32CmpLog += "," + key;
+            _loadE32CmpN++;
+            BootLog.Write("[Hive] LoadE32 ExtraROM TOC[" + _loadE32WatchIndex + "] " +
+                _loadE32WatchName + " LoadE32Cmp " +
+                FormatLoadE32Cmp(pc, op, lhs, rhs) +
+                " after-e32_rom-copy" +
+                " rombit=(obj+4)&2=" + _loadE32RomBit +
+                " (name this compare, not CurMSec; observe only; do not jal; do not force v0=1)");
         }
 
         private static string FormatO32RomPeek(MipsBus bus, uint va)
@@ -5383,17 +5524,18 @@ namespace ProcessorEmulator.Core
                 " flags=0x" + slot.O32Words[5].ToString("X");
         }
 
-        // Guest NK bytes at ProbeO32Rom are not in-repo. Read them
-        // from the live bus on the later Boot (no dump folder I/O).
-        private static void TryLogProbeO32RomDecompile(MipsBus bus)
+        // Dump nk.exe: CurMSec jal ReadCount then 0x803392B0 /
+        // 0x80342C60. Guest bytes are not in-repo; later Boot
+        // fills this. Incoming a1 is leftover LoadE32, not o32.
+        private static void TryLogCurMSecDecompile(MipsBus bus)
         {
-            if (_probeO32DisasmLogged || bus == null)
+            if (_curMSecDisasmLogged || bus == null)
                 return;
-            _probeO32DisasmLogged = true;
-            string line = "[Hive] ProbeO32Rom decompile";
+            _curMSecDisasmLogged = true;
+            string line = "[Hive] CurMSec decompile";
             for (uint i = 0; i < 24; i++)
             {
-                uint pc = LoadE32RomFieldChk + i * 4;
+                uint pc = OemCurMSec + i * 4;
                 uint instr = 0;
                 try
                 {
@@ -5401,13 +5543,13 @@ namespace ProcessorEmulator.Core
                 }
                 catch
                 {
-                    line += " (guest bytes unmapped; NK e32 not in-repo; ExtraROM dump +0x5C is 0)";
+                    line += " (guest bytes unmapped; dump nk.exe is jal ReadCount then 0x803392B0 scale)";
                     BootLog.Write(line);
                     return;
                 }
                 if (i == 0 && instr == 0)
                 {
-                    line += " (guest word0=0; NK e32 not in-repo; ExtraROM dump +0x5C is 0)";
+                    line += " (guest word0=0; dump nk.exe CurMSec; not ProbeO32Rom)";
                     BootLog.Write(line);
                     return;
                 }
@@ -5415,8 +5557,7 @@ namespace ProcessorEmulator.Core
                 if (IsMipsJrRa(instr))
                     break;
             }
-            line += " (a1 must be first o32_rom; a2 must be 0x18; word must be o32_vsize nonzero;" +
-                " ExtraROM dump +0x5C is 0; do not invent; do not jal; do not force v0=1)";
+            line += " (OEM tick leftover a1 is not o32; v0=0 is not LoadE32 fail; do not jal; do not force v0=1)";
             BootLog.Write(line);
         }
 
@@ -5517,7 +5658,22 @@ namespace ProcessorEmulator.Core
                     return "slt " + MipsRn(rd) + "," + MipsRn(rs) + "," + MipsRn(rt);
                 if (fn == 0x2B)
                     return "sltu " + MipsRn(rd) + "," + MipsRn(rs) + "," + MipsRn(rt);
+                if (fn == 0x1A)
+                    return "div " + MipsRn(rs) + "," + MipsRn(rt);
+                if (fn == 0x1B)
+                    return "divu " + MipsRn(rs) + "," + MipsRn(rt);
+                if (fn == 0x10)
+                    return "mfhi " + MipsRn(rd);
+                if (fn == 0x12)
+                    return "mflo " + MipsRn(rd);
                 return "spec fn=0x" + fn.ToString("X");
+            }
+            if (op == 0x10)
+            {
+                if (rs == 0)
+                    return "mfc0 " + MipsRn(rt) + "," + rd;
+                if (rs == 4)
+                    return "mtc0 " + MipsRn(rt) + "," + rd;
             }
             if (op == 2 || op == 3)
             {
@@ -5563,78 +5719,47 @@ namespace ProcessorEmulator.Core
             return "op" + op.ToString("X") + "=0x" + instr.ToString("X8");
         }
 
-        // One named field after the e32_rom copy. 0x80058B24 is
-        // the unit memcpy (not the fail). ProbeO32Rom 0x80055DB0
-        // wants a1=first o32_rom a2=0x18 word=o32_vsize. ExtraROM
-        // dump word at e32+0x5C is 0. Do not invent a unit pointer.
-        private static string NameLoadE32FieldCheck(ExtraRomTocMod slot)
+        // Name the last beq/bne/sltiu in LoadE32 after e32_rom
+        // memcpy. CurMSec / Count / Compare v0=0 is not the fail.
+        // object+4 bit 1 is the ROM path (type 7 has it).
+        private static string NameLoadE32Cmp(ExtraRomTocMod slot)
         {
-            uint off = _loadE32ChkOff != 0 ? _loadE32ChkOff : E32RomPackedSize;
             uint live = slot != null ? slot.LiveE32 : 0;
             uint liveO32 = slot != null ? slot.LiveO32 : 0;
-            uint dumpWord = 0;
-            uint dump44 = 0;
-            uint dump5c = 0;
-            uint o32v = 0;
-            uint o32p = 0;
-            if (slot != null && slot.E32Words != null)
-            {
-                if (off < (uint)slot.E32Words.Length * 4)
-                    dumpWord = slot.E32Words[off / 4];
-                if (slot.E32Words.Length > 17)
-                    dump44 = slot.E32Words[E32RomRetryOff / 4];
-                if (slot.E32Words.Length > 23)
-                    dump5c = slot.E32Words[E32RomPackedSize / 4];
-            }
-            if (slot != null && slot.O32Words != null && slot.O32Words.Length > 3)
-            {
-                o32v = slot.O32Words[0];
-                o32p = slot.O32Words[3];
-            }
             string copy = _loadE32CopySeen
                 ? " e32_unit_copy v0=0x" + _loadE32CopyV0.ToString("X8") +
                     " dest=0x" + _loadE32CopyA0.ToString("X8") +
                     " src=0x" + _loadE32CopyA1.ToString("X8") +
                     " a2=0x" + _loadE32CopyA2.ToString("X8")
                 : " e32_unit_copy missed";
-            string a2name = _loadE32ChkA2 == O32RomSize ? " a2=0x18 O32RomSize"
-                : " a2=0x" + _loadE32ChkA2.ToString("X");
-            string chk = _loadE32ChkSeen
-                ? " v0=0x" + _loadE32ChkV0.ToString("X8") +
-                    " a0=0x" + _loadE32ChkA0.ToString("X8") +
-                    " a1=0x" + _loadE32ChkA1.ToString("X8") +
-                    a2name +
-                    " word=0x" + _loadE32ChkWord.ToString("X8")
-                : " (ProbeO32Rom not observed)";
-            string span = !string.IsNullOrEmpty(_loadE32ChkSpan)
-                ? " a1-o32 " + _loadE32ChkSpan : "";
+            string first = " first-cmp " +
+                FormatLoadE32Cmp(_loadE32CmpFirstPc, _loadE32CmpFirstOp,
+                    _loadE32CmpFirstLhs, _loadE32CmpFirstRhs);
+            string lastAfter = !string.IsNullOrEmpty(_loadE32CmpAfterOp)
+                ? "fail=LoadE32Cmp " +
+                    FormatLoadE32Cmp(_loadE32CmpAfterPc, _loadE32CmpAfterOp,
+                        _loadE32CmpAfterLhs, _loadE32CmpAfterRhs) +
+                    " after-e32_rom-copy"
+                : "fail=LoadE32Cmp-missed after-e32_rom-copy last-cmp " +
+                    FormatLoadE32Cmp(_loadE32CmpPc, _loadE32CmpOp,
+                        _loadE32CmpLhs, _loadE32CmpRhs);
+            string leftover = _loadE32ChkSeen
+                ? " CurMSec leftover a1=0x" + _loadE32ChkA1.ToString("X8") +
+                    " tick-v0=0x" + _loadE32ChkV0.ToString("X8") +
+                    " (not o32 ABI; not the fail)"
+                : " CurMSec not observed";
             string dumpO32 = FormatDumpO32(slot);
-            bool fwO32 = live != 0 && liveO32 == live + E32RomPackedSize && o32v != 0;
-            string honest;
-            if (dumpWord != 0)
-                honest = " dump ExtraROM e32+0x" + off.ToString("X") +
-                    " dump-real 0x" + dumpWord.ToString("X8") + " already hosted";
-            else if (fwO32 && off == E32RomPackedSize)
-                honest = " dump ExtraROM e32+0x5C is 0 (not a pointer); " + dumpO32 +
-                    " hosted at LiveE32+0x5C=0x" + liveO32.ToString("X8") +
-                    " for ProbeO32Rom; public o32 at +0x24; do not invent a pointer";
-            else
-                honest = " dump ExtraROM e32+0x" + off.ToString("X") +
-                    " is 0; " + dumpO32 +
-                    " at TOC+0x18 LiveO32=0x" + liveO32.ToString("X8") +
-                    "; do not invent a unit pointer";
             string nk = !string.IsNullOrEmpty(_nkLoadE32Ok)
                 ? " NK-ok " + _nkLoadE32Ok
                 : " NK-ok pending fsdmgr/coredll/ceddk (NK e32 not in-repo)";
-            return "fail=ProbeO32Rom e32+0x" + off.ToString("X") +
-                " dump=0x" + dumpWord.ToString("X8") +
-                " dump+0x44=0x" + dump44.ToString("X8") +
-                " dump+0x5C=0x" + dump5c.ToString("X8") +
+            return lastAfter +
+                " rombit=(obj+4)&2=" + _loadE32RomBit +
+                first + copy + leftover +
                 " liveE32=0x" + live.ToString("X8") +
-                chk + span + copy +
-                " (" + NameProbeO32Must(_loadE32ChkWord, _loadE32ChkA2, o32v) +
-                "; " + honest + ";" + nk +
-                "; 0x80058B24 is unit memcpy; do not force v0=1)";
+                " LiveO32=0x" + liveO32.ToString("X8") +
+                " " + dumpO32 +
+                " (dump e32 then dump o32 after; do not invent +0x5C;" +
+                nk + "; memcpy is 0x80058B24; do not force v0=1)";
         }
 
         // Same 0x8004DBF8 path gwes uses for ddi_nop after
@@ -6024,25 +6149,14 @@ namespace ProcessorEmulator.Core
             return true;
         }
 
-        // Firmware ProbeO32Rom a1 = e32+0x5C. Dump ExtraROM
-        // e32+0x5C is 0 (not a pointer). When dump o32_vsize
-        // is nonzero, host e32 as 0x5C and write dump o32
-        // there. Leave dump e32[0x00..0x5C) so unit-copy
-        // +0x24 stays dump-real. Do not invent a pointer.
+        // Dump-cached e32 size. o32 follows that copy at
+        // LiveE32+e32Bytes (TOC+0x18). Do not pack o32 at
+        // +0x5C: that was leftover CurMSec a1, not a pointer.
         private static uint ExtraRomHostE32Bytes(ExtraRomTocMod slot)
         {
             if (slot == null || slot.E32Words == null || slot.E32Words.Length == 0)
                 return 0;
-            uint cached = (uint)slot.E32Words.Length * 4;
-            uint dump5c = slot.E32Words.Length > 23
-                ? slot.E32Words[E32RomPackedSize / 4] : 0;
-            if (dump5c != 0)
-                return cached;
-            uint o32v = slot.O32Words != null && slot.O32Words.Length > 0
-                ? slot.O32Words[0] : 0;
-            if (o32v != 0)
-                return E32RomPackedSize;
-            return cached;
+            return (uint)slot.E32Words.Length * 4;
         }
 
         private static bool WriteHostExtraRomE32O32(MipsBus bus, ExtraRomTocMod slot, string name)
