@@ -37,11 +37,20 @@ namespace ProcessorEmulator.Core
         // mapped but never linked, so LoadDriver/ActivateDevice
         // never sees ExtraROM TOC names without host attach.
         // All six nk.exe lui/lw of 0x80342B10 are loads, no sw
-        // in .text. Dump ExtraROM ROMHDR ulCopyEntries=0,
-        // pExtensions=0x80011020 (NK VA, not ExtraROM chain).
-        // OEM/chain/pExtensions should link ExtraROM. Do not
-        // invent a list node. Host attach is a workaround
-        // because the chain is unlinked.
+        // in .text. ExtraROM and NK ROMHDR both have
+        // pExtensions=0x80011020; that VA in nk.exe .text is
+        // 32 bytes of zeros, not an ExtraROM chain pointer.
+        // Do not treat it as a linker. ExtraROM
+        // ulCopyEntries=0, copy_table empty. NK copy[0]
+        // src=0x8021F8EC dst=0x80320000 copy_len=0x5A4
+        // dest_len=0x22C88. 0x80342B10 is dst+0x22B10,
+        // inside dest_len but past copy_len: NK RAM BSS
+        // tail (zero-filled), not the 0x5A4 copied bytes.
+        // If live *(0x80342B10) is 0 after NK copy, firmware
+        // never linked NK either until some other writer;
+        // ExtraROM still has no dump node. Do not invent a
+        // ROMChain_t. Host attach is a workaround because
+        // the chain is unlinked.
         // object+6: firmware sh s5,6(fp) at 0x8001D4F0 only
         // when CreateFileMapping 0x8003DA64 returns 0.
         // BuiltIn LoadLibrary never takes that jal. Do not
@@ -597,8 +606,14 @@ namespace ProcessorEmulator.Core
         public const uint RomHdrWalk = 0x80016AFC;
         public const uint ExtraRomDumpHdr = 0x8134DA84;
         public const uint RomHdrCopyEntries = 0x20;
+        public const uint RomHdrCopyOffset = 0x24;
         public const uint RomHdrExtensions = 0x48;
         public const uint NkPExtensions = 0x80011020;
+        public const uint NkCopy0Src = 0x8021F8EC;
+        public const uint NkCopy0Dst = 0x80320000;
+        public const uint NkCopy0CopyLen = 0x5A4;
+        public const uint NkCopy0DestLen = 0x22C88;
+        public const uint RomHdrListBssOff = 0x22B10;
         public const uint CreateFileMappingObj6 = 0x8001D4F0;
         public const uint RomHdrListLoad0 = 0x80016B1C;
         public const uint RomHdrListLoad1 = 0x8001B670;
@@ -1289,9 +1304,10 @@ namespace ProcessorEmulator.Core
         // this walk at 0x8001DA58 for a bare name. NK modules hit
         // because they sit on *(0x80342B10). ExtraROM 0x8134DA84
         // is mapped but never linked. Host attach is a workaround
-        // because the chain is unlinked. Do not invent a list
-        // node. Write the same object the hit path at 0x80016B9C
-        // writes and return 0 so 0x800196E4 can decompress/map.
+        // because the chain is unlinked. Do not invent a
+        // ROMChain_t. Write the same object the hit path at
+        // 0x80016B9C writes and return 0 so 0x800196E4 can
+        // decompress/map.
         public static bool TryAttachExtraRomTocWalk(MipsBus bus, uint path, uint obj)
         {
             if (bus == null || path == 0 || obj == 0)
@@ -1342,7 +1358,7 @@ namespace ProcessorEmulator.Core
             TryLogRomHdrListWalk(bus, "TOC-walk host-attach " + baseName);
             System.Console.WriteLine("[Hive] TOC-walk ExtraROM " + baseName + " entry=0x" +
                 tocEntry.ToString("X8") +
-                " (TOC[" + tocIndex + "]; type-7 host attach; chain unlinked; do not invent a list node; do not invent a FILE)");
+                " (TOC[" + tocIndex + "]; type-7 host attach; chain unlinked; do not invent a ROMChain_t; do not invent a FILE)");
             LogRomAttach("ok", "ExtraROM", "TOC", tocIndex, baseName, 7, dest, 0, 0,
                 "TOC-walk type-7 host attach; TOC[" + tocIndex + "]; " + NameChainMiss());
             TryMarkExtraRomO32Compressed(bus, tocEntry);
@@ -6748,17 +6764,19 @@ namespace ProcessorEmulator.Core
         // 0x200. Do not copy NK 0x1007. Do not invent dest.
         private static string NameBuiltInMiss()
         {
-            return "honest miss: ExtraROM ROMHDR 0x8134DA84 is mapped but never linked on *(0x80342B10); after BuiltIn LoadO32 skip, 0x20(sp) stays 0 so dest out s4 is never sw; firmware never VirtualCopys ExtraROM o32; ddi_nop dest remains OpenFile/LoadDriver MapO32/CEDecompressROM object+6>=2 (c1c0bc4 a0=0x80764CE0 a1=0xD989 a2=0x01981000 v0=0x1743A), same dumpToc0 0x807; firmware sh s5,6(fp) at 0x8001D4F0 only when CreateFileMapping 0x8003DA64 returns 0; BuiltIn LoadLibrary never takes that jal; 0x80016830 is not MapO32; 0x8001E428 jal 0x800283FC VirtualAlloc-like; 0x8001AF20 is o32 page-sum not MapO32; 0x8001AC9C/0x80028844 not on skip path; do not set 0x200; do not write object+6; do not invent a list node; do not invent dest; do not invent a map at 0x8178C000";
+            return "honest miss: ExtraROM ROMHDR 0x8134DA84 is mapped but never linked on *(0x80342B10); after BuiltIn LoadO32 skip, 0x20(sp) stays 0 so dest out s4 is never sw; firmware never VirtualCopys ExtraROM o32; ddi_nop dest remains OpenFile/LoadDriver MapO32/CEDecompressROM object+6>=2 (c1c0bc4 a0=0x80764CE0 a1=0xD989 a2=0x01981000 v0=0x1743A), same dumpToc0 0x807; firmware sh s5,6(fp) at 0x8001D4F0 only when CreateFileMapping 0x8003DA64 returns 0; BuiltIn LoadLibrary never takes that jal; 0x80016830 is not MapO32; 0x8001E428 jal 0x800283FC VirtualAlloc-like; 0x8001AF20 is o32 page-sum not MapO32; 0x8001AC9C/0x80028844 not on skip path; do not set 0x200; do not write object+6; do not invent a ROMChain_t; do not invent dest; do not invent a map at 0x8178C000";
         }
 
-        // OEM/chain/pExtensions 0x80011020 should link ExtraROM
-        // into *(0x80342B10). Dump ExtraROM ulCopyEntries=0 and
-        // pExtensions is an NK VA, not an ExtraROM chain. nk.exe
-        // .text has no sw of the list head. Host attach is a
-        // workaround because the chain is unlinked.
+        // Dump-real (extracted nk.exe + etc/rom_meta, not a
+        // live log): pExtensions 0x80011020 is 32 bytes of
+        // zeros in nk.exe .text, not a linker. ExtraROM
+        // copy_table is empty. NK copy[0] leaves *(0x80342B10)
+        // in the BSS tail past copy_len. Do not invent a
+        // ROMChain_t. Host attach is a workaround because
+        // the chain is unlinked.
         private static string NameChainMiss()
         {
-            return "honest miss: ExtraROM 0x8134DA84 mapped but never linked on *(0x80342B10); 0x80016AFC walks node+4 ROMHDR TOC hdr+0x54 name entry+0x10 miss v0=2; LoadDriver/ActivateDevice never sees ExtraROM TOC names without host attach; OEM/chain/pExtensions 0x80011020 should link ExtraROM; dump ExtraROM ulCopyEntries=0 pExtensions=0x80011020 (NK VA, not ExtraROM chain); all six nk.exe lui/lw of 0x80342B10 are loads, no sw in .text; do not invent a list node; host attach is a workaround because the chain is unlinked";
+            return "honest miss: ExtraROM 0x8134DA84 mapped but never linked on *(0x80342B10); 0x80016AFC walks node+4 ROMHDR TOC hdr+0x54 name entry+0x10 miss v0=2; LoadDriver/ActivateDevice never sees ExtraROM TOC names without host attach; ExtraROM and NK pExtensions=0x80011020 is 32 zeros in nk.exe .text, not an ExtraROM chain pointer, do not treat it as a linker; ExtraROM ulCopyEntries=0 copy_table empty; NK copy[0] src=0x8021F8EC dst=0x80320000 copy_len=0x5A4 dest_len=0x22C88; 0x80342B10 is dst+0x22B10 inside dest_len past copy_len (NK RAM BSS tail, zero-filled); dump nk.exe has no sw of 0x80342B10; if live list head is 0 after NK copy, firmware never linked NK either until some other writer; ExtraROM still has no dump node; do not invent a ROMChain_t; host attach is a workaround because the chain is unlinked";
         }
 
         public static void LogExtraRomHdrAtMap(ProcessorEmulator.Core.Emulation.IMemoryManager memory, uint romhdr)
@@ -6806,20 +6824,22 @@ namespace ProcessorEmulator.Core
                 ? " ExtraROM-hdr=0x" + hdr.ToString("X8") +
                     (hdr == ExtraRomDumpHdr ? " dump-real-0x8134DA84" : " !=0x8134DA84") +
                     " ulCopyEntries=0x" + copy.ToString("X") +
-                    (copy == 0 ? " dump-real-0" : " !=0") +
+                    (copy == 0 ? " ExtraROM-copy_table-empty" : " ExtraROM-ulCopyEntries!=0") +
                     " pExtensions=0x" + ext.ToString("X8") +
                     (ext == NkPExtensions
-                        ? " NK-VA-0x80011020-not-ExtraROM-chain"
+                        ? " dump-.text-32-zeros-not-a-linker"
                         : " pExtensions!=0x80011020") +
                     " phys=0x" + physfirst.ToString("X8") +
                     "-0x" + physlast.ToString("X8") +
                     " nmods=" + nmods
                 : " ExtraROM-hdr=0x" + hdr.ToString("X8") + " unmapped";
+            string nkCopy = FormatNkCopyVsList(va => memory.ReadMemory32(va));
             string walk = FormatRomHdrListFromMemory(memory, hdr);
             if (!_romHdrChainLogged)
             {
                 _romHdrChainLogged = true;
                 string line = "[Hive] ExtraROM ROMHDR chain at map" + dump +
+                    " " + nkCopy +
                     " " + walk +
                     " (" + NameChainMiss() + ")";
                 System.Console.WriteLine(line);
@@ -6848,16 +6868,153 @@ namespace ProcessorEmulator.Core
                 return;
             uint extraHdr = _extraRomHdr != 0 ? _extraRomHdr : ExtraRomDumpHdr;
             uint head = PeekDestWord(bus, RomHdrListPtr);
-            string walk = FormatRomHdrListWalk(va => bus.Read32(va), head, extraHdr);
             if (_romHdrListWalkLogged && when != null && when.IndexOf("host-attach", System.StringComparison.Ordinal) < 0)
                 return;
             _romHdrListWalkLogged = true;
+            string nkCopy = FormatNkCopyVsList(va => bus.Read32(va));
+            string walk = FormatRomHdrListWalk(va => bus.Read32(va), head, extraHdr);
             string line = "[Hive] ExtraROM ROMHDR list " + (when ?? "walk") +
                 " ExtraROM-hdr=0x" + extraHdr.ToString("X8") +
+                " " + nkCopy +
                 " " + walk +
                 " (" + NameChainMiss() + ")";
             System.Console.WriteLine(line);
             BootLog.Write(line);
+        }
+
+        // Dump-named NK copy[0] vs live *(0x80342B10). List
+        // head is dst+0x22B10 (BSS tail past copy_len). Peek
+        // only; do not host-write. Do not invent a ROMChain_t.
+        private static string FormatNkCopyVsList(System.Func<uint, uint> read32)
+        {
+            string nkCopy = "NK-copy[0]-dump src=0x"
+                + NkCopy0Src.ToString("X8")
+                + " dst=0x"
+                + NkCopy0Dst.ToString("X8")
+                + " copy_len=0x"
+                + NkCopy0CopyLen.ToString("X")
+                + " dest_len=0x"
+                + NkCopy0DestLen.ToString("X")
+                + " list=dst+0x"
+                + RomHdrListBssOff.ToString("X");
+            uint nkHdr;
+            if (!TryRead32(read32, EcecTocPtr, out nkHdr))
+            {
+                nkCopy += " live-NK-hdr-unmapped";
+            }
+            else if (nkHdr == 0)
+            {
+                nkCopy += " live-NK-hdr=0";
+            }
+            else
+            {
+                uint nkEntries;
+                uint nkCopyOff;
+                bool gotEntries = TryRead32(read32, nkHdr + RomHdrCopyEntries, out nkEntries);
+                bool gotOff = TryRead32(read32, nkHdr + RomHdrCopyOffset, out nkCopyOff);
+                nkCopy += " live-NK-hdr=0x" + nkHdr.ToString("X8");
+                if (gotEntries)
+                    nkCopy += " ulCopyEntries=0x" + nkEntries.ToString("X");
+                if (gotOff)
+                    nkCopy += " ulCopyOffset=0x" + nkCopyOff.ToString("X8");
+                if (gotEntries && gotOff && nkEntries != 0 && nkCopyOff != 0)
+                {
+                    uint liveSrc;
+                    uint liveDst;
+                    uint liveCopyLen;
+                    uint liveDestLen;
+                    if (TryRead32(read32, nkCopyOff, out liveSrc)
+                        && TryRead32(read32, nkCopyOff + 4, out liveDst)
+                        && TryRead32(read32, nkCopyOff + 8, out liveCopyLen)
+                        && TryRead32(read32, nkCopyOff + 12, out liveDestLen))
+                    {
+                        nkCopy += " live-copy[0] src=0x"
+                            + liveSrc.ToString("X8")
+                            + " dst=0x"
+                            + liveDst.ToString("X8")
+                            + " copy_len=0x"
+                            + liveCopyLen.ToString("X")
+                            + " dest_len=0x"
+                            + liveDestLen.ToString("X");
+                    }
+                }
+            }
+
+            uint extraCopy;
+            string extraTable = TryRead32(read32, ExtraRomDumpHdr + RomHdrCopyEntries, out extraCopy)
+                ? (extraCopy == 0
+                    ? " ExtraROM-copy_table-empty"
+                    : " ExtraROM-ulCopyEntries=0x" + extraCopy.ToString("X"))
+                : " ExtraROM-copy_table-unmapped";
+
+            uint[] pExt = new uint[8];
+            bool pExtMapped = true;
+            bool pExtZeros = true;
+            for (int i = 0; i < 8; i++)
+            {
+                if (!TryRead32(read32, NkPExtensions + (uint)(i * 4), out pExt[i]))
+                {
+                    pExtMapped = false;
+                    break;
+                }
+                if (pExt[i] != 0)
+                    pExtZeros = false;
+            }
+            string pExtLive;
+            if (!pExtMapped)
+                pExtLive = "pExtensions-0x80011020-dump-.text-32-zeros pExtensions-0x80011020-unmapped";
+            else if (pExtZeros)
+                pExtLive = "pExtensions-0x80011020-dump-.text-32-zeros pExtensions-0x80011020-live-32-zeros";
+            else
+            {
+                var sb = new System.Text.StringBuilder();
+                sb.Append("pExtensions-0x80011020-dump-.text-32-zeros pExtensions-0x80011020-live=");
+                for (int i = 0; i < 8; i++)
+                {
+                    if (i != 0)
+                        sb.Append(',');
+                    sb.Append("0x").Append(pExt[i].ToString("X8"));
+                }
+                pExtLive = sb.ToString();
+            }
+
+            uint listWord;
+            string list;
+            if (!TryRead32(read32, RomHdrListPtr, out listWord))
+            {
+                list = "live-*(0x80342B10)-unmapped";
+            }
+            else if (listWord == 0)
+            {
+                list = "live-*(0x80342B10)=0 empty-after-NK-copy-BSS-tail-until-other-writer ExtraROM-no-dump-node";
+            }
+            else
+            {
+                uint nodeHdr;
+                list = "live-*(0x80342B10)=0x" + listWord.ToString("X8");
+                if (TryRead32(read32, listWord + 4, out nodeHdr))
+                    list += " node+4=0x" + nodeHdr.ToString("X8");
+                else
+                    list += " node+4-unmapped";
+            }
+
+            return nkCopy + extraTable + " " + pExtLive + " " + list;
+        }
+
+        private static bool TryRead32(System.Func<uint, uint> read32, uint va, out uint value)
+        {
+            value = 0;
+            if (read32 == null)
+                return false;
+            try
+            {
+                value = read32(va);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static string FormatRomHdrListWalk(System.Func<uint, uint> read32, uint head, uint extraHdr)
@@ -6865,7 +7022,7 @@ namespace ProcessorEmulator.Core
             if (read32 == null)
                 return "list-walk skipped";
             if (head == 0)
-                return "*(0x80342B10)=0 empty; ExtraROM 0x8134DA84 not linked; do not invent a list node";
+                return "*(0x80342B10)=0 BSS-tail-past-copy_len ExtraROM-no-dump-node; do not invent a ROMChain_t";
             var sb = new System.Text.StringBuilder();
             sb.Append("*(0x80342B10)=0x").Append(head.ToString("X8"));
             bool linked = false;
@@ -6895,8 +7052,8 @@ namespace ProcessorEmulator.Core
             }
             sb.Append(linked
                 ? " ExtraROM-hdr-on-list"
-                : " ExtraROM-hdr-NOT-on-list");
-            sb.Append(" (do not invent a list node)");
+                : " ExtraROM-no-dump-node");
+            sb.Append(" (do not invent a ROMChain_t)");
             return sb.ToString();
         }
 
