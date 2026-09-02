@@ -623,6 +623,8 @@ namespace ProcessorEmulator.Core
                     return false;
                 }
             }
+            if (pc == CeRomTocFiles.BinaryDecompressRom)
+                CeRomTocFiles.TryNoteExtraRomDecompressEntry(bus, registers);
             if (pc == CeRomTocFiles.BinaryDecompressInner)
                 CeRomTocFiles.TryNoteExtraRomInnerDest(bus, registers);
             if (pc == CeRomTocFiles.BinaryDecompressAfterInner)

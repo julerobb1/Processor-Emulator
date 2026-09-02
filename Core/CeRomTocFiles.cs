@@ -1246,50 +1246,14 @@ namespace ProcessorEmulator.Core
             }
         }
 
-        // 0x80028844 is a0=dest a1=dataptr a2=vsize. Same
-        // CEDecompressROM as ddi_nop VirtualCopy. TOC[46]
-        // and TOC[34] dests. ddi_nop keeps 0x2000 and
-        // VALLOC+VirtualCopy.
+        // 0x80028844 is a0=dest a1=dataptr a2=vsize.
+        // Do not jal 0x8004DBF8 or rewrite a0/a1/a2/a3.
+        // 6c001d9 stole sipcfg/shell dest 0x00011000 and
+        // looped. Firmware MapO32/OpenFile/VALLOC owns this.
         public static bool TryRedirectExtraRomMapO32Decompress(
             MipsBus bus, uint[] regs, ref uint programCounter)
         {
-            if (bus == null || regs == null || regs.Length <= 23)
-                return false;
-            uint dest = regs[4];
-            uint src = regs[5];
-            uint vsize = regs[6];
-            if (!IsExtraRomMscoreeDest(dest) && !IsExtraRomMscoreeData(src)
-                && !IsExtraRomOle32Dest(dest) && !IsExtraRomOle32Data(src))
-                return false;
-            uint o32Lite = regs[23];
-            uint psize = 0;
-            try
-            {
-                if (o32Lite != 0)
-                {
-                    if (vsize == 0)
-                        vsize = bus.Read32(o32Lite);
-                    psize = bus.Read32(o32Lite + 0x14);
-                    if (src == 0)
-                        src = bus.Read32(o32Lite + 0x18);
-                }
-            }
-            catch
-            {
-                return false;
-            }
-            if (psize == 0 || vsize == 0)
-                return false;
-            regs[4] = src;
-            regs[5] = psize;
-            regs[6] = dest;
-            regs[7] = vsize;
-            System.Console.WriteLine("[Hive] ExtraROM MapO32 0x80028844 -> CEDecompressROM dest=0x" +
-                dest.ToString("X8") + " src=0x" + src.ToString("X8") +
-                " vsize=0x" + vsize.ToString("X") +
-                " psize=0x" + psize.ToString("X") +
-                " (dump LZX; same 0x8004DBF8 as ddi_nop; no VALLOC)");
-            return TryRedirectExtraRomVirtualCopyToDecompress(bus, regs, ref programCounter);
+            return false;
         }
 
         public static void TryLogMscoreeMapO32Ret(MipsBus bus, uint[] regs)
@@ -1491,14 +1455,12 @@ namespace ProcessorEmulator.Core
             }
         }
 
-        // MapO32 VALLOCs dest only when flags keep 0x2000 (the early
-        // 0x80028844 path does not). After that VALLOC it VirtualCopys
-        // compressed ExtraROM bytes as XIP. 0x80028844 is a PTE remap
-        // (kseg0 src takes the XIP shortcut and dest stays zeros).
-        // Rewrite that jal to kernel CEDecompressROM so
-        // firmware expands the real ExtraROM LZX pages onto
-        // the VALLOC dest. Do not host-alias XIP. Do not
-        // invent 0x81360000. Do not jal CE3 0x80050974.
+        // Do not jal 0x8004DBF8 from VirtualCopy. 6c001d9
+        // treated dest 0x00011000 (sipcfg/shell TOC) as
+        // ddi_nop and looped 3012 hits. Firmware owns
+        // OpenFile/VALLOC/CopyO32. Leave a0/a1/a2/a3.
+        // dest 0x01981000 first nonzero is noted at the
+        // firmware 0x8004DBF8 return, once.
         private static uint _ddiNopDecompRa;
         private static uint _ddiNopDecompSrc;
         private static uint _ddiNopDecompCb;
@@ -1508,86 +1470,50 @@ namespace ProcessorEmulator.Core
         private static bool _ddiNopInnerCap;
         private static int _ddiNopInnerPages;
         private static bool _ddiNopDestWordLogged;
+        private static bool _ddiNopObserve;
 
         public static bool TryRedirectExtraRomVirtualCopyToDecompress(
             MipsBus bus, uint[] regs, ref uint programCounter)
         {
-            if (bus == null || regs == null || regs.Length <= 7)
-                return false;
-            uint src = regs[4];
-            uint psize = regs[5];
+            return false;
+        }
+
+        // Firmware already at 0x8004DBF8. Leave registers
+        // and PC. sipcfg/shell dest 0x00011000 is not
+        // ddi_nop. Remember RA only for VALLOC dest
+        // 0x01981000 so the first nonzero dest word logs
+        // once.
+        public static void TryNoteExtraRomDecompressEntry(MipsBus bus, uint[] regs)
+        {
+            if (_ddiNopDestWordLogged || regs == null || regs.Length <= 7)
+                return;
             uint dest = regs[6];
+            if (dest != 0x01981000u)
+                return;
+            uint src = regs[4];
+            uint cb = regs[5];
             uint vsize = regs[7];
-            if (!IsExtraRomDdiNopDest(dest) && !IsExtraRomDdiNopData(src)
-                && !IsExtraRomMscoreeDest(dest) && !IsExtraRomMscoreeData(src)
-                && !IsExtraRomOle32Dest(dest) && !IsExtraRomOle32Data(src))
-                return false;
-            if (dest < 0x01400000u)
-                return false;
-            if (psize == 0 || psize > 0x200000 || vsize == 0 || vsize > 0x200000)
-                return false;
-            uint aligned = CopyExtraRomSrcPageAligned(bus, src, psize);
-            if (aligned != 0)
-                src = aligned;
-            if (IsExtraRomMscoreeDest(dest) || IsExtraRomMscoreeData(src))
-            {
-                _mscoreeDestOn = true;
-                if (_mscoreeVbase != 0)
-                    _mscoreeSlot0 = _mscoreeVbase & SlotMask;
-            }
-            if (IsExtraRomOle32Dest(dest) || IsExtraRomOle32Data(src))
-            {
-                _ole32DestOn = true;
-                if (_ole32Vbase != 0)
-                    _ole32Slot0 = _ole32Vbase & SlotMask;
-            }
-            HostCommitExtraRomDest(bus, dest, vsize);
-            // ExtraROM first word is [size0][size1][size2][b0].
-            // Kernel 0x80050A10 takes the 3-byte LE size, then
-            // 3-byte page offsets starting at src+3. Byte 3 is
-            // the low byte of the first offset (0xB5 08 00 =
-            // 0x8B5), not a type to drop. Dropping it made
-            // every offset 0xDD0008-style and left entry/ImpHdr
-            // empty (BindImp LoadLibrary "").
-            regs[4] = src;
-            regs[5] = psize;
-            regs[6] = dest;
-            regs[7] = vsize;
-            if (regs.Length > 29)
-            {
-                try
-                {
-                    uint sp = regs[29];
-                    bus.Write32(sp + 16, 0);
-                    bus.Write32(sp + 20, 1);
-                    bus.Write32(sp + 24, 0x1000);
-                }
-                catch
-                {
-                }
-            }
-            programCounter = BinaryDecompressRom;
+            _ddiNopObserve = true;
             _ddiNopDecompRa = regs.Length > 31 ? regs[31] : 0;
             _ddiNopDecompSrc = src;
-            _ddiNopDecompCb = psize;
+            _ddiNopDecompCb = cb;
             _ddiNopDecompDest = dest;
             _ddiNopDecompVsize = vsize;
             _ddiNopDecompHdr = 0;
-            _ddiNopInnerCap = false;
-            _ddiNopInnerPages = 0;
             try
             {
-                _ddiNopDecompHdr = bus.Read32(src);
+                if (bus != null && src != 0)
+                    _ddiNopDecompHdr = bus.Read32(src);
             }
             catch
             {
             }
-            return true;
         }
 
         public static bool TryNoteExtraRomInnerDest(MipsBus bus, uint[] regs)
         {
-            if ((_ddiNopDecompRa == 0 && _tv2FileDecompRa == 0 && _romFileDecompRa == 0)
+            if (_ddiNopObserve
+                || (_ddiNopDecompRa == 0 && _tv2FileDecompRa == 0 && _romFileDecompRa == 0)
                 || bus == null || regs == null || regs.Length <= 7)
                 return false;
             try
@@ -1621,7 +1547,8 @@ namespace ProcessorEmulator.Core
 
         public static bool TryNoteExtraRomInnerRet(uint[] regs)
         {
-            if ((_ddiNopDecompRa == 0 && _tv2FileDecompRa == 0 && _romFileDecompRa == 0)
+            if (_ddiNopObserve
+                || (_ddiNopDecompRa == 0 && _tv2FileDecompRa == 0 && _romFileDecompRa == 0)
                 || regs == null || regs.Length <= 2)
                 return false;
             // TOC[34] o32[0] vsize 0x2E705 is 47 pages.
@@ -1751,9 +1678,8 @@ namespace ProcessorEmulator.Core
                     " (firmware OpenFile/VALLOC/CopyO32 dest; not sipcfg 0x00011000; not host a2 rewrite)";
                 System.Console.WriteLine(first);
                 BootLog.Write(first);
-                if (bus != null && v0 == vsize)
-                    DumpDdiNopTextSites(bus, dest);
             }
+            _ddiNopObserve = false;
             _tocDecompSlot = null;
             return false;
         }
@@ -2513,6 +2439,7 @@ namespace ProcessorEmulator.Core
             _ddiNopDecompVsize = 0;
             _ddiNopDecompHdr = 0;
             _ddiNopDestWordLogged = false;
+            _ddiNopObserve = false;
             _ddiNopInnerCap = false;
             _ddiNopInnerPages = 0;
             _ddiNopBindHdr = false;
@@ -9757,6 +9684,7 @@ namespace ProcessorEmulator.Core
             _ddiNopDecompVsize = 0;
             _ddiNopDecompHdr = 0;
             _ddiNopDestWordLogged = false;
+            _ddiNopObserve = false;
             _ddiNopInnerCap = false;
             _ddiNopInnerPages = 0;
             _ddiNopBindHdr = false;
