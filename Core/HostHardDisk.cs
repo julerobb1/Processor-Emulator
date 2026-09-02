@@ -282,6 +282,7 @@ namespace ProcessorEmulator.Core
         private static bool _extractLogged;
         private static bool _hiveFlagsLogged;
         private static string _cprocName = "";
+        private static string _pendingLoadLib = "";
         private static uint _cprocRa;
         private static uint _cprocThread;
         private static bool _gwesWatch;
@@ -1115,7 +1116,11 @@ namespace ProcessorEmulator.Core
                 return;
             string host = MapHost(_root, name);
             bool hit = !string.IsNullOrEmpty(host) && File.Exists(host);
-            System.Console.WriteLine($"[HardDisk] CreateFile \"{name}\" host={(hit ? host : "miss")} fat={(IsPresent ? "yes" : "no")}");
+            BootLog.Write("[HardDisk] CreateFile \"" + name + "\" host=" + (hit ? host : "miss") +
+                " fat=" + (IsPresent ? "yes" : "no"));
+            if (!hit)
+                BootLog.Rom("miss", "NK", "", -1, name, 0, 0, 0, 0,
+                    "CreateFile host miss; do not invent the file");
         }
 
         // wait52: probe died at CreateFileFail 0x8001D400 reading
@@ -2128,16 +2133,24 @@ namespace ProcessorEmulator.Core
                     " (XIP path; ExtraROM o32 should decompress instead)");
                 return;
             }
-            if (pc == CeRomTocFiles.LoadLibSyscallRet
-                && _logged.Contains("hive:ll:ddi_nop.dll")
-                && _logged.Add("hive:ldsys"))
+            if (pc == CeRomTocFiles.LoadLibSyscallRet)
             {
-                System.Console.WriteLine("[Hive] LoadLibraryExW syscall ret v0=0x" +
-                    (registers != null && registers.Length > 2
-                        ? registers[2].ToString("X8") : "0") +
-                    " last-error=" + ReadLastError(bus) +
-                    " ddi_nop@0x03998014 " +
-                    (DdiNopMapped(bus) ? "mapped" : "unmapped"));
+                uint v0 = registers != null && registers.Length > 2 ? registers[2] : 0;
+                if (!string.IsNullOrEmpty(_pendingLoadLib) && v0 == 0
+                    && _logged.Add("rom:llmiss:" + _pendingLoadLib))
+                {
+                    BootLog.Rom("miss", "ExtraROM", "", -1, _pendingLoadLib, 0, 0, 0, 0,
+                        "LoadLibrary ret v0=0; do not invent the DLL");
+                }
+                if (_logged.Contains("hive:ll:ddi_nop.dll")
+                    && _logged.Add("hive:ldsys"))
+                {
+                    System.Console.WriteLine("[Hive] LoadLibraryExW syscall ret v0=0x" +
+                        v0.ToString("X8") +
+                        " last-error=" + ReadLastError(bus) +
+                        " ddi_nop@0x03998014 " +
+                        (DdiNopMapped(bus) ? "mapped" : "unmapped"));
+                }
                 return;
             }
             if (pc == CoredllLoadLibraryW || pc == CoredllLoadLibraryExW
@@ -2147,15 +2160,21 @@ namespace ProcessorEmulator.Core
                     ? ReadUtf16(bus, registers[4]) : "";
                 if (string.IsNullOrEmpty(n))
                     return;
+                _pendingLoadLib = n;
                 bool after = _logged.Contains("hive:gpc:WinMain");
                 bool ddi = n.IndexOf("ddi", StringComparison.OrdinalIgnoreCase) >= 0
                     || n.IndexOf("display", StringComparison.OrdinalIgnoreCase) >= 0
                     || n.IndexOf("gwes", StringComparison.OrdinalIgnoreCase) >= 0
                     || n.IndexOf("mon", StringComparison.OrdinalIgnoreCase) >= 0;
-                if ((after || ddi) && _logged.Add("hive:ll:" + n))
-                    System.Console.WriteLine("[Hive] " +
-                        (pc == CoredllLoadDriver ? "LoadDriver" : "LoadLibrary") +
-                        " \"" + n + "\" pc=0x" + pc.ToString("X8"));
+                if (_logged.Add("hive:ll:" + n))
+                {
+                    string tag = pc == CoredllLoadDriver ? "LoadDriver" : "LoadLibrary";
+                    if (after || ddi)
+                        System.Console.WriteLine("[Hive] " + tag +
+                            " \"" + n + "\" pc=0x" + pc.ToString("X8"));
+                    BootLog.Rom("ok", "ExtraROM", "", -1, n, 0, 0, 0, 0,
+                        tag + " name; do not invent the DLL");
+                }
                 return;
             }
             if ((pc == GwesVaAvHelper || IsSlottedVa(pc, GwesVaAvHelper)

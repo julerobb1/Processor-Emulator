@@ -79,7 +79,9 @@ namespace ProcessorEmulator.Core.Loaders
             uint imageLength = BitConverter.ToUInt32(data, pos);
             pos += 4;
 
-            Console.WriteLine($"[NkBinLoader] Loading kernel. Image start: 0x{imageStart:X}, Length: 0x{imageLength:X}");
+            Log("[NkBinLoader] Loading kernel. Image start: 0x" + imageStart.ToString("X") + ", Length: 0x" + imageLength.ToString("X"));
+            BootLog.Rom("ok", "NK", "image", -1, "nk.bin", 0, imageStart, 0, imageLength,
+                "B000FF map");
 
             int records = WriteB000FfRecords(data, pos, imageLength, memory, "nk", out uint firstRecord, out ulong entryPoint, out bool truncated);
 
@@ -136,7 +138,9 @@ namespace ProcessorEmulator.Core.Loaders
             catch { return false; }
             if (len < 15)
             {
-                Console.WriteLine("[NkBinLoader] ExtraROM skip " + path + " (" + len + " bytes, stub)");
+                Log("[NkBinLoader] ExtraROM skip " + path + " (" + len + " bytes, stub)");
+                BootLog.Rom("skip", "ExtraROM", "image", -1, Path.GetFileName(path), 0, 0, 0, 0,
+                    "stub");
                 return false;
             }
 
@@ -148,20 +152,26 @@ namespace ProcessorEmulator.Core.Loaders
                 {
                     if (fs.Read(header, 0, 15) < 15)
                     {
-                        Console.WriteLine("[NkBinLoader] ExtraROM skip " + path + " (short read, stub)");
+                        Log("[NkBinLoader] ExtraROM skip " + path + " (short read, stub)");
+                        BootLog.Rom("skip", "ExtraROM", "image", -1, Path.GetFileName(path), 0, 0, 0, 0,
+                            "short read, stub");
                         return false;
                     }
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine("[NkBinLoader] ExtraROM read failed " + path + ": " + ex.Message);
+                Log("[NkBinLoader] ExtraROM read failed " + path + ": " + ex.Message);
+                BootLog.Rom("fail", "ExtraROM", "image", -1, Path.GetFileName(path), 0, 0, 0, 0,
+                    ex.Message);
                 return false;
             }
 
             if (!IsB000Ff(header))
             {
-                Console.WriteLine("[NkBinLoader] ExtraROM skip " + path + " (" + len + " bytes, not B000FF)");
+                Log("[NkBinLoader] ExtraROM skip " + path + " (" + len + " bytes, not B000FF)");
+                BootLog.Rom("skip", "ExtraROM", "image", -1, Path.GetFileName(path), 0, 0, 0, 0,
+                    "not B000FF");
                 return false;
             }
 
@@ -169,8 +179,10 @@ namespace ProcessorEmulator.Core.Loaders
             uint imageLength = BitConverter.ToUInt32(header, 11);
             if (mappedStarts != null && mappedStarts.Contains(imageStart))
             {
-                Console.WriteLine("[NkBinLoader] ExtraROM skip " + path +
+                Log("[NkBinLoader] ExtraROM skip " + path +
                     " imageStart=0x" + imageStart.ToString("X8") + " (already mapped)");
+                BootLog.Rom("skip", "ExtraROM", "image", -1, Path.GetFileName(path), 0, imageStart, 0, 0,
+                    "already mapped");
                 return false;
             }
 
@@ -181,7 +193,9 @@ namespace ProcessorEmulator.Core.Loaders
             }
             catch (Exception ex)
             {
-                Console.WriteLine("[NkBinLoader] ExtraROM read failed " + path + ": " + ex.Message);
+                Log("[NkBinLoader] ExtraROM read failed " + path + ": " + ex.Message);
+                BootLog.Rom("fail", "ExtraROM", "image", -1, Path.GetFileName(path), 0, 0, 0, 0,
+                    ex.Message);
                 return false;
             }
 
@@ -189,14 +203,18 @@ namespace ProcessorEmulator.Core.Loaders
             int records = WriteB000FfRecords(data, 15, imageLength, memory, label, out _, out _, out bool truncated);
             if (records <= 0)
             {
-                Console.WriteLine("[NkBinLoader] ExtraROM skip " + path + " (no records" + (truncated ? ", truncated" : "") + ")");
+                Log("[NkBinLoader] ExtraROM skip " + path + " (no records" + (truncated ? ", truncated" : "") + ")");
+                BootLog.Rom("skip", "ExtraROM", "image", -1, label, 0, imageStart, 0, 0,
+                    truncated ? "no records, truncated" : "no records");
                 return false;
             }
             if (mappedStarts != null)
                 mappedStarts.Add(imageStart);
-            Console.WriteLine("[NkBinLoader] ExtraROM mapped records=" + records +
+            Log("[NkBinLoader] ExtraROM mapped records=" + records +
                 " imageStart=0x" + imageStart.ToString("X8") +
                 " path=" + path);
+            BootLog.Rom("ok", "ExtraROM", "image", -1, label, 0, imageStart, 0, imageLength,
+                "B000FF map; XIP at imageStart");
             CeRomTocFiles.NoteExtraRom(imageStart);
             LogMappedRomHdr(memory, imageStart);
             return true;
@@ -220,64 +238,63 @@ namespace ProcessorEmulator.Core.Loaders
                 uint dlllast = memory.ReadMemory32(romhdr + 4);
                 uint nummods = memory.ReadMemory32(romhdr + 0x10);
                 uint numfiles = memory.ReadMemory32(romhdr + 0x30);
-                Console.WriteLine("[NkBinLoader] ExtraROM ROMHDR imageStart=0x" + imageStart.ToString("X8") +
+                Log("[NkBinLoader] ExtraROM ROMHDR imageStart=0x" + imageStart.ToString("X8") +
                     " cece=0x" + sig.ToString("X8") +
                     " dllfirst=0x" + dllfirst.ToString("X8") +
                     " dlllast=0x" + dlllast.ToString("X8") +
                     " nummods=" + nummods +
                     " numfiles=" + numfiles);
-                if (nummods == 0 || nummods > 128)
-                    return;
-                int shown = 0;
-                for (uint i = 0; i < nummods; i++)
+                if (nummods > 0 && nummods <= 128)
                 {
-                    uint entry = romhdr + 0x54 + i * 32;
-                    uint namePtr = memory.ReadMemory32(entry + 0x10);
-                    string name = ReadAscii(memory, namePtr);
-                    if (string.IsNullOrEmpty(name))
-                        continue;
-                    if (IsDdiNop(name))
+                    for (uint i = 0; i < nummods; i++)
                     {
-                        uint tocAttr = memory.ReadMemory32(entry);
-                        CeRomTocFiles.NoteExtraRomModule(romhdr, entry, tocAttr);
-                        CeRomTocFiles.CacheExtraRomDdiNop(memory, entry);
-                        Console.WriteLine("[NkBinLoader] ExtraROM TOC[" + i + "] ddi_nop.dll entry=0x" +
-                            entry.ToString("X8") + " (LoadDriver; do not invent 0x81360000)");
-                    }
-                    if (IsMscoree(name))
-                    {
-                        uint tocAttr = memory.ReadMemory32(entry);
+                        uint entry = romhdr + 0x54 + i * 32;
+                        uint namePtr = memory.ReadMemory32(entry + 0x10);
+                        string name = ReadAscii(memory, namePtr);
+                        if (string.IsNullOrEmpty(name))
+                            continue;
+                        uint dest = 0;
+                        uint vsize = 0;
+                        uint psize = 0;
                         uint e32 = memory.ReadMemory32(entry + 0x14);
                         uint o32 = memory.ReadMemory32(entry + 0x18);
-                        CeRomTocFiles.CacheExtraRomMscoree(memory, entry);
-                        Console.WriteLine("[NkBinLoader] ExtraROM TOC[" + i + "] mscoree.dll entry=0x" +
-                            entry.ToString("X8") +
-                            " attr=0x" + tocAttr.ToString("X8") +
-                            " e32=0x" + e32.ToString("X8") +
-                            " o32=0x" + o32.ToString("X8") +
-                            " (OpenExe; not a FILE; do not invent 0x81360000)");
-                    }
-                    if (IsOle32(name))
-                    {
-                        uint tocAttr = memory.ReadMemory32(entry);
-                        uint e32 = memory.ReadMemory32(entry + 0x14);
-                        uint o32 = memory.ReadMemory32(entry + 0x18);
-                        CeRomTocFiles.CacheExtraRomOle32(memory, entry);
-                        Console.WriteLine("[NkBinLoader] ExtraROM TOC[" + i + "] ole32.dll entry=0x" +
-                            entry.ToString("X8") +
-                            " attr=0x" + tocAttr.ToString("X8") +
-                            " e32=0x" + e32.ToString("X8") +
-                            " o32=0x" + o32.ToString("X8") +
-                            " (OpenExe; not a FILE; do not invent 0x81360000)");
-                    }
-                    if (shown < 24)
-                    {
-                        Console.WriteLine("[NkBinLoader] ExtraROM XIP " + name);
-                        shown++;
+                        if (o32 != 0)
+                        {
+                            try
+                            {
+                                vsize = memory.ReadMemory32(o32);
+                                psize = memory.ReadMemory32(o32 + 8);
+                                dest = memory.ReadMemory32(o32 + 0x10);
+                            }
+                            catch
+                            {
+                            }
+                        }
+                        string why = "TOCentry type-7; dump o32 if present; do not invent 0x81360000";
+                        if (IsDdiNop(name))
+                        {
+                            uint tocAttr = memory.ReadMemory32(entry);
+                            CeRomTocFiles.NoteExtraRomModule(romhdr, entry, tocAttr);
+                            CeRomTocFiles.CacheExtraRomDdiNop(memory, entry);
+                            why = "LoadDriver; TOC type-7; do not invent 0x81360000";
+                        }
+                        if (IsMscoree(name))
+                        {
+                            CeRomTocFiles.CacheExtraRomMscoree(memory, entry);
+                            why = "OpenExe; TOC type-7; not a FILE; e32=0x" + e32.ToString("X8") +
+                                "; do not invent 0x81360000";
+                        }
+                        if (IsOle32(name))
+                        {
+                            CeRomTocFiles.CacheExtraRomOle32(memory, entry);
+                            why = "OpenExe; TOC type-7; not a FILE; e32=0x" + e32.ToString("X8") +
+                                "; do not invent 0x81360000";
+                        }
+                        BootLog.Rom("ok", "ExtraROM", "TOC", (int)i, name, 7, dest, vsize, psize, why);
                     }
                 }
                 uint nfiles = memory.ReadMemory32(romhdr + 0x30);
-                if (nfiles > 0 && nfiles <= 128)
+                if (nfiles > 0 && nfiles <= 128 && nummods <= 128)
                 {
                     uint first = romhdr + 0x54 + nummods * 32;
                     bool sawMscoreeFile = false;
@@ -288,66 +305,38 @@ namespace ProcessorEmulator.Core.Loaders
                         string fname = ReadAscii(memory, memory.ReadMemory32(entry + 0x14));
                         if (string.IsNullOrEmpty(fname))
                             continue;
-                        if (IsOle32(fname))
-                        {
-                            sawOle32File = true;
-                            uint oReal = memory.ReadMemory32(entry + 0x0C);
-                            uint oComp = memory.ReadMemory32(entry + 0x10);
-                            uint oLoad = memory.ReadMemory32(entry + 0x18);
-                            Console.WriteLine("[NkBinLoader] ExtraROM FILE[" + i + "] " + fname +
-                                " entry=0x" + entry.ToString("X8") +
-                                " real=" + oReal +
-                                " comp=" + oComp +
-                                " load=0x" + oLoad.ToString("X8") +
-                                " (FILESentry; unexpected; do not invent)");
-                            continue;
-                        }
-                        if (IsMscoree(fname))
-                        {
-                            sawMscoreeFile = true;
-                            uint mReal = memory.ReadMemory32(entry + 0x0C);
-                            uint mComp = memory.ReadMemory32(entry + 0x10);
-                            uint mLoad = memory.ReadMemory32(entry + 0x18);
-                            Console.WriteLine("[NkBinLoader] ExtraROM FILE[" + i + "] " + fname +
-                                " entry=0x" + entry.ToString("X8") +
-                                " real=" + mReal +
-                                " comp=" + mComp +
-                                " load=0x" + mLoad.ToString("X8") +
-                                " (FILESentry; unexpected; do not invent)");
-                            continue;
-                        }
-                        bool tv2 = fname.Length >= 11
-                            && (fname[0] == 't' || fname[0] == 'T')
-                            && (fname[1] == 'v' || fname[1] == 'V')
-                            && fname[2] == '2';
-                        bool openFile = CeRomTocFiles.IsExtraRomOpenFile(fname);
-                        if (!tv2 && !openFile)
-                            continue;
                         uint realSz = memory.ReadMemory32(entry + 0x0C);
                         uint compSz = memory.ReadMemory32(entry + 0x10);
                         uint load = memory.ReadMemory32(entry + 0x18);
-                        Console.WriteLine("[NkBinLoader] ExtraROM FILE[" + i + "] " + fname +
-                            " entry=0x" + entry.ToString("X8") +
-                            " real=" + realSz +
-                            " comp=" + compSz +
-                            " load=0x" + load.ToString("X8") +
-                            " (FILESentry; do not invent 0x81360000)");
+                        string why = "FILESentry type-8; dump record; do not invent 0x81360000";
+                        if (IsOle32(fname))
+                        {
+                            sawOle32File = true;
+                            why = "FILESentry; unexpected ole32 FILE; do not invent";
+                        }
+                        else if (IsMscoree(fname))
+                        {
+                            sawMscoreeFile = true;
+                            why = "FILESentry; unexpected mscoree FILE; do not invent";
+                        }
+                        BootLog.Rom("ok", "ExtraROM", "FILE", (int)i, fname, 8, load, realSz, compSz, why);
+                        bool openFile = CeRomTocFiles.IsExtraRomOpenFile(fname);
                         if (IsTv2ClientCeExe(fname))
                             CeRomTocFiles.CacheExtraRomTv2File(memory, entry);
                         else if (openFile)
                             CeRomTocFiles.CacheExtraRomOpenFile(memory, entry, fname);
                     }
                     if (!sawMscoreeFile)
-                        Console.WriteLine("[NkBinLoader] ExtraROM FILE table has no mscoree.dll" +
+                        Log("[NkBinLoader] ExtraROM FILE table has no mscoree.dll" +
                             " (TOC[46] is the dump module; do not invent a FILE)");
                     if (!sawOle32File)
-                        Console.WriteLine("[NkBinLoader] ExtraROM FILE table has no ole32.dll" +
+                        Log("[NkBinLoader] ExtraROM FILE table has no ole32.dll" +
                             " (TOC[34] is the dump module; do not invent a FILE)");
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine("[NkBinLoader] ExtraROM ROMHDR log skipped: " + ex.Message);
+                Log("[NkBinLoader] ExtraROM ROMHDR log skipped: " + ex.Message);
             }
         }
 
@@ -459,14 +448,16 @@ namespace ProcessorEmulator.Core.Loaders
                         continue;
                     if (mappedStarts.Contains(imageStart))
                         continue;
-                    Console.WriteLine("[NkBinLoader] ExtraROM missing dump B000FF for chain base=0x" +
+                    Log("[NkBinLoader] ExtraROM missing dump B000FF for chain base=0x" +
                         imageStart.ToString("X8") + " size=0x" + imageLength.ToString("X") +
                         " (firmware has no skip; do not invent a map)");
+                    BootLog.Rom("miss", "ExtraROM", "image", -1, "", 0, imageStart, 0, imageLength,
+                        "no dump B000FF for chain base; do not invent a map");
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine("[NkBinLoader] ExtraROM chain report skipped: " + ex.Message);
+                Log("[NkBinLoader] ExtraROM chain report skipped: " + ex.Message);
             }
         }
 
@@ -487,14 +478,14 @@ namespace ProcessorEmulator.Core.Loaders
                     if (pos + 4 <= data.Length)
                     {
                         entryPoint = BitConverter.ToUInt32(data, pos);
-                        Console.WriteLine("[NkBinLoader] " + label + " sync record. Entry Point: 0x" + entryPoint.ToString("X"));
+                        Log("[NkBinLoader] " + label + " sync record. Entry Point: 0x" + entryPoint.ToString("X"));
                     }
                     break;
                 }
 
                 if (recordLength == 0 || recordLength > imageLength || pos + recordLength > data.Length)
                 {
-                    Console.WriteLine("[NkBinLoader] " + label + " stop at record " + records +
+                    Log("[NkBinLoader] " + label + " stop at record " + records +
                         ": addr=0x" + recordAddress.ToString("X") + " len=0x" + recordLength.ToString("X") +
                         " remaining=" + (data.Length - pos));
                     truncated = true;
@@ -505,7 +496,7 @@ namespace ProcessorEmulator.Core.Loaders
                 Buffer.BlockCopy(data, pos, record, 0, (int)recordLength);
                 pos += (int)recordLength;
 
-                Console.WriteLine("[NkBinLoader] " + label + " record at 0x" + recordAddress.ToString("X") + ", Length: " + recordLength);
+                Log("[NkBinLoader] " + label + " record at 0x" + recordAddress.ToString("X") + ", Length: " + recordLength);
                 memory.WriteMemory(recordAddress, record);
 
                 if (records == 0)
@@ -513,6 +504,11 @@ namespace ProcessorEmulator.Core.Loaders
                 records++;
             }
             return records;
+        }
+
+        private static void Log(string line)
+        {
+            BootLog.Write(line);
         }
     }
 }

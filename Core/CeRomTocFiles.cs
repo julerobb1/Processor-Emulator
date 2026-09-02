@@ -773,6 +773,18 @@ namespace ProcessorEmulator.Core
         private static bool _tv2SwitchForced;
         private static bool _tv2SwitchStoreLogged;
 
+        private static string _lastRomAttachKey;
+
+        private static void LogRomAttach(string result, string source, string kind, int index,
+            string name, int type, uint dest, uint real, uint comp, string why)
+        {
+            string key = (result ?? "") + "|" + (source ?? "") + "|" + (kind ?? "") + "|" + (name ?? "");
+            if (key == _lastRomAttachKey)
+                return;
+            _lastRomAttachKey = key;
+            BootLog.Rom(result, source, kind, index, name, type, dest, real, comp, why);
+        }
+
         public static void NotePendingRomFile(string path)
         {
             if (string.IsNullOrEmpty(path))
@@ -816,10 +828,18 @@ namespace ProcessorEmulator.Core
                 && !IsOle32Dll(baseName)
                 && !IsTv2ClientCe(baseName)
                 && !IsExtraRomOpenFile(baseName))
+            {
+                LogRomAttach("skip", "ExtraROM", "", -1, baseName, 0, 0, 0, 0,
+                    "CreateFileFail/OpenFile; not ExtraROM FILE type-8 or TOC attach name; do not invent");
                 return false;
+            }
 
             if (TryFindTocModule(bus, 0, 64, baseName, out tocEntry, out attr))
+            {
+                LogRomAttach("ok", "NK", "TOC", -1, baseName, 7, 0, 0, 0,
+                    "CreateFileFail NK ROMHDR attach type-7");
                 return true;
+            }
             // ExtraROM TOC[33] ddi_nop.dll. LoadDriver of it is
             // proven; NK TOC does not list it. Do not invent
             // 0x81360000. Do not map until firmware asks.
@@ -828,6 +848,8 @@ namespace ProcessorEmulator.Core
             {
                 System.Console.WriteLine("[Hive] TOC-attach ExtraROM ddi_nop.dll entry=0x" +
                     tocEntry.ToString("X8") + " (CreateFile miss; do not invent 0x81360000)");
+                LogRomAttach("ok", "ExtraROM", "TOC", 33, "ddi_nop.dll", 7, 0, 0, 0,
+                    "CreateFile miss; TOC type-7; do not invent 0x81360000");
                 TryMarkExtraRomO32Compressed(bus, tocEntry);
                 return true;
             }
@@ -848,6 +870,8 @@ namespace ProcessorEmulator.Core
                 {
                     System.Console.WriteLine("[Hive] TOC-attach ExtraROM mscoree.dll miss" +
                         " (FILE table has no mscoree.dll; do not invent a FILE)");
+                    LogRomAttach("fail", "ExtraROM", "TOC", 46, "mscoree.dll", 7, 0, 0, 0,
+                        "OpenExe miss; FILE table has no mscoree.dll; do not invent a FILE");
                     return false;
                 }
                 attachType = TocAttachType;
@@ -856,6 +880,10 @@ namespace ProcessorEmulator.Core
                     " type=7 attr=0x" + attr.ToString("X8") +
                     " e32=0x" + (_mscoreeE32 != 0 ? _mscoreeE32 : (uint)0).ToString("X8") +
                     " (TOC[46]; not a FILE; do not invent 0x81360000)");
+                LogRomAttach("ok", "ExtraROM", "TOC", 46, "mscoree.dll", 7, 0, 0, 0,
+                    "OpenExe type-7; not a FILE; e32=0x" +
+                    (_mscoreeE32 != 0 ? _mscoreeE32 : (uint)0).ToString("X8") +
+                    "; do not invent 0x81360000");
                 TryMarkExtraRomO32Compressed(bus, tocEntry);
                 _pendingRomFile = null;
                 return true;
@@ -876,6 +904,8 @@ namespace ProcessorEmulator.Core
                 {
                     System.Console.WriteLine("[Hive] TOC-attach ExtraROM ole32.dll miss" +
                         " (FILE table has no ole32.dll; do not invent a FILE)");
+                    LogRomAttach("fail", "ExtraROM", "TOC", 34, "ole32.dll", 7, 0, 0, 0,
+                        "OpenExe miss; FILE table has no ole32.dll; do not invent a FILE");
                     return false;
                 }
                 attachType = TocAttachType;
@@ -884,6 +914,10 @@ namespace ProcessorEmulator.Core
                     " type=7 attr=0x" + attr.ToString("X8") +
                     " e32=0x" + (_ole32E32 != 0 ? _ole32E32 : (uint)0).ToString("X8") +
                     " (TOC[34]; not a FILE; do not invent 0x81360000)");
+                LogRomAttach("ok", "ExtraROM", "TOC", 34, "ole32.dll", 7, 0, 0, 0,
+                    "OpenExe type-7; not a FILE; e32=0x" +
+                    (_ole32E32 != 0 ? _ole32E32 : (uint)0).ToString("X8") +
+                    "; do not invent 0x81360000");
                 TryMarkExtraRomO32Compressed(bus, tocEntry);
                 _pendingRomFile = null;
                 return true;
@@ -917,6 +951,8 @@ namespace ProcessorEmulator.Core
                 else if (!TryFindExtraRomFile(bus, "tv2clientce.exe", out tocEntry, out attr,
                     out real, out comp, out load))
                 {
+                    LogRomAttach("fail", "ExtraROM", "FILE", 25, "tv2clientce.exe", 8, 0, 0, 0,
+                        "CreateFileFail; FILESentry miss; do not invent 0x81360000");
                     return false;
                 }
                 _romFileAttach = false;
@@ -928,6 +964,8 @@ namespace ProcessorEmulator.Core
                     " comp=" + comp +
                     " load=0x" + load.ToString("X8") +
                     " (FILESentry; firmware SetFilePointer/ReadFile; not a dump 0x81360000 map)");
+                LogRomAttach("ok", "ExtraROM", "FILE", 25, "tv2clientce.exe", 8, load, real, comp,
+                    "CreateFileFail type-8 FILESentry; firmware SetFilePointer/ReadFile; not a dump 0x81360000 map");
                 _pendingRomFile = null;
                 return true;
             }
@@ -951,6 +989,8 @@ namespace ProcessorEmulator.Core
                     && !TryFindExtraRomFile(bus, want, out tocEntry, out attr,
                         out real, out comp, out load))
                 {
+                    LogRomAttach("fail", "ExtraROM", "FILE", -1, want, 8, 0, 0, 0,
+                        "OpenFile type-8 FILESentry miss; do not invent bytes or 0x81360000");
                     return false;
                 }
                 _romFileAttach = true;
@@ -962,6 +1002,8 @@ namespace ProcessorEmulator.Core
                     " comp=" + comp +
                     " load=0x" + load.ToString("X8") +
                     " (FILESentry; firmware SetFilePointer/ReadFile; not a dump 0x81360000 map)");
+                LogRomAttach("ok", "ExtraROM", "FILE", -1, want, 8, load, real, comp,
+                    "OpenFile type-8 FILESentry; firmware SetFilePointer/ReadFile; not a dump 0x81360000 map");
                 _pendingRomFile = null;
                 return true;
             }
@@ -1006,6 +1048,9 @@ namespace ProcessorEmulator.Core
                     toc.ToString("X8") + " nmods=" + nmods +
                     " cached-hdr=0x" + _extraRomHdr.ToString("X8") +
                     " (do not invent 0x81360000)");
+                LogRomAttach("fail", "ExtraROM", "TOC", -1, baseName, 7, 0, 0, 0,
+                    "TOC-walk miss toc=0x" + toc.ToString("X8") +
+                    " nmods=" + nmods + "; do not invent 0x81360000");
                 return false;
             }
             try
@@ -1024,6 +1069,14 @@ namespace ProcessorEmulator.Core
                     : (IsMscoreeDll(baseName)
                         ? " (OpenExe; TOC[46]; do not invent a FILE)"
                         : " (LoadDriver; do not invent 0x81360000)")));
+            LogRomAttach("ok", "ExtraROM", "TOC",
+                IsOle32Dll(baseName) ? 34 : (IsMscoreeDll(baseName) ? 46 : 33),
+                baseName, 7, 0, 0, 0,
+                IsOle32Dll(baseName)
+                    ? "TOC-walk OpenExe type-7; TOC[34]; do not invent a FILE"
+                    : (IsMscoreeDll(baseName)
+                        ? "TOC-walk OpenExe type-7; TOC[46]; do not invent a FILE"
+                        : "TOC-walk LoadDriver type-7; do not invent 0x81360000"));
             TryMarkExtraRomO32Compressed(bus, tocEntry);
             return true;
         }
@@ -1803,6 +1856,8 @@ namespace ProcessorEmulator.Core
                 System.Console.WriteLine("[Hive] ExtraROM BindImp LoadLibrary \"" +
                     (dll.Length > 0 ? dll : "(empty)") +
                     "\" a0=0x" + a0.ToString("X8"));
+                LogRomAttach("ok", "ExtraROM", "", -1, dll.Length > 0 ? dll : "(empty)", 0, 0, 0, 0,
+                    "BindImp LoadLibrary; do not invent the DLL");
                 return false;
             }
             if (pc == BindImpLoadLibRet && _ddiNopBindLib && !_ddiNopBindLibRet)
@@ -1812,6 +1867,10 @@ namespace ProcessorEmulator.Core
                 System.Console.WriteLine("[Hive] ExtraROM BindImp LoadLibrary ret v0=0x" +
                     v0.ToString("X8") +
                     (v0 == 0 ? " (import miss; last-error 126)" : " (import loaded)"));
+                LogRomAttach(v0 == 0 ? "miss" : "ok", "ExtraROM", "", -1, "", 0, 0, 0, 0,
+                    v0 == 0
+                        ? "BindImp LoadLibrary ret v0=0 import miss; last-error 126; do not invent the DLL"
+                        : "BindImp LoadLibrary ret v0=0x" + v0.ToString("X8"));
                 return false;
             }
             return false;
@@ -2191,6 +2250,7 @@ namespace ProcessorEmulator.Core
             _extraRomStart = imageStart;
             _extraRomHdr = 0;
             _pendingRomFile = null;
+            _lastRomAttachKey = null;
             _ddiNopTocEntry = 0;
             _ddiNopAttr = 0;
             _ddiNopTocWords = null;
@@ -2545,7 +2605,7 @@ namespace ProcessorEmulator.Core
                 slot.Load = load;
                 slot.Data = blob;
                 slot.Label = ExtraRomOpenFileName(label);
-                System.Console.WriteLine("[NkBinLoader] ExtraROM FILE cached " + slot.Label +
+                BootLog.Write("[NkBinLoader] ExtraROM FILE cached " + slot.Label +
                     " entry=0x" + filesEntry.ToString("X8") +
                     " real=" + real +
                     " comp=" + comp +
@@ -2555,7 +2615,7 @@ namespace ProcessorEmulator.Core
             }
             catch (System.Exception ex)
             {
-                System.Console.WriteLine("[NkBinLoader] ExtraROM FILE cache skipped " + label +
+                BootLog.Write("[NkBinLoader] ExtraROM FILE cache skipped " + label +
                     ": " + ex.Message);
             }
         }
@@ -2598,7 +2658,7 @@ namespace ProcessorEmulator.Core
                 _tv2FileComp = comp;
                 _tv2FileLoad = load;
                 _tv2FileData = blob;
-                System.Console.WriteLine("[NkBinLoader] ExtraROM FILE[25] cached entry=0x" +
+                BootLog.Write("[NkBinLoader] ExtraROM FILE[25] cached entry=0x" +
                     filesEntry.ToString("X8") +
                     " real=" + real +
                     " comp=" + comp +
@@ -2607,7 +2667,7 @@ namespace ProcessorEmulator.Core
             }
             catch (System.Exception ex)
             {
-                System.Console.WriteLine("[NkBinLoader] ExtraROM FILE[25] cache skipped: " + ex.Message);
+                BootLog.Write("[NkBinLoader] ExtraROM FILE[25] cache skipped: " + ex.Message);
             }
         }
 

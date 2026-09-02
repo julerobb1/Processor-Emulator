@@ -120,7 +120,28 @@ namespace ProcessorEmulator
         {
             _start.Enabled = !running;
             _stop.Enabled = running;
-            _status.Text = running ? "Running" : "Stopped";
+            if (!running)
+                BootLog.Write("Stopped");
+        }
+
+        private void ShowStatus(string line)
+        {
+            if (string.IsNullOrEmpty(line))
+                return;
+            void apply()
+            {
+                _status.Text = line.Length > 140 ? line.Substring(0, 140) : line;
+            }
+            try
+            {
+                if (IsHandleCreated && InvokeRequired)
+                    BeginInvoke(new Action(apply));
+                else
+                    apply();
+            }
+            catch
+            {
+            }
         }
 
         private void FolderClick(object sender, EventArgs e)
@@ -149,7 +170,10 @@ namespace ProcessorEmulator
             _frame.Image = null;
             _frame.BackColor = Color.Black;
             string feed = _folderBox.Text;
-            _session = new MediaroomSession(_ => { });
+            BootLog.Open(feed);
+            BootLog.Listener = ShowStatus;
+            BootLog.Write("start folder=" + (feed ?? "") + " log=" + BootLog.FilePath);
+            _session = new MediaroomSession(BootLog.Write);
             _worker = new Thread(() =>
             {
                 try
