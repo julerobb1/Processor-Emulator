@@ -2042,7 +2042,8 @@ namespace ProcessorEmulator.Core
                     " ddi_nop@0x03998014 " +
                     (DdiNopMapped(bus) ? "mapped" : "unmapped"));
                 BootLog.LoadE32("ddi_nop.dll", 33, v0,
-                    "firmware LoadE32; do not invent 0x81360000");
+                    CeRomTocFiles.NameLoadE32RetPublic(v0) +
+                    "; firmware LoadE32; do not invent 0x81360000");
                 return;
             }
             if (pc == CeRomTocFiles.LoadE32RomRet
@@ -2055,7 +2056,8 @@ namespace ProcessorEmulator.Core
                     " last-error=" + ReadLastError(bus) +
                     " (TOC[46]; do not invent e32)");
                 BootLog.LoadE32("mscoree.dll", 46, v0,
-                    "TOC[46]; firmware LoadE32; do not invent e32");
+                    CeRomTocFiles.NameLoadE32RetPublic(v0) +
+                    "; TOC[46]; firmware LoadE32; do not invent e32");
                 return;
             }
             if (pc == CeRomTocFiles.LoadE32RomRet
@@ -2068,7 +2070,8 @@ namespace ProcessorEmulator.Core
                     " last-error=" + ReadLastError(bus) +
                     " (TOC[34]; do not invent e32)");
                 BootLog.LoadE32("ole32.dll", 34, v0,
-                    "TOC[34]; firmware LoadE32; do not invent e32");
+                    CeRomTocFiles.NameLoadE32RetPublic(v0) +
+                    "; TOC[34]; firmware LoadE32; do not invent e32");
                 return;
             }
             if (pc == CeRomTocFiles.LoadE32RomRet)
@@ -2084,7 +2087,8 @@ namespace ProcessorEmulator.Core
                         " last-error=" + ReadLastError(bus) +
                         " (TOC[" + tocIndex + "]; do not invent e32)");
                     BootLog.LoadE32(tocName, tocIndex, v0,
-                        "TOC[" + tocIndex + "]; firmware LoadE32; do not invent e32");
+                        CeRomTocFiles.NameLoadE32RetPublic(v0) +
+                        "; TOC[" + tocIndex + "]; firmware LoadE32; do not invent e32");
                     return;
                 }
             }
