@@ -240,10 +240,12 @@ namespace ProcessorEmulator.Core.Loaders
                 uint numfiles = memory.ReadMemory32(romhdr + 0x30);
                 Log("[NkBinLoader] ExtraROM ROMHDR imageStart=0x" + imageStart.ToString("X8") +
                     " cece=0x" + sig.ToString("X8") +
+                    " romhdr=0x" + romhdr.ToString("X8") +
                     " dllfirst=0x" + dllfirst.ToString("X8") +
                     " dlllast=0x" + dlllast.ToString("X8") +
                     " nummods=" + nummods +
                     " numfiles=" + numfiles);
+                CeRomTocFiles.LogExtraRomHdrAtMap(memory, romhdr);
                 bool sawCom16550Toc = false;
                 bool sawCom16550File = false;
                 if (nummods > 0 && nummods <= 128)
