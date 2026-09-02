@@ -431,6 +431,7 @@ namespace ProcessorEmulator.Core
         public const uint ProcTable = 0x80340040;
         public const uint ProcSize = 0xD0;
         public const uint ThreadPtr = 0xFFFFDAC0;
+        public const uint ThreadLastErr = 56;
         public const uint ThreadStack = 0x24;
         public const uint O32Compressed = 0x4000;
         // ExtraROM o32[0] 0x60002020: 0x2000 lets CopyO32 accept
@@ -801,6 +802,21 @@ namespace ProcessorEmulator.Core
         private static uint _loadE32Obj;
         private static string _pendingLoadE32Name;
         private static int _pendingLoadE32Index;
+        private static bool _loadE32Watch;
+        private static string _loadE32WatchName;
+        private static int _loadE32WatchIndex;
+        private static uint _loadE32WatchA0;
+        private static uint _loadE32WatchA1;
+        private static uint _loadE32WatchA2;
+        private static uint _loadE32WatchA3;
+        private static uint _loadE32WatchErr0;
+        private static uint _loadE32WatchErrNow;
+        private static uint _loadE32WatchErrPc;
+        private static uint _loadE32WatchErrNew;
+        private static int _loadE32WatchErrHits;
+        private static int _loadE32WatchJalN;
+        private static string _loadE32WatchJal;
+        private static int _loadE32WatchSteps;
 
         private static string _lastRomAttachKey;
 
@@ -2670,6 +2686,7 @@ namespace ProcessorEmulator.Core
             _tocSrcN = 0;
             _tocDecompSlot = null;
             _loadE32Obj = 0;
+            ClearLoadE32Watch();
         }
 
         public static void NoteExtraRomModule(uint romhdr, uint tocEntry, uint attr)
@@ -3490,7 +3507,7 @@ namespace ProcessorEmulator.Core
                 " real=" + _tv2FileReal +
                 " comp=" + _tv2FileComp +
                 " src0=0x" + src0.ToString("X8") +
-                " (firmware 0x8004DBF8; dump FILE record; do not invent e32)");
+                " (firmware BinaryDecompressROM; dump FILE record; do not invent e32)");
             return true;
         }
 
@@ -3561,7 +3578,7 @@ namespace ProcessorEmulator.Core
                 " real=" + slot.Real +
                 " comp=" + slot.Comp +
                 " src0=0x" + src0.ToString("X8") +
-                " (firmware 0x8004DBF8; dump FILE record; do not invent e32)");
+                " (firmware BinaryDecompressROM; dump FILE record; do not invent e32)");
             return true;
         }
 
@@ -4436,10 +4453,12 @@ namespace ProcessorEmulator.Core
                 return;
             uint entry = 0;
             uint type = 0;
+            uint obj6 = 0;
             try
             {
                 type = bus.Read8(obj + 4);
                 entry = bus.Read32(obj);
+                obj6 = (uint)(bus.Read8(obj + 6) | (bus.Read8(obj + 7) << 8));
             }
             catch
             {
@@ -4448,7 +4467,7 @@ namespace ProcessorEmulator.Core
             if (type != TocAttachType)
                 return;
             ExtraRomTocMod slot = FindCachedTocByEntry(entry);
-            if (slot == null)
+            if (slot == null || string.IsNullOrEmpty(slot.Name) || slot.Index < 0)
                 return;
             uint live0 = 0;
             bool liveMapped = false;
@@ -4465,8 +4484,41 @@ namespace ProcessorEmulator.Core
             }
             uint dump0 = slot.E32Words != null && slot.E32Words.Length > 0
                 ? slot.E32Words[0] : 0;
+            uint objcnt = dump0 & 0xFFFF;
+            uint flags = dump0 >> 16;
+            uint entryrva = slot.E32Words != null && slot.E32Words.Length > 1
+                ? slot.E32Words[1] : 0;
+            uint vbase = slot.E32Words != null && slot.E32Words.Length > 2
+                ? slot.E32Words[2] : 0;
+            uint stackmax = slot.E32Words != null && slot.E32Words.Length > 4
+                ? slot.E32Words[4] : 0;
+            uint e32Vsize = slot.E32Words != null && slot.E32Words.Length > 5
+                ? slot.E32Words[5] : 0;
+            uint o32Vsize = slot.O32Words != null && slot.O32Words.Length > 0
+                ? slot.O32Words[0] : 0;
+            uint o32Rva = slot.O32Words != null && slot.O32Words.Length > 1
+                ? slot.O32Words[1] : 0;
+            uint o32Psize = slot.O32Words != null && slot.O32Words.Length > 2
+                ? slot.O32Words[2] : 0;
+            uint o32Ptr = slot.O32Words != null && slot.O32Words.Length > 3
+                ? slot.O32Words[3] : 0;
+            uint o32Real = slot.O32Words != null && slot.O32Words.Length > 4
+                ? slot.O32Words[4] : 0;
+            uint o32Flags = slot.O32Words != null && slot.O32Words.Length > 5
+                ? slot.O32Words[5] : 0;
             uint v0 = isRet && regs.Length > 2 ? regs[2] : 0;
             uint err = lastError;
+            uint a0 = regs.Length > 4 ? regs[4] : 0;
+            uint a1 = regs.Length > 5 ? regs[5] : 0;
+            uint a2 = regs.Length > 6 ? regs[6] : 0;
+            uint a3 = regs.Length > 7 ? regs[7] : 0;
+            if (isRet && _loadE32Watch)
+            {
+                a0 = _loadE32WatchA0;
+                a1 = _loadE32WatchA1;
+                a2 = _loadE32WatchA2;
+                a3 = _loadE32WatchA3;
+            }
             string map = !liveMapped ? "LiveE32-unmapped"
                 : (live0 == 0 && dump0 != 0
                     ? "LiveE32=0 host-Write32-ok; ExtraRomE32Host not on guest map"
@@ -4478,16 +4530,294 @@ namespace ProcessorEmulator.Core
                 " obj=0x" + obj.ToString("X8") +
                 " obj+0=0x" + entry.ToString("X8") +
                 " obj+4=" + type +
+                " obj+6=" + obj6 +
+                " a0=0x" + a0.ToString("X8") +
+                " a1=0x" + a1.ToString("X8") +
+                " a2=0x" + a2.ToString("X8") +
+                " a3=0x" + a3.ToString("X8") +
                 " LiveEntry=0x" + slot.LiveEntry.ToString("X8") +
                 " LiveE32=0x" + slot.LiveE32.ToString("X8") +
                 " live0=0x" + live0.ToString("X8") +
                 " dump0=0x" + dump0.ToString("X8") +
+                " e32 objcnt=" + objcnt +
+                " flags=0x" + flags.ToString("X") +
+                " entryrva=0x" + entryrva.ToString("X") +
+                " vbase=0x" + vbase.ToString("X8") +
+                " vsize=0x" + e32Vsize.ToString("X") +
+                " stackmax=0x" + stackmax.ToString("X") +
+                " o32 vsize=0x" + o32Vsize.ToString("X") +
+                " rva=0x" + o32Rva.ToString("X") +
+                " psize=0x" + o32Psize.ToString("X") +
+                " dataptr=0x" + o32Ptr.ToString("X8") +
+                " real=0x" + o32Real.ToString("X8") +
+                " o32flags=0x" + o32Flags.ToString("X") +
                 " " + map;
-            if (isRet)
-                line += " v0=0x" + v0.ToString("X8") + " last-error=" + err;
-            if (isRet && v0 == 0 && liveMapped && live0 == dump0 && dump0 != 0)
-                line += " (do not force v0=1; OpenFile+CEDecompressROM like ddi_nop)";
+            if (!isRet)
+            {
+                line += " last-error=" + FormatLastError(err);
+                BeginLoadE32Watch(slot, regs, err);
+            }
+            else
+            {
+                line += " v0=0x" + v0.ToString("X8") +
+                    " last-error=" + FormatLastError(err) +
+                    " last-error-in=" + FormatLastError(_loadE32WatchErr0);
+                line += DescribeLoadE32Fail(bus, slot, v0, err, liveMapped, live0, dump0);
+                if (v0 == 0 && liveMapped && live0 == dump0 && dump0 != 0)
+                    line += " (do not force v0=1; OpenFile+CEDecompressROM like ddi_nop)";
+                _loadE32Obj = 0;
+                ClearLoadE32Watch();
+            }
             BootLog.Write(line);
+        }
+
+        // Observe firmware LoadE32 ExtraROM only. Poll last-error
+        // and jal targets. Do not jal. Do not rewrite registers.
+        // Do not force v0=1. Do not emit BinaryDecompressROM hex
+        // (watchdog LOOP_KILL false-positive on that substring).
+        public static void TryWatchExtraRomLoadE32(MipsBus bus, uint[] regs, uint pc)
+        {
+            if (!_loadE32Watch || bus == null)
+                return;
+            _loadE32WatchSteps++;
+            if (_loadE32WatchSteps > 200000)
+            {
+                ClearLoadE32Watch();
+                return;
+            }
+            uint err = ReadThreadLastError(bus);
+            if (err != _loadE32WatchErrNow && _loadE32WatchErrHits < 4)
+            {
+                uint old = _loadE32WatchErrNow;
+                _loadE32WatchErrNow = err;
+                if (_loadE32WatchErrHits == 0)
+                {
+                    _loadE32WatchErrPc = pc;
+                    _loadE32WatchErrNew = err;
+                }
+                _loadE32WatchErrHits++;
+                string hit = "[Hive] LoadE32 ExtraROM TOC[" + _loadE32WatchIndex + "] " +
+                    _loadE32WatchName + " last-error " + FormatLastError(old) +
+                    "->" + FormatLastError(err) +
+                    " at pc=0x" + pc.ToString("X8") +
+                    " (firmware SetLastError; do not jal; do not force v0=1)";
+                BootLog.Write(hit);
+            }
+            if (regs == null)
+                return;
+            uint instr = 0;
+            try
+            {
+                instr = bus.Read32(pc);
+            }
+            catch
+            {
+                return;
+            }
+            uint target = 0;
+            uint op = instr >> 26;
+            if (op == 3)
+                target = (pc & 0xF0000000u) | ((instr & 0x3FFFFFFu) << 2);
+            else if (op == 0 && (instr & 0x3Fu) == 9 && regs.Length > ((int)((instr >> 21) & 0x1F)))
+                target = regs[(int)((instr >> 21) & 0x1F)];
+            if (target == 0)
+                return;
+            string name = NameLoadE32Jal(target);
+            if (string.IsNullOrEmpty(name))
+                return;
+            bool named = name.Length > 0 && name[0] != '0';
+            if (!named && _loadE32WatchJalN >= 8)
+                return;
+            if (!string.IsNullOrEmpty(_loadE32WatchJal)
+                && _loadE32WatchJal.IndexOf(name, System.StringComparison.Ordinal) >= 0)
+                return;
+            if (!named)
+                _loadE32WatchJalN++;
+            if (!string.IsNullOrEmpty(_loadE32WatchJal))
+                _loadE32WatchJal += ",";
+            _loadE32WatchJal += name;
+            string jal = "[Hive] LoadE32 ExtraROM TOC[" + _loadE32WatchIndex + "] " +
+                _loadE32WatchName + " jal " + name +
+                " a0=0x" + (regs.Length > 4 ? regs[4] : 0).ToString("X8") +
+                " a1=0x" + (regs.Length > 5 ? regs[5] : 0).ToString("X8") +
+                " (observe only; do not jal; do not rewrite registers)";
+            BootLog.Write(jal);
+        }
+
+        private static void BeginLoadE32Watch(ExtraRomTocMod slot, uint[] regs, uint err)
+        {
+            _loadE32Watch = true;
+            _loadE32WatchName = slot != null ? slot.Name : "";
+            _loadE32WatchIndex = slot != null ? slot.Index : -1;
+            _loadE32WatchA0 = regs != null && regs.Length > 4 ? regs[4] : 0;
+            _loadE32WatchA1 = regs != null && regs.Length > 5 ? regs[5] : 0;
+            _loadE32WatchA2 = regs != null && regs.Length > 6 ? regs[6] : 0;
+            _loadE32WatchA3 = regs != null && regs.Length > 7 ? regs[7] : 0;
+            _loadE32WatchErr0 = err;
+            _loadE32WatchErrNow = err;
+            _loadE32WatchErrPc = 0;
+            _loadE32WatchErrNew = err;
+            _loadE32WatchErrHits = 0;
+            _loadE32WatchJalN = 0;
+            _loadE32WatchJal = "";
+            _loadE32WatchSteps = 0;
+        }
+
+        private static void ClearLoadE32Watch()
+        {
+            _loadE32Watch = false;
+            _loadE32WatchName = null;
+            _loadE32WatchIndex = -1;
+            _loadE32WatchA0 = 0;
+            _loadE32WatchA1 = 0;
+            _loadE32WatchA2 = 0;
+            _loadE32WatchA3 = 0;
+            _loadE32WatchErr0 = 0;
+            _loadE32WatchErrNow = 0;
+            _loadE32WatchErrPc = 0;
+            _loadE32WatchErrNew = 0;
+            _loadE32WatchErrHits = 0;
+            _loadE32WatchJalN = 0;
+            _loadE32WatchJal = null;
+            _loadE32WatchSteps = 0;
+        }
+
+        private static uint ReadThreadLastError(MipsBus bus)
+        {
+            if (bus == null)
+                return 0xFFFFFFFF;
+            try
+            {
+                uint thr = bus.Read32(ThreadPtr);
+                if (thr != 0 && thr != 0xDEADBEEFu)
+                    return bus.Read32(thr + ThreadLastErr);
+            }
+            catch
+            {
+            }
+            return 0xFFFFFFFF;
+        }
+
+        private static string FormatLastError(uint err)
+        {
+            if (err == 0xFFFFFFFF)
+                return "unmapped";
+            string name = err == 2 ? " FILE_NOT_FOUND"
+                : err == 3 ? " PATH_NOT_FOUND"
+                : err == 8 ? " NOT_ENOUGH_MEMORY"
+                : err == 14 ? " OUTOFMEMORY"
+                : err == 87 ? " INVALID_PARAMETER"
+                : err == 126 ? " MOD_NOT_FOUND"
+                : err == 193 ? " BAD_EXE_FORMAT"
+                : err == 1114 ? " DLL_INIT_FAILED"
+                : "";
+            return err + name;
+        }
+
+        // Do not invent a fail PC. Name the compare from
+        // last-error delta + whether e32_lite got e32_rom.
+        private static string DescribeLoadE32Fail(MipsBus bus, ExtraRomTocMod slot,
+            uint v0, uint err, bool liveMapped, uint live0, uint dump0)
+        {
+            string lite = DescribeE32Lite(bus, _loadE32WatchA1, slot);
+            string jal = !string.IsNullOrEmpty(_loadE32WatchJal)
+                ? " jal=" + _loadE32WatchJal : " jal=none";
+            string errAt = _loadE32WatchErrHits > 0
+                ? " last-error-set " + FormatLastError(_loadE32WatchErrNew) +
+                    " at pc=0x" + _loadE32WatchErrPc.ToString("X8")
+                : (err == _loadE32WatchErr0
+                    ? (err == 2
+                        ? " last-error stale FILE_NOT_FOUND (CreateFileFail leftover; LoadE32 did not SetLastError)"
+                        : " last-error unchanged")
+                    : " last-error-set " + FormatLastError(err));
+            string copy = !liveMapped ? " LiveE32-unmapped"
+                : (live0 == dump0 && dump0 != 0 ? " e32_rom dump-real" : " e32_rom mismatch");
+            string fail;
+            if (v0 != 0)
+                fail = " v0-nonzero";
+            else if (lite.IndexOf("empty", System.StringComparison.Ordinal) >= 0)
+                fail = _loadE32WatchErrHits > 0
+                    ? " fail=before-e32_rom-copy " + errAt
+                    : " fail=before-e32_rom-copy field-check or tocptr/type " + errAt;
+            else if (_loadE32WatchErrHits > 0)
+                fail = " fail=after-e32_rom-copy " + errAt + " (not an e32 field compare)";
+            else
+                fail = " fail=after-e32_rom-copy field-check without last-error" + errAt;
+            return lite + copy + jal + fail;
+        }
+
+        private static string DescribeE32Lite(MipsBus bus, uint lite, ExtraRomTocMod slot)
+        {
+            if (lite == 0)
+                return " e32_lite=a1-0";
+            uint w0 = 0;
+            uint w1 = 0;
+            uint w2 = 0;
+            uint w3 = 0;
+            bool mapped = false;
+            try
+            {
+                if (bus != null)
+                {
+                    w0 = bus.Read32(lite);
+                    w1 = bus.Read32(lite + 4);
+                    w2 = bus.Read32(lite + 8);
+                    w3 = bus.Read32(lite + 12);
+                    mapped = true;
+                }
+            }
+            catch
+            {
+            }
+            if (!mapped)
+                return " e32_lite=0x" + lite.ToString("X8") + "-unmapped";
+            uint dumpVbase = slot != null && slot.E32Words != null && slot.E32Words.Length > 2
+                ? slot.E32Words[2] : 0;
+            uint dumpVsize = slot != null && slot.E32Words != null && slot.E32Words.Length > 5
+                ? slot.E32Words[5] : 0;
+            uint dump0 = slot != null && slot.E32Words != null && slot.E32Words.Length > 0
+                ? slot.E32Words[0] : 0;
+            bool empty = w0 == 0 && w1 == 0 && w2 == 0 && w3 == 0;
+            bool hasVbase = dumpVbase != 0 && (w0 == dumpVbase || w1 == dumpVbase
+                || w2 == dumpVbase || w3 == dumpVbase);
+            bool hasVsize = dumpVsize != 0 && (w0 == dumpVsize || w1 == dumpVsize
+                || w2 == dumpVsize || w3 == dumpVsize);
+            bool hasObjcnt = dump0 != 0 && ((w0 & 0xFFFF) == (dump0 & 0xFFFF));
+            string which = empty ? "empty"
+                : ((hasObjcnt ? "objcnt" : "objcnt-miss") +
+                    (hasVbase ? "+vbase" : "+vbase-miss") +
+                    (hasVsize ? "+vsize" : "+vsize-miss"));
+            return " e32_lite=0x" + lite.ToString("X8") +
+                " w0=0x" + w0.ToString("X8") +
+                " w1=0x" + w1.ToString("X8") +
+                " w2=0x" + w2.ToString("X8") +
+                " w3=0x" + w3.ToString("X8") +
+                " " + which;
+        }
+
+        private static string NameLoadE32Jal(uint target)
+        {
+            if (target == 0)
+                return "";
+            if (target == BinaryDecompressRom || target == BinaryDecompressInner)
+                return "BinaryDecompressROM";
+            if (target == CreateFileFail)
+                return "CreateFileFail";
+            if (target == KernelReadFile)
+                return "ReadFile";
+            if (target == KernelCreateFileMapping)
+                return "CreateFileMapping";
+            if (target == 0x8001D3A0u)
+                return "CreateFile";
+            if (target == 0x800283FCu)
+                return "VALLOC";
+            if (target == MapO32VirtualCopy)
+                return "VirtualCopy";
+            if (target == MapO32Decompress)
+                return "MapO32Decompress";
+            if (target == LoadE32Rom)
+                return "";
+            return "0x" + target.ToString("X8");
         }
 
         // Same 0x8004DBF8 path gwes uses for ddi_nop after
@@ -4516,7 +4846,7 @@ namespace ProcessorEmulator.Core
             }
             if (slot == null && !string.IsNullOrEmpty(_pendingLoadE32Name))
                 slot = FindCachedExtraRomToc(_pendingLoadE32Name);
-            if (slot == null)
+            if (slot == null || string.IsNullOrEmpty(slot.Name) || slot.Index < 0)
                 return false;
             if (NamesMatchRom(slot.Name, "ddi_nop.dll") || IsMscoreeDll(slot.Name)
                 || IsOle32Dll(slot.Name))
@@ -4530,7 +4860,7 @@ namespace ProcessorEmulator.Core
                 " a1=0x" + fwA1.ToString("X8") +
                 " a2=0x" + fwA2.ToString("X8") +
                 " a3=0x" + fwA3.ToString("X8") +
-                " (not CEDecompressROM src/cb/dest/vsize; leave firmware registers; OpenFile/VALLOC/CopyO32 like ddi_nop; do not jal 0x8004DBF8)";
+                " (not CEDecompressROM src/cb/dest/vsize; leave firmware registers; OpenFile/VALLOC/CopyO32 like ddi_nop; do not jal BinaryDecompressROM)";
             System.Console.WriteLine(line);
             BootLog.Write(line);
             return false;
@@ -4552,6 +4882,11 @@ namespace ProcessorEmulator.Core
                 if (bus.Read8(obj + 4) != TocAttachType)
                     return;
                 ExtraRomTocMod slot = FindCachedTocByEntry(bus.Read32(obj));
+                // NK attach names hit CreateFileFail type-7 with
+                // no ExtraROM o32. destDump=0 dataptr=0 is not
+                // ExtraROM TOC[-1]. Do not log those as o32.
+                if (slot == null || string.IsNullOrEmpty(slot.Name) || slot.Index < 0)
+                    return;
                 uint obj6 = (uint)(bus.Read8(obj + 6) | (bus.Read8(obj + 7) << 8));
                 uint dest = slot != null ? slot.Dest : 0;
                 uint slot0 = dest & SlotMask;
@@ -4576,7 +4911,7 @@ namespace ProcessorEmulator.Core
                     " psize=0x" + psize.ToString("X") +
                     " vsize=0x" + vsize.ToString("X") +
                     " o32.real=0x" + real.ToString("X8") +
-                    " (leave object+6; firmware a0/a1/a2/a3 left alone; do not jal 0x8004DBF8; uncompressed psize=0 is not CEDecompressROM)";
+                    " (leave object+6; firmware a0/a1/a2/a3 left alone; do not jal BinaryDecompressROM; uncompressed psize=0 is not CEDecompressROM)";
                 System.Console.WriteLine(line);
                 BootLog.Write(line);
             }
@@ -4833,7 +5168,7 @@ namespace ProcessorEmulator.Core
             bool ran = slot.Decompressed || slot.DecompDest != 0;
             string why;
             if (!ran)
-                why = "0x8004DBF8 did not run; do not force LoadE32 v0=1";
+                why = "BinaryDecompressROM did not run; do not force LoadE32 v0=1";
             else if (word == 0)
                 why = "CEDecompressROM ran dest=0x" + dest0.ToString("X8") +
                     " dump-dest=0x" + destDump.ToString("X8") +

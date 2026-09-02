@@ -411,6 +411,7 @@ namespace ProcessorEmulator.Core
             CeRomTocFiles.TryResumeTv2LeftoverDestLiveContinue(bus, registers, ref programCounter);
             CeRomTocFiles.TryKeepLeftoverDestLiveDispatch(bus, programCounter);
             pc = programCounter;
+            CeRomTocFiles.TryWatchExtraRomLoadE32(bus, registers, pc);
             if (pc == BinfsInheritFill)
             {
                 uint plus14 = registers[12];
@@ -545,6 +546,7 @@ namespace ProcessorEmulator.Core
             }
             if (pc == CeRomTocFiles.LoadExeE32Ret)
             {
+                CeRomTocFiles.TryLogExtraRomLoadE32(bus, registers, true, ReadLastError(bus));
                 CeRomTocFiles.TryNoteTv2LoadExeE32(bus, registers, pc);
                 CeRomTocFiles.TryFillProcExeStartip(bus);
                 LogLoadExeStartip(bus);
@@ -1966,7 +1968,7 @@ namespace ProcessorEmulator.Core
                 && registers != null && registers.Length > 4)
             {
                 CeRomTocFiles.TryServeExtraRomLoadE32(bus, registers[4]);
-                CeRomTocFiles.TryLogExtraRomLoadE32(bus, registers, false, 0);
+                CeRomTocFiles.TryLogExtraRomLoadE32(bus, registers, false, ReadLastError(bus));
                 if (_logged.Contains("hive:ll:ddi_nop.dll")
                     && CeRomTocFiles.IsDdiNopTocObject(bus, registers[4]))
                 {
