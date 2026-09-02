@@ -273,6 +273,7 @@ namespace ProcessorEmulator.Core.Loaders
                             }
                         }
                         string why = "TOCentry type-7; dump o32 if present; do not invent 0x81360000";
+                        CeRomTocFiles.CacheExtraRomTocModule(memory, romhdr, entry, (int)i, name);
                         if (IsDdiNop(name))
                         {
                             uint tocAttr = memory.ReadMemory32(entry);
@@ -346,6 +347,7 @@ namespace ProcessorEmulator.Core.Loaders
                 if (!sawCom16550Toc && !sawCom16550File)
                     BootLog.Rom("miss", "ExtraROM", "", -1, "com16550.dll", 0, 0, 0, 0,
                         "not in ExtraROM TOC/FILE; hive Dllcom16550.dll may be leftover; do not claim it loads");
+                CeRomTocFiles.LogExtraRomTocAttachCache();
             }
             catch (Exception ex)
             {

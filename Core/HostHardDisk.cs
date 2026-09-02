@@ -1173,6 +1173,9 @@ namespace ProcessorEmulator.Core
                 " a0=\"" + pathA0 + "\"" +
                 " cproc=\"" + _cprocName + "\"" +
                 " (wait52 TLB; do not invent 0x040851E8)");
+            string failName = !string.IsNullOrEmpty(pathS7) ? pathS7 : pathA0;
+            if (!string.IsNullOrEmpty(failName))
+                BootLog.Write("[Hive] CreateFileFail \"" + failName + "\" pc=0x8001D400");
             LogSlotAliasVa(bus, s7, "CreateFileFail s7");
             if (slot0 != s7)
                 LogSlotAliasVa(bus, slot0, "CreateFileFail slot0");
@@ -1959,6 +1962,7 @@ namespace ProcessorEmulator.Core
                     if (_logged.Add("hive:ldde32"))
                     {
                         CeRomTocFiles.TryMarkExtraRomO32Compressed(bus, CeRomTocFiles.DdiNopTocEntry);
+                        CeRomTocFiles.NoteLoadE32("ddi_nop.dll", 33);
                         System.Console.WriteLine("[Hive] 0x800196E4 ExtraROM ddi_nop obj=0x" +
                             registers[4].ToString("X8") +
                             " entry=0x" + CeRomTocFiles.DdiNopTocEntry.ToString("X8") +
@@ -1970,6 +1974,7 @@ namespace ProcessorEmulator.Core
                     && _logged.Add("hive:ldde32:mscoree"))
                 {
                     CeRomTocFiles.TryMarkExtraRomO32Compressed(bus, CeRomTocFiles.MscoreeTocEntry);
+                    CeRomTocFiles.NoteLoadE32("mscoree.dll", 46);
                     System.Console.WriteLine("[Hive] 0x800196E4 ExtraROM mscoree.dll obj=0x" +
                         registers[4].ToString("X8") +
                         " entry=0x" + CeRomTocFiles.MscoreeTocEntry.ToString("X8") +
@@ -1981,6 +1986,7 @@ namespace ProcessorEmulator.Core
                     && _logged.Add("hive:ldde32:ole32"))
                 {
                     CeRomTocFiles.TryMarkExtraRomO32Compressed(bus, CeRomTocFiles.Ole32TocEntry);
+                    CeRomTocFiles.NoteLoadE32("ole32.dll", 34);
                     System.Console.WriteLine("[Hive] 0x800196E4 ExtraROM ole32.dll obj=0x" +
                         registers[4].ToString("X8") +
                         " entry=0x" + CeRomTocFiles.Ole32TocEntry.ToString("X8") +
@@ -1988,39 +1994,79 @@ namespace ProcessorEmulator.Core
                         " (TOC[34] type 7; firmware LoadE32; not a FILE)");
                     return;
                 }
+                string tocName;
+                int tocIndex;
+                uint tocEntry;
+                uint tocE32;
+                if (CeRomTocFiles.TryDescribeExtraRomTocObject(bus, registers[4],
+                    out tocName, out tocIndex, out tocEntry, out tocE32)
+                    && _logged.Add("hive:ldde32:" + tocName))
+                {
+                    CeRomTocFiles.TryMarkExtraRomO32Compressed(bus, tocEntry);
+                    CeRomTocFiles.NoteLoadE32(tocName, tocIndex);
+                    System.Console.WriteLine("[Hive] 0x800196E4 ExtraROM " + tocName +
+                        " obj=0x" + registers[4].ToString("X8") +
+                        " entry=0x" + tocEntry.ToString("X8") +
+                        " e32=0x" + tocE32.ToString("X8") +
+                        " (TOC[" + tocIndex + "] type 7; firmware LoadE32; not a FILE)");
+                    return;
+                }
             }
             if (pc == CeRomTocFiles.LoadE32RomRet
                 && _logged.Contains("hive:ldde32")
                 && _logged.Add("hive:ldde32ret"))
             {
+                uint v0 = registers != null && registers.Length > 2 ? registers[2] : 0;
                 System.Console.WriteLine("[Hive] 0x800196E4 ret v0=0x" +
-                    (registers != null && registers.Length > 2
-                        ? registers[2].ToString("X8") : "0") +
+                    v0.ToString("X8") +
                     " ddi_nop@0x03998014 " +
                     (DdiNopMapped(bus) ? "mapped" : "unmapped"));
+                BootLog.LoadE32("ddi_nop.dll", 33, v0,
+                    "firmware LoadE32; do not invent 0x81360000");
                 return;
             }
             if (pc == CeRomTocFiles.LoadE32RomRet
                 && _logged.Contains("hive:ldde32:mscoree")
                 && _logged.Add("hive:ldde32ret:mscoree"))
             {
+                uint v0 = registers != null && registers.Length > 2 ? registers[2] : 0;
                 System.Console.WriteLine("[Hive] 0x800196E4 mscoree ret v0=0x" +
-                    (registers != null && registers.Length > 2
-                        ? registers[2].ToString("X8") : "0") +
+                    v0.ToString("X8") +
                     " last-error=" + ReadLastError(bus) +
                     " (TOC[46]; do not invent e32)");
+                BootLog.LoadE32("mscoree.dll", 46, v0,
+                    "TOC[46]; firmware LoadE32; do not invent e32");
                 return;
             }
             if (pc == CeRomTocFiles.LoadE32RomRet
                 && _logged.Contains("hive:ldde32:ole32")
                 && _logged.Add("hive:ldde32ret:ole32"))
             {
+                uint v0 = registers != null && registers.Length > 2 ? registers[2] : 0;
                 System.Console.WriteLine("[Hive] 0x800196E4 ole32 ret v0=0x" +
-                    (registers != null && registers.Length > 2
-                        ? registers[2].ToString("X8") : "0") +
+                    v0.ToString("X8") +
                     " last-error=" + ReadLastError(bus) +
                     " (TOC[34]; do not invent e32)");
+                BootLog.LoadE32("ole32.dll", 34, v0,
+                    "TOC[34]; firmware LoadE32; do not invent e32");
                 return;
+            }
+            if (pc == CeRomTocFiles.LoadE32RomRet)
+            {
+                string tocName;
+                int tocIndex;
+                if (CeRomTocFiles.TryPeekLoadE32(out tocName, out tocIndex)
+                    && _logged.Add("hive:ldde32ret:" + tocName))
+                {
+                    uint v0 = registers != null && registers.Length > 2 ? registers[2] : 0;
+                    System.Console.WriteLine("[Hive] 0x800196E4 " + tocName + " ret v0=0x" +
+                        v0.ToString("X8") +
+                        " last-error=" + ReadLastError(bus) +
+                        " (TOC[" + tocIndex + "]; do not invent e32)");
+                    BootLog.LoadE32(tocName, tocIndex, v0,
+                        "TOC[" + tocIndex + "]; firmware LoadE32; do not invent e32");
+                    return;
+                }
             }
             if (pc == CeRomTocFiles.LoadO32RomRet
                 && _logged.Contains("hive:ldde32")

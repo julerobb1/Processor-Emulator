@@ -185,6 +185,36 @@ namespace ProcessorEmulator.Core
                 || EndsWithFold(name, "serial");
         }
 
+        // LoadE32 / CEDecompressROM outer return only. WinExe hides
+        // Hive Console.WriteLine. Do not log every inner LZX page.
+        public static void LoadE32(string name, int index, uint v0, string why)
+        {
+            var sb = new StringBuilder();
+            sb.Append("[Hive] LoadE32");
+            if (index >= 0)
+                sb.Append(" ExtraROM TOC[").Append(index).Append(']');
+            if (!string.IsNullOrEmpty(name))
+                sb.Append(' ').Append(name);
+            sb.Append(" ret v0=0x").Append(v0.ToString("X8"));
+            if (!string.IsNullOrEmpty(why))
+                sb.Append(" (").Append(why).Append(')');
+            Write(sb.ToString());
+        }
+
+        public static void DecompressRom(string name, uint dest, uint v0, string why)
+        {
+            var sb = new StringBuilder();
+            sb.Append("[Hive] ExtraROM CEDecompressROM");
+            if (!string.IsNullOrEmpty(name))
+                sb.Append(' ').Append(name);
+            sb.Append(" ret v0=0x").Append(v0.ToString("X8"));
+            if (dest != 0)
+                sb.Append(" dest=0x").Append(dest.ToString("X8"));
+            if (!string.IsNullOrEmpty(why))
+                sb.Append(" (").Append(why).Append(')');
+            Write(sb.ToString());
+        }
+
         public static void Rom(string result, string source, string kind, int index,
             string name, int type, uint dest, uint real, uint comp, string why)
         {

@@ -180,8 +180,10 @@ namespace ProcessorEmulator.Emulation
                 }
 
                 // 0x80016AFC miss (v0=2). s3=UTF16 name, s4=object.
-                // ExtraROM TOC[33] ddi_nop / TOC[46] mscoree /
-                // TOC[34] ole32 are not on *(0x80342B10).
+                // ExtraROM TOC modules are not on *(0x80342B10).
+                // Attach any ExtraROM TOC type-7 name already in
+                // the dump ROMHDR (ddi_nop/mscoree/ole32 plus
+                // bcmuart/ndis/sipcfg and the rest).
                 if (programCounter == CeRomTocFiles.TocWalkMiss)
                 {
                     if (CeRomTocFiles.TryAttachExtraRomTocWalk(_bus, registers[19], registers[20]))
