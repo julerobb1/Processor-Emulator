@@ -738,6 +738,9 @@ namespace ProcessorEmulator.Core
                 string kn = ReadUtf16(bus, registers[4]);
                 if ((_notified || IsHardDiskPath(kn)) && _logged.Add("k:" + kn))
                     System.Console.WriteLine($"[HardDisk] kCreateFile \"{kn}\"");
+                if (BootLog.IsGuestIoName(kn) && _logged.Add("rom:cf:" + kn))
+                    BootLog.Rom("ok", "ExtraROM", "", -1, kn, 0, 0, 0, 0,
+                        "CreateFile guest IO name; no NIC on the MIPS bus; do not invent a NIC or UART");
                 LogKernelCreateFile(bus, registers[4]);
                 LogTv2CreateFile(registers, bus, kn);
                 return false;
@@ -1922,8 +1925,14 @@ namespace ProcessorEmulator.Core
                 if (string.IsNullOrEmpty(n))
                     n = "(null)";
                 if (_logged.Add("hive:act:" + n))
+                {
                     System.Console.WriteLine("[Hive] ActivateDevice \"" + n + "\" pc=0x" +
                         pc.ToString("X8"));
+                    BootLog.Rom("ok", "ExtraROM", "", -1, n, 0, 0, 0, 0,
+                        BootLog.IsGuestIoName(n)
+                            ? "ActivateDevice; guest IO name; no NIC on the MIPS bus; do not invent a device"
+                            : "ActivateDevice name");
+                }
                 return;
             }
             if (pc == CoredllLoadDriverRet && _logged.Contains("hive:ll:ddi_nop.dll"))
@@ -2140,7 +2149,9 @@ namespace ProcessorEmulator.Core
                     && _logged.Add("rom:llmiss:" + _pendingLoadLib))
                 {
                     BootLog.Rom("miss", "ExtraROM", "", -1, _pendingLoadLib, 0, 0, 0, 0,
-                        "LoadLibrary ret v0=0; do not invent the DLL");
+                        BootLog.IsGuestIoName(_pendingLoadLib)
+                            ? "LoadLibrary ret v0=0; guest IO name; do not invent a NIC or UART"
+                            : "LoadLibrary ret v0=0; do not invent the DLL");
                 }
                 if (_logged.Contains("hive:ll:ddi_nop.dll")
                     && _logged.Add("hive:ldsys"))
@@ -2173,7 +2184,9 @@ namespace ProcessorEmulator.Core
                         System.Console.WriteLine("[Hive] " + tag +
                             " \"" + n + "\" pc=0x" + pc.ToString("X8"));
                     BootLog.Rom("ok", "ExtraROM", "", -1, n, 0, 0, 0, 0,
-                        tag + " name; do not invent the DLL");
+                        BootLog.IsGuestIoName(n)
+                            ? tag + " guest IO name; no NIC on the MIPS bus; do not invent a NIC or UART"
+                            : tag + " name; do not invent the DLL");
                 }
                 return;
             }

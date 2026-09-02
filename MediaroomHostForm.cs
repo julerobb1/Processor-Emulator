@@ -80,7 +80,7 @@ namespace ProcessorEmulator
             AutoFillFolder();
 
             HandleCreated += (_, __) => Win7VisualStyle.ApplyToHwnd(Handle);
-            FormClosing += (_, __) => { _session?.RequestStop(); };
+            FormClosing += (_, __) => { _session?.RequestStop(); BootLog.UartFlush(); };
         }
 
         private void AutoFillFolder()
@@ -173,6 +173,7 @@ namespace ProcessorEmulator
             BootLog.Open(feed);
             BootLog.Listener = ShowStatus;
             BootLog.Write("start folder=" + (feed ?? "") + " log=" + BootLog.FilePath);
+            BootLog.Write("cli=tail that log (ExtraROM FILE/TOC attach + UART TX). guest frame black; no _frame.Image blit; GuestVideoWrote=false; Display=ddi_nop.dll ExtraROM TOC[33] stub; MipsUart 0xB0000000 TX -> this file; no NIC on the MIPS bus");
             _session = new MediaroomSession(BootLog.Write);
             _worker = new Thread(() =>
             {

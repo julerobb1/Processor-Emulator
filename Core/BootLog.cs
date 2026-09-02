@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Text;
 
@@ -22,6 +23,7 @@ namespace ProcessorEmulator.Core
         private static string _dumpFolder = "";
         private static string _lastLine = "";
         private static Action<string> _listener;
+        private static StringBuilder _uart;
 
         public static string FilePath
         {
@@ -53,6 +55,8 @@ namespace ProcessorEmulator.Core
             lock (Gate)
             {
                 CloseUnlocked();
+                if (_uart != null)
+                    _uart.Length = 0;
                 _dumpFolder = dumpFolder ?? "";
                 string exeDir = ExeDirectory();
                 _path = ResolvePath(exeDir, _dumpFolder);
@@ -93,6 +97,92 @@ namespace ProcessorEmulator.Core
                 try { listener(line); }
                 catch { }
             }
+        }
+
+        // WinExe hides Console.Write of MipsUart UART_DR. Buffer
+        // printable TX into lines, flush each line (and leftover
+        // on Stop). Do not invent a second UART or a NIC.
+        public static void UartTx(byte value)
+        {
+            char c = (char)(value & 0xFF);
+            try { Console.Write(c); }
+            catch { }
+            try { Debug.Write(c); }
+            catch { }
+            if (c == '\0')
+                return;
+            string line = null;
+            string hex = null;
+            lock (Gate)
+            {
+                if (_writer == null)
+                    OpenUnlocked(_dumpFolder);
+                if (_uart == null)
+                    _uart = new StringBuilder();
+                if (c == '\n' || c == '\r')
+                {
+                    if (_uart.Length > 0)
+                    {
+                        line = _uart.ToString();
+                        _uart.Length = 0;
+                    }
+                }
+                else if (c >= 32 && c < 127)
+                {
+                    _uart.Append(c);
+                    if (_uart.Length >= 240)
+                    {
+                        line = _uart.ToString();
+                        _uart.Length = 0;
+                    }
+                }
+                else if (c == '\t')
+                {
+                    _uart.Append('\t');
+                }
+                else
+                {
+                    if (_uart.Length > 0)
+                    {
+                        line = _uart.ToString();
+                        _uart.Length = 0;
+                    }
+                    hex = "0x" + ((int)c).ToString("X2");
+                }
+            }
+            if (line != null)
+                Write("[Uart] " + line);
+            if (hex != null)
+                Write("[Uart] byte=" + hex);
+        }
+
+        public static void UartFlush()
+        {
+            string line = null;
+            lock (Gate)
+            {
+                if (_uart != null && _uart.Length > 0)
+                {
+                    line = _uart.ToString();
+                    _uart.Length = 0;
+                }
+            }
+            if (line != null)
+                Write("[Uart] " + line);
+        }
+
+        public static bool IsGuestIoName(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+                return false;
+            return ContainsFold(name, "rtl8139")
+                || ContainsFold(name, "bcm7038mac")
+                || ContainsFold(name, "ndis")
+                || ContainsFold(name, "iptvdriver")
+                || ContainsFold(name, "bcmuart")
+                || ContainsFold(name, "com16550")
+                || ContainsFold(name, "serial.dll")
+                || EndsWithFold(name, "serial");
         }
 
         public static void Rom(string result, string source, string kind, int index,
@@ -155,6 +245,20 @@ namespace ProcessorEmulator.Core
             {
                 return false;
             }
+        }
+
+        private static bool ContainsFold(string name, string token)
+        {
+            if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(token))
+                return false;
+            return name.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool EndsWithFold(string name, string token)
+        {
+            if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(token) || name.Length < token.Length)
+                return false;
+            return name.EndsWith(token, StringComparison.OrdinalIgnoreCase);
         }
 
         private static void OpenUnlocked(string dumpFolder)

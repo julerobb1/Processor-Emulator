@@ -830,7 +830,9 @@ namespace ProcessorEmulator.Core
                 && !IsExtraRomOpenFile(baseName))
             {
                 LogRomAttach("skip", "ExtraROM", "", -1, baseName, 0, 0, 0, 0,
-                    "CreateFileFail/OpenFile; not ExtraROM FILE type-8 or TOC attach name; do not invent");
+                    BootLog.IsGuestIoName(baseName)
+                        ? "CreateFileFail/OpenFile; guest IO name; not ExtraROM FILE type-8 attach; do not invent a NIC or UART"
+                        : "CreateFileFail/OpenFile; not ExtraROM FILE type-8 or TOC attach name; do not invent");
                 return false;
             }
 

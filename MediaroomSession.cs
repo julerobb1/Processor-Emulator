@@ -112,6 +112,7 @@ namespace ProcessorEmulator
             KernelLoaded = true;
             DumpRoot = HostHardDisk.Root;
             GuestVideoWrote = false;
+            _status("display ddi_nop.dll ExtraROM TOC[33] stub; guest screen black until a real DDI writes pixels; GuestVideoWrote=false; no framebuffer blit");
             _cpu.SetRegister(MipsCpuEmulator.Register.PC, (uint)loaded.EntryPoint);
             _cpu.SetRegister(MipsCpuEmulator.Register.SP, 0x80000000u + RamSize - 0x1000u);
             _lastPc = (uint)loaded.EntryPoint;
@@ -178,10 +179,12 @@ namespace ProcessorEmulator
             catch (Exception ex)
             {
                 _lastPc = _cpu != null ? _cpu.ProgramCounter : _lastPc;
+                BootLog.UartFlush();
                 _status("CPU " + ex.GetType().Name + " PC=0x" + _lastPc.ToString("X8"));
                 return KernelLoaded;
             }
 
+            BootLog.UartFlush();
             _status("stopped");
             return true;
         }

@@ -244,6 +244,8 @@ namespace ProcessorEmulator.Core.Loaders
                     " dlllast=0x" + dlllast.ToString("X8") +
                     " nummods=" + nummods +
                     " numfiles=" + numfiles);
+                bool sawCom16550Toc = false;
+                bool sawCom16550File = false;
                 if (nummods > 0 && nummods <= 128)
                 {
                     for (uint i = 0; i < nummods; i++)
@@ -276,7 +278,7 @@ namespace ProcessorEmulator.Core.Loaders
                             uint tocAttr = memory.ReadMemory32(entry);
                             CeRomTocFiles.NoteExtraRomModule(romhdr, entry, tocAttr);
                             CeRomTocFiles.CacheExtraRomDdiNop(memory, entry);
-                            why = "LoadDriver; TOC type-7; do not invent 0x81360000";
+                            why = "LoadDriver; TOC type-7 Display=ddi_nop.dll stub; guest screen black; do not invent a framebuffer";
                         }
                         if (IsMscoree(name))
                         {
@@ -290,6 +292,10 @@ namespace ProcessorEmulator.Core.Loaders
                             why = "OpenExe; TOC type-7; not a FILE; e32=0x" + e32.ToString("X8") +
                                 "; do not invent 0x81360000";
                         }
+                        if (IsCom16550(name))
+                            sawCom16550Toc = true;
+                        if (BootLog.IsGuestIoName(name) && !IsDdiNop(name))
+                            why = GuestIoWhy(name, i, true);
                         BootLog.Rom("ok", "ExtraROM", "TOC", (int)i, name, 7, dest, vsize, psize, why);
                     }
                 }
@@ -319,6 +325,10 @@ namespace ProcessorEmulator.Core.Loaders
                             sawMscoreeFile = true;
                             why = "FILESentry; unexpected mscoree FILE; do not invent";
                         }
+                        if (IsCom16550(fname))
+                            sawCom16550File = true;
+                        if (BootLog.IsGuestIoName(fname))
+                            why = GuestIoWhy(fname, i, false);
                         BootLog.Rom("ok", "ExtraROM", "FILE", (int)i, fname, 8, load, realSz, compSz, why);
                         bool openFile = CeRomTocFiles.IsExtraRomOpenFile(fname);
                         if (IsTv2ClientCeExe(fname))
@@ -333,11 +343,50 @@ namespace ProcessorEmulator.Core.Loaders
                         Log("[NkBinLoader] ExtraROM FILE table has no ole32.dll" +
                             " (TOC[34] is the dump module; do not invent a FILE)");
                 }
+                if (!sawCom16550Toc && !sawCom16550File)
+                    BootLog.Rom("miss", "ExtraROM", "", -1, "com16550.dll", 0, 0, 0, 0,
+                        "not in ExtraROM TOC/FILE; hive Dllcom16550.dll may be leftover; do not claim it loads");
             }
             catch (Exception ex)
             {
                 Log("[NkBinLoader] ExtraROM ROMHDR log skipped: " + ex.Message);
             }
+        }
+
+        private static bool IsCom16550(string name)
+        {
+            if (string.IsNullOrEmpty(name) || name.Length != 12)
+                return false;
+            return (name[0] == 'c' || name[0] == 'C')
+                && (name[1] == 'o' || name[1] == 'O')
+                && (name[2] == 'm' || name[2] == 'M')
+                && name[3] == '1'
+                && name[4] == '6'
+                && name[5] == '5'
+                && name[6] == '5'
+                && name[7] == '0'
+                && name[8] == '.'
+                && (name[9] == 'd' || name[9] == 'D')
+                && (name[10] == 'l' || name[10] == 'L')
+                && (name[11] == 'l' || name[11] == 'L');
+        }
+
+        private static string GuestIoWhy(string name, uint index, bool toc)
+        {
+            string kind = toc ? "TOC[" + index + "] type-7" : "FILE[" + index + "] type-8";
+            if (name != null && name.IndexOf("serial", StringComparison.OrdinalIgnoreCase) >= 0
+                && name.IndexOf("bcmuart", StringComparison.OrdinalIgnoreCase) < 0)
+                return kind + "; hive Dll Serial.dll / UART; MipsUart 0xB0000000 is the live TX log; do not invent a second UART";
+            if (name != null && name.IndexOf("bcmuart", StringComparison.OrdinalIgnoreCase) >= 0)
+                return kind + "; hive Dll bcmuart.dll; MipsUart 0xB0000000 is the live TX log; do not invent a second UART";
+            if (name != null && name.IndexOf("com16550", StringComparison.OrdinalIgnoreCase) >= 0)
+                return kind + "; hive Dllcom16550.dll; ExtraROM has this name";
+            if (name != null && (name.IndexOf("rtl8139", StringComparison.OrdinalIgnoreCase) >= 0
+                || name.IndexOf("bcm7038mac", StringComparison.OrdinalIgnoreCase) >= 0
+                || name.IndexOf("ndis", StringComparison.OrdinalIgnoreCase) >= 0
+                || name.IndexOf("iptvdriver", StringComparison.OrdinalIgnoreCase) >= 0))
+                return kind + "; hive ImagePath; no NIC on the MIPS bus; log only; do not invent a NIC";
+            return kind + "; guest IO name; do not invent a NIC or UART";
         }
 
         private static bool IsOle32(string name)
