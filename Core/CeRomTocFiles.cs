@@ -1720,12 +1720,10 @@ namespace ProcessorEmulator.Core
                     ? "firmware expanded vsize"
                     : (v0 == 0 ? "firmware returned 0" : "firmware CEDecompressROM");
             BootLog.DecompressRom(decompName, dest, v0, decompWhy);
-            if (_tocDecompSlot != null)
-            {
-                if (v0 == vsize || (mapped && word != 0 && v0 != 0xFFFFFFFFu))
-                    _tocDecompSlot.Decompressed = true;
-                _tocDecompSlot = null;
-            }
+            bool expanded = v0 == vsize || (mapped && word != 0 && v0 != 0xFFFFFFFFu);
+            if (expanded)
+                MarkExtraRomTocDecompressed(dest);
+            _tocDecompSlot = null;
             if (bus != null && dest == 0x01981000u && v0 == vsize)
                 DumpDdiNopTextSites(bus, dest);
             return false;
@@ -4661,34 +4659,115 @@ namespace ProcessorEmulator.Core
             return va;
         }
 
+        private static void MarkExtraRomTocDecompressed(uint dest)
+        {
+            if (_tocDecompSlot != null
+                && (_tocDecompSlot.DecompDest == dest || dest == 0))
+                _tocDecompSlot.Decompressed = true;
+            if (_romTocMods == null || dest == 0)
+                return;
+            for (int i = 0; i < _romTocCount; i++)
+            {
+                ExtraRomTocMod s = _romTocMods[i];
+                if (s != null && s.DecompDest != 0 && s.DecompDest == dest)
+                    s.Decompressed = true;
+            }
+        }
+
+        private static string FileBaseName(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+                return path;
+            int slash = path.LastIndexOf('\\');
+            if (slash < 0)
+                slash = path.LastIndexOf('/');
+            return slash >= 0 ? path.Substring(slash + 1) : path;
+        }
+
+        private static uint PeekDestWord(MipsBus bus, uint va)
+        {
+            if (bus == null || va == 0)
+                return 0;
+            try
+            {
+                return bus.Read32(va);
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
+        private static uint DumpTocVbase(ExtraRomTocMod slot)
+        {
+            if (slot == null)
+                return 0;
+            if (slot.Vbase != 0)
+                return slot.Vbase;
+            if (slot.E32Words != null && slot.E32Words.Length > 2 && slot.E32Words[2] != 0)
+                return slot.E32Words[2];
+            if (slot.O32Words != null && slot.O32Words.Length >= 5
+                && slot.O32Words[1] == 0x1000 && slot.Dest >= 0x1000)
+                return slot.Dest - 0x1000;
+            return 0;
+        }
+
         public static bool TryServeExtraRomLoadLibrary(MipsBus bus, string name, uint[] regs)
         {
             if (regs == null || regs.Length <= 2 || regs[2] != 0)
                 return false;
-            ExtraRomTocMod slot = FindCachedExtraRomToc(name);
-            if (slot == null || !slot.Decompressed || slot.Vbase == 0)
+            string baseName = FileBaseName(name);
+            ExtraRomTocMod slot = FindCachedExtraRomToc(baseName);
+            if (slot == null && !string.IsNullOrEmpty(baseName))
+                slot = FindCachedExtraRomToc(name);
+            if (slot == null)
                 return false;
-            uint dest = slot.DecompDest != 0 ? slot.DecompDest : (slot.Dest & SlotMask);
-            uint word = 0;
-            try
+            uint vbase = DumpTocVbase(slot);
+            uint dest0 = slot.DecompDest != 0 ? slot.DecompDest : (slot.Dest & SlotMask);
+            uint destDump = slot.Dest;
+            uint word0 = PeekDestWord(bus, dest0);
+            uint wordDump = destDump != 0 && destDump != dest0
+                ? PeekDestWord(bus, destDump) : 0;
+            uint mapped = dest0 != 0 ? MapExtraRomTocDestVa(dest0) : 0;
+            uint wordMap = mapped != 0 && mapped != dest0
+                ? PeekDestWord(bus, mapped) : 0;
+            uint word = word0 != 0 ? word0 : (wordDump != 0 ? wordDump : wordMap);
+            bool ran = slot.Decompressed || slot.DecompDest != 0;
+            string why;
+            if (!ran)
+                why = "0x8004DBF8 did not run; do not force LoadE32 v0=1";
+            else if (word == 0)
+                why = "CEDecompressROM ran dest=0x" + dest0.ToString("X8") +
+                    " dump-dest=0x" + destDump.ToString("X8") +
+                    " vbase=0x" + vbase.ToString("X8") +
+                    " slot0-word=0 dump-word=0 map-word=0; expanded image not on hook dest";
+            else if (vbase == 0)
+                why = "dest word=0x" + word.ToString("X8") +
+                    " but dump vbase=0; do not invent e32";
+            else
+                why = "LoadLibrary dump vbase after CEDecompressROM dest=0x" +
+                    dest0.ToString("X8") + " word=0x" + word.ToString("X8");
+            string line = "[Hive] ExtraROM TOC[" + slot.Index + "] " +
+                slot.Name + " LoadLibrary ret dest0=0x" + dest0.ToString("X8") +
+                " destDump=0x" + destDump.ToString("X8") +
+                " vbase=0x" + vbase.ToString("X8") +
+                " slot0-word=0x" + word0.ToString("X8") +
+                " dump-word=0x" + wordDump.ToString("X8") +
+                " map=0x" + mapped.ToString("X8") +
+                " map-word=0x" + wordMap.ToString("X8") +
+                " ran4DBF8=" + ran +
+                " decomp=" + slot.Decompressed +
+                " (" + why + ")";
+            System.Console.WriteLine(line);
+            BootLog.Write(line);
+            if (word == 0 || vbase == 0)
             {
-                if (bus != null && dest != 0)
-                    word = bus.Read32(dest);
-            }
-            catch
-            {
+                BootLog.Rom("miss", "ExtraROM", "TOC", slot.Index, slot.Name, 7, dest0, word, vbase, why);
                 return false;
             }
-            if (word == 0)
-                return false;
-            regs[2] = slot.Vbase;
-            System.Console.WriteLine("[Hive] ExtraROM TOC[" + slot.Index + "] " +
-                slot.Name + " LoadLibrary v0=0x" + slot.Vbase.ToString("X8") +
-                " dest=0x" + dest.ToString("X8") +
-                " word=0x" + word.ToString("X8") +
-                " (dump vbase after CEDecompressROM; do not invent e32)");
-            BootLog.Rom("ok", "ExtraROM", "TOC", slot.Index, slot.Name, 7, slot.Vbase, 0, 0,
-                "LoadLibrary dump vbase after CEDecompressROM; do not invent e32");
+            slot.Vbase = vbase;
+            regs[2] = vbase;
+            BootLog.Rom("ok", "ExtraROM", "TOC", slot.Index, slot.Name, 7, vbase, 0, 0, why);
             return true;
         }
 
@@ -10588,6 +10667,7 @@ namespace ProcessorEmulator.Core
         // ExtraROM TOC name. Do not invent a second module.
         private static string RomLookupName(string name)
         {
+            name = FileBaseName(name);
             if (string.IsNullOrEmpty(name) || name.Length < 8)
                 return name;
             int n = name.Length;
