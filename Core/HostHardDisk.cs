@@ -547,6 +547,7 @@ namespace ProcessorEmulator.Core
             if (pc == CeRomTocFiles.LoadExeE32Ret)
             {
                 CeRomTocFiles.TryLogExtraRomLoadE32(bus, registers, true, ReadLastError(bus));
+                CeRomTocFiles.TryFinishNkLoadE32(bus, registers);
                 CeRomTocFiles.TryNoteTv2LoadExeE32(bus, registers, pc);
                 CeRomTocFiles.TryFillProcExeStartip(bus);
                 LogLoadExeStartip(bus);
@@ -1969,6 +1970,7 @@ namespace ProcessorEmulator.Core
             {
                 CeRomTocFiles.TryServeExtraRomLoadE32(bus, registers[4]);
                 CeRomTocFiles.TryLogExtraRomLoadE32(bus, registers, false, ReadLastError(bus));
+                CeRomTocFiles.TryBeginNkLoadE32(bus, registers);
                 if (_logged.Contains("hive:ll:ddi_nop.dll")
                     && CeRomTocFiles.IsDdiNopTocObject(bus, registers[4]))
                 {
@@ -2026,7 +2028,10 @@ namespace ProcessorEmulator.Core
                 }
             }
             if (pc == CeRomTocFiles.LoadE32RomRet)
+            {
                 CeRomTocFiles.TryLogExtraRomLoadE32(bus, registers, true, ReadLastError(bus));
+                CeRomTocFiles.TryFinishNkLoadE32(bus, registers);
+            }
             if (pc == CeRomTocFiles.LoadE32RomRet
                 && _logged.Contains("hive:ldde32")
                 && _logged.Add("hive:ldde32ret"))
