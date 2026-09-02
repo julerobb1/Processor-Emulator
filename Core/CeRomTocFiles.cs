@@ -1014,6 +1014,7 @@ namespace ProcessorEmulator.Core
         private static uint _loadE32OkSp24;
         private static uint _loadE32OkDestAfter;
         private static string _bcmSkipSnap;
+        private static string _bcmMapSnap;
         private static string _ddiSkipSnap;
         private static bool _loadE32OkBindImp;
         private static bool _loadE32OkCallDll;
@@ -2415,6 +2416,123 @@ namespace ProcessorEmulator.Core
                     return slot;
             }
             return null;
+        }
+
+        private static ExtraRomTocMod FindCachedTocByDataptr(uint dataptr)
+        {
+            if (_romTocMods == null || dataptr == 0)
+                return null;
+            if (IsExtraRomDdiNopData(dataptr))
+                return FindCachedExtraRomToc("ddi_nop.dll");
+            for (int i = 0; i < _romTocCount; i++)
+            {
+                ExtraRomTocMod slot = _romTocMods[i];
+                if (slot == null)
+                    continue;
+                if (slot.DataPtr != null)
+                {
+                    for (int s = 0; s < slot.DataPtr.Length; s++)
+                    {
+                        if (slot.DataPtr[s] != 0 && slot.DataPtr[s] == dataptr)
+                            return slot;
+                    }
+                }
+                if (slot.O32Words == null)
+                    continue;
+                int nsec = slot.O32Words.Length / 6;
+                for (int s = 0; s < nsec; s++)
+                {
+                    if (slot.O32Words[s * 6 + 3] == dataptr)
+                        return slot;
+                }
+            }
+            return null;
+        }
+
+        // MapO32 0x8001AC30 a0=obj a1=o32_lite; dest at +8,
+        // dataptr at +0x18. 0x80028844 a0=dest a1=dataptr
+        // a2=vsize. 0x8004DBF8 a0=src a2=dest. ddi_nop
+        // VALLOC dest 0x01981000 and dataptr 0x80764CE0
+        // are dump-real (c1c0bc4). Do not invent dest.
+        private static ExtraRomTocMod FindExtraRomMapSlot(MipsBus bus, uint[] regs, uint pc)
+        {
+            if (regs == null || regs.Length <= 4)
+                return null;
+            ExtraRomTocMod slot = null;
+            uint a0 = regs[4];
+            uint a1 = regs.Length > 5 ? regs[5] : 0;
+            uint a2 = regs.Length > 6 ? regs[6] : 0;
+            if (pc == MapO32Rom || pc == MapO32InnerJal)
+            {
+                try
+                {
+                    if (bus != null && a0 != 0 && bus.Read8(a0 + 4) == TocAttachType)
+                        slot = FindCachedTocByEntry(bus.Read32(a0));
+                }
+                catch
+                {
+                }
+                uint dest = 0;
+                uint dataptr = 0;
+                if (bus != null && a1 != 0)
+                {
+                    dest = PeekDestWord(bus, a1 + 8);
+                    dataptr = PeekDestWord(bus, a1 + 0x18);
+                }
+                if (slot == null && dest == 0x01981000u)
+                    slot = FindCachedExtraRomToc("ddi_nop.dll");
+                if (slot == null)
+                    slot = FindCachedTocByDest(dest);
+                if (slot == null)
+                    slot = FindCachedTocByDataptr(dataptr);
+            }
+            else if (pc == MapO32Decompress)
+            {
+                if (a0 == 0x01981000u || a1 == 0x01981000u)
+                    slot = FindCachedExtraRomToc("ddi_nop.dll");
+                if (slot == null)
+                    slot = FindCachedTocByDest(a0);
+                if (slot == null)
+                    slot = FindCachedTocByDataptr(a1);
+            }
+            else if (pc == BinaryDecompressRom)
+            {
+                if (a2 == 0x01981000u)
+                    slot = FindCachedExtraRomToc("ddi_nop.dll");
+                if (slot == null)
+                    slot = FindCachedTocByDest(a2);
+                if (slot == null)
+                    slot = FindCachedTocByDataptr(a0);
+            }
+            else
+            {
+                try
+                {
+                    if (bus != null && a0 != 0 && bus.Read8(a0 + 4) == TocAttachType)
+                        slot = FindCachedTocByEntry(bus.Read32(a0));
+                }
+                catch
+                {
+                }
+            }
+            return slot;
+        }
+
+        private static bool IsCompareExtraRom(ExtraRomTocMod slot)
+        {
+            return slot != null && (NamesMatchRom(slot.Name, "bcmuart.dll")
+                || NamesMatchRom(slot.Name, "ddi_nop.dll"));
+        }
+
+        private static bool WatchMatchesExtraRom(MipsBus bus, uint[] regs, uint pc)
+        {
+            if (string.IsNullOrEmpty(_loadE32OkName))
+                return false;
+            uint obj = regs != null && regs.Length > 4 ? regs[4] : 0;
+            if (_loadE32OkObj != 0 && obj == _loadE32OkObj)
+                return true;
+            ExtraRomTocMod hit = FindExtraRomMapSlot(bus, regs, pc);
+            return hit != null && NamesMatchRom(hit.Name, _loadE32OkName);
         }
 
         private static bool IsExtraRomCompressedData(uint dataptr)
@@ -5188,6 +5306,7 @@ namespace ProcessorEmulator.Core
         // (watchdog LOOP_KILL false-positive on that substring).
         public static void TryWatchExtraRomLoadE32(MipsBus bus, uint[] regs, uint pc)
         {
+            TryWatchExtraRomFwMap(bus, regs, pc);
             if (_loadE32OkWatch)
                 NoteAfterLoadE32Ok(bus, regs, pc);
             if (_nkLoadO32Watch)
@@ -6109,8 +6228,13 @@ namespace ProcessorEmulator.Core
 
         private static string FormatSkipVsDdiNop()
         {
-            bool bcm = _loadE32OkName != null && NamesMatchRom(_loadE32OkName, "bcmuart.dll");
-            bool ddi = _loadE32OkName != null && NamesMatchRom(_loadE32OkName, "ddi_nop.dll");
+            return FormatSkipVsDdiNop(_loadE32OkName);
+        }
+
+        private static string FormatSkipVsDdiNop(string name)
+        {
+            bool bcm = name != null && NamesMatchRom(name, "bcmuart.dll");
+            bool ddi = name != null && NamesMatchRom(name, "ddi_nop.dll");
             if (bcm)
                 return " vs ddi_nop OpenFile/LoadDriver object+6>=2 c1c0bc4 dest 0x01981000; BuiltIn bcmuart LoadLibrary skip dest 0";
             if (ddi)
@@ -6168,6 +6292,103 @@ namespace ProcessorEmulator.Core
                     ? " other-snap=pending"
                     : " other=" + other) +
                 " (0x8001AC9c/0x80028844 not on LoadO32 skip path; serve dest only if firmware MapO32/CEDecompressROM; do not set 0x200; do not invent dest; do not invent a map at 0x8178C000)");
+        }
+
+        private static void PersistOpenFileMap(ExtraRomTocMod slot, uint obj6, uint dest, uint destWord)
+        {
+            if (slot == null || !IsCompareExtraRom(slot))
+                return;
+            string snap = slot.Name +
+                " OpenFile/LoadDriver object+6=" + obj6 +
+                " 0x8001AC9c=" + slot.LoggedFwMapInner +
+                " 0x80028844=" + slot.LoggedFwMap28844 +
+                " MapO32=" + slot.LoggedFwMapO32 +
+                " dest=0x" + dest.ToString("X8") +
+                " dest-word=0x" + destWord.ToString("X8") +
+                " " + FormatDumpO32(slot) +
+                FormatLoadVaPhys(slot.Name, SlotLoadVa(slot)) +
+                " (firmware MapO32/CEDecompressROM; serve dest on this path; do not invent dest; do not invent a map at 0x8178C000)";
+            bool ddi = NamesMatchRom(slot.Name, "ddi_nop.dll");
+            if (ddi)
+                _ddiSkipSnap = snap;
+            else
+                _bcmMapSnap = snap;
+            string other = ddi ? _bcmSkipSnap : _ddiSkipSnap;
+            BootLog.Write("[Hive] ExtraROM TOC[" + slot.Index + "] " +
+                slot.Name + " openfile-map-compare" +
+                " object+6=" + obj6 +
+                " 0x8001AC9c=" + slot.LoggedFwMapInner +
+                " 0x80028844=" + slot.LoggedFwMap28844 +
+                " dest=0x" + dest.ToString("X8") +
+                " dest-word=0x" + destWord.ToString("X8") +
+                FormatSkipVsDdiNop(slot.Name) +
+                (string.IsNullOrEmpty(other)
+                    ? " other-snap=pending"
+                    : " other=" + other) +
+                " (OpenFile/LoadDriver MapO32 is not BuiltIn LoadO32 skip; do not write object+6; do not set 0x200; do not invent dest)");
+        }
+
+        // ddi_nop dest is OpenFile/LoadDriver MapO32, not the
+        // ExtraROM BuiltIn LoadE32-ok watch. Log the same
+        // compare bits so Boot can set _ddiSkipSnap without
+        // attributing that MapO32 to bcmuart skip.
+        private static void TryWatchExtraRomFwMap(MipsBus bus, uint[] regs, uint pc)
+        {
+            if (bus == null || regs == null)
+                return;
+            if (pc != MapO32Rom && pc != MapO32InnerJal && pc != MapO32Decompress
+                && pc != BinaryDecompressRom)
+                return;
+            ExtraRomTocMod slot = FindExtraRomMapSlot(bus, regs, pc);
+            if (!IsCompareExtraRom(slot))
+                return;
+            bool first = false;
+            if (pc == MapO32Rom && !slot.LoggedFwMapO32)
+            {
+                slot.LoggedFwMapO32 = true;
+                first = true;
+            }
+            else if (pc == MapO32InnerJal && !slot.LoggedFwMapInner)
+            {
+                slot.LoggedFwMapInner = true;
+                first = true;
+            }
+            else if (pc == MapO32Decompress && !slot.LoggedFwMap28844)
+            {
+                slot.LoggedFwMap28844 = true;
+                first = true;
+            }
+            else if (pc == BinaryDecompressRom && !slot.FwMapO32)
+                first = true;
+            if (!first)
+                return;
+            slot.FwMapO32 = true;
+            uint obj = regs.Length > 4 ? regs[4] : 0;
+            uint obj6 = PeekObj6(bus, obj);
+            uint dest = 0;
+            uint destWord = 0;
+            if (pc == MapO32Decompress)
+                dest = regs[4];
+            else if (pc == BinaryDecompressRom)
+                dest = regs.Length > 6 ? regs[6] : 0;
+            else if (regs.Length > 5 && regs[5] != 0)
+                dest = PeekDestWord(bus, regs[5] + 8);
+            if (dest == 0)
+                dest = slot.DecompDest != 0 ? slot.DecompDest : (slot.Dest & SlotMask);
+            destWord = PeekDestWord(bus, dest);
+            PersistOpenFileMap(slot, obj6, dest, destWord);
+            BootLog.Write("[Hive] ExtraROM TOC[" + slot.Index + "] " +
+                slot.Name + " firmware " +
+                (pc == MapO32InnerJal ? "0x8001AC9c"
+                    : pc == MapO32Decompress ? "0x80028844"
+                    : pc == BinaryDecompressRom ? "CEDecompressROM"
+                    : "MapO32") +
+                " object+6=" + obj6 +
+                " dest=0x" + dest.ToString("X8") +
+                " dest-word=0x" + destWord.ToString("X8") +
+                " " + FormatDumpO32(slot) +
+                FormatLoadVaPhys(slot.Name, SlotLoadVa(slot)) +
+                " (OpenFile/LoadDriver path; not BuiltIn LoadO32 skip; serve dest only if firmware actually MapO32/CEDecompressROM; do not invent dest; do not invent a map at 0x8178C000)");
         }
 
         // Dump nk.exe: CurMSec jal ReadCount then 0x803392B0 /
@@ -6925,7 +7146,7 @@ namespace ProcessorEmulator.Core
                     " (do not invent 0x2000; observe only; do not force v0=1)");
                 return;
             }
-            if (pc == CopyO32Rom && !_loadE32OkCopyO32)
+            if (pc == CopyO32Rom && !_loadE32OkCopyO32 && WatchMatchesExtraRom(bus, regs, pc))
             {
                 _loadE32OkCopyO32 = true;
                 BootLog.Write("[Hive] LoadE32 ExtraROM TOC[" + _loadE32OkIndex + "] " +
@@ -6935,7 +7156,8 @@ namespace ProcessorEmulator.Core
                     " (dump-nk: CopyO32 is NOT on LoadO32 skip path; firmware OpenFile/LoadDriver like ddi_nop; do not jal BinaryDecompressROM)");
                 return;
             }
-            if (pc == MapO32Rom && _loadE32OkLoadO32 && !_loadE32OkMapO32)
+            if (pc == MapO32Rom && _loadE32OkLoadO32 && !_loadE32OkMapO32
+                && WatchMatchesExtraRom(bus, regs, pc))
             {
                 _loadE32OkMapO32 = true;
                 MarkFwMapO32();
@@ -6948,7 +7170,8 @@ namespace ProcessorEmulator.Core
                     " (dump-nk: MapO32 is NOT on LoadO32 skip path; serve dest only if firmware actually MapO32/CEDecompressROM; do not invent dest; do not jal BinaryDecompressROM)");
                 return;
             }
-            if (pc == MapO32InnerJal && _loadE32OkLoadO32 && !_loadE32OkMapInner)
+            if (pc == MapO32InnerJal && _loadE32OkLoadO32 && !_loadE32OkMapInner
+                && WatchMatchesExtraRom(bus, regs, pc))
             {
                 _loadE32OkMapInner = true;
                 MarkFwMapO32();
@@ -6961,7 +7184,8 @@ namespace ProcessorEmulator.Core
                     " (dump-nk: 0x8001AC9c jal 0x80028844 is MapO32 inner NOT on LoadO32 skip path; serve dest on that path; do not invent dest)");
                 return;
             }
-            if (pc == MapO32Decompress && _loadE32OkLoadO32 && !_loadE32OkMap28844)
+            if (pc == MapO32Decompress && _loadE32OkLoadO32 && !_loadE32OkMap28844
+                && WatchMatchesExtraRom(bus, regs, pc))
             {
                 _loadE32OkMap28844 = true;
                 MarkFwMapO32();
@@ -6974,7 +7198,8 @@ namespace ProcessorEmulator.Core
                     " (dump-nk: 0x80028844 is MapO32 inner NOT on LoadO32 skip path; ddi_nop dest remains OpenFile/LoadDriver; serve dest on that path; do not invent dest; do not host-CEDecompressROM slot-0)");
                 return;
             }
-            if (pc == BindImpHdr && _loadE32OkLoadO32 && !_loadE32OkBindImp)
+            if (pc == BindImpHdr && _loadE32OkLoadO32 && !_loadE32OkBindImp
+                && WatchMatchesExtraRom(bus, regs, pc))
             {
                 _loadE32OkBindImp = true;
                 uint word0 = PeekDestWord(bus, _loadE32OkDest0);
@@ -6988,7 +7213,8 @@ namespace ProcessorEmulator.Core
                     ")");
                 return;
             }
-            if (pc == CallDllStartip && _loadE32OkLoadO32 && !_loadE32OkCallDll)
+            if (pc == CallDllStartip && _loadE32OkLoadO32 && !_loadE32OkCallDll
+                && WatchMatchesExtraRom(bus, regs, pc))
             {
                 _loadE32OkCallDll = true;
                 uint word0 = PeekDestWord(bus, _loadE32OkDest0);
@@ -7002,7 +7228,8 @@ namespace ProcessorEmulator.Core
                     ")");
                 return;
             }
-            if (pc == BinaryDecompressRom && _loadE32OkLoadO32 && !_loadE32OkDecomp)
+            if (pc == BinaryDecompressRom && _loadE32OkLoadO32 && !_loadE32OkDecomp
+                && WatchMatchesExtraRom(bus, regs, pc))
             {
                 _loadE32OkDecomp = true;
                 MarkFwMapO32();
@@ -13406,6 +13633,9 @@ namespace ProcessorEmulator.Core
             public bool LoadE32Ok;
             public bool BuiltInSkip;
             public bool FwMapO32;
+            public bool LoggedFwMapO32;
+            public bool LoggedFwMapInner;
+            public bool LoggedFwMap28844;
         }
 
         // OpenExe retries \mscoree.dll.dll. Same suffix on any
