@@ -1383,10 +1383,11 @@ namespace ProcessorEmulator.Core
         public const uint ExtraRomE32Host = 0x8F148000;
         public const uint ExtraRomE32HostLim = 0x8F168000;
         // Dump ExtraROM TOC o32 dataptr backing (not a0).
-        // a0 is dump o32 dataptr (bcmuart destDump 0x02F21000).
-        // Do not rewrite a0 to ExtraRomTocSrc. Dest a2 is
-        // ExtraRomTocDestHost kseg0 like FILE[25] 0x8F140000.
-        // Dump vbase/vsize only. Not 0x81360000.
+        // a0 is dump o32 dataptr (bcmuart 0x80B62B98).
+        // Do not rewrite a0 to ExtraRomTocSrc. a2 is firmware
+        // dest (o32.real 0x02F21000 / VALLOC). Do not rewrite
+        // a2 to ExtraRomTocDestHost. Dump vbase/vsize only.
+        // Not 0x81360000.
         public const uint ExtraRomTocSrc = 0x8E000000;
         public const uint ExtraRomTocSrcLim = 0x8E800000;
         public const uint ExtraRomTocDestHost = 0x8E800000;
@@ -1520,6 +1521,14 @@ namespace ProcessorEmulator.Core
                 return false;
             if (psize == 0 || psize > 0x200000 || vsize == 0 || vsize > 0x200000)
                 return false;
+            string fw = "[Hive] ExtraROM ddi_nop CEDecompressROM firmware a0=0x" +
+                src.ToString("X8") +
+                " a1=0x" + psize.ToString("X8") +
+                " a2=0x" + dest.ToString("X8") +
+                " a3=0x" + vsize.ToString("X8") +
+                " (before host; firmware OpenFile/VALLOC dest; do not rewrite a2 to ExtraRomTocDestHost)";
+            System.Console.WriteLine(fw);
+            BootLog.Write(fw);
             uint aligned = CopyExtraRomSrcPageAligned(bus, src, psize);
             if (aligned != 0)
                 src = aligned;
@@ -1735,14 +1744,16 @@ namespace ProcessorEmulator.Core
             if (mapped && word != 0 && hdr != 0 && word == hdr)
                 note += " (dest is src header; not expanded)";
             string destKind = dest >= ExtraRomTocDestHost && dest < ExtraRomTocDestHostLim
-                ? "kseg0 ExtraRomTocDestHost"
+                ? "host ExtraRomTocDestHost (firmware does not use)"
                 : dest == Tv2FileDest
                     ? "FILE[25] dest 0x8F140000"
-                    : dest >= 0x01980000u && dest < 0x019B0000u
-                        ? "ddi_nop VALLOC dest"
-                        : dest < 0x80000000u
-                            ? "not guest-RAM slot-0"
-                            : "kseg dest";
+                    : dest >= 0x01900000u && dest < 0x02000000u
+                        ? "firmware VALLOC dest"
+                        : dest >= 0x02000000u && dest < 0x80000000u
+                            ? "firmware o32.real dest"
+                            : dest < 0x80000000u
+                                ? "not guest-RAM slot-0"
+                                : "kseg dest";
             string line = "[Hive] ExtraROM CEDecompressROM ret v0=0x" +
                 v0.ToString("X8") + " dest=0x" + dest.ToString("X8") +
                 " a0=0x" + src.ToString("X8") +
@@ -4582,22 +4593,36 @@ namespace ProcessorEmulator.Core
             uint real = slot.O32Words[4];
             if (vsize == 0 || psize == 0 || psize > 0x40000 || vsize > 0x80000)
                 return false;
-            // a0 is dump o32 dataptr (bcmuart destDump 0x02F21000
-            // / ExtraROM compressed bytes). Do not rewrite a0 to
-            // ExtraRomTocSrc. Dest a2 is ExtraRomTocDestHost
-            // kseg0 like FILE[25] 0x8F140000. Dump vbase/vsize.
+            uint fwA0 = regs[4];
+            uint fwA1 = regs[5];
+            uint fwA2 = regs[6];
+            uint fwA3 = regs[7];
+            string before = "[Hive] ExtraROM TOC[" + slot.Index + "] " +
+                slot.Name + " CEDecompressROM firmware a0=0x" + fwA0.ToString("X8") +
+                " a1=0x" + fwA1.ToString("X8") +
+                " a2=0x" + fwA2.ToString("X8") +
+                " a3=0x" + fwA3.ToString("X8") +
+                " (before host; do not rewrite a2 to ExtraRomTocDestHost; do not rewrite a0 to ExtraRomTocSrc)";
+            System.Console.WriteLine(before);
+            BootLog.Write(before);
+            // a0 stays dump o32 dataptr (bcmuart 0x80B62B98).
+            // a2 is firmware dest: firmware a2 if it is o32.real
+            // or VALLOC 0x0198xxxx-class, else dump o32.real
+            // 0x02F21000. Do not rewrite a2 to ExtraRomTocDestHost
+            // (sipcfg v0=0xFFFFFFFF). Map that dest window.
             if (dataptr == 0)
                 dataptr = slot.Dest;
             if (dataptr == 0)
                 return false;
-            uint slot0 = real != 0 ? (real & SlotMask) : (slot.Dest & SlotMask);
-            if (slot0 == 0)
+            uint dest = real != 0 ? real : slot.Dest;
+            if (IsFirmwareDecompressDest(fwA2, real))
+                dest = fwA2;
+            if (dest == 0)
                 return false;
             uint src = dataptr;
             if (!HostSrcExtraRomToc(bus, slot, src, psize))
                 return false;
-            uint dest;
-            if (!HostBackExtraRomTocDest(bus, slot, slot0, vsize, out dest))
+            if (!HostMapFirmwareTocDest(bus, slot, dest, vsize))
                 return false;
             regs[4] = src;
             regs[5] = psize;
@@ -4645,17 +4670,32 @@ namespace ProcessorEmulator.Core
                 " a3=0x" + vsize.ToString("X8") +
                 " (src/cb/dest/vsize) dest=0x" + dest.ToString("X8") +
                 " dataptr=0x" + dataptr.ToString("X8") +
-                " slot0=0x" + slot0.ToString("X8") +
                 " destDump=0x" + slot.Dest.ToString("X8") +
                 " vbase=0x" + vbase.ToString("X8") +
                 " o32.real=0x" + real.ToString("X8") +
                 " src0=0x" + src0.ToString("X8") +
-                " (dump o32 dataptr src; dest kseg0 like FILE[25] 0x8F140000; do not rewrite a0 to ExtraRomTocSrc; do not invent 0x81360000)";
+                " fw-a2=0x" + fwA2.ToString("X8") +
+                " (dump o32 dataptr src; firmware dest o32.real/VALLOC; do not rewrite a2 to ExtraRomTocDestHost; do not rewrite a0 to ExtraRomTocSrc)";
             System.Console.WriteLine(start);
             BootLog.Write(start);
             BootLog.DecompressRom(slot.Name, dest, 0,
-                "start dump o32 dataptr CEDecompressROM; dest kseg0 ExtraRomTocDestHost; do not rewrite a0");
+                "start dump o32 dataptr CEDecompressROM; firmware dest; do not rewrite a2");
             return true;
+        }
+
+        private static bool IsFirmwareDecompressDest(uint dest, uint real)
+        {
+            if (dest == 0)
+                return false;
+            if (dest >= ExtraRomTocDestHost && dest < ExtraRomTocDestHostLim)
+                return false;
+            if (dest >= ExtraRomTocSrc && dest < ExtraRomTocSrcLim)
+                return false;
+            if (real != 0 && (dest == real || dest == (real & SlotMask)))
+                return true;
+            if (dest >= 0x01400000u && dest < 0x02000000u)
+                return true;
+            return false;
         }
 
         // Dump o32 dataptr bytes stay at dump dataptr VA. Backing
@@ -4702,15 +4742,14 @@ namespace ProcessorEmulator.Core
             return true;
         }
 
-        // Commit ExtraRomTocDestHost like FILE[25] dest 0x8F140000.
-        // Return that kseg so CEDecompressROM a2 is guest-RAM.
-        // Keep slot-0 / dump dest aliased onto the same pages.
-        private static bool HostBackExtraRomTocDest(MipsBus bus, ExtraRomTocMod slot,
-            uint slot0, uint vsize, out uint dest)
+        // Map firmware dest (o32.real 0x02F21000 / VALLOC) onto
+        // ExtraRomTocDestHost backing. a2 stays firmware dest.
+        private static bool HostMapFirmwareTocDest(MipsBus bus, ExtraRomTocMod slot,
+            uint fwDest, uint vsize)
         {
-            dest = 0;
-            if (bus == null || slot0 == 0 || vsize == 0)
+            if (bus == null || fwDest == 0 || vsize == 0)
                 return false;
+            uint slot0 = fwDest & SlotMask;
             uint pages = (vsize + 0x1FFFu) & ~0xFFFu;
             if (_tocDestHostPool + pages > ExtraRomTocDestHostLim)
                 return false;
@@ -4738,13 +4777,12 @@ namespace ProcessorEmulator.Core
             if (_tocDestN >= _tocDestSlot0.Length)
                 return false;
             _tocDestSlot0[_tocDestN] = slot0;
-            _tocDestDump[_tocDestN] = slot.Dest;
+            _tocDestDump[_tocDestN] = slot.Dest != 0 ? slot.Dest : fwDest;
             _tocDestVsize[_tocDestN] = pages;
             _tocDestKseg[_tocDestN] = kseg;
-            _tocDestReady[_tocDestN] = false;
+            _tocDestReady[_tocDestN] = true;
             _tocDestN++;
             _tocDestHostPool += pages;
-            dest = kseg;
             return true;
         }
 
