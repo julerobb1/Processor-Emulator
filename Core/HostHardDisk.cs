@@ -1929,6 +1929,8 @@ namespace ProcessorEmulator.Core
                     n = "(null)";
                 if (_logged.Add("hive:act:" + n))
                 {
+                    if (!string.IsNullOrEmpty(n) && n != "(null)")
+                        CeRomTocFiles.NotePendingRomFile(n);
                     System.Console.WriteLine("[Hive] ActivateDevice \"" + n + "\" pc=0x" +
                         pc.ToString("X8"));
                     BootLog.Rom("ok", "ExtraROM", "", -1, n, 0, 0, 0, 0,
@@ -2218,6 +2220,7 @@ namespace ProcessorEmulator.Core
                 if (string.IsNullOrEmpty(n))
                     return;
                 _pendingLoadLib = n;
+                CeRomTocFiles.NotePendingRomFile(n);
                 bool after = _logged.Contains("hive:gpc:WinMain");
                 bool ddi = n.IndexOf("ddi", StringComparison.OrdinalIgnoreCase) >= 0
                     || n.IndexOf("display", StringComparison.OrdinalIgnoreCase) >= 0

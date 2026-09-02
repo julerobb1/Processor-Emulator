@@ -331,11 +331,10 @@ namespace ProcessorEmulator.Core.Loaders
                         if (BootLog.IsGuestIoName(fname))
                             why = GuestIoWhy(fname, i, false);
                         BootLog.Rom("ok", "ExtraROM", "FILE", (int)i, fname, 8, load, realSz, compSz, why);
-                        bool openFile = CeRomTocFiles.IsExtraRomOpenFile(fname);
                         if (IsTv2ClientCeExe(fname))
                             CeRomTocFiles.CacheExtraRomTv2File(memory, entry);
-                        else if (openFile)
-                            CeRomTocFiles.CacheExtraRomOpenFile(memory, entry, fname);
+                        else
+                            CeRomTocFiles.CacheExtraRomOpenFile(memory, entry, fname, (int)i);
                     }
                     if (!sawMscoreeFile)
                         Log("[NkBinLoader] ExtraROM FILE table has no mscoree.dll" +

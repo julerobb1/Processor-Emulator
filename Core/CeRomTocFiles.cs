@@ -494,6 +494,7 @@ namespace ProcessorEmulator.Core
         public const uint ExtraRomFileSrc = 0x8FC00000;
         public const uint ExtraRomFileCacheMax = 0x400000;
         public const uint ExtraRomFileDestMax = 0x800000;
+        public const int ExtraRomFileMax = 48;
         public const uint O32RomSize = 0x18;
         public const uint O32LiteSize = 0x1C;
         // coredll 0x03F7A960 bne v0,0 / delay sw v0, (0x01FFFFA0).
@@ -902,6 +903,8 @@ namespace ProcessorEmulator.Core
                         "OpenFile type-8 FILESentry miss; do not invent bytes or 0x81360000");
                     return false;
                 }
+                ExtraRomOpenFile fileSlot = FindExtraRomOpenFile(want);
+                int fileIndex = fileSlot != null ? fileSlot.Index : -1;
                 _romFileAttach = true;
                 attachType = FileAttachType;
                 System.Console.WriteLine("[Hive] FILE-attach ExtraROM " + want +
@@ -911,12 +914,12 @@ namespace ProcessorEmulator.Core
                     " comp=" + comp +
                     " load=0x" + load.ToString("X8") +
                     " (FILESentry; firmware SetFilePointer/ReadFile; not a dump 0x81360000 map)");
-                LogRomAttach("ok", "ExtraROM", "FILE", -1, want, 8, load, real, comp,
-                    "OpenFile type-8 FILESentry; firmware SetFilePointer/ReadFile; not a dump 0x81360000 map");
+                LogRomAttach("ok", "ExtraROM", "FILE", fileIndex, want, 8, load, real, comp,
+                    "CreateFileFail/OpenFile type-8 FILESentry; firmware SetFilePointer/ReadFile; not a dump 0x81360000 map");
                 _pendingRomFile = null;
                 return true;
             }
-            if (TryFindTocModule(bus, 0, 64, baseName, out tocEntry, out attr))
+            if (TryFindTocModule(bus, 0, 80, baseName, out tocEntry, out attr))
             {
                 LogRomAttach("ok", "NK", "TOC", -1, baseName, 7, 0, 0, 0,
                     "CreateFileFail NK ROMHDR attach type-7");
@@ -942,6 +945,18 @@ namespace ProcessorEmulator.Core
                 LogRomAttach("ok", "ExtraROM", "TOC", tocIndex, baseName, 7, dest, 0, 0, why);
                 TryMarkExtraRomO32Compressed(bus, tocEntry);
                 NoteLoadE32(baseName, tocIndex);
+                _pendingRomFile = null;
+                return true;
+            }
+            uint nkReal = 0;
+            uint nkComp = 0;
+            uint nkLoad = 0;
+            if (TryFindNkFile(bus, baseName, out tocEntry, out attr, out nkReal, out nkComp, out nkLoad))
+            {
+                _romFileAttach = false;
+                attachType = FileAttachType;
+                LogRomAttach("ok", "NK", "FILE", -1, baseName, 8, nkLoad, nkReal, nkComp,
+                    "CreateFileFail NK ROMHDR FILE type-8; do not invent ExtraROM copy");
                 _pendingRomFile = null;
                 return true;
             }
@@ -2269,12 +2284,17 @@ namespace ProcessorEmulator.Core
 
         public static void LogExtraRomTocAttachCache()
         {
-            BootLog.Write("[NkBinLoader] ExtraROM TOC type-7 attach cache count=" + _romTocCount);
+            BootLog.Write("[NkBinLoader] ExtraROM TOC type-7 attach cache count=" + _romTocCount +
+                " FILE type-8 cache count=" + _romFileCount);
             string[] probe =
             {
                 "bcmuart.dll", "NDIS.Dll", "ndisuio.dll", "sipcfg.exe",
-                "timesvc.dll", "iptvdriver.dll", "ddi_nop.dll", "mscoree.dll",
-                "ole32.dll", "com16550.dll", "keybddr.dll", "mscorlib.dll"
+                "timesvc.dll", "waveapi.dll", "AFD.Dll", "cfgrdr.dll",
+                "credsvc.dll", "ehci.dll", "nleddrvr.dll", "ohci2.dll",
+                "PPP.Dll", "uspce.dll", "serial.dll", "iptvdriver.dll",
+                "ddi_nop.dll", "mscoree.dll", "ole32.dll", "RunOnce.exe",
+                "mscorlib.dll", "tv2clientce.exe", "com16550.dll",
+                "keybddr.dll", "ddcore.dll", "EVENTLOG.DLL", "LMemDebug.DLL"
             };
             for (int i = 0; i < probe.Length; i++)
             {
@@ -2288,14 +2308,16 @@ namespace ProcessorEmulator.Core
                         "cached for CreateFileFail/OpenFile/LoadLibrary type-7 attach");
                     continue;
                 }
-                if (IsExtraRomOpenFile(n) || IsTv2ClientCe(n))
+                ExtraRomOpenFile file = FindExtraRomOpenFile(n);
+                if (file != null || IsTv2ClientCe(n))
                 {
-                    BootLog.Rom("ok", "ExtraROM", "FILE", -1, n, 8, 0, 0, 0,
+                    int fi = file != null ? file.Index : 25;
+                    BootLog.Rom("ok", "ExtraROM", "FILE", fi, n, 8, 0, 0, 0,
                         "FILE type-8 dest/cache; not ExtraROM TOC type-7");
                     continue;
                 }
                 BootLog.Rom("miss", "ExtraROM", "", -1, n, 0, 0, 0, 0,
-                    "not in ExtraROM TOC; honest miss; do not invent");
+                    "not in ExtraROM TOC/FILE; honest miss; do not invent");
             }
         }
 
@@ -2611,11 +2633,14 @@ namespace ProcessorEmulator.Core
         // Same ExtraROM-tail reuse that zeros TOC[33].
         public static void CacheExtraRomOpenFile(ProcessorEmulator.Core.Emulation.IMemoryManager memory, uint filesEntry, string label)
         {
+            CacheExtraRomOpenFile(memory, filesEntry, label, -1);
+        }
+
+        public static void CacheExtraRomOpenFile(ProcessorEmulator.Core.Emulation.IMemoryManager memory, uint filesEntry, string label, int index)
+        {
             if (memory == null || filesEntry == 0 || string.IsNullOrEmpty(label))
                 return;
             if (IsTv2ClientCe(label))
-                return;
-            if (!IsExtraRomOpenFile(label))
                 return;
             try
             {
@@ -2646,14 +2671,15 @@ namespace ProcessorEmulator.Core
                 ExtraRomOpenFile slot = FindExtraRomOpenFile(label);
                 if (slot == null)
                 {
-                    if (_romFileCount >= 12)
+                    if (_romFileCount >= ExtraRomFileMax)
                         return;
                     if (_romFiles == null)
-                        _romFiles = new ExtraRomOpenFile[12];
+                        _romFiles = new ExtraRomOpenFile[ExtraRomFileMax];
                     slot = new ExtraRomOpenFile();
                     _romFiles[_romFileCount] = slot;
                     _romFileCount++;
                 }
+                slot.Index = index;
                 slot.Entry = filesEntry;
                 slot.Words = words;
                 slot.Name = name;
@@ -2662,8 +2688,10 @@ namespace ProcessorEmulator.Core
                 slot.Comp = comp;
                 slot.Load = load;
                 slot.Data = blob;
-                slot.Label = ExtraRomOpenFileName(label);
-                BootLog.Write("[NkBinLoader] ExtraROM FILE cached " + slot.Label +
+                slot.Label = label;
+                BootLog.Write("[NkBinLoader] ExtraROM FILE" +
+                    (index >= 0 ? "[" + index + "]" : "") +
+                    " cached " + slot.Label +
                     " entry=0x" + filesEntry.ToString("X8") +
                     " real=" + real +
                     " comp=" + comp +
@@ -3160,13 +3188,13 @@ namespace ProcessorEmulator.Core
         {
             if (_romFiles == null || string.IsNullOrEmpty(want))
                 return null;
-            string name = ExtraRomOpenFileName(want);
+            string look = RomLookupName(want);
             for (int i = 0; i < _romFileCount; i++)
             {
                 ExtraRomOpenFile slot = _romFiles[i];
                 if (slot == null || string.IsNullOrEmpty(slot.Label))
                     continue;
-                if (NamesEqual(slot.Label, name))
+                if (NamesMatchRom(want, slot.Label) || NamesMatchRom(look, slot.Label))
                     return slot;
             }
             return null;
@@ -4153,7 +4181,7 @@ namespace ProcessorEmulator.Core
                 {
                     uint entry = toc + TocFirst + i * TocEntrySize;
                     uint name = bus.Read32(entry + 0x10);
-                    if (!NamesEqual(baseName, ReadAscii(bus, name)))
+                    if (!NamesMatchRom(baseName, ReadAscii(bus, name)))
                         continue;
                     uint tocAttr = bus.Read32(entry);
                     attr = (tocAttr & 0xFFFFEFFFu) | 0x2040u;
@@ -4194,7 +4222,7 @@ namespace ProcessorEmulator.Core
                 {
                     uint entry = first + i * FilesEntrySize;
                     uint name = bus.Read32(entry + FilesNameOff);
-                    if (!NamesEqual(baseName, ReadAscii(bus, name)))
+                    if (!NamesMatchRom(baseName, ReadAscii(bus, name)))
                         continue;
                     uint fileAttr = bus.Read32(entry);
                     real = bus.Read32(entry + FilesRealSize);
@@ -4203,6 +4231,46 @@ namespace ProcessorEmulator.Core
                     // Keep the dump FILE attr (0x807). Do not set
                     // ROMMODULE 0x2000: LoadE32 then reads +0x14 as e32.
                     attr = fileAttr;
+                    filesEntry = entry;
+                    return true;
+                }
+            }
+            catch
+            {
+            }
+            return false;
+        }
+
+        private static bool TryFindNkFile(MipsBus bus, string baseName,
+            out uint filesEntry, out uint attr, out uint real, out uint comp, out uint load)
+        {
+            filesEntry = 0;
+            attr = 0;
+            real = 0;
+            comp = 0;
+            load = 0;
+            if (bus == null || string.IsNullOrEmpty(baseName))
+                return false;
+            try
+            {
+                uint toc = bus.Read32(EcecTocPtr);
+                if (toc == 0)
+                    return false;
+                uint nmods = bus.Read32(toc + RomHdrNumMods);
+                uint nfiles = bus.Read32(toc + RomHdrNumFiles);
+                if (nmods > 80 || nfiles == 0 || nfiles > 80)
+                    return false;
+                uint first = toc + TocFirst + nmods * TocEntrySize;
+                for (uint i = 0; i < nfiles; i++)
+                {
+                    uint entry = first + i * FilesEntrySize;
+                    uint name = bus.Read32(entry + FilesNameOff);
+                    if (!NamesMatchRom(baseName, ReadAscii(bus, name)))
+                        continue;
+                    attr = bus.Read32(entry);
+                    real = bus.Read32(entry + FilesRealSize);
+                    comp = bus.Read32(entry + FilesCompSize);
+                    load = bus.Read32(entry + FilesLoadOff);
                     filesEntry = entry;
                     return true;
                 }
@@ -9865,7 +9933,11 @@ namespace ProcessorEmulator.Core
         // FILE table names only. Do not match TOC type-7
         // (mscoree / ole32 / tv2engine / mscoree3_5 / zlib /
         // uspce / raswrap / crypt32 / toolhelp). Do not invent
-        // xdrm.dll. FILE[25] stays IsTv2ClientCe.
+        // xdrm.dll. FILE[25] stays IsTv2ClientCe. FILE[11]/[26]
+        // dest/cache stay ExtraRomFileDest 0x8F400000 class.
+        // Any other ExtraROM FILE[0..47] (RunOnce.exe FILE[32])
+        // uses that same dest class when CE CreateFile/OpenFile
+        // asks. Do not attach ExtraROM TOC names as type-8.
         private static readonly string[] ExtraRomOpenFileNames =
         {
             "mscorlib.dll",
@@ -9882,6 +9954,10 @@ namespace ProcessorEmulator.Core
 
         public static bool IsExtraRomOpenFile(string name)
         {
+            if (IsTv2ClientCe(name))
+                return false;
+            if (FindCachedExtraRomToc(name) != null)
+                return false;
             return ExtraRomOpenFileName(name).Length != 0;
         }
 
@@ -9892,16 +9968,20 @@ namespace ProcessorEmulator.Core
             for (int i = 0; i < ExtraRomOpenFileNames.Length; i++)
             {
                 string n = ExtraRomOpenFileNames[i];
-                if (NamesEqual(name, n))
+                if (NamesEqual(name, n) || NamesMatchRom(name, n))
                     return n;
                 if (NamesEqual(name, n + ".dll") || NamesEqual(name, n + ".exe"))
                     return n;
             }
+            ExtraRomOpenFile slot = FindExtraRomOpenFile(name);
+            if (slot != null && !string.IsNullOrEmpty(slot.Label))
+                return slot.Label;
             return "";
         }
 
         private sealed class ExtraRomOpenFile
         {
+            public int Index;
             public uint Entry;
             public uint[] Words;
             public uint Name;
