@@ -41,6 +41,13 @@ namespace ProcessorEmulator.Core
         public const uint TocWalkMissContinue = 0x80016B78;
         public const uint LoadE32Rom = 0x800196E4;
         public const uint LoadE32RomRet = 0x8001E3E8;
+        // After e32_lite objcnt/vbase/vsize copy, firmware jals
+        // 0x80058B24 (e32_lite+0x1C <- e32_rom+0x24 units) then
+        // 0x80055DB0 (a1=e32_rom+0x5C or 0). That second jal is
+        // the field-check that returns 0 with no last-error.
+        // Observe ret v0 only. Do not jal. Do not rewrite.
+        public const uint LoadE32UnitCopy = 0x80058B24;
+        public const uint LoadE32RomFieldChk = 0x80055DB0;
         // After OpenE32, 0x8001E418 jal 0x800165DC then
         // 0x8001E750 jal 0x8001AFA4 (CopyO32). MapO32
         // 0x8001AC30 jal 0x80028844 only when flags lack
@@ -817,6 +824,21 @@ namespace ProcessorEmulator.Core
         private static int _loadE32WatchJalN;
         private static string _loadE32WatchJal;
         private static int _loadE32WatchSteps;
+        private static uint _loadE32CopyRa;
+        private static uint _loadE32CopyV0;
+        private static uint _loadE32CopyA0;
+        private static uint _loadE32CopyA1;
+        private static uint _loadE32CopyA2;
+        private static uint _loadE32CopyWord;
+        private static uint _loadE32ChkRa;
+        private static uint _loadE32ChkV0;
+        private static uint _loadE32ChkA0;
+        private static uint _loadE32ChkA1;
+        private static uint _loadE32ChkA2;
+        private static uint _loadE32ChkWord;
+        private static uint _loadE32ChkOff;
+        private static bool _loadE32CopySeen;
+        private static bool _loadE32ChkSeen;
 
         private static string _lastRomAttachKey;
 
@@ -4586,6 +4608,31 @@ namespace ProcessorEmulator.Core
                 return;
             }
             uint err = ReadThreadLastError(bus);
+            if (regs != null && _loadE32CopyRa != 0 && pc == _loadE32CopyRa)
+            {
+                _loadE32CopyV0 = regs.Length > 2 ? regs[2] : 0;
+                _loadE32CopyRa = 0;
+                BootLog.Write("[Hive] LoadE32 ExtraROM TOC[" + _loadE32WatchIndex + "] " +
+                    _loadE32WatchName + " e32_unit_copy ret v0=0x" + _loadE32CopyV0.ToString("X8") +
+                    " dest=0x" + _loadE32CopyA0.ToString("X8") +
+                    " src=0x" + _loadE32CopyA1.ToString("X8") +
+                    " a2=0x" + _loadE32CopyA2.ToString("X8") +
+                    " src0=0x" + _loadE32CopyWord.ToString("X8") +
+                    " (e32_lite+0x1C <- e32_rom+0x24; observe only; do not jal)");
+            }
+            if (regs != null && _loadE32ChkRa != 0 && pc == _loadE32ChkRa)
+            {
+                _loadE32ChkV0 = regs.Length > 2 ? regs[2] : 0;
+                _loadE32ChkRa = 0;
+                BootLog.Write("[Hive] LoadE32 ExtraROM TOC[" + _loadE32WatchIndex + "] " +
+                    _loadE32WatchName + " e32_rom+0x" + _loadE32ChkOff.ToString("X") +
+                    " field-check ret v0=0x" + _loadE32ChkV0.ToString("X8") +
+                    " a0=0x" + _loadE32ChkA0.ToString("X8") +
+                    " a1=0x" + _loadE32ChkA1.ToString("X8") +
+                    " a2=0x" + _loadE32ChkA2.ToString("X8") +
+                    " word=0x" + _loadE32ChkWord.ToString("X8") +
+                    " (0x80055DB0 after e32_rom copy; observe only; do not jal; do not force v0=1)");
+            }
             if (err != _loadE32WatchErrNow && _loadE32WatchErrHits < 4)
             {
                 uint old = _loadE32WatchErrNow;
@@ -4622,6 +4669,8 @@ namespace ProcessorEmulator.Core
                 target = regs[(int)((instr >> 21) & 0x1F)];
             if (target == 0)
                 return;
+            if (target == LoadE32UnitCopy || target == LoadE32RomFieldChk)
+                NoteLoadE32FieldJal(bus, regs, pc, target);
             string name = NameLoadE32Jal(target);
             if (string.IsNullOrEmpty(name))
                 return;
@@ -4661,6 +4710,21 @@ namespace ProcessorEmulator.Core
             _loadE32WatchJalN = 0;
             _loadE32WatchJal = "";
             _loadE32WatchSteps = 0;
+            _loadE32CopyRa = 0;
+            _loadE32CopyV0 = 0xFFFFFFFFu;
+            _loadE32CopyA0 = 0;
+            _loadE32CopyA1 = 0;
+            _loadE32CopyA2 = 0;
+            _loadE32CopyWord = 0;
+            _loadE32ChkRa = 0;
+            _loadE32ChkV0 = 0xFFFFFFFFu;
+            _loadE32ChkA0 = 0;
+            _loadE32ChkA1 = 0;
+            _loadE32ChkA2 = 0;
+            _loadE32ChkWord = 0;
+            _loadE32ChkOff = 0;
+            _loadE32CopySeen = false;
+            _loadE32ChkSeen = false;
         }
 
         private static void ClearLoadE32Watch()
@@ -4680,6 +4744,21 @@ namespace ProcessorEmulator.Core
             _loadE32WatchJalN = 0;
             _loadE32WatchJal = null;
             _loadE32WatchSteps = 0;
+            _loadE32CopyRa = 0;
+            _loadE32CopyV0 = 0xFFFFFFFFu;
+            _loadE32CopyA0 = 0;
+            _loadE32CopyA1 = 0;
+            _loadE32CopyA2 = 0;
+            _loadE32CopyWord = 0;
+            _loadE32ChkRa = 0;
+            _loadE32ChkV0 = 0xFFFFFFFFu;
+            _loadE32ChkA0 = 0;
+            _loadE32ChkA1 = 0;
+            _loadE32ChkA2 = 0;
+            _loadE32ChkWord = 0;
+            _loadE32ChkOff = 0;
+            _loadE32CopySeen = false;
+            _loadE32ChkSeen = false;
         }
 
         private static uint ReadThreadLastError(MipsBus bus)
@@ -4742,7 +4821,7 @@ namespace ProcessorEmulator.Core
             else if (_loadE32WatchErrHits > 0)
                 fail = " fail=after-e32_rom-copy " + errAt + " (not an e32 field compare)";
             else
-                fail = " fail=after-e32_rom-copy field-check without last-error" + errAt;
+                fail = " " + NameLoadE32FieldCheck(slot) + errAt;
             return lite + copy + jal + fail;
         }
 
@@ -4817,7 +4896,89 @@ namespace ProcessorEmulator.Core
                 return "MapO32Decompress";
             if (target == LoadE32Rom)
                 return "";
+            if (target == LoadE32UnitCopy)
+                return "e32_unit_copy";
+            if (target == LoadE32RomFieldChk)
+                return "e32_rom_field";
             return "0x" + target.ToString("X8");
+        }
+
+        private static void NoteLoadE32FieldJal(MipsBus bus, uint[] regs, uint pc, uint target)
+        {
+            uint a0 = regs != null && regs.Length > 4 ? regs[4] : 0;
+            uint a1 = regs != null && regs.Length > 5 ? regs[5] : 0;
+            uint a2 = regs != null && regs.Length > 6 ? regs[6] : 0;
+            uint word = PeekLoadE32Word(bus, a1 != 0 ? a1 : a0);
+            uint ra = pc + 8;
+            if (target == LoadE32UnitCopy && !_loadE32CopySeen)
+            {
+                _loadE32CopySeen = true;
+                _loadE32CopyRa = ra;
+                _loadE32CopyA0 = a0;
+                _loadE32CopyA1 = a1;
+                _loadE32CopyA2 = a2;
+                _loadE32CopyWord = word;
+                return;
+            }
+            if (target != LoadE32RomFieldChk || _loadE32ChkSeen)
+                return;
+            _loadE32ChkSeen = true;
+            _loadE32ChkRa = ra;
+            _loadE32ChkA0 = a0;
+            _loadE32ChkA1 = a1;
+            _loadE32ChkA2 = a2;
+            _loadE32ChkWord = word;
+            _loadE32ChkOff = 0;
+            ExtraRomTocMod slot = FindCachedExtraRomToc(_loadE32WatchName);
+            uint live = slot != null ? slot.LiveE32 : 0;
+            if (a1 != 0 && live != 0 && a1 >= live && a1 < live + 0x80)
+                _loadE32ChkOff = a1 - live;
+            else if (a1 == 0)
+                _loadE32ChkOff = 0x5C;
+        }
+
+        private static uint PeekLoadE32Word(MipsBus bus, uint va)
+        {
+            if (bus == null || va == 0)
+                return 0;
+            try
+            {
+                return bus.Read32(va);
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
+        // One named field after the e32_rom copy. 0x80058B24 is
+        // the unit memcpy (not the fail). 0x80055DB0 compares
+        // e32_rom+0x5C (a1=0 on ppp). Do not force v0=1.
+        private static string NameLoadE32FieldCheck(ExtraRomTocMod slot)
+        {
+            uint off = _loadE32ChkOff != 0 ? _loadE32ChkOff : 0x5Cu;
+            uint live = slot != null ? slot.LiveE32 : 0;
+            uint dumpWord = 0;
+            if (slot != null && slot.E32Words != null && off < (uint)slot.E32Words.Length * 4)
+                dumpWord = slot.E32Words[off / 4];
+            string copy = _loadE32CopySeen
+                ? " e32_unit_copy v0=0x" + _loadE32CopyV0.ToString("X8") +
+                    " dest=0x" + _loadE32CopyA0.ToString("X8") +
+                    " src=0x" + _loadE32CopyA1.ToString("X8") +
+                    " a2=0x" + _loadE32CopyA2.ToString("X8")
+                : " e32_unit_copy missed";
+            string chk = _loadE32ChkSeen
+                ? " v0=0x" + _loadE32ChkV0.ToString("X8") +
+                    " a0=0x" + _loadE32ChkA0.ToString("X8") +
+                    " a1=0x" + _loadE32ChkA1.ToString("X8") +
+                    " a2=0x" + _loadE32ChkA2.ToString("X8") +
+                    " word=0x" + _loadE32ChkWord.ToString("X8")
+                : " (0x80055DB0 not observed)";
+            return "fail=e32_rom+0x" + off.ToString("X") +
+                " dump=0x" + dumpWord.ToString("X8") +
+                " liveE32=0x" + live.ToString("X8") +
+                chk + copy +
+                " (0x80055DB0 after-e32_rom-copy field-check; 0x80058B24 is unit memcpy e32_lite+0x1C<-e32_rom+0x24; do not force v0=1)";
         }
 
         // Same 0x8004DBF8 path gwes uses for ddi_nop after
