@@ -43,13 +43,21 @@ namespace ProcessorEmulator.Core
         public const uint LoadE32RomRet = 0x8001E3E8;
         // After e32_lite objcnt/vbase/vsize copy, firmware jals
         // 0x80058B24 (e32_lite+0x1C <- e32_rom+0x24 units, a2=0x38)
-        // then 0x80055DB0 (a0=0xFFFF03FF a1=e32+0x5C or +0x44
-        // a2=0x18=O32RomSize or 0). ExtraROM dump e32+0x5C is 0.
-        // Do not invent a unit pointer there. Observe NK TOC
-        // type-7 (fsdmgr/coredll/ceddk) for the succeeding word.
-        // Do not jal. Do not rewrite.
+        // then ProbeO32Rom 0x80055DB0:
+        //   a0 = 0xFFFF03FF (mask)
+        //   a1 = first o32_rom (e32+0x5C packed, retry e32+0x44)
+        //   a2 = sizeof(o32_rom) = 0x18 (or 0 = empty span)
+        //   word = *a1 = o32[0].o32_vsize; must be nonzero
+        // 25d74cb: ExtraROM a1=LiveE32+0x5C / +0x44 word=0
+        // v0=0. Dump ExtraROM e32+0x5C is 0 because o32 lives
+        // at TOC+0x18 (host LiveO32 = LiveE32+0x80), not packed
+        // after e32. NK TOC type-7 e32 bytes are not in-repo.
+        // Do not invent a pointer at +0x5C. Do not jal. Do not
+        // rewrite. Do not force v0=1.
         public const uint LoadE32UnitCopy = 0x80058B24;
         public const uint LoadE32RomFieldChk = 0x80055DB0;
+        public const uint E32RomPackedSize = 0x5C;
+        public const uint E32RomRetryOff = 0x44;
         // After OpenE32, 0x8001E418 jal 0x800165DC then
         // 0x8001E750 jal 0x8001AFA4 (CopyO32). MapO32
         // 0x8001AC30 jal 0x80028844 only when flags lack
@@ -507,6 +515,10 @@ namespace ProcessorEmulator.Core
         public const int ExtraRomFileMax = 48;
         public const uint O32RomSize = 0x18;
         public const uint O32LiteSize = 0x1C;
+        // e32_rom before first packed o32_rom. Header 0x20 +
+        // 7 info units (0x38) + pad. CE pehdr ROM_EXTRA=9 would
+        // put IMD.size at +0x5C, but a2=0x18 is O32RomSize not
+        // sizeof(info)=8, so the call site is one o32_rom.
         // coredll 0x03F7A960 bne v0,0 / delay sw v0, (0x01FFFFA0).
         // HeapCreate(0,0,0) returned 0 in device.exe and the delay
         // slot wrote that 0 over the heap filesys already stored.
@@ -839,6 +851,7 @@ namespace ProcessorEmulator.Core
         private static uint _loadE32ChkA2;
         private static uint _loadE32ChkWord;
         private static uint _loadE32ChkOff;
+        private static string _loadE32ChkSpan;
         private static bool _loadE32CopySeen;
         private static bool _loadE32ChkSeen;
         private static bool _nkLoadE32Watch;
@@ -855,9 +868,11 @@ namespace ProcessorEmulator.Core
         private static uint _nkChkA2;
         private static uint _nkChkWord;
         private static uint _nkChkV0;
+        private static string _nkChkSpan;
         private static bool _nkChkSeen;
         private static int _nkLoadE32Logged;
         private static string _nkLoadE32Ok;
+        private static bool _probeO32DisasmLogged;
 
         private static string _lastRomAttachKey;
 
@@ -2731,6 +2746,7 @@ namespace ProcessorEmulator.Core
             ClearNkLoadE32Watch();
             _nkLoadE32Logged = 0;
             _nkLoadE32Ok = null;
+            _probeO32DisasmLogged = false;
         }
 
         public static void NoteExtraRomModule(uint romhdr, uint tocEntry, uint attr)
@@ -4445,6 +4461,12 @@ namespace ProcessorEmulator.Core
             uint o32Psize = slot.O32Words != null && slot.O32Words.Length > 2 ? slot.O32Words[2] : 0;
             uint o32Ptr = slot.O32Words != null && slot.O32Words.Length > 3 ? slot.O32Words[3] : 0;
             uint o32Real = slot.O32Words != null && slot.O32Words.Length > 4 ? slot.O32Words[4] : 0;
+            uint dump5c = slot.E32Words.Length > 23 ? slot.E32Words[E32RomPackedSize / 4] : 0;
+            uint dump44 = slot.E32Words.Length > 17 ? slot.E32Words[E32RomRetryOff / 4] : 0;
+            string packed = dump5c != 0
+                ? " e32+0x5C dump-real 0x" + dump5c.ToString("X8") + " already hosted"
+                : " e32+0x5C dump=0; ProbeO32Rom word must be o32_vsize; o32 at TOC+0x18 LiveO32=0x" +
+                    slot.LiveO32.ToString("X8") + "; do not invent a unit pointer";
             System.Console.WriteLine("[Hive] ExtraROM TOC[" + slot.Index + "] " +
                 slot.Name + " e32_rom=0x" + slot.LiveE32.ToString("X8") +
                 " o32=0x" + slot.LiveO32.ToString("X8") +
@@ -4455,6 +4477,8 @@ namespace ProcessorEmulator.Core
                 " vsize=0x" + o32Vsize.ToString("X") +
                 " o32.real=0x" + o32Real.ToString("X8") +
                 " toc=0x" + slot.LiveEntry.ToString("X8") +
+                " e32+0x44=0x" + dump44.ToString("X8") +
+                packed +
                 " (dump e32/o32 copy; dump o32 dataptr/comp; do not invent 0x81360000)");
             BootLog.Rom("ok", "ExtraROM", "TOC", slot.Index, slot.Name, 7, slot.Dest, o32Real, o32Psize,
                 "LoadE32 dump e32_rom+o32 at 0x" + slot.LiveE32.ToString("X8") +
@@ -4616,10 +4640,11 @@ namespace ProcessorEmulator.Core
         }
 
         // NK TOC type-7 that already LoadE32-succeeds (fsdmgr /
-        // coredll / ceddk). Log 0x80055DB0 a1/a2/word at
+        // coredll / ceddk). Log ProbeO32Rom a1/a2/word at
         // e32+0x5C / +0x44 so ExtraROM can name the compare.
-        // Do not invent an ExtraROM unit pointer when dump
-        // e32+0x5C is 0.
+        // NK e32 bytes are not in-repo; the later Boot fills
+        // this. Do not invent an ExtraROM unit pointer when
+        // dump e32+0x5C is 0.
         public static void TryBeginNkLoadE32(MipsBus bus, uint[] regs)
         {
             if (_loadE32Watch || _nkLoadE32Watch || bus == null || regs == null || regs.Length <= 4)
@@ -4676,6 +4701,7 @@ namespace ProcessorEmulator.Core
             _nkChkA2 = 0;
             _nkChkWord = 0;
             _nkChkV0 = 0xFFFFFFFFu;
+            _nkChkSpan = null;
             _nkChkSeen = false;
         }
 
@@ -4697,6 +4723,7 @@ namespace ProcessorEmulator.Core
                     : " o32=0x" + _nkLoadE32O32.ToString("X8") + " separate");
             string a2name = _nkChkA2 == O32RomSize ? " a2=0x18 O32RomSize"
                 : " a2=0x" + _nkChkA2.ToString("X");
+            string must = NameProbeO32Must(_nkChkWord, _nkChkA2, _nkLoadE32O32Vsize);
             string line = "[Hive] LoadE32 NK " + _nkLoadE32Name +
                 " ret v0=0x" + v0.ToString("X8") +
                 " e32=0x" + _nkLoadE32E32.ToString("X8") +
@@ -4705,13 +4732,15 @@ namespace ProcessorEmulator.Core
                 " o32vsize=0x" + _nkLoadE32O32Vsize.ToString("X") +
                 " o32dataptr=0x" + _nkLoadE32O32Ptr.ToString("X8") +
                 pack +
-                " 0x80055DB0 a0=0x" + _nkChkA0.ToString("X8") +
+                " ProbeO32Rom a0=0x" + _nkChkA0.ToString("X8") +
                 " a1=0x" + _nkChkA1.ToString("X8") +
                 (off != 0 ? " e32+0x" + off.ToString("X") : "") +
                 a2name +
                 " word=0x" + _nkChkWord.ToString("X8") +
                 " chk-v0=0x" + _nkChkV0.ToString("X8") +
-                " (NK TOC type-7; ExtraROM dump e32+0x5C is 0; do not invent a unit pointer)";
+                (!string.IsNullOrEmpty(_nkChkSpan) ? " a1-o32 " + _nkChkSpan : "") +
+                " " + must +
+                " (NK TOC type-7; ExtraROM dump e32+0x5C is 0; NK e32 not in-repo; do not invent a unit pointer)";
             BootLog.Write(line);
             if (v0 != 0)
             {
@@ -4746,6 +4775,8 @@ namespace ProcessorEmulator.Core
             _nkChkA1 = regs != null && regs.Length > 5 ? regs[5] : 0;
             _nkChkA2 = regs != null && regs.Length > 6 ? regs[6] : 0;
             _nkChkWord = PeekLoadE32Word(bus, _nkChkA1);
+            _nkChkSpan = FormatO32RomPeek(bus, _nkChkA1);
+            TryLogProbeO32RomDecompile(bus);
         }
 
         // Observe firmware LoadE32 ExtraROM only. Poll last-error
@@ -4784,14 +4815,19 @@ namespace ProcessorEmulator.Core
             {
                 _loadE32ChkV0 = regs.Length > 2 ? regs[2] : 0;
                 _loadE32ChkRa = 0;
+                ExtraRomTocMod chkSlot = FindCachedExtraRomToc(_loadE32WatchName);
+                uint dumpV = chkSlot != null && chkSlot.O32Words != null && chkSlot.O32Words.Length > 0
+                    ? chkSlot.O32Words[0] : 0;
                 BootLog.Write("[Hive] LoadE32 ExtraROM TOC[" + _loadE32WatchIndex + "] " +
-                    _loadE32WatchName + " e32_rom+0x" + _loadE32ChkOff.ToString("X") +
-                    " field-check ret v0=0x" + _loadE32ChkV0.ToString("X8") +
+                    _loadE32WatchName + " ProbeO32Rom e32+0x" + _loadE32ChkOff.ToString("X") +
+                    " ret v0=0x" + _loadE32ChkV0.ToString("X8") +
                     " a0=0x" + _loadE32ChkA0.ToString("X8") +
                     " a1=0x" + _loadE32ChkA1.ToString("X8") +
                     " a2=0x" + _loadE32ChkA2.ToString("X8") +
                     " word=0x" + _loadE32ChkWord.ToString("X8") +
-                    " (0x80055DB0 after e32_rom copy; observe only; do not jal; do not force v0=1)");
+                    (!string.IsNullOrEmpty(_loadE32ChkSpan) ? " a1-o32 " + _loadE32ChkSpan : "") +
+                    " " + NameProbeO32Must(_loadE32ChkWord, _loadE32ChkA2, dumpV) +
+                    " (after e32_rom copy; observe only; do not jal; do not force v0=1)");
             }
             if (_loadE32Watch && err != _loadE32WatchErrNow && _loadE32WatchErrHits < 4)
             {
@@ -4887,6 +4923,7 @@ namespace ProcessorEmulator.Core
             _loadE32ChkA2 = 0;
             _loadE32ChkWord = 0;
             _loadE32ChkOff = 0;
+            _loadE32ChkSpan = null;
             _loadE32CopySeen = false;
             _loadE32ChkSeen = false;
         }
@@ -4907,6 +4944,7 @@ namespace ProcessorEmulator.Core
             _nkChkA2 = 0;
             _nkChkWord = 0;
             _nkChkV0 = 0xFFFFFFFFu;
+            _nkChkSpan = null;
             _nkChkSeen = false;
         }
 
@@ -4940,6 +4978,7 @@ namespace ProcessorEmulator.Core
             _loadE32ChkA2 = 0;
             _loadE32ChkWord = 0;
             _loadE32ChkOff = 0;
+            _loadE32ChkSpan = null;
             _loadE32CopySeen = false;
             _loadE32ChkSeen = false;
         }
@@ -5082,7 +5121,7 @@ namespace ProcessorEmulator.Core
             if (target == LoadE32UnitCopy)
                 return "e32_unit_copy";
             if (target == LoadE32RomFieldChk)
-                return "e32_rom_field";
+                return "ProbeO32Rom";
             return "0x" + target.ToString("X8");
         }
 
@@ -5112,12 +5151,14 @@ namespace ProcessorEmulator.Core
             _loadE32ChkA2 = a2;
             _loadE32ChkWord = word;
             _loadE32ChkOff = 0;
+            _loadE32ChkSpan = FormatO32RomPeek(bus, a1);
             ExtraRomTocMod slot = FindCachedExtraRomToc(_loadE32WatchName);
             uint live = slot != null ? slot.LiveE32 : 0;
             if (a1 != 0 && live != 0 && a1 >= live && a1 < live + 0x80)
                 _loadE32ChkOff = a1 - live;
             else if (a1 == 0)
-                _loadE32ChkOff = 0x5C;
+                _loadE32ChkOff = E32RomPackedSize;
+            TryLogProbeO32RomDecompile(bus);
         }
 
         private static uint PeekLoadE32Word(MipsBus bus, uint va)
@@ -5134,14 +5175,202 @@ namespace ProcessorEmulator.Core
             }
         }
 
+        // ProbeO32Rom (0x80055DB0) ABI from 25d74cb. a1 is the
+        // first o32_rom, a2 is sizeof(o32_rom), word is o32_vsize.
+        private static string NameProbeO32Must(uint word, uint a2, uint o32v)
+        {
+            string a2ok = a2 == O32RomSize
+                ? "a2=0x18 O32RomSize ok"
+                : "a2=0x" + a2.ToString("X") + " must be 0x18 O32RomSize";
+            string wordok;
+            if (word != 0 && o32v != 0 && word == o32v)
+                wordok = "word=o32_vsize 0x" + word.ToString("X") + " ok";
+            else if (word != 0)
+                wordok = "word=0x" + word.ToString("X8") + " nonzero";
+            else
+                wordok = "word=0 must be o32_vsize" +
+                    (o32v != 0 ? " 0x" + o32v.ToString("X") : "");
+            return "ProbeO32Rom a1 must be first o32_rom; " + a2ok + "; " + wordok;
+        }
+
+        private static string FormatO32RomPeek(MipsBus bus, uint va)
+        {
+            if (va == 0)
+                return "va=0";
+            uint vsize = PeekLoadE32Word(bus, va);
+            uint rva = PeekLoadE32Word(bus, va + 4);
+            uint psize = PeekLoadE32Word(bus, va + 8);
+            uint dataptr = PeekLoadE32Word(bus, va + 0xC);
+            uint real = PeekLoadE32Word(bus, va + 0x10);
+            uint flags = PeekLoadE32Word(bus, va + 0x14);
+            return "va=0x" + va.ToString("X8") +
+                " vsize=0x" + vsize.ToString("X") +
+                " rva=0x" + rva.ToString("X") +
+                " psize=0x" + psize.ToString("X") +
+                " dataptr=0x" + dataptr.ToString("X8") +
+                " real=0x" + real.ToString("X8") +
+                " flags=0x" + flags.ToString("X");
+        }
+
+        private static string FormatDumpO32(ExtraRomTocMod? slot)
+        {
+            if (slot == null || slot.O32Words == null || slot.O32Words.Length < 6)
+                return "dump-o32 missing";
+            return "dump-o32 vsize=0x" + slot.O32Words[0].ToString("X") +
+                " rva=0x" + slot.O32Words[1].ToString("X") +
+                " psize=0x" + slot.O32Words[2].ToString("X") +
+                " dataptr=0x" + slot.O32Words[3].ToString("X8") +
+                " real=0x" + slot.O32Words[4].ToString("X8") +
+                " flags=0x" + slot.O32Words[5].ToString("X");
+        }
+
+        // Guest NK bytes at ProbeO32Rom are not in-repo. Read them
+        // from the live bus on the later Boot (no dump folder I/O).
+        private static void TryLogProbeO32RomDecompile(MipsBus bus)
+        {
+            if (_probeO32DisasmLogged || bus == null)
+                return;
+            _probeO32DisasmLogged = true;
+            string line = "[Hive] ProbeO32Rom decompile";
+            for (uint i = 0; i < 24; i++)
+            {
+                uint pc = LoadE32RomFieldChk + i * 4;
+                uint instr = 0;
+                try
+                {
+                    instr = bus.Read32(pc);
+                }
+                catch
+                {
+                    line += " (guest bytes unmapped; NK e32 not in-repo; ExtraROM dump +0x5C is 0)";
+                    BootLog.Write(line);
+                    return;
+                }
+                if (i == 0 && instr == 0)
+                {
+                    line += " (guest word0=0; NK e32 not in-repo; ExtraROM dump +0x5C is 0)";
+                    BootLog.Write(line);
+                    return;
+                }
+                line += " " + FormatMipsOp(pc, instr);
+                if (IsMipsJrRa(instr))
+                    break;
+            }
+            line += " (a1 must be first o32_rom; a2 must be 0x18; word must be o32_vsize nonzero;" +
+                " ExtraROM dump +0x5C is 0; do not invent; do not jal; do not force v0=1)";
+            BootLog.Write(line);
+        }
+
+        private static bool IsMipsJrRa(uint instr)
+        {
+            return (instr >> 26) == 0 && (instr & 0x3Fu) == 8 && ((instr >> 21) & 0x1Fu) == 31;
+        }
+
+        private static readonly string[] MipsRegName = {
+            "0", "at", "v0", "v1", "a0", "a1", "a2", "a3",
+            "t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7",
+            "s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7",
+            "t8", "t9", "k0", "k1", "gp", "sp", "fp", "ra"
+        };
+
+        private static string MipsRn(uint r)
+        {
+            return MipsRegName[r & 31];
+        }
+
+        private static string FormatMipsOp(uint pc, uint instr)
+        {
+            uint op = instr >> 26;
+            uint rs = (instr >> 21) & 31;
+            uint rt = (instr >> 16) & 31;
+            uint rd = (instr >> 11) & 31;
+            uint sh = (instr >> 6) & 31;
+            uint fn = instr & 0x3F;
+            int simm = (short)(instr & 0xFFFF);
+            uint uimm = instr & 0xFFFF;
+            if (op == 0)
+            {
+                if (instr == 0)
+                    return "nop";
+                if (fn == 0)
+                    return "sll " + MipsRn(rd) + "," + MipsRn(rt) + "," + sh;
+                if (fn == 2)
+                    return "srl " + MipsRn(rd) + "," + MipsRn(rt) + "," + sh;
+                if (fn == 3)
+                    return "sra " + MipsRn(rd) + "," + MipsRn(rt) + "," + sh;
+                if (fn == 8)
+                    return "jr " + MipsRn(rs);
+                if (fn == 9)
+                    return "jalr " + MipsRn(rd) + "," + MipsRn(rs);
+                if (fn == 0x21)
+                    return "addu " + MipsRn(rd) + "," + MipsRn(rs) + "," + MipsRn(rt);
+                if (fn == 0x23)
+                    return "subu " + MipsRn(rd) + "," + MipsRn(rs) + "," + MipsRn(rt);
+                if (fn == 0x24)
+                    return "and " + MipsRn(rd) + "," + MipsRn(rs) + "," + MipsRn(rt);
+                if (fn == 0x25)
+                    return "or " + MipsRn(rd) + "," + MipsRn(rs) + "," + MipsRn(rt);
+                if (fn == 0x27)
+                    return "nor " + MipsRn(rd) + "," + MipsRn(rs) + "," + MipsRn(rt);
+                if (fn == 0x2A)
+                    return "slt " + MipsRn(rd) + "," + MipsRn(rs) + "," + MipsRn(rt);
+                if (fn == 0x2B)
+                    return "sltu " + MipsRn(rd) + "," + MipsRn(rs) + "," + MipsRn(rt);
+                return "spec fn=0x" + fn.ToString("X");
+            }
+            if (op == 2 || op == 3)
+            {
+                uint t = (pc & 0xF0000000u) | ((instr & 0x3FFFFFFu) << 2);
+                return (op == 2 ? "j " : "jal ") + "0x" + t.ToString("X8");
+            }
+            if (op == 4)
+                return "beq " + MipsRn(rs) + "," + MipsRn(rt) + "," + simm;
+            if (op == 5)
+                return "bne " + MipsRn(rs) + "," + MipsRn(rt) + "," + simm;
+            if (op == 6)
+                return "blez " + MipsRn(rs) + "," + simm;
+            if (op == 7)
+                return "bgtz " + MipsRn(rs) + "," + simm;
+            if (op == 8)
+                return "addi " + MipsRn(rt) + "," + MipsRn(rs) + "," + simm;
+            if (op == 9)
+                return "addiu " + MipsRn(rt) + "," + MipsRn(rs) + "," + simm;
+            if (op == 0xA)
+                return "slti " + MipsRn(rt) + "," + MipsRn(rs) + "," + simm;
+            if (op == 0xB)
+                return "sltiu " + MipsRn(rt) + "," + MipsRn(rs) + "," + simm;
+            if (op == 0xC)
+                return "andi " + MipsRn(rt) + "," + MipsRn(rs) + ",0x" + uimm.ToString("X");
+            if (op == 0xD)
+                return "ori " + MipsRn(rt) + "," + MipsRn(rs) + ",0x" + uimm.ToString("X");
+            if (op == 0xE)
+                return "xori " + MipsRn(rt) + "," + MipsRn(rs) + ",0x" + uimm.ToString("X");
+            if (op == 0xF)
+                return "lui " + MipsRn(rt) + ",0x" + uimm.ToString("X");
+            if (op == 0x20)
+                return "lb " + MipsRn(rt) + "," + simm + "(" + MipsRn(rs) + ")";
+            if (op == 0x23)
+                return "lw " + MipsRn(rt) + "," + simm + "(" + MipsRn(rs) + ")";
+            if (op == 0x24)
+                return "lbu " + MipsRn(rt) + "," + simm + "(" + MipsRn(rs) + ")";
+            if (op == 0x25)
+                return "lhu " + MipsRn(rt) + "," + simm + "(" + MipsRn(rs) + ")";
+            if (op == 0x28)
+                return "sb " + MipsRn(rt) + "," + simm + "(" + MipsRn(rs) + ")";
+            if (op == 0x2B)
+                return "sw " + MipsRn(rt) + "," + simm + "(" + MipsRn(rs) + ")";
+            return "op" + op.ToString("X") + "=0x" + instr.ToString("X8");
+        }
+
         // One named field after the e32_rom copy. 0x80058B24 is
-        // the unit memcpy (not the fail). 0x80055DB0 probes
-        // a2=0x18 (O32RomSize) at e32+0x5C / +0x44. ExtraROM
-        // dump word there is 0. Do not invent a unit pointer.
+        // the unit memcpy (not the fail). ProbeO32Rom 0x80055DB0
+        // wants a1=first o32_rom a2=0x18 word=o32_vsize. ExtraROM
+        // dump word at e32+0x5C is 0. Do not invent a unit pointer.
         private static string NameLoadE32FieldCheck(ExtraRomTocMod slot)
         {
-            uint off = _loadE32ChkOff != 0 ? _loadE32ChkOff : 0x5Cu;
+            uint off = _loadE32ChkOff != 0 ? _loadE32ChkOff : E32RomPackedSize;
             uint live = slot != null ? slot.LiveE32 : 0;
+            uint liveO32 = slot != null ? slot.LiveO32 : 0;
             uint dumpWord = 0;
             uint dump44 = 0;
             uint dump5c = 0;
@@ -5152,9 +5381,9 @@ namespace ProcessorEmulator.Core
                 if (off < (uint)slot.E32Words.Length * 4)
                     dumpWord = slot.E32Words[off / 4];
                 if (slot.E32Words.Length > 17)
-                    dump44 = slot.E32Words[0x44 / 4];
+                    dump44 = slot.E32Words[E32RomRetryOff / 4];
                 if (slot.E32Words.Length > 23)
-                    dump5c = slot.E32Words[0x5C / 4];
+                    dump5c = slot.E32Words[E32RomPackedSize / 4];
             }
             if (slot != null && slot.O32Words != null && slot.O32Words.Length > 3)
             {
@@ -5175,25 +5404,29 @@ namespace ProcessorEmulator.Core
                     " a1=0x" + _loadE32ChkA1.ToString("X8") +
                     a2name +
                     " word=0x" + _loadE32ChkWord.ToString("X8")
-                : " (0x80055DB0 not observed)";
+                : " (ProbeO32Rom not observed)";
+            string span = !string.IsNullOrEmpty(_loadE32ChkSpan)
+                ? " a1-o32 " + _loadE32ChkSpan : "";
+            string dumpO32 = FormatDumpO32(slot);
             string honest = dumpWord == 0
                 ? " dump ExtraROM e32+0x" + off.ToString("X") +
-                    " is 0; o32 dump-real dataptr=0x" + o32p.ToString("X8") +
-                    " vsize=0x" + o32v.ToString("X") +
-                    " at TOC+0x18; do not invent a unit pointer"
+                    " is 0; " + dumpO32 +
+                    " at TOC+0x18 LiveO32=0x" + liveO32.ToString("X8") +
+                    "; do not invent a unit pointer; copy skipped"
                 : " dump ExtraROM e32+0x" + off.ToString("X") +
                     " dump-real 0x" + dumpWord.ToString("X8") + " already hosted";
             string nk = !string.IsNullOrEmpty(_nkLoadE32Ok)
                 ? " NK-ok " + _nkLoadE32Ok
-                : " NK-ok pending fsdmgr/coredll/ceddk";
-            return "fail=e32_rom+0x" + off.ToString("X") +
+                : " NK-ok pending fsdmgr/coredll/ceddk (NK e32 not in-repo)";
+            return "fail=ProbeO32Rom e32+0x" + off.ToString("X") +
                 " dump=0x" + dumpWord.ToString("X8") +
                 " dump+0x44=0x" + dump44.ToString("X8") +
                 " dump+0x5C=0x" + dump5c.ToString("X8") +
                 " liveE32=0x" + live.ToString("X8") +
-                chk + copy +
-                " (" + honest + ";" + nk +
-                "; 0x80055DB0 a2=0x18 is O32RomSize; 0x80058B24 is unit memcpy; do not force v0=1)";
+                chk + span + copy +
+                " (" + NameProbeO32Must(_loadE32ChkWord, _loadE32ChkA2, o32v) +
+                "; " + honest + ";" + nk +
+                "; 0x80058B24 is unit memcpy; do not force v0=1)";
         }
 
         // Same 0x8004DBF8 path gwes uses for ddi_nop after
