@@ -61,6 +61,22 @@ namespace ProcessorEmulator.Core
         public const uint E32RomPublicSize = 0x24;
         public const uint E32RomPackedSize = 0x5C;
         public const uint E32RomRetryOff = 0x44;
+        // 25d74cb jals AFTER ProbeO32Rom. NK OAL bytes are
+        // not in-repo. Names from ABI + in-repo maps:
+        // OEMInit 0x800568AC, calib 0x80057054, ISR 0x800574A8,
+        // walker 0x80056500, SetCompare 0x80059CAC, OEMIdleLoop
+        // 0x80059D20, OEMIdle 0x80059E98. Observe only.
+        // 0x8005730C: same a0=0xFFFF03FF a1=ProbeO32Rom a1.
+        // 0x80057314/1C are +8/+16 siblings (Count stall).
+        // 0x800557F4: a0=0 a1=0x2BF06 (near ProbeO32Rom).
+        // 0x80059CE8: a0=0x20C a1=0x400 (SetCompare/OEMIdle).
+        // 0x8002C070: kernel; a1 may be jalr target.
+        public const uint LoadE32ProbeO32Mask = 0x8005730C;
+        public const uint LoadE32OalArg = 0x800557F4;
+        public const uint LoadE32OemCountDelay = 0x80059CE8;
+        public const uint LoadE32OalCountDelay = 0x80057314;
+        public const uint LoadE32OalCountScale = 0x8005731C;
+        public const uint LoadE32NkCount = 0x8002C070;
         // After OpenE32, 0x8001E418 jal 0x800165DC then
         // 0x8001E750 jal 0x8001AFA4 (CopyO32). MapO32
         // 0x8001AC30 jal 0x80028844 only when flags lack
@@ -876,6 +892,18 @@ namespace ProcessorEmulator.Core
         private static int _nkLoadE32Logged;
         private static string _nkLoadE32Ok;
         private static bool _probeO32DisasmLogged;
+        private const int LoadE32AfterMax = 8;
+        private static readonly uint[] _afterRa = new uint[LoadE32AfterMax];
+        private static readonly string[] _afterName = new string[LoadE32AfterMax];
+        private static readonly uint[] _afterA0 = new uint[LoadE32AfterMax];
+        private static readonly uint[] _afterA1 = new uint[LoadE32AfterMax];
+        private static readonly uint[] _afterA2 = new uint[LoadE32AfterMax];
+        private static readonly uint[] _afterWord = new uint[LoadE32AfterMax];
+        private static readonly string[] _afterNeed = new string[LoadE32AfterMax];
+        private static int _afterN;
+        private static string _afterRets;
+        private static string _afterFail;
+        private static string _afterDisasm;
 
         private static string _lastRomAttachKey;
 
@@ -2750,6 +2778,8 @@ namespace ProcessorEmulator.Core
             _nkLoadE32Logged = 0;
             _nkLoadE32Ok = null;
             _probeO32DisasmLogged = false;
+            ClearAfterLoadE32();
+            _afterDisasm = null;
         }
 
         public static void NoteExtraRomModule(uint romhdr, uint tocEntry, uint attr)
@@ -4840,6 +4870,8 @@ namespace ProcessorEmulator.Core
                     " " + NameProbeO32Must(_loadE32ChkWord, _loadE32ChkA2, dumpV) +
                     " (after e32_rom copy; observe only; do not jal; do not force v0=1)");
             }
+            if (regs != null)
+                FinishLoadE32AfterJal(regs, pc);
             if (_loadE32Watch && err != _loadE32WatchErrNow && _loadE32WatchErrHits < 4)
             {
                 uint old = _loadE32WatchErrNow;
@@ -4882,6 +4914,8 @@ namespace ProcessorEmulator.Core
                 return;
             if (target == LoadE32UnitCopy || target == LoadE32RomFieldChk)
                 NoteLoadE32FieldJal(bus, regs, pc, target);
+            if (IsLoadE32AfterProbeJal(target))
+                NoteLoadE32AfterJal(bus, regs, pc, target);
             string name = NameLoadE32Jal(target);
             if (string.IsNullOrEmpty(name))
                 return;
@@ -4906,6 +4940,7 @@ namespace ProcessorEmulator.Core
 
         private static void BeginLoadE32Watch(ExtraRomTocMod slot, uint[] regs, uint err)
         {
+            ClearAfterLoadE32();
             _loadE32Watch = true;
             _loadE32WatchName = slot != null ? slot.Name : "";
             _loadE32WatchIndex = slot != null ? slot.Index : -1;
@@ -4961,6 +4996,7 @@ namespace ProcessorEmulator.Core
 
         private static void ClearLoadE32Watch()
         {
+            ClearAfterLoadE32();
             _loadE32Watch = false;
             _loadE32WatchName = null;
             _loadE32WatchIndex = -1;
@@ -5034,6 +5070,8 @@ namespace ProcessorEmulator.Core
             string lite = DescribeE32Lite(bus, _loadE32WatchA1, slot);
             string jal = !string.IsNullOrEmpty(_loadE32WatchJal)
                 ? " jal=" + _loadE32WatchJal : " jal=none";
+            if (!string.IsNullOrEmpty(_afterRets))
+                jal += " after=" + _afterRets;
             string errAt = _loadE32WatchErrHits > 0
                 ? " last-error-set " + FormatLastError(_loadE32WatchErrNew) +
                     " at pc=0x" + _loadE32WatchErrPc.ToString("X8")
@@ -5051,6 +5089,8 @@ namespace ProcessorEmulator.Core
                 fail = _loadE32WatchErrHits > 0
                     ? " fail=before-e32_rom-copy " + errAt
                     : " fail=before-e32_rom-copy field-check or tocptr/type " + errAt;
+            else if (!string.IsNullOrEmpty(_afterFail) && _loadE32ChkV0 != 0)
+                fail = " fail=after-ProbeO32Rom " + _afterFail + errAt;
             else if (_loadE32WatchErrHits > 0)
                 fail = " fail=after-e32_rom-copy " + errAt + " (not an e32 field compare)";
             else
@@ -5133,7 +5173,114 @@ namespace ProcessorEmulator.Core
                 return "e32_unit_copy";
             if (target == LoadE32RomFieldChk)
                 return "ProbeO32Rom";
+            if (target == LoadE32ProbeO32Mask)
+                return "ProbeO32Mask";
+            if (target == LoadE32OalArg)
+                return "OalLoadE32Arg";
+            if (target == LoadE32OemCountDelay)
+                return "OemCountDelay";
+            if (target == LoadE32OalCountDelay)
+                return "OalCountDelay";
+            if (target == LoadE32OalCountScale)
+                return "OalCountScale";
+            if (target == LoadE32NkCount)
+                return "NkLoadE32Count";
             return "0x" + target.ToString("X8");
+        }
+
+        private static bool IsLoadE32AfterProbeJal(uint target)
+        {
+            return target == LoadE32ProbeO32Mask
+                || target == LoadE32OalArg
+                || target == LoadE32OemCountDelay
+                || target == LoadE32OalCountDelay
+                || target == LoadE32OalCountScale
+                || target == LoadE32NkCount;
+        }
+
+        private static string NameLoadE32AfterNeed(uint target, uint a0, uint a1, uint word)
+        {
+            if (target == LoadE32ProbeO32Mask)
+                return word != 0
+                    ? "word=0x" + word.ToString("X") + " at a1 (dump o32_vsize; same a1 as ProbeO32Rom)"
+                    : "needs *a1 dump o32_vsize nonzero (same a1 as ProbeO32Rom; 7182ee4 hosts dump o32 at +0x5C)";
+            if (target == LoadE32OalArg)
+                return a0 == 0
+                    ? "needs dump-real a0/a1; a0=0 a1=0x" + a1.ToString("X") +
+                        " (do not invent dest; do not steer dest)"
+                    : "a0=0x" + a0.ToString("X8") + " a1=0x" + a1.ToString("X8");
+            if (target == LoadE32OemCountDelay)
+                return "needs Count delay a0=0x20C a1=0x400 (SetCompare/OEMIdle cluster)";
+            if (target == LoadE32OalCountDelay)
+                return "needs same stall args as OemCountDelay (ProbeO32Mask+8)";
+            if (target == LoadE32OalCountScale)
+                return "needs Count-scale a0 from prior stall (calib Count<<4; ProbeO32Mask+16)";
+            if (target == LoadE32NkCount)
+                return "needs a0=Count-scale from OAL; a1 may be jalr target";
+            return "needs observe-only ret";
+        }
+
+        private static void NoteLoadE32AfterJal(MipsBus bus, uint[] regs, uint pc, uint target)
+        {
+            if (_afterN >= LoadE32AfterMax)
+                return;
+            int i = _afterN;
+            _afterN++;
+            _afterRa[i] = pc + 8;
+            _afterName[i] = NameLoadE32Jal(target);
+            _afterA0[i] = regs != null && regs.Length > 4 ? regs[4] : 0;
+            _afterA1[i] = regs != null && regs.Length > 5 ? regs[5] : 0;
+            _afterA2[i] = regs != null && regs.Length > 6 ? regs[6] : 0;
+            _afterWord[i] = PeekLoadE32Word(bus, _afterA1[i] != 0 ? _afterA1[i] : _afterA0[i]);
+            _afterNeed[i] = NameLoadE32AfterNeed(target, _afterA0[i], _afterA1[i], _afterWord[i]);
+            TryLogLoadE32JalDecompile(bus, target, _afterName[i]);
+        }
+
+        private static void FinishLoadE32AfterJal(uint[] regs, uint pc)
+        {
+            for (int i = 0; i < _afterN; i++)
+            {
+                if (_afterRa[i] == 0 || pc != _afterRa[i])
+                    continue;
+                uint v0 = regs != null && regs.Length > 2 ? regs[2] : 0;
+                _afterRa[i] = 0;
+                string ret = _afterName[i] + " v0=0x" + v0.ToString("X8") +
+                    " a0=0x" + _afterA0[i].ToString("X8") +
+                    " a1=0x" + _afterA1[i].ToString("X8") +
+                    " a2=0x" + _afterA2[i].ToString("X8") +
+                    " word=0x" + _afterWord[i].ToString("X8");
+                if (string.IsNullOrEmpty(_afterRets))
+                    _afterRets = ret;
+                else
+                    _afterRets += "; " + ret;
+                if (v0 == 0 && string.IsNullOrEmpty(_afterFail))
+                    _afterFail = _afterName[i] + " v0=0 " + _afterNeed[i];
+                BootLog.Write("[Hive] LoadE32 ExtraROM TOC[" + _loadE32WatchIndex + "] " +
+                    _loadE32WatchName + " " + _afterName[i] +
+                    " ret v0=0x" + v0.ToString("X8") +
+                    " a0=0x" + _afterA0[i].ToString("X8") +
+                    " a1=0x" + _afterA1[i].ToString("X8") +
+                    " a2=0x" + _afterA2[i].ToString("X8") +
+                    " word=0x" + _afterWord[i].ToString("X8") +
+                    " (" + _afterNeed[i] + "; observe only; do not jal; do not force v0=1)");
+            }
+        }
+
+        private static void ClearAfterLoadE32()
+        {
+            for (int i = 0; i < LoadE32AfterMax; i++)
+            {
+                _afterRa[i] = 0;
+                _afterName[i] = null;
+                _afterA0[i] = 0;
+                _afterA1[i] = 0;
+                _afterA2[i] = 0;
+                _afterWord[i] = 0;
+                _afterNeed[i] = null;
+            }
+            _afterN = 0;
+            _afterRets = null;
+            _afterFail = null;
         }
 
         private static void NoteLoadE32FieldJal(MipsBus bus, uint[] regs, uint pc, uint target)
@@ -5270,6 +5417,48 @@ namespace ProcessorEmulator.Core
             }
             line += " (a1 must be first o32_rom; a2 must be 0x18; word must be o32_vsize nonzero;" +
                 " ExtraROM dump +0x5C is 0; do not invent; do not jal; do not force v0=1)";
+            BootLog.Write(line);
+        }
+
+        // Guest NK/OAL bytes are not in-repo. Read them from the
+        // live bus on the later Boot (no dump folder I/O).
+        private static void TryLogLoadE32JalDecompile(MipsBus bus, uint va, string name)
+        {
+            if (bus == null || va == 0 || string.IsNullOrEmpty(name))
+                return;
+            if (!string.IsNullOrEmpty(_afterDisasm)
+                && _afterDisasm.IndexOf(name, System.StringComparison.Ordinal) >= 0)
+                return;
+            if (string.IsNullOrEmpty(_afterDisasm))
+                _afterDisasm = name;
+            else
+                _afterDisasm += "," + name;
+            string line = "[Hive] " + name + " decompile";
+            for (uint i = 0; i < 16; i++)
+            {
+                uint pc = va + i * 4;
+                uint instr = 0;
+                try
+                {
+                    instr = bus.Read32(pc);
+                }
+                catch
+                {
+                    line += " (guest bytes unmapped; NK OAL not in-repo)";
+                    BootLog.Write(line);
+                    return;
+                }
+                if (i == 0 && instr == 0)
+                {
+                    line += " (guest word0=0; NK OAL not in-repo)";
+                    BootLog.Write(line);
+                    return;
+                }
+                line += " " + FormatMipsOp(pc, instr);
+                if (IsMipsJrRa(instr))
+                    break;
+            }
+            line += " (observe only; do not jal; do not rewrite registers; do not force v0=1)";
             BootLog.Write(line);
         }
 
