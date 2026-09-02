@@ -95,11 +95,21 @@ namespace ProcessorEmulator.Core
         // ExtraROM e32 live0 0x212E0003 & 0x400 = 0, so v0=1.
         // 0x800165DC: fp=**(obj) LiveEntry first word (not e32
         // live0 unless they alias); jal predicate; andi fp,0x200;
-        // beqz -> 0x80016830 skip jal 0x8003E660 VALLOC/Open;
+        // beqz -> 0x80016830 skip jal 0x8003E660 kmode thunk;
         // 0x80016848 move v0,0 success, dest never written.
-        // ExtraROM 0x212E0003 & 0x200 = 0. Do not set 0x200.
-        // Do not invent dest. Do not jal BinaryDecompressROM.
+        // ExtraROM LiveEntry0 is dump TOC word0, not e32
+        // 0x212E0003. 0x8003E660 is a kmode thunk
+        // (jal 0x8003CA70 handle lookup; jalr object+0x18c;
+        // jal 0x8003CE44). LoadO32 calls it a0=-1 when
+        // fp&0x200. Skip is why dest stays 0. Do not set
+        // 0x200. Do not copy NK attributes. Do not invent dest.
+        // gwes OpenFile+CEDecompressROM is the ddi_nop path
+        // (c1c0bc4 a0=0x80764CE0 a1=0xD989 a2=0x01981000
+        // v0=0x1743A). ExtraROM BuiltIn LoadLibrary is the
+        // LoadO32 skip when dump-real LiveEntry0 lacks 0x200.
         public const uint LoadE32WrapJal = 0x8001E3E0;
+        public const uint LoadO32ThunkLookup = 0x8003CA70;
+        public const uint LoadO32ThunkTail = 0x8003CE44;
         public const uint LoadE32WrapFail = 0x8001E538;
         public const uint LoadO32Rom = 0x800165DC;
         public const uint LoadO32RomRet = 0x8001E420;
@@ -933,6 +943,7 @@ namespace ProcessorEmulator.Core
         private static uint _loadE32OkPredV0;
         private static uint _loadE32OkLiveEntry;
         private static uint _loadE32OkLiveE32;
+        private static uint _loadE32OkDumpToc0;
         private static uint _loadE32OkFp;
         private static bool _loadE32OkBit200;
         private static bool _loadE32OkBit200Seen;
@@ -967,6 +978,22 @@ namespace ProcessorEmulator.Core
         private static uint _nkRetPc;
         private static int _nkLoadE32Logged;
         private static string _nkLoadE32Ok;
+        private static uint _nkLoadE32Obj;
+        private static uint _nkLoadE32Toc;
+        private static uint _nkLoadE32DumpToc0;
+        private static bool _nkLoadO32Watch;
+        private static string _nkLoadO32Name;
+        private static uint _nkLoadO32Obj;
+        private static uint _nkLoadO32Toc;
+        private static uint _nkLoadO32DumpToc0;
+        private static uint _nkLoadO32Word0;
+        private static uint _nkLoadO32Fp;
+        private static bool _nkLoadO32Bit200;
+        private static bool _nkLoadO32Entered;
+        private static bool _nkLoadO32Skip200;
+        private static bool _nkLoadO32Thunk;
+        private static bool _nkLoadO32Ret;
+        private static int _nkLoadO32Steps;
         private static bool _curMSecDisasmLogged;
         private const int LoadE32AfterMax = 8;
         private static readonly uint[] _afterRa = new uint[LoadE32AfterMax];
@@ -2541,8 +2568,14 @@ namespace ProcessorEmulator.Core
                 uint dest;
                 if (TryGetCachedExtraRomToc(n, out index, out entry, out dest))
                 {
+                    ExtraRomTocMod slot = FindCachedExtraRomToc(n);
+                    uint dumpToc0 = DumpTocWord0(slot);
+                    string path = NameLoadO32Path(dumpToc0, dumpToc0, false);
                     BootLog.Rom("ok", "ExtraROM", "TOC", index, n, 7, dest, 0, 0,
-                        "cached for CreateFileFail/OpenFile/LoadLibrary type-7 attach");
+                        "cached for CreateFileFail/OpenFile/LoadLibrary type-7 attach" +
+                        " dumpToc0=0x" + dumpToc0.ToString("X8") +
+                        " dumpToc0&0x200=" + (dumpToc0 & LoadO32VallocBit).ToString("X") +
+                        " (LiveEntry0=dump TOC word0, not e32 0x212E0003; " + path + ")");
                     continue;
                 }
                 ExtraRomOpenFile file = FindExtraRomOpenFile(n);
@@ -2557,6 +2590,7 @@ namespace ProcessorEmulator.Core
                     "not in ExtraROM TOC/FILE; honest miss; do not invent");
             }
             LogCachedExtraRomFragment("iptvhal");
+            BootLog.Write("[Hive] NK coredll/fsdmgr/ceddk dumpToc0/LiveEntry0 logs if those hit LoadO32 0x800165DC (already LoadLibrary-ok; compare ExtraROM bcmuart dumpToc0&0x200; do not copy NK attributes onto ExtraROM; do not set 0x200)");
         }
 
         // ExtraROM has iptvhal_* TOC names, not a bare iptvhal.dll.
@@ -2852,6 +2886,7 @@ namespace ProcessorEmulator.Core
             _loadE32Obj = 0;
             ClearLoadE32Watch();
             ClearNkLoadE32Watch();
+            ClearNkLoadO32Watch();
             _nkLoadE32Logged = 0;
             _nkLoadE32Ok = null;
             _curMSecDisasmLogged = false;
@@ -4574,6 +4609,8 @@ namespace ProcessorEmulator.Core
             uint o32Ptr = slot.O32Words != null && slot.O32Words.Length > 3 ? slot.O32Words[3] : 0;
             uint o32Real = slot.O32Words != null && slot.O32Words.Length > 4 ? slot.O32Words[4] : 0;
             uint dump24 = slot.E32Words.Length > 9 ? slot.E32Words[E32RomPublicSize / 4] : 0;
+            uint dumpToc0 = DumpTocWord0(slot);
+            uint live0 = PeekDestWord(bus, slot.LiveEntry);
             System.Console.WriteLine("[Hive] ExtraROM TOC[" + slot.Index + "] " +
                 slot.Name + " e32_rom=0x" + slot.LiveE32.ToString("X8") +
                 " o32=0x" + slot.LiveO32.ToString("X8") +
@@ -4584,15 +4621,17 @@ namespace ProcessorEmulator.Core
                 " vsize=0x" + o32Vsize.ToString("X") +
                 " o32.real=0x" + o32Real.ToString("X8") +
                 " toc=0x" + slot.LiveEntry.ToString("X8") +
+                FormatDumpLiveEntry0(dumpToc0, live0) +
                 " e32+0x24=0x" + dump24.ToString("X8") +
-                " (dump e32 then dump o32 after; +0x5C is CurMSec leftover a1 not an o32 pointer; do not invent 0x81360000)");
+                " (dump e32 then dump o32 after; +0x5C is CurMSec leftover a1 not an o32 pointer; LiveEntry0=dump TOC word0; do not set 0x200; do not copy NK attributes; do not invent 0x81360000)");
             BootLog.Rom("ok", "ExtraROM", "TOC", slot.Index, slot.Name, 7, slot.Dest, o32Real, o32Psize,
                 "LoadE32 dump e32_rom+o32 at 0x" + slot.LiveE32.ToString("X8") +
                 " o32=0x" + slot.LiveO32.ToString("X8") +
                 " vbase=0x" + vbase.ToString("X8") +
                 " dataptr=0x" + o32Ptr.ToString("X8") +
                 " psize=0x" + o32Psize.ToString("X") +
-                " (dump o32 after e32; +0x5C is not a pointer; do not invent e32)");
+                FormatDumpLiveEntry0(dumpToc0, live0) +
+                " (dump o32 after e32; +0x5C is not a pointer; LiveEntry0=dump TOC word0; do not set 0x200; do not invent e32)");
             return true;
         }
 
@@ -4713,6 +4752,8 @@ namespace ProcessorEmulator.Core
                 " a3=0x" + a3.ToString("X8") +
                 " LiveEntry=0x" + slot.LiveEntry.ToString("X8") +
                 " LiveE32=0x" + slot.LiveE32.ToString("X8") +
+                FormatDumpLiveEntry0(DumpTocWord0(slot),
+                    slot.LiveEntry != 0 ? PeekDestWord(bus, slot.LiveEntry) : 0) +
                 " live0=0x" + live0.ToString("X8") +
                 " dump0=0x" + dump0.ToString("X8") +
                 " e32 objcnt=" + objcnt +
@@ -4797,12 +4838,16 @@ namespace ProcessorEmulator.Core
                 return;
             uint o32v = PeekLoadE32Word(bus, o32);
             uint o32p = PeekLoadE32Word(bus, o32 != 0 ? o32 + 0xC : 0);
+            uint dumpToc0 = PeekDestWord(bus, toc);
             _nkLoadE32Watch = true;
             _nkLoadE32Name = name;
             _nkLoadE32E32 = e32;
             _nkLoadE32O32 = o32;
             _nkLoadE32O32Vsize = o32v;
             _nkLoadE32O32Ptr = o32p;
+            _nkLoadE32Obj = obj;
+            _nkLoadE32Toc = toc;
+            _nkLoadE32DumpToc0 = dumpToc0;
             _nkChkRa = 0;
             _nkChkA0 = 0;
             _nkChkA1 = 0;
@@ -4839,6 +4884,7 @@ namespace ProcessorEmulator.Core
                     " (incoming LoadE32 regs; jal a1 overwritten; not o32 ABI)"
                 : " CurMSec not observed";
             string named = NameLoadE32Ret(_nkRetPc, v0);
+            uint live0 = PeekDestWord(bus, _nkLoadE32Toc);
             string line = "[Hive] LoadE32 NK " + _nkLoadE32Name +
                 " ret v0=0x" + v0.ToString("X8") +
                 " ret-pc=0x" + _nkRetPc.ToString("X8") +
@@ -4848,16 +4894,21 @@ namespace ProcessorEmulator.Core
                 " o32vsize=0x" + _nkLoadE32O32Vsize.ToString("X") +
                 " o32dataptr=0x" + _nkLoadE32O32Ptr.ToString("X8") +
                 " rombit=(obj+4)&2=" + _nkRomBit +
+                FormatDumpLiveEntry0(_nkLoadE32DumpToc0, live0) +
                 " first-cmp " + first +
                 " last-cmp " + last +
                 leftover +
-                " (NK TOC type-7; ExtraROM type-7 v0=0 is the same success; dest word 0 after that is CopyO32 miss; do not invent +0x5C)";
+                " (NK TOC type-7; ExtraROM type-7 v0=0 is the same success; compare ExtraROM bcmuart dumpToc0; do not copy NK attributes onto ExtraROM; do not invent +0x5C)";
             BootLog.Write(line);
             if (IsLoadE32Success(v0, _nkRetPc))
             {
                 _nkLoadE32Ok = _nkLoadE32Name +
                     " success=LoadE32 ret-pc=0x" + _nkRetPc.ToString("X8") +
-                    " v0=0 rombit=" + _nkRomBit;
+                    " v0=0 rombit=" + _nkRomBit +
+                    " dumpToc0=0x" + _nkLoadE32DumpToc0.ToString("X8") +
+                    " dumpToc0&0x200=" + (_nkLoadE32DumpToc0 & LoadO32VallocBit).ToString("X");
+                if (WantNkLoadO32Log(_nkLoadE32Name))
+                    BeginNkLoadO32Watch();
             }
             _nkLoadE32Logged++;
             ClearNkLoadE32Watch();
@@ -4872,6 +4923,170 @@ namespace ProcessorEmulator.Core
                 || NamesMatchRom(name, "ceddk.dll")
                 || NamesMatchRom(name, "nk.exe")
                 || NamesMatchRom(name, "filesys.exe");
+        }
+
+        private static bool WantNkLoadO32Log(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+                return false;
+            return NamesMatchRom(name, "fsdmgr.dll")
+                || NamesMatchRom(name, "coredll.dll")
+                || NamesMatchRom(name, "ceddk.dll");
+        }
+
+        private static void BeginNkLoadO32Watch()
+        {
+            _nkLoadO32Watch = true;
+            _nkLoadO32Name = _nkLoadE32Name;
+            _nkLoadO32Obj = _nkLoadE32Obj;
+            _nkLoadO32Toc = _nkLoadE32Toc;
+            _nkLoadO32DumpToc0 = _nkLoadE32DumpToc0;
+            _nkLoadO32Word0 = 0;
+            _nkLoadO32Fp = 0;
+            _nkLoadO32Bit200 = false;
+            _nkLoadO32Entered = false;
+            _nkLoadO32Skip200 = false;
+            _nkLoadO32Thunk = false;
+            _nkLoadO32Ret = false;
+            _nkLoadO32Steps = 0;
+            BootLog.Write("[Hive] LoadO32 NK " + _nkLoadO32Name +
+                " watch after LoadE32 success" +
+                FormatDumpLiveEntry0(_nkLoadO32DumpToc0, _nkLoadO32DumpToc0) +
+                " (already LoadLibrary-ok; compare ExtraROM bcmuart dumpToc0&0x200; do not copy NK attributes onto ExtraROM; do not set 0x200)");
+        }
+
+        private static void ClearNkLoadO32Watch()
+        {
+            _nkLoadO32Watch = false;
+            _nkLoadO32Name = null;
+            _nkLoadO32Obj = 0;
+            _nkLoadO32Toc = 0;
+            _nkLoadO32DumpToc0 = 0;
+            _nkLoadO32Word0 = 0;
+            _nkLoadO32Fp = 0;
+            _nkLoadO32Bit200 = false;
+            _nkLoadO32Entered = false;
+            _nkLoadO32Skip200 = false;
+            _nkLoadO32Thunk = false;
+            _nkLoadO32Ret = false;
+            _nkLoadO32Steps = 0;
+        }
+
+        private static void NoteAfterNkLoadO32(MipsBus bus, uint[] regs, uint pc)
+        {
+            if (!_nkLoadO32Watch)
+                return;
+            _nkLoadO32Steps++;
+            if (pc == LoadLibSyscallRet || _nkLoadO32Steps > 200000)
+            {
+                if (!_nkLoadO32Entered)
+                    BootLog.Write("[Hive] LoadO32 NK " + _nkLoadO32Name +
+                        " 0x800165DC not entered after LoadE32 success" +
+                        FormatDumpLiveEntry0(_nkLoadO32DumpToc0, _nkLoadO32DumpToc0) +
+                        " (already LoadLibrary-ok; do not copy NK attributes onto ExtraROM)");
+                ClearNkLoadO32Watch();
+                return;
+            }
+            if (pc == LoadO32Rom && !_nkLoadO32Entered)
+            {
+                uint a0 = regs != null && regs.Length > 4 ? regs[4] : 0;
+                if (_nkLoadO32Obj != 0 && a0 != 0 && a0 != _nkLoadO32Obj)
+                    return;
+                _nkLoadO32Entered = true;
+                uint toc = PeekDestWord(bus, a0 != 0 ? a0 : _nkLoadO32Obj);
+                uint fp = toc != 0 ? PeekDestWord(bus, toc) : 0;
+                uint live0 = _nkLoadO32Toc != 0
+                    ? PeekDestWord(bus, _nkLoadO32Toc) : fp;
+                _nkLoadO32Fp = fp;
+                _nkLoadO32Word0 = live0;
+                _nkLoadO32Bit200 = (fp & LoadO32VallocBit) != 0;
+                BootLog.Write("[Hive] LoadO32 NK " + _nkLoadO32Name +
+                    " entered 0x800165DC" +
+                    " a0=0x" + a0.ToString("X8") +
+                    " fp=**(obj)=0x" + fp.ToString("X8") +
+                    FormatDumpLiveEntry0(_nkLoadO32DumpToc0, live0) +
+                    " fp&0x200=" + (fp & LoadO32VallocBit).ToString("X") +
+                    " (already LoadLibrary-ok; compare ExtraROM bcmuart dumpToc0; do not copy NK attributes onto ExtraROM; do not set 0x200)");
+                return;
+            }
+            if (pc == LoadO32SkipValloc && _nkLoadO32Entered && !_nkLoadO32Skip200)
+            {
+                _nkLoadO32Skip200 = true;
+                BootLog.Write("[Hive] LoadO32 NK " + _nkLoadO32Name +
+                    " andi 0x200 not taken" +
+                    " fp=0x" + _nkLoadO32Fp.ToString("X8") +
+                    " skip kmode thunk 0x8003E660 via 0x80016830" +
+                    FormatDumpLiveEntry0(_nkLoadO32DumpToc0, _nkLoadO32Word0) +
+                    " (NK already LoadLibrary-ok; ExtraROM BuiltIn skip is the dest-0 miss; do not copy NK attributes onto ExtraROM)");
+                return;
+            }
+            if (pc == LoadO32VallocOpen && _nkLoadO32Entered && !_nkLoadO32Thunk)
+            {
+                _nkLoadO32Thunk = true;
+                uint a0 = regs != null && regs.Length > 4 ? regs[4] : 0;
+                BootLog.Write("[Hive] LoadO32 NK " + _nkLoadO32Name +
+                    " 0x8003E660 enter a0=0x" + a0.ToString("X8") +
+                    " fp=0x" + _nkLoadO32Fp.ToString("X8") +
+                    FormatDumpLiveEntry0(_nkLoadO32DumpToc0, _nkLoadO32Word0) +
+                    " (kmode thunk; jal 0x8003CA70; jalr object+0x18c; do not copy NK attributes onto ExtraROM)");
+                return;
+            }
+            if (pc == LoadO32RomRet && _nkLoadO32Entered && !_nkLoadO32Ret)
+            {
+                _nkLoadO32Ret = true;
+                uint v0 = regs != null && regs.Length > 2 ? regs[2] : 0;
+                uint live0 = _nkLoadO32Toc != 0
+                    ? PeekDestWord(bus, _nkLoadO32Toc) : _nkLoadO32Word0;
+                BootLog.Write("[Hive] LoadO32 NK " + _nkLoadO32Name +
+                    " ret-pc=0x" + pc.ToString("X8") +
+                    " v0=0x" + v0.ToString("X8") +
+                    " bit200-taken=" + _nkLoadO32Bit200 +
+                    " skip200=" + _nkLoadO32Skip200 +
+                    " thunk-entered=" + _nkLoadO32Thunk +
+                    " fp=0x" + _nkLoadO32Fp.ToString("X8") +
+                    FormatDumpLiveEntry0(_nkLoadO32DumpToc0, live0) +
+                    " (already LoadLibrary-ok; ExtraROM bcmuart dest stays 0 when dump-real LiveEntry0 lacks 0x200; do not copy NK attributes onto ExtraROM; do not set 0x200; do not invent dest)");
+                ClearNkLoadO32Watch();
+                return;
+            }
+            if (!_nkLoadO32Entered || bus == null || regs == null)
+                return;
+            uint instr = 0;
+            try
+            {
+                instr = bus.Read32(pc);
+            }
+            catch
+            {
+                return;
+            }
+            uint op = instr >> 26;
+            if (!_nkLoadO32Bit200 && op == 0xC && (instr & 0xFFFF) == LoadO32VallocBit)
+            {
+                uint rs = (instr >> 21) & 31;
+                uint lhs = regs.Length > (int)rs ? regs[(int)rs] : 0;
+                _nkLoadO32Fp = lhs;
+                _nkLoadO32Bit200 = (lhs & LoadO32VallocBit) != 0;
+                BootLog.Write("[Hive] LoadO32 NK " + _nkLoadO32Name +
+                    " andi 0x200 pc=0x" + pc.ToString("X8") +
+                    " fp=0x" + lhs.ToString("X8") +
+                    " taken=" + _nkLoadO32Bit200 +
+                    FormatDumpLiveEntry0(_nkLoadO32DumpToc0, _nkLoadO32Word0) +
+                    " (already LoadLibrary-ok; do not copy NK attributes onto ExtraROM; do not set 0x200)");
+            }
+            uint target = 0;
+            if (op == 3)
+                target = (pc & 0xF0000000u) | ((instr & 0x3FFFFFFu) << 2);
+            if (target == LoadO32VallocOpen && !_nkLoadO32Thunk)
+            {
+                _nkLoadO32Thunk = true;
+                uint a0 = regs.Length > 4 ? regs[4] : 0;
+                BootLog.Write("[Hive] LoadO32 NK " + _nkLoadO32Name +
+                    " jal 0x8003E660 a0=0x" + a0.ToString("X8") +
+                    " fp=0x" + _nkLoadO32Fp.ToString("X8") +
+                    FormatDumpLiveEntry0(_nkLoadO32DumpToc0, _nkLoadO32Word0) +
+                    " (kmode thunk; jal 0x8003CA70; jalr object+0x18c; do not copy NK attributes onto ExtraROM)");
+            }
         }
 
         private static void NoteNkLoadE32FieldJal(MipsBus bus, uint[] regs, uint pc)
@@ -4894,6 +5109,8 @@ namespace ProcessorEmulator.Core
         {
             if (_loadE32OkWatch)
                 NoteAfterLoadE32Ok(bus, regs, pc);
+            if (_nkLoadO32Watch)
+                NoteAfterNkLoadO32(bus, regs, pc);
             if ((!_loadE32Watch && !_nkLoadE32Watch) || bus == null)
                 return;
             NoteLoadE32RetPc(regs, pc);
@@ -5047,6 +5264,9 @@ namespace ProcessorEmulator.Core
             _nkLoadE32O32 = 0;
             _nkLoadE32O32Vsize = 0;
             _nkLoadE32O32Ptr = 0;
+            _nkLoadE32Obj = 0;
+            _nkLoadE32Toc = 0;
+            _nkLoadE32DumpToc0 = 0;
             _nkChkRa = 0;
             _nkChkA0 = 0;
             _nkChkA1 = 0;
@@ -5136,6 +5356,7 @@ namespace ProcessorEmulator.Core
             _loadE32OkDest0 = _loadE32OkDest & SlotMask;
             _loadE32OkLiveEntry = slot != null ? slot.LiveEntry : 0;
             _loadE32OkLiveE32 = slot != null ? slot.LiveE32 : 0;
+            _loadE32OkDumpToc0 = DumpTocWord0(slot);
             _loadE32OkWrapPc = LoadE32RomRet;
             _loadE32OkLoadO32 = false;
             _loadE32OkCopyO32 = false;
@@ -5166,6 +5387,7 @@ namespace ProcessorEmulator.Core
             _loadE32OkWrapPc = 0;
             _loadE32OkLiveEntry = 0;
             _loadE32OkLiveE32 = 0;
+            _loadE32OkDumpToc0 = 0;
             _loadE32OkLoadO32 = false;
             _loadE32OkCopyO32 = false;
             _loadE32OkPred = false;
@@ -5993,6 +6215,41 @@ namespace ProcessorEmulator.Core
                 " dump-word=0x" + wordDump.ToString("X8");
         }
 
+        private static uint DumpTocWord0(ExtraRomTocMod slot)
+        {
+            if (slot == null)
+                return 0;
+            if (slot.TocWords != null && slot.TocWords.Length > 0)
+                return slot.TocWords[0];
+            return slot.Attr;
+        }
+
+        private static string FormatDumpLiveEntry0(uint dumpToc0, uint live0)
+        {
+            bool dumpReal = dumpToc0 != 0 && live0 == dumpToc0;
+            return " dumpToc0=0x" + dumpToc0.ToString("X8") +
+                " LiveEntry0=0x" + live0.ToString("X8") +
+                (dumpReal ? " dump-real" : " LiveEntry0!=dumpToc0") +
+                " dumpToc0&0x200=" + (dumpToc0 & LoadO32VallocBit).ToString("X") +
+                " LiveEntry0&0x200=" + (live0 & LoadO32VallocBit).ToString("X");
+        }
+
+        // gwes OpenFile+CEDecompressROM filled ddi_nop dest
+        // 0x01981000 (c1c0bc4). ExtraROM BuiltIn LoadLibrary
+        // hits LoadO32 andi 0x200 skip when dump-real
+        // LiveEntry0 lacks 0x200. Do not set 0x200. Do not
+        // copy NK attributes. Do not invent dest. Serve dest
+        // only on the path firmware actually takes.
+        private static string NameLoadO32Path(uint dumpToc0, uint live0, bool destFilled)
+        {
+            bool has200 = ((live0 != 0 ? live0 : dumpToc0) & LoadO32VallocBit) != 0;
+            if (destFilled)
+                return "OpenFile+CEDecompressROM dest like gwes ddi_nop (c1c0bc4 a0=0x80764CE0 a1=0xD989 a2=0x01981000 v0=0x1743A); serve dest on that path";
+            if (!has200)
+                return "honest miss: dump-real LiveEntry0 lacks 0x200; firmware will not VALLOC ExtraROM BuiltIn the way gwes OpenFile+CEDecompressROM'd ddi_nop (c1c0bc4 a0=0x80764CE0 a1=0xD989 a2=0x01981000 v0=0x1743A); BuiltIn LoadO32 skip; do not set 0x200; do not invent dest; do not copy NK attributes";
+            return "LiveEntry0 has 0x200; kmode thunk 0x8003E660 should run; do not invent dest";
+        }
+
         private static string FormatLoadO32Fp(MipsBus bus, uint obj)
         {
             uint toc = PeekDestWord(bus, obj);
@@ -6001,6 +6258,7 @@ namespace ProcessorEmulator.Core
                 ? PeekDestWord(bus, _loadE32OkLiveEntry) : 0;
             uint e32live0 = _loadE32OkLiveE32 != 0
                 ? PeekDestWord(bus, _loadE32OkLiveE32) : 0;
+            uint dumpToc0 = _loadE32OkDumpToc0;
             _loadE32OkFp = fp;
             _loadE32OkBit200 = (fp & LoadO32VallocBit) != 0;
             bool alias = toc != 0 && toc == _loadE32OkLiveE32;
@@ -6010,7 +6268,7 @@ namespace ProcessorEmulator.Core
             return " *obj=0x" + toc.ToString("X8") +
                 " fp=**(obj)=0x" + fp.ToString("X8") +
                 " LiveEntry=0x" + _loadE32OkLiveEntry.ToString("X8") +
-                " LiveEntry0=0x" + live0.ToString("X8") +
+                FormatDumpLiveEntry0(dumpToc0, live0) +
                 " LiveE32=0x" + _loadE32OkLiveE32.ToString("X8") +
                 " e32-live0=0x" + e32live0.ToString("X8") +
                 " fp&0x200=" + (fp & LoadO32VallocBit).ToString("X") +
@@ -6032,7 +6290,10 @@ namespace ProcessorEmulator.Core
                         _loadE32OkName + " LoadO32 0x800165DC not entered after LoadE32 success" +
                         " wrapper-pc=0x" + _loadE32OkWrapPc.ToString("X8") +
                         FormatLoadE32OkDest(bus) +
-                        " (dest word 0 is 0x200 VALLOC skipped; not LoadE32 fail; do not set 0x200; do not jal BinaryDecompressROM; do not force v0=1)");
+                        FormatDumpLiveEntry0(_loadE32OkDumpToc0,
+                            _loadE32OkLiveEntry != 0 ? PeekDestWord(bus, _loadE32OkLiveEntry) : 0) +
+                        " (" + NameLoadO32Path(_loadE32OkDumpToc0, _loadE32OkFp, false) +
+                        "; not LoadE32 fail; do not jal BinaryDecompressROM; do not force v0=1)");
                 ClearLoadE32OkWatch();
                 return;
             }
@@ -6059,8 +6320,11 @@ namespace ProcessorEmulator.Core
             }
             if (pc == LoadO32Rom && !_loadE32OkLoadO32)
             {
+                uint a0chk = regs != null && regs.Length > 4 ? regs[4] : 0;
+                if (_loadE32OkObj != 0 && a0chk != 0 && a0chk != _loadE32OkObj)
+                    return;
                 _loadE32OkLoadO32 = true;
-                uint a0 = regs != null && regs.Length > 4 ? regs[4] : 0;
+                uint a0 = a0chk;
                 uint a1 = regs != null && regs.Length > 5 ? regs[5] : 0;
                 uint a2 = regs != null && regs.Length > 6 ? regs[6] : 0;
                 uint a3 = regs != null && regs.Length > 7 ? regs[7] : 0;
@@ -6086,7 +6350,9 @@ namespace ProcessorEmulator.Core
                     " bit2=(obj+4)&4=" + (type & LoadE32RomBit2) +
                     FormatLoadO32Fp(bus, obj) +
                     FormatLoadE32OkDest(bus) +
-                    " (fp=**(obj) LiveEntry first word; andi 0x200 skip VALLOC if 0; do not set 0x200; do not jal BinaryDecompressROM)");
+                    " (fp=**(obj) LiveEntry first word not e32 0x212E0003; andi 0x200 skip kmode thunk 0x8003E660 if 0; " +
+                    NameLoadO32Path(_loadE32OkDumpToc0, _loadE32OkFp, false) +
+                    "; do not jal BinaryDecompressROM)");
                 return;
             }
             if (pc == LoadO32PredFail && !_loadE32OkPredFail)
@@ -6101,15 +6367,18 @@ namespace ProcessorEmulator.Core
                     " (beqz after 0x8001637C; ExtraROM e32&0x400=0 should not take this; dest word 0 is 0x200 skip; do not jal BinaryDecompressROM)");
                 return;
             }
-            if (pc == LoadO32SkipValloc && !_loadE32OkSkip200)
+            if (pc == LoadO32SkipValloc && _loadE32OkLoadO32 && !_loadE32OkSkip200)
             {
                 _loadE32OkSkip200 = true;
                 BootLog.Write("[Hive] LoadE32 ExtraROM TOC[" + _loadE32OkIndex + "] " +
                     _loadE32OkName + " andi 0x200 not taken" +
                     " fp=0x" + _loadE32OkFp.ToString("X8") +
-                    " skip 0x8003E660 via 0x80016830" +
+                    " skip kmode thunk 0x8003E660 via 0x80016830" +
+                    FormatDumpLiveEntry0(_loadE32OkDumpToc0,
+                        _loadE32OkLiveEntry != 0 ? PeekDestWord(bus, _loadE32OkLiveEntry) : _loadE32OkFp) +
                     FormatLoadE32OkDest(bus) +
-                    " (LoadO32 success v0=0 at 0x80016848; dest never written; do not set 0x200; do not invent dest; do not jal BinaryDecompressROM)");
+                    " (" + NameLoadO32Path(_loadE32OkDumpToc0, _loadE32OkFp, false) +
+                    "; LoadO32 success v0=0 at 0x80016848; dest never written; do not jal BinaryDecompressROM)");
                 return;
             }
             if (pc == LoadO32OkRet && _loadE32OkLoadO32 && !_loadE32OkLoadO32Ret)
@@ -6119,9 +6388,11 @@ namespace ProcessorEmulator.Core
                     _loadE32OkName + " LoadO32 success-pc=0x" + pc.ToString("X8") +
                     " v0=0x" + v0.ToString("X8") +
                     " bit200-taken=" + _loadE32OkBit200 +
-                    " valloc-entered=" + _loadE32OkValloc +
+                    " thunk-entered=" + _loadE32OkValloc +
+                    FormatDumpLiveEntry0(_loadE32OkDumpToc0, _loadE32OkFp) +
                     FormatLoadE32OkDest(bus) +
-                    " (move v0,0; dest never written when 0x200 skipped; do not set 0x200; do not force LoadE32 v0=1)");
+                    " (" + NameLoadO32Path(_loadE32OkDumpToc0, _loadE32OkFp, false) +
+                    "; move v0,0; dest never written when 0x200 skipped; do not force LoadE32 v0=1)");
             }
             if (regs != null && _loadE32OkPredRa != 0 && pc == _loadE32OkPredRa)
             {
@@ -6144,7 +6415,7 @@ namespace ProcessorEmulator.Core
                 BootLog.Write("[Hive] LoadE32 ExtraROM TOC[" + _loadE32OkIndex + "] " +
                     _loadE32OkName + " 0x8003E660 ret v0=0x" + _loadE32OkVallocV0.ToString("X8") +
                     FormatLoadE32OkDest(bus) +
-                    " (VALLOC/Open after andi 0x200 taken; observe only; do not jal BinaryDecompressROM; do not invent dest)");
+                    " (kmode thunk after andi 0x200 taken; jal 0x8003CA70; jalr object+0x18c; jal 0x8003CE44; not ROM CopyO32; observe only; do not jal BinaryDecompressROM; do not invent dest)");
                 return;
             }
             if (pc == LoadO32RomRet && _loadE32OkLoadO32 && !_loadE32OkLoadO32Ret)
@@ -6152,20 +6423,23 @@ namespace ProcessorEmulator.Core
                 _loadE32OkLoadO32Ret = true;
                 uint v0 = regs != null && regs.Length > 2 ? regs[2] : 0;
                 uint word0 = PeekDestWord(bus, _loadE32OkDest0);
+                uint live0 = _loadE32OkLiveEntry != 0
+                    ? PeekDestWord(bus, _loadE32OkLiveEntry) : _loadE32OkFp;
                 string destWhy = word0 != 0
-                    ? "dest word nonzero after LoadO32; firmware filled dest"
+                    ? NameLoadO32Path(_loadE32OkDumpToc0, live0, true)
                     : (_loadE32OkValloc
-                        ? "dest word 0 after 0x8003E660 v0=0x" + _loadE32OkVallocV0.ToString("X8")
-                        : "dest word 0; andi 0x200 not taken; skipped 0x8003E660; LoadO32 still v0=0");
+                        ? "dest word 0 after kmode thunk 0x8003E660 v0=0x" + _loadE32OkVallocV0.ToString("X8")
+                        : NameLoadO32Path(_loadE32OkDumpToc0, live0, false));
                 BootLog.Write("[Hive] LoadE32 ExtraROM TOC[" + _loadE32OkIndex + "] " +
                     _loadE32OkName + " LoadO32 ret-pc=0x" + pc.ToString("X8") +
                     " v0=0x" + v0.ToString("X8") +
                     " pred-v0=0x" + _loadE32OkPredV0.ToString("X8") +
                     " bit200-taken=" + _loadE32OkBit200 +
                     " skip200=" + _loadE32OkSkip200 +
-                    " valloc-entered=" + _loadE32OkValloc +
-                    " valloc-v0=0x" + _loadE32OkVallocV0.ToString("X8") +
+                    " thunk-entered=" + _loadE32OkValloc +
+                    " thunk-v0=0x" + _loadE32OkVallocV0.ToString("X8") +
                     " fp=0x" + _loadE32OkFp.ToString("X8") +
+                    FormatDumpLiveEntry0(_loadE32OkDumpToc0, live0) +
                     FormatLoadE32OkDest(bus) +
                     " " + destWhy +
                     " (do not set 0x200; do not invent dest; do not jal BinaryDecompressROM; do not force v0=1)");
@@ -6205,10 +6479,12 @@ namespace ProcessorEmulator.Core
                     " fp=0x" + lhs.ToString("X8") +
                     " taken=" + _loadE32OkBit200 +
                     (_loadE32OkBit200
-                        ? " (jal 0x8003E660 VALLOC/Open a0=-1)"
-                        : " (beqz 0x80016830 skip VALLOC; dest never written)") +
+                        ? " (jal 0x8003E660 kmode thunk a0=-1)"
+                        : " (beqz 0x80016830 skip kmode thunk; dest never written)") +
+                    FormatDumpLiveEntry0(_loadE32OkDumpToc0, lhs) +
                     FormatLoadE32OkDest(bus) +
-                    " (do not set 0x200; do not invent dest; observe only)");
+                    " (" + NameLoadO32Path(_loadE32OkDumpToc0, lhs, false) +
+                    "; observe only)");
             }
             uint target = 0;
             if (op == 3)
@@ -6222,7 +6498,7 @@ namespace ProcessorEmulator.Core
                     _loadE32OkName + " jal 0x8001637C a0=0x" + a0.ToString("X8") +
                     " (0x400 predicate, not heap alloc; ExtraROM e32&0x400=0 expects v0=1; observe only; do not jal; do not rewrite registers)");
             }
-            if (target == LoadO32VallocOpen && !_loadE32OkValloc)
+            if (target == LoadO32VallocOpen && _loadE32OkLoadO32 && !_loadE32OkValloc)
             {
                 _loadE32OkValloc = true;
                 _loadE32OkVallocRa = pc + 8;
@@ -6231,7 +6507,7 @@ namespace ProcessorEmulator.Core
                     _loadE32OkName + " 0x8003E660 enter a0=0x" + a0.ToString("X8") +
                     " fp=0x" + _loadE32OkFp.ToString("X8") +
                     FormatLoadE32OkDest(bus) +
-                    " (andi 0x200 taken; VALLOC/Open; observe only; do not invent dest; do not jal BinaryDecompressROM)");
+                    " (andi 0x200 taken; kmode thunk jal 0x8003CA70; jalr object+0x18c; jal 0x8003CE44; not ROM CopyO32; observe only; do not invent dest; do not jal BinaryDecompressROM)");
             }
         }
 
@@ -6583,7 +6859,14 @@ namespace ProcessorEmulator.Core
             bool ran = slot.Decompressed || slot.DecompDest != 0;
             string why;
             if (!ran && slot.LoadE32Ok && word == 0)
-                why = "LoadE32 success v0=0; dest word 0; LoadO32 skipped 0x8003E660 (andi 0x200 not taken); not LoadE32 fail; do not set 0x200; do not force v0=1; do not jal BinaryDecompressROM";
+            {
+                uint dumpToc0 = DumpTocWord0(slot);
+                uint live0 = slot.LiveEntry != 0 ? PeekDestWord(bus, slot.LiveEntry) : dumpToc0;
+                why = "LoadE32 success v0=0; dest word 0; " +
+                    NameLoadO32Path(dumpToc0, live0, false) +
+                    FormatDumpLiveEntry0(dumpToc0, live0) +
+                    "; not LoadE32 fail; do not force v0=1; do not jal BinaryDecompressROM";
+            }
             else if (!ran)
                 why = "BinaryDecompressROM did not run; dest word 0 after LoadE32 success is CopyO32 miss; do not force v0=1";
             else if (word == 0)
@@ -6598,8 +6881,15 @@ namespace ProcessorEmulator.Core
                 why = "dest word=0x" + word.ToString("X8") +
                     " but dump vbase=0; do not invent e32";
             else
-                why = "LoadLibrary dump vbase after CEDecompressROM dest=0x" +
-                    dest0.ToString("X8") + " word=0x" + word.ToString("X8");
+            {
+                uint dumpToc0 = DumpTocWord0(slot);
+                uint live0 = slot.LiveEntry != 0 ? PeekDestWord(bus, slot.LiveEntry) : dumpToc0;
+                why = NameLoadO32Path(dumpToc0, live0, true) +
+                    FormatDumpLiveEntry0(dumpToc0, live0) +
+                    " dest=0x" + dest0.ToString("X8") + " word=0x" + word.ToString("X8");
+            }
+            uint libDumpToc0 = DumpTocWord0(slot);
+            uint libLive0 = slot.LiveEntry != 0 ? PeekDestWord(bus, slot.LiveEntry) : libDumpToc0;
             string line = "[Hive] ExtraROM TOC[" + slot.Index + "] " +
                 slot.Name + " LoadLibrary ret dest0=0x" + dest0.ToString("X8") +
                 " destDump=0x" + destDump.ToString("X8") +
@@ -6608,6 +6898,7 @@ namespace ProcessorEmulator.Core
                 " dump-word=0x" + wordDump.ToString("X8") +
                 " map=0x" + mapped.ToString("X8") +
                 " map-word=0x" + wordMap.ToString("X8") +
+                FormatDumpLiveEntry0(libDumpToc0, libLive0) +
                 " ran4DBF8=" + ran +
                 " decomp=" + slot.Decompressed +
                 " (" + why + ")";
