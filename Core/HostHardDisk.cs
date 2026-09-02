@@ -641,6 +641,8 @@ namespace ProcessorEmulator.Core
                 CeRomTocFiles.TryNoteExtraRomBindImp(bus, registers, pc);
             CeRomTocFiles.TryNoteTv2BindImp(bus, registers, pc);
             if (pc == CeRomTocFiles.MapO32Decompress
+                && (_logged.Contains("hive:ldde32:mscoree")
+                    || _logged.Contains("hive:ldde32:ole32"))
                 && CeRomTocFiles.TryRedirectExtraRomMapO32Decompress(
                     bus, registers, ref programCounter))
                 return false;
@@ -649,6 +651,9 @@ namespace ProcessorEmulator.Core
                     || _logged.Contains("hive:ldde32:ole32")))
                 CeRomTocFiles.TryLogMscoreeMapO32Ret(bus, registers);
             if (pc == CeRomTocFiles.MapO32VirtualCopy
+                && (_logged.Contains("hive:ldde32")
+                    || _logged.Contains("hive:ldde32:mscoree")
+                    || _logged.Contains("hive:ldde32:ole32"))
                 && CeRomTocFiles.TryRedirectExtraRomVirtualCopyToDecompress(
                     bus, registers, ref programCounter))
                 return false;

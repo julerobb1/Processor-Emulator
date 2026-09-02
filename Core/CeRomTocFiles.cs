@@ -1259,8 +1259,7 @@ namespace ProcessorEmulator.Core
             uint src = regs[5];
             uint vsize = regs[6];
             if (!IsExtraRomMscoreeDest(dest) && !IsExtraRomMscoreeData(src)
-                && !IsExtraRomOle32Dest(dest) && !IsExtraRomOle32Data(src)
-                && !IsExtraRomCompressedDest(dest) && !IsExtraRomCompressedData(src))
+                && !IsExtraRomOle32Dest(dest) && !IsExtraRomOle32Data(src))
                 return false;
             uint o32Lite = regs[23];
             uint psize = 0;
@@ -1519,18 +1518,14 @@ namespace ProcessorEmulator.Core
             uint psize = regs[5];
             uint dest = regs[6];
             uint vsize = regs[7];
-            if (!IsExtraRomCompressedDest(dest) && !IsExtraRomCompressedData(src))
+            if (!IsExtraRomDdiNopDest(dest) && !IsExtraRomDdiNopData(src)
+                && !IsExtraRomMscoreeDest(dest) && !IsExtraRomMscoreeData(src)
+                && !IsExtraRomOle32Dest(dest) && !IsExtraRomOle32Data(src))
+                return false;
+            if (dest < 0x01400000u)
                 return false;
             if (psize == 0 || psize > 0x200000 || vsize == 0 || vsize > 0x200000)
                 return false;
-            string fw = "[Hive] ExtraROM ddi_nop CEDecompressROM firmware a0=0x" +
-                src.ToString("X8") +
-                " a1=0x" + psize.ToString("X8") +
-                " a2=0x" + dest.ToString("X8") +
-                " a3=0x" + vsize.ToString("X8") +
-                " (before host; firmware OpenFile/VALLOC dest; do not rewrite a2 to ExtraRomTocDestHost)";
-            System.Console.WriteLine(fw);
-            BootLog.Write(fw);
             uint aligned = CopyExtraRomSrcPageAligned(bus, src, psize);
             if (aligned != 0)
                 src = aligned;
@@ -1580,41 +1575,13 @@ namespace ProcessorEmulator.Core
             _ddiNopDecompHdr = 0;
             _ddiNopInnerCap = false;
             _ddiNopInnerPages = 0;
-            uint first = 0;
-            uint page0 = 0;
             try
             {
-                first = bus.Read32(src);
-                _ddiNopDecompHdr = first;
+                _ddiNopDecompHdr = bus.Read32(src);
             }
             catch
             {
             }
-            try
-            {
-                // 3-byte size then 3-byte offsets. First LZX
-                // block header sits at the first page-offset
-                // (byte 3..5 = 0x8B5 for ddi_nop o32[0]; the
-                // table length is (pages+2)*3).
-                uint size3 = first & 0xFFFFFFu;
-                uint n = ((size3 >> 12) + 2) * 3;
-                if (n >= 6 && n < psize)
-                    page0 = bus.Read32(src + n);
-            }
-            catch
-            {
-            }
-            string ddi = "[Hive] ExtraROM ddi_nop CEDecompressROM a0=0x" +
-                src.ToString("X8") +
-                " a1=0x" + psize.ToString("X8") +
-                " a2=0x" + dest.ToString("X8") +
-                " a3=0x" + vsize.ToString("X8") +
-                " (src/cb/dest/vsize) src0=0x" + first.ToString("X8") +
-                " page0=0x" + page0.ToString("X8") +
-                " dest-" + (DestReadable(bus, dest) ? "mapped" : "unmapped") +
-                " (firmware 0x8004DBF8 skip=0 convert=1 step=0x1000; dump dataptr src; do not rewrite a0 to ExtraRomTocSrc)";
-            System.Console.WriteLine(ddi);
-            BootLog.Write(ddi);
             return true;
         }
 
@@ -1745,35 +1712,6 @@ namespace ProcessorEmulator.Core
                 note = "";
             if (mapped && word != 0 && hdr != 0 && word == hdr)
                 note += " (dest is src header; not expanded)";
-            string destKind = dest >= ExtraRomTocDestHost && dest < ExtraRomTocDestHostLim
-                ? "host ExtraRomTocDestHost (firmware does not use)"
-                : dest == Tv2FileDest
-                    ? "FILE[25] dest 0x8F140000"
-                    : dest >= 0x01900000u && dest < 0x02000000u
-                        ? "firmware VALLOC dest"
-                        : dest >= 0x02000000u && dest < 0x80000000u
-                            ? "firmware o32.real dest"
-                            : dest < 0x80000000u
-                                ? "not guest-RAM slot-0"
-                                : "kseg dest";
-            string line = "[Hive] ExtraROM CEDecompressROM ret v0=0x" +
-                v0.ToString("X8") + " dest=0x" + dest.ToString("X8") +
-                " a0=0x" + src.ToString("X8") +
-                " a1=0x" + cb.ToString("X8") +
-                " a2=0x" + dest.ToString("X8") +
-                " a3=0x" + vsize.ToString("X8") +
-                " (src/cb/dest/vsize)" +
-                " live-a0=0x" + a0.ToString("X8") +
-                " live-a1=0x" + a1.ToString("X8") +
-                " live-a2=0x" + a2.ToString("X8") +
-                " live-a3=0x" + a3.ToString("X8") +
-                (mapped ? " word=0x" + word.ToString("X8") : " dest-unmapped") +
-                (entryMapped ? " entry=0x" + entry.ToString("X8") : "") +
-                " " + destKind +
-                imp +
-                note;
-            System.Console.WriteLine(line);
-            BootLog.Write(line);
             string decompName = !string.IsNullOrEmpty(_pendingLoadE32Name)
                 ? _pendingLoadE32Name : "";
             string decompWhy = v0 == 0xFFFFFFFFu
@@ -1789,7 +1727,11 @@ namespace ProcessorEmulator.Core
             bool expanded = mapped && word != 0 && !header && v0 != 0xFFFFFFFFu;
             if (expanded)
                 MarkExtraRomTocDecompressed(dest);
-            if (dest == 0x01981000u && mapped && word != 0 && !_ddiNopDestWordLogged)
+            // 0x8004DBF8 is not ddi_nop on every hit. sipcfg/shell
+            // dest 0x00011000 stays firmware. One line when
+            // VALLOC dest 0x01981000 first becomes nonzero.
+            if (dest == 0x01981000u && mapped && word != 0 && !header
+                && !_ddiNopDestWordLogged)
             {
                 _ddiNopDestWordLogged = true;
                 string first = "[Hive] ExtraROM ddi_nop dest 0x01981000 first nonzero word=0x" +
@@ -1799,13 +1741,20 @@ namespace ProcessorEmulator.Core
                     " a2=0x" + dest.ToString("X8") +
                     " a3=0x" + vsize.ToString("X8") +
                     " v0=0x" + v0.ToString("X8") +
-                    " (firmware OpenFile/VALLOC/CopyO32 dest; not host a2 rewrite)";
+                    " live-a0=0x" + a0.ToString("X8") +
+                    " live-a1=0x" + a1.ToString("X8") +
+                    " live-a2=0x" + a2.ToString("X8") +
+                    " live-a3=0x" + a3.ToString("X8") +
+                    (entryMapped ? " entry=0x" + entry.ToString("X8") : "") +
+                    imp +
+                    note +
+                    " (firmware OpenFile/VALLOC/CopyO32 dest; not sipcfg 0x00011000; not host a2 rewrite)";
                 System.Console.WriteLine(first);
                 BootLog.Write(first);
+                if (bus != null && v0 == vsize)
+                    DumpDdiNopTextSites(bus, dest);
             }
             _tocDecompSlot = null;
-            if (bus != null && dest == 0x01981000u && v0 == vsize)
-                DumpDdiNopTextSites(bus, dest);
             return false;
         }
 
@@ -2234,16 +2183,6 @@ namespace ProcessorEmulator.Core
             if (IsExtraRomDdiNopDest(dest) || IsExtraRomMscoreeDest(dest)
                 || IsExtraRomOle32Dest(dest))
                 return true;
-            ExtraRomTocMod toc = FindCachedTocByDest(dest);
-            if (toc != null)
-                return true;
-            for (int i = 0; i < _tocDestN; i++)
-            {
-                uint slot0 = _tocDestSlot0[i];
-                uint vsize = _tocDestVsize[i];
-                if (slot0 != 0 && dest >= slot0 && dest < slot0 + vsize)
-                    return true;
-            }
             return false;
         }
 
