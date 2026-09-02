@@ -783,6 +783,7 @@ namespace ProcessorEmulator.Core
         // stays on IsExtraRomOpenFile / FILE[25].
         private static ExtraRomTocMod[] _romTocMods;
         private static int _romTocCount;
+        private static uint _e32HostPool = ExtraRomE32Host;
         private static string _pendingLoadE32Name;
         private static int _pendingLoadE32Index;
 
@@ -1355,6 +1356,16 @@ namespace ProcessorEmulator.Core
         // Dedicated unused kseg0, same class as ExtraROM dest.
         public const uint VallocHostKseg = 0x8F200000;
         public const uint VallocHostKsegLim = 0x8F400000;
+        // ExtraROM TOC/e32/o32 live at 0x8134xxxx / 0x80E99Cxx.
+        // Firmware reuses that tail as RAM, so LoadE32 of every
+        // ExtraROM TOC type-7 returns v0=0 (bcmuart TOC[63]
+        // never expands). NK TOC attach works because NK
+        // ROMHDR e32_rom stays in XIP. Copy dump TOC+e32+o32
+        // here (same ExtraROM dest kseg0 class as 0x8F1C0000;
+        // 0x8F1E0000-0x8F200000 is unused). Not 0x81360000
+        // and not FILE dest 0x8F140000 / 0x8F400000.
+        public const uint ExtraRomE32Host = 0x8F1E0000;
+        public const uint ExtraRomE32HostLim = 0x8F200000;
         public const uint CeAllocGranularity = 0x10000;
 
         public static bool TryReserveExtraRomValloc(uint[] regs)
@@ -2137,12 +2148,17 @@ namespace ProcessorEmulator.Core
 
         public static bool IsDdiNopTocObject(MipsBus bus, uint obj)
         {
-            if (bus == null || obj == 0 || _ddiNopTocEntry == 0)
+            if (bus == null || obj == 0)
                 return false;
             try
             {
-                return bus.Read32(obj) == _ddiNopTocEntry
-                    && bus.Read8(obj + 4) == TocAttachType;
+                if (bus.Read8(obj + 4) != TocAttachType)
+                    return false;
+                uint toc = bus.Read32(obj);
+                if (_ddiNopTocEntry != 0 && toc == _ddiNopTocEntry)
+                    return true;
+                ExtraRomTocMod slot = FindCachedTocByEntry(toc);
+                return slot != null && NamesMatchRom(slot.Name, "ddi_nop.dll");
             }
             catch
             {
@@ -2157,12 +2173,17 @@ namespace ProcessorEmulator.Core
 
         public static bool IsMscoreeTocObject(MipsBus bus, uint obj)
         {
-            if (bus == null || obj == 0 || _mscoreeTocEntry == 0)
+            if (bus == null || obj == 0)
                 return false;
             try
             {
-                return bus.Read32(obj) == _mscoreeTocEntry
-                    && bus.Read8(obj + 4) == TocAttachType;
+                if (bus.Read8(obj + 4) != TocAttachType)
+                    return false;
+                uint toc = bus.Read32(obj);
+                if (_mscoreeTocEntry != 0 && toc == _mscoreeTocEntry)
+                    return true;
+                ExtraRomTocMod slot = FindCachedTocByEntry(toc);
+                return slot != null && IsMscoreeDll(slot.Name);
             }
             catch
             {
@@ -2182,12 +2203,17 @@ namespace ProcessorEmulator.Core
 
         public static bool IsOle32TocObject(MipsBus bus, uint obj)
         {
-            if (bus == null || obj == 0 || _ole32TocEntry == 0)
+            if (bus == null || obj == 0)
                 return false;
             try
             {
-                return bus.Read32(obj) == _ole32TocEntry
-                    && bus.Read8(obj + 4) == TocAttachType;
+                if (bus.Read8(obj + 4) != TocAttachType)
+                    return false;
+                uint toc = bus.Read32(obj);
+                if (_ole32TocEntry != 0 && toc == _ole32TocEntry)
+                    return true;
+                ExtraRomTocMod slot = FindCachedTocByEntry(toc);
+                return slot != null && IsOle32Dll(slot.Name);
             }
             catch
             {
@@ -2229,7 +2255,7 @@ namespace ProcessorEmulator.Core
             {
                 name = slot.Name;
                 index = slot.Index;
-                e32 = slot.E32;
+                e32 = slot.LiveE32 != 0 ? slot.LiveE32 : slot.E32;
                 return true;
             }
             if (tocEntry == _ddiNopTocEntry && tocEntry != 0)
@@ -2594,6 +2620,7 @@ namespace ProcessorEmulator.Core
             _romTocCount = 0;
             _pendingLoadE32Name = null;
             _pendingLoadE32Index = -1;
+            _e32HostPool = ExtraRomE32Host;
         }
 
         public static void NoteExtraRomModule(uint romhdr, uint tocEntry, uint attr)
@@ -4023,13 +4050,14 @@ namespace ProcessorEmulator.Core
             else if (NamesMatchRom(baseName, "ddi_nop.dll"))
                 TryRestoreExtraRomIfClobbered(bus, _ddiNopTocEntry);
 
-            ExtraRomTocMod slot = FindCachedExtraRomToc(baseName);
+                ExtraRomTocMod slot = FindCachedExtraRomToc(baseName);
             if (slot != null)
             {
                 if (!IsMscoreeDll(baseName) && !IsOle32Dll(baseName)
                     && !NamesMatchRom(baseName, "ddi_nop.dll"))
                     TryRestoreExtraRomTocModIfClobbered(bus, slot);
-                tocEntry = slot.Entry;
+                TryHostExtraRomE32O32(bus, slot);
+                tocEntry = slot.LiveEntry != 0 ? slot.LiveEntry : slot.Entry;
                 attr = (slot.Attr & 0xFFFFEFFFu) | 0x2040u;
                 if (IsMscoreeDll(baseName) && _mscoreeAttr != 0)
                     attr = _mscoreeAttr;
@@ -4037,10 +4065,10 @@ namespace ProcessorEmulator.Core
                     attr = _ole32Attr;
                 index = slot.Index;
                 dest = slot.Dest;
-                e32 = slot.E32;
-                if (IsMscoreeDll(baseName) && _mscoreeE32 != 0)
+                e32 = slot.LiveE32 != 0 ? slot.LiveE32 : slot.E32;
+                if (IsMscoreeDll(baseName) && _mscoreeE32 != 0 && slot.LiveE32 == 0)
                     e32 = _mscoreeE32;
-                else if (IsOle32Dll(baseName) && _ole32E32 != 0)
+                else if (IsOle32Dll(baseName) && _ole32E32 != 0 && slot.LiveE32 == 0)
                     e32 = _ole32E32;
                 return tocEntry != 0;
             }
@@ -4127,7 +4155,7 @@ namespace ProcessorEmulator.Core
             for (int i = 0; i < _romTocCount; i++)
             {
                 ExtraRomTocMod slot = _romTocMods[i];
-                if (slot != null && slot.Entry == tocEntry)
+                if (slot != null && (slot.Entry == tocEntry || slot.LiveEntry == tocEntry))
                     return slot;
             }
             return null;
@@ -4207,6 +4235,120 @@ namespace ProcessorEmulator.Core
             {
                 System.Console.WriteLine("[Hive] ExtraROM TOC[" + slot.Index + "] " +
                     slot.Name + " restore-fail " + ex.Message);
+            }
+        }
+
+        // NK LoadE32 copies e32_rom at TOC+0x14 and o32 at +0x18
+        // because those VAs stay in NK XIP. ExtraROM tail does
+        // not. Write dump-cached TOC/e32/o32 to ExtraRomE32Host
+        // and point object+0 at that copy. Do not invent e32
+        // bytes or 0x81360000.
+        public static bool TryServeExtraRomLoadE32(MipsBus bus, uint obj)
+        {
+            if (bus == null || obj == 0)
+                return false;
+            ExtraRomTocMod slot;
+            try
+            {
+                if (bus.Read8(obj + 4) != TocAttachType)
+                    return false;
+                uint tocEntry = bus.Read32(obj);
+                slot = FindCachedTocByEntry(tocEntry);
+            }
+            catch
+            {
+                return false;
+            }
+            if (slot == null || slot.E32Words == null)
+                return false;
+            TryRestoreExtraRomTocModIfClobbered(bus, slot);
+            if (!TryHostExtraRomE32O32(bus, slot) || slot.LiveEntry == 0)
+                return false;
+            try
+            {
+                bus.Write32(obj, slot.LiveEntry);
+            }
+            catch
+            {
+                return false;
+            }
+            TryMarkExtraRomO32Compressed(bus, slot.LiveEntry);
+            NoteLoadE32(slot.Name, slot.Index);
+            return true;
+        }
+
+        private static bool TryHostExtraRomE32O32(MipsBus bus, ExtraRomTocMod slot)
+        {
+            if (bus == null || slot == null || slot.TocWords == null || slot.E32Words == null)
+                return false;
+            uint e32Bytes = (uint)slot.E32Words.Length * 4;
+            uint o32Bytes = slot.O32Words != null ? (uint)slot.O32Words.Length * 4 : 0;
+            string name = slot.Name ?? "";
+            uint nameBytes = ((uint)name.Length + 4) & ~3u;
+            uint tocBytes = 32;
+            uint span = (tocBytes + e32Bytes + o32Bytes + nameBytes + 0xF) & ~0xFu;
+            bool first = slot.LiveEntry == 0;
+            if (first)
+            {
+                if (_e32HostPool < ExtraRomE32Host
+                    || _e32HostPool + span > ExtraRomE32HostLim)
+                    return false;
+                slot.LiveEntry = _e32HostPool;
+                _e32HostPool += span;
+            }
+            slot.LiveE32 = slot.LiveEntry + tocBytes;
+            slot.LiveO32 = o32Bytes != 0 ? slot.LiveE32 + e32Bytes : 0;
+            slot.LiveName = (o32Bytes != 0 ? slot.LiveO32 + o32Bytes : slot.LiveE32 + e32Bytes);
+            if (!WriteHostExtraRomE32O32(bus, slot, name))
+                return false;
+            if (!first)
+                return true;
+            uint vbase = slot.E32Words.Length > 2 ? slot.E32Words[2] : 0;
+            uint vsize = slot.E32Words.Length > 5 ? slot.E32Words[5] : 0;
+            System.Console.WriteLine("[Hive] ExtraROM TOC[" + slot.Index + "] " +
+                slot.Name + " e32_rom=0x" + slot.LiveE32.ToString("X8") +
+                " o32=0x" + slot.LiveO32.ToString("X8") +
+                " vbase=0x" + vbase.ToString("X8") +
+                " vsize=0x" + vsize.ToString("X8") +
+                " toc=0x" + slot.LiveEntry.ToString("X8") +
+                " (dump e32/o32 copy; NK LoadE32 path; do not invent 0x81360000)");
+            BootLog.Rom("ok", "ExtraROM", "TOC", slot.Index, slot.Name, 7, slot.Dest, vsize, 0,
+                "LoadE32 dump e32_rom+o32 at 0x" + slot.LiveE32.ToString("X8") +
+                " vbase=0x" + vbase.ToString("X8") +
+                "; firmware copy like NK ROMHDR; do not invent e32 or 0x81360000");
+            return true;
+        }
+
+        private static bool WriteHostExtraRomE32O32(MipsBus bus, ExtraRomTocMod slot, string name)
+        {
+            try
+            {
+                for (int i = 0; i < slot.TocWords.Length && i < 8; i++)
+                    bus.Write32(slot.LiveEntry + (uint)(i * 4), slot.TocWords[i]);
+                bus.Write32(slot.LiveEntry + 0x14, slot.LiveE32);
+                bus.Write32(slot.LiveEntry + 0x18, slot.LiveO32);
+                if (slot.LiveName != 0)
+                    bus.Write32(slot.LiveEntry + 0x10, slot.LiveName);
+                for (int i = 0; i < slot.E32Words.Length; i++)
+                    bus.Write32(slot.LiveE32 + (uint)(i * 4), slot.E32Words[i]);
+                if (slot.O32Words != null && slot.LiveO32 != 0)
+                {
+                    for (int i = 0; i < slot.O32Words.Length; i++)
+                        bus.Write32(slot.LiveO32 + (uint)(i * 4), slot.O32Words[i]);
+                }
+                if (slot.LiveName != 0 && !string.IsNullOrEmpty(name))
+                {
+                    for (int i = 0; i < name.Length; i++)
+                        bus.Write8(slot.LiveName + (uint)i, (byte)name[i]);
+                    bus.Write8(slot.LiveName + (uint)name.Length, 0);
+                }
+                return true;
+            }
+            catch (System.Exception ex)
+            {
+                System.Console.WriteLine("[Hive] ExtraROM TOC[" + slot.Index + "] " +
+                    slot.Name + " e32-host-fail " + ex.Message);
+                return false;
             }
         }
 
@@ -10055,6 +10197,10 @@ namespace ProcessorEmulator.Core
             public uint[] TocWords;
             public uint[] E32Words;
             public uint[] O32Words;
+            public uint LiveEntry;
+            public uint LiveE32;
+            public uint LiveO32;
+            public uint LiveName;
         }
 
         // OpenExe retries \mscoree.dll.dll. Same suffix on any

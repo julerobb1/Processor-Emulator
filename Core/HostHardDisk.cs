@@ -1963,6 +1963,7 @@ namespace ProcessorEmulator.Core
             if (pc == CeRomTocFiles.LoadE32Rom
                 && registers != null && registers.Length > 4)
             {
+                CeRomTocFiles.TryServeExtraRomLoadE32(bus, registers[4]);
                 if (_logged.Contains("hive:ll:ddi_nop.dll")
                     && CeRomTocFiles.IsDdiNopTocObject(bus, registers[4]))
                 {
