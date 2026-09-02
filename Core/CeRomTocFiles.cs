@@ -784,6 +784,15 @@ namespace ProcessorEmulator.Core
         private static ExtraRomTocMod[] _romTocMods;
         private static int _romTocCount;
         private static uint _e32HostPool = ExtraRomE32Host;
+        private static bool _e32HostCommitted;
+        private static uint _tocDestHostPool = ExtraRomTocDestHost;
+        private static uint[] _tocDestSlot0;
+        private static uint[] _tocDestDump;
+        private static uint[] _tocDestVsize;
+        private static uint[] _tocDestKseg;
+        private static int _tocDestN;
+        private static ExtraRomTocMod _tocDecompSlot;
+        private static uint _loadE32Obj;
         private static string _pendingLoadE32Name;
         private static int _pendingLoadE32Index;
 
@@ -1361,11 +1370,18 @@ namespace ProcessorEmulator.Core
         // ExtraROM TOC type-7 returns v0=0 (bcmuart TOC[63]
         // never expands). NK TOC attach works because NK
         // ROMHDR e32_rom stays in XIP. Copy dump TOC+e32+o32
-        // here (same ExtraROM dest kseg0 class as 0x8F1C0000;
-        // 0x8F1E0000-0x8F200000 is unused). Not 0x81360000
-        // and not FILE dest 0x8F140000 / 0x8F400000.
-        public const uint ExtraRomE32Host = 0x8F1E0000;
-        public const uint ExtraRomE32HostLim = 0x8F200000;
+        // next to FILE[25] dest 0x8F140000 (CEDecompressROM
+        // tv2clientce already uses that kseg0 window). After
+        // FILE[25] 5120/0x2000. Not 0x81360000, not FILE dest,
+        // not VallocHostKseg 0x8F200000.
+        public const uint ExtraRomE32Host = 0x8F148000;
+        public const uint ExtraRomE32HostLim = 0x8F168000;
+        // Dump ExtraROM TOC o32 dest/src host-back for the same
+        // 0x8004DBF8 path gwes uses for ddi_nop. Below
+        // AlignedCompSrc 0x8F000000. Not FILE dest/src.
+        public const uint ExtraRomTocSrc = 0x8E000000;
+        public const uint ExtraRomTocDestHost = 0x8E800000;
+        public const uint ExtraRomTocDestHostLim = 0x8F000000;
         public const uint CeAllocGranularity = 0x10000;
 
         public static bool TryReserveExtraRomValloc(uint[] regs)
@@ -1704,6 +1720,12 @@ namespace ProcessorEmulator.Core
                     ? "firmware expanded vsize"
                     : (v0 == 0 ? "firmware returned 0" : "firmware CEDecompressROM");
             BootLog.DecompressRom(decompName, dest, v0, decompWhy);
+            if (_tocDecompSlot != null)
+            {
+                if (v0 == vsize || (mapped && word != 0 && v0 != 0xFFFFFFFFu))
+                    _tocDecompSlot.Decompressed = true;
+                _tocDecompSlot = null;
+            }
             if (bus != null && dest == 0x01981000u && v0 == vsize)
                 DumpDdiNopTextSites(bus, dest);
             return false;
@@ -2123,14 +2145,38 @@ namespace ProcessorEmulator.Core
 
         private static bool IsExtraRomCompressedDest(uint dest)
         {
-            return IsExtraRomDdiNopDest(dest) || IsExtraRomMscoreeDest(dest)
-                || IsExtraRomOle32Dest(dest);
+            if (IsExtraRomDdiNopDest(dest) || IsExtraRomMscoreeDest(dest)
+                || IsExtraRomOle32Dest(dest))
+                return true;
+            for (int i = 0; i < _tocDestN; i++)
+            {
+                uint slot0 = _tocDestSlot0[i];
+                uint vsize = _tocDestVsize[i];
+                if (slot0 != 0 && dest >= slot0 && dest < slot0 + vsize)
+                    return true;
+            }
+            return false;
         }
 
         private static bool IsExtraRomCompressedData(uint dataptr)
         {
-            return IsExtraRomDdiNopData(dataptr) || IsExtraRomMscoreeData(dataptr)
-                || IsExtraRomOle32Data(dataptr);
+            if (IsExtraRomDdiNopData(dataptr) || IsExtraRomMscoreeData(dataptr)
+                || IsExtraRomOle32Data(dataptr))
+                return true;
+            if (_romTocMods == null)
+                return false;
+            for (int i = 0; i < _romTocCount; i++)
+            {
+                ExtraRomTocMod slot = _romTocMods[i];
+                if (slot == null || slot.DataPtr == null)
+                    continue;
+                for (int s = 0; s < slot.DataPtr.Length; s++)
+                {
+                    if (slot.DataPtr[s] != 0 && slot.DataPtr[s] == dataptr)
+                        return true;
+                }
+            }
+            return false;
         }
 
         private static bool IsExtraRomHeaderDestPage(uint slotPage)
@@ -2621,6 +2667,15 @@ namespace ProcessorEmulator.Core
             _pendingLoadE32Name = null;
             _pendingLoadE32Index = -1;
             _e32HostPool = ExtraRomE32Host;
+            _e32HostCommitted = false;
+            _tocDestHostPool = ExtraRomTocDestHost;
+            _tocDestSlot0 = null;
+            _tocDestDump = null;
+            _tocDestVsize = null;
+            _tocDestKseg = null;
+            _tocDestN = 0;
+            _tocDecompSlot = null;
+            _loadE32Obj = 0;
         }
 
         public static void NoteExtraRomModule(uint romhdr, uint tocEntry, uint attr)
@@ -3004,6 +3059,30 @@ namespace ProcessorEmulator.Core
                 slot.TocWords = toc;
                 slot.E32Words = e32Words;
                 slot.O32Words = o32Words;
+                slot.Vbase = e32Words != null && e32Words.Length > 2 ? e32Words[2] : 0;
+                slot.Decompressed = false;
+                slot.DecompDest = 0;
+                if (o32Words != null && o32Words.Length >= 6)
+                {
+                    int nsec = o32Words.Length / 6;
+                    slot.DataPtr = new uint[nsec];
+                    slot.DataLen = new uint[nsec];
+                    slot.Data = new uint[nsec][];
+                    for (int s = 0; s < nsec; s++)
+                    {
+                        uint psize = o32Words[s * 6 + 2];
+                        uint dataptr = o32Words[s * 6 + 3];
+                        if (dataptr == 0 || psize == 0 || psize > 0x40000)
+                            continue;
+                        uint n = (psize + 3) / 4;
+                        var blob = new uint[n];
+                        for (uint w = 0; w < n; w++)
+                            blob[w] = memory.ReadMemory32(dataptr + w * 4);
+                        slot.DataPtr[s] = dataptr;
+                        slot.DataLen[s] = psize;
+                        slot.Data[s] = blob;
+                    }
+                }
             }
             catch (System.Exception ex)
             {
@@ -4272,6 +4351,7 @@ namespace ProcessorEmulator.Core
             {
                 return false;
             }
+            _loadE32Obj = obj;
             TryMarkExtraRomO32Compressed(bus, slot.LiveEntry);
             NoteLoadE32(slot.Name, slot.Index);
             return true;
@@ -4299,6 +4379,7 @@ namespace ProcessorEmulator.Core
             slot.LiveE32 = slot.LiveEntry + tocBytes;
             slot.LiveO32 = o32Bytes != 0 ? slot.LiveE32 + e32Bytes : 0;
             slot.LiveName = (o32Bytes != 0 ? slot.LiveO32 + o32Bytes : slot.LiveE32 + e32Bytes);
+            CommitExtraRomE32Host(bus);
             if (!WriteHostExtraRomE32O32(bus, slot, name))
                 return false;
             if (!first)
@@ -4316,6 +4397,298 @@ namespace ProcessorEmulator.Core
                 "LoadE32 dump e32_rom+o32 at 0x" + slot.LiveE32.ToString("X8") +
                 " vbase=0x" + vbase.ToString("X8") +
                 "; firmware copy like NK ROMHDR; do not invent e32 or 0x81360000");
+            return true;
+        }
+
+        // FILE[25] dest 0x8F140000 is kseg0 RAM because
+        // CEDecompressROM Write32 commits those pages. Do the
+        // same for ExtraRomE32Host (next to that dest). Do not
+        // invent a third B000FF at 0x81360000.
+        private static void CommitExtraRomE32Host(MipsBus bus)
+        {
+            if (bus == null || _e32HostCommitted)
+                return;
+            try
+            {
+                for (uint i = ExtraRomE32Host; i < ExtraRomE32HostLim; i += 4)
+                    bus.Write32(i, 0);
+                _e32HostCommitted = true;
+            }
+            catch (System.Exception ex)
+            {
+                System.Console.WriteLine("[Hive] ExtraROM e32-host commit-fail " + ex.Message +
+                    " (0x8F148000 next to FILE dest 0x8F140000; do not invent 0x81360000)");
+            }
+        }
+
+        public static void TryLogExtraRomLoadE32(MipsBus bus, uint[] regs, bool isRet, uint lastError)
+        {
+            if (bus == null || regs == null || regs.Length <= 4)
+                return;
+            uint obj = regs[4];
+            if (obj == 0 || (isRet && _loadE32Obj != 0))
+                obj = _loadE32Obj != 0 ? _loadE32Obj : obj;
+            if (obj == 0)
+                return;
+            uint entry = 0;
+            uint type = 0;
+            try
+            {
+                type = bus.Read8(obj + 4);
+                entry = bus.Read32(obj);
+            }
+            catch
+            {
+                return;
+            }
+            if (type != TocAttachType)
+                return;
+            ExtraRomTocMod slot = FindCachedTocByEntry(entry);
+            if (slot == null)
+                return;
+            uint live0 = 0;
+            bool liveMapped = false;
+            try
+            {
+                if (slot.LiveE32 != 0)
+                {
+                    live0 = bus.Read32(slot.LiveE32);
+                    liveMapped = true;
+                }
+            }
+            catch
+            {
+            }
+            uint dump0 = slot.E32Words != null && slot.E32Words.Length > 0
+                ? slot.E32Words[0] : 0;
+            uint v0 = isRet && regs.Length > 2 ? regs[2] : 0;
+            uint err = lastError;
+            string map = !liveMapped ? "LiveE32-unmapped"
+                : (live0 == 0 && dump0 != 0
+                    ? "LiveE32=0 host-Write32-ok; ExtraRomE32Host not on guest map"
+                    : (live0 == dump0
+                        ? "LiveE32 dump-real"
+                        : "LiveE32=0x" + live0.ToString("X8") + " dump0=0x" + dump0.ToString("X8")));
+            string line = "[Hive] LoadE32 ExtraROM TOC[" + slot.Index + "] " + slot.Name +
+                (isRet ? " ret" : "") +
+                " obj=0x" + obj.ToString("X8") +
+                " obj+0=0x" + entry.ToString("X8") +
+                " obj+4=" + type +
+                " LiveEntry=0x" + slot.LiveEntry.ToString("X8") +
+                " LiveE32=0x" + slot.LiveE32.ToString("X8") +
+                " live0=0x" + live0.ToString("X8") +
+                " dump0=0x" + dump0.ToString("X8") +
+                " " + map;
+            if (isRet)
+                line += " v0=0x" + v0.ToString("X8") + " last-error=" + err;
+            if (isRet && v0 == 0 && liveMapped && live0 == dump0 && dump0 != 0)
+                line += " (do not force v0=1; OpenFile+CEDecompressROM like ddi_nop)";
+            BootLog.Write(line);
+        }
+
+        // Same 0x8004DBF8 path gwes uses for ddi_nop after
+        // LoadE32=0. Dump o32 dest/vsize/psize/dataptr only.
+        // Do not invent e32 bytes. ddi_nop/mscoree/ole32 keep
+        // their existing VALLOC+VirtualCopy redirect.
+        public static bool TryStartExtraRomTocDecompress(MipsBus bus, uint[] regs, ref uint programCounter)
+        {
+            if (bus == null || regs == null || regs.Length <= 31)
+                return false;
+            ExtraRomTocMod slot = null;
+            try
+            {
+                uint obj = regs.Length > 30 ? regs[30] : 0;
+                if (obj != 0 && bus.Read8(obj + 4) == TocAttachType)
+                    slot = FindCachedTocByEntry(bus.Read32(obj));
+            }
+            catch
+            {
+            }
+            if (slot == null && !string.IsNullOrEmpty(_pendingLoadE32Name))
+                slot = FindCachedExtraRomToc(_pendingLoadE32Name);
+            if (slot == null || slot.O32Words == null || slot.O32Words.Length < 6)
+                return false;
+            if (NamesMatchRom(slot.Name, "ddi_nop.dll") || IsMscoreeDll(slot.Name)
+                || IsOle32Dll(slot.Name))
+                return false;
+            if (slot.Decompressed)
+                return false;
+            uint vsize = slot.O32Words[0];
+            uint psize = slot.O32Words[2];
+            uint dataptr = slot.O32Words[3];
+            uint real = slot.O32Words[4];
+            if (vsize == 0 || psize == 0 || psize > 0x40000 || vsize > 0x80000)
+                return false;
+            uint dest = real != 0 ? (real & SlotMask) : (slot.Dest & SlotMask);
+            if (dest == 0)
+                return false;
+            uint src = ExtraRomTocSrc;
+            try
+            {
+                uint[] blob = slot.Data != null && slot.Data.Length > 0 ? slot.Data[0] : null;
+                uint n = (psize + 3) / 4;
+                for (uint w = 0; w < n; w++)
+                {
+                    uint word = blob != null && w < blob.Length
+                        ? blob[w]
+                        : (dataptr != 0 ? bus.Read32(dataptr + w * 4) : 0);
+                    bus.Write32(src + w * 4, word);
+                }
+            }
+            catch (System.Exception ex)
+            {
+                System.Console.WriteLine("[Hive] ExtraROM TOC[" + slot.Index + "] " +
+                    slot.Name + " src-prep fail " + ex.Message +
+                    " (do not invent 0x81360000)");
+                return false;
+            }
+            if (!HostBackExtraRomTocDest(bus, slot, dest, vsize))
+                return false;
+            regs[4] = src;
+            regs[5] = psize;
+            regs[6] = dest;
+            regs[7] = vsize;
+            if (regs.Length > 29)
+            {
+                try
+                {
+                    uint sp = regs[29];
+                    bus.Write32(sp + 16, 0);
+                    bus.Write32(sp + 20, 1);
+                    bus.Write32(sp + 24, 0x1000);
+                }
+                catch
+                {
+                }
+            }
+            programCounter = BinaryDecompressRom;
+            _ddiNopDecompRa = CreateFileOk;
+            regs[31] = CreateFileOk;
+            _ddiNopDecompDest = dest;
+            _ddiNopDecompVsize = vsize;
+            _ddiNopInnerCap = false;
+            _ddiNopInnerPages = 0;
+            _tocDecompSlot = slot;
+            slot.DecompDest = dest;
+            uint src0 = 0;
+            try
+            {
+                src0 = bus.Read32(src);
+            }
+            catch
+            {
+            }
+            System.Console.WriteLine("[Hive] ExtraROM TOC[" + slot.Index + "] " +
+                slot.Name + " CEDecompressROM dest=0x" + dest.ToString("X8") +
+                " src=0x" + src.ToString("X8") +
+                " vsize=0x" + vsize.ToString("X") +
+                " psize=0x" + psize.ToString("X") +
+                " vbase=0x" + slot.Vbase.ToString("X8") +
+                " o32.real=0x" + real.ToString("X8") +
+                " src0=0x" + src0.ToString("X8") +
+                " (dump o32; same 0x8004DBF8 as ddi_nop; do not invent e32)");
+            BootLog.DecompressRom(slot.Name, dest, 0,
+                "start dump o32 CEDecompressROM; dest slot-0; do not invent e32");
+            return true;
+        }
+
+        private static bool HostBackExtraRomTocDest(MipsBus bus, ExtraRomTocMod slot, uint dest, uint vsize)
+        {
+            if (bus == null || dest == 0 || vsize == 0)
+                return false;
+            uint pages = (vsize + 0x1FFFu) & ~0xFFFu;
+            if (_tocDestHostPool + pages > ExtraRomTocDestHostLim)
+                return false;
+            uint kseg = _tocDestHostPool;
+            try
+            {
+                for (uint i = 0; i < pages; i += 4)
+                    bus.Write32(kseg + i, 0);
+            }
+            catch (System.Exception ex)
+            {
+                System.Console.WriteLine("[Hive] ExtraROM TOC dest-host fail " +
+                    slot.Name + " " + ex.Message);
+                return false;
+            }
+            if (_tocDestSlot0 == null)
+            {
+                _tocDestSlot0 = new uint[32];
+                _tocDestDump = new uint[32];
+                _tocDestVsize = new uint[32];
+                _tocDestKseg = new uint[32];
+            }
+            if (_tocDestN >= _tocDestSlot0.Length)
+                return false;
+            _tocDestSlot0[_tocDestN] = dest;
+            _tocDestDump[_tocDestN] = slot.Dest;
+            _tocDestVsize[_tocDestN] = pages;
+            _tocDestKseg[_tocDestN] = kseg;
+            _tocDestN++;
+            _tocDestHostPool += pages;
+            return true;
+        }
+
+        public static uint MapExtraRomE32HostVa(uint va)
+        {
+            if (va >= ExtraRomE32Host && va < ExtraRomE32HostLim)
+                return va;
+            return va;
+        }
+
+        public static uint MapExtraRomTocDestVa(uint va)
+        {
+            for (int i = 0; i < _tocDestN; i++)
+            {
+                uint slot0 = _tocDestSlot0[i];
+                uint dump = _tocDestDump[i];
+                uint vsize = _tocDestVsize[i];
+                uint kseg = _tocDestKseg[i];
+                if (slot0 == 0 || kseg == 0 || vsize == 0)
+                    continue;
+                uint off = va & SlotMask;
+                uint base0 = slot0 & SlotMask;
+                if (off >= base0 && off < base0 + vsize)
+                    return kseg + (off - base0);
+                if (dump != 0)
+                {
+                    uint dumpOff = dump & SlotMask;
+                    if ((va & ~SlotMask) == (dump & ~SlotMask)
+                        && off >= dumpOff && off < dumpOff + vsize)
+                        return kseg + (off - dumpOff);
+                }
+            }
+            return va;
+        }
+
+        public static bool TryServeExtraRomLoadLibrary(MipsBus bus, string name, uint[] regs)
+        {
+            if (regs == null || regs.Length <= 2 || regs[2] != 0)
+                return false;
+            ExtraRomTocMod slot = FindCachedExtraRomToc(name);
+            if (slot == null || !slot.Decompressed || slot.Vbase == 0)
+                return false;
+            uint dest = slot.DecompDest != 0 ? slot.DecompDest : (slot.Dest & SlotMask);
+            uint word = 0;
+            try
+            {
+                if (bus != null && dest != 0)
+                    word = bus.Read32(dest);
+            }
+            catch
+            {
+                return false;
+            }
+            if (word == 0)
+                return false;
+            regs[2] = slot.Vbase;
+            System.Console.WriteLine("[Hive] ExtraROM TOC[" + slot.Index + "] " +
+                slot.Name + " LoadLibrary v0=0x" + slot.Vbase.ToString("X8") +
+                " dest=0x" + dest.ToString("X8") +
+                " word=0x" + word.ToString("X8") +
+                " (dump vbase after CEDecompressROM; do not invent e32)");
+            BootLog.Rom("ok", "ExtraROM", "TOC", slot.Index, slot.Name, 7, slot.Vbase, 0, 0,
+                "LoadLibrary dump vbase after CEDecompressROM; do not invent e32");
             return true;
         }
 
@@ -9343,6 +9716,8 @@ namespace ProcessorEmulator.Core
 
         public static uint MapVallocHostVa(uint va)
         {
+            if (va >= ExtraRomE32Host && va < ExtraRomE32HostLim)
+                return va;
             for (int i = 0; i < _vallocHostN; i++)
             {
                 if (va >= _vallocHostLo[i] && va < _vallocHostHi[i])
@@ -10201,6 +10576,12 @@ namespace ProcessorEmulator.Core
             public uint LiveE32;
             public uint LiveO32;
             public uint LiveName;
+            public uint Vbase;
+            public uint[] DataPtr;
+            public uint[] DataLen;
+            public uint[][] Data;
+            public bool Decompressed;
+            public uint DecompDest;
         }
 
         // OpenExe retries \mscoree.dll.dll. Same suffix on any

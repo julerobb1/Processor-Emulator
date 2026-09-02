@@ -155,6 +155,14 @@ namespace ProcessorEmulator.Emulation
                                 _bus.Tick(1);
                                 continue;
                             }
+                            if (attachType == CeRomTocFiles.TocAttachType
+                                && CeRomTocFiles.TryStartExtraRomTocDecompress(
+                                    _bus, registers, ref programCounter))
+                            {
+                                _cp0.UpdateTimer(1);
+                                _bus.Tick(1);
+                                continue;
+                            }
                             // Type 7: NameCopyContinue CreateFileMappings
                             // the TOCentry (wait61 126). Return v0=0 with
                             // object+0=entry +4=7 so 0x800196E4 LoadE32s.

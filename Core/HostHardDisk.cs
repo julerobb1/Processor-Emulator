@@ -1964,6 +1964,7 @@ namespace ProcessorEmulator.Core
                 && registers != null && registers.Length > 4)
             {
                 CeRomTocFiles.TryServeExtraRomLoadE32(bus, registers[4]);
+                CeRomTocFiles.TryLogExtraRomLoadE32(bus, registers, false, 0);
                 if (_logged.Contains("hive:ll:ddi_nop.dll")
                     && CeRomTocFiles.IsDdiNopTocObject(bus, registers[4]))
                 {
@@ -2020,6 +2021,8 @@ namespace ProcessorEmulator.Core
                     return;
                 }
             }
+            if (pc == CeRomTocFiles.LoadE32RomRet)
+                CeRomTocFiles.TryLogExtraRomLoadE32(bus, registers, true, ReadLastError(bus));
             if (pc == CeRomTocFiles.LoadE32RomRet
                 && _logged.Contains("hive:ldde32")
                 && _logged.Add("hive:ldde32ret"))
@@ -2198,6 +2201,8 @@ namespace ProcessorEmulator.Core
             }
             if (pc == CeRomTocFiles.LoadLibSyscallRet)
             {
+                if (!string.IsNullOrEmpty(_pendingLoadLib))
+                    CeRomTocFiles.TryServeExtraRomLoadLibrary(bus, _pendingLoadLib, registers);
                 uint v0 = registers != null && registers.Length > 2 ? registers[2] : 0;
                 if (!string.IsNullOrEmpty(_pendingLoadLib) && v0 == 0
                     && _logged.Add("rom:llmiss:" + _pendingLoadLib))
