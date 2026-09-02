@@ -790,7 +790,13 @@ namespace ProcessorEmulator.Core
         private static uint[] _tocDestDump;
         private static uint[] _tocDestVsize;
         private static uint[] _tocDestKseg;
+        private static bool[] _tocDestReady;
         private static int _tocDestN;
+        private static uint _tocSrcPool = ExtraRomTocSrc;
+        private static uint[] _tocSrcPtr;
+        private static uint[] _tocSrcLen;
+        private static uint[] _tocSrcKseg;
+        private static int _tocSrcN;
         private static ExtraRomTocMod _tocDecompSlot;
         private static uint _loadE32Obj;
         private static string _pendingLoadE32Name;
@@ -1376,13 +1382,13 @@ namespace ProcessorEmulator.Core
         // not VallocHostKseg 0x8F200000.
         public const uint ExtraRomE32Host = 0x8F148000;
         public const uint ExtraRomE32HostLim = 0x8F168000;
-        // Dump ExtraROM TOC o32 dest/src. CEDecompressROM a2 is
-        // ExtraRomTocDestHost (kseg0 guest-RAM like FILE[25]
-        // 0x8F140000 / ExtraRomE32Host). Slot-0 0x00F21000 is
-        // not guest-RAM; dest word stayed 0 there. Dump
-        // vbase/vsize only. Below AlignedCompSrc 0x8F000000.
-        // Not FILE dest/src. Not 0x81360000.
+        // Dump ExtraROM TOC o32 dataptr backing (not a0).
+        // a0 is dump o32 dataptr (bcmuart destDump 0x02F21000).
+        // Do not rewrite a0 to ExtraRomTocSrc. Dest a2 is
+        // ExtraRomTocDestHost kseg0 like FILE[25] 0x8F140000.
+        // Dump vbase/vsize only. Not 0x81360000.
         public const uint ExtraRomTocSrc = 0x8E000000;
+        public const uint ExtraRomTocSrcLim = 0x8E800000;
         public const uint ExtraRomTocDestHost = 0x8E800000;
         public const uint ExtraRomTocDestHostLim = 0x8F000000;
         public const uint CeAllocGranularity = 0x10000;
@@ -1497,6 +1503,7 @@ namespace ProcessorEmulator.Core
         private static uint _ddiNopDecompCb;
         private static uint _ddiNopDecompDest;
         private static uint _ddiNopDecompVsize;
+        private static uint _ddiNopDecompHdr;
         private static bool _ddiNopInnerCap;
         private static int _ddiNopInnerPages;
 
@@ -1559,6 +1566,7 @@ namespace ProcessorEmulator.Core
             _ddiNopDecompCb = psize;
             _ddiNopDecompDest = dest;
             _ddiNopDecompVsize = vsize;
+            _ddiNopDecompHdr = 0;
             _ddiNopInnerCap = false;
             _ddiNopInnerPages = 0;
             uint first = 0;
@@ -1566,6 +1574,7 @@ namespace ProcessorEmulator.Core
             try
             {
                 first = bus.Read32(src);
+                _ddiNopDecompHdr = first;
             }
             catch
             {
@@ -1584,14 +1593,17 @@ namespace ProcessorEmulator.Core
             catch
             {
             }
-            System.Console.WriteLine("[Hive] ExtraROM VALLOC dest then CEDecompressROM dest=0x" +
-                dest.ToString("X8") + " src=0x" + src.ToString("X8") +
-                " vsize=0x" + vsize.ToString("X") +
-                " psize=0x" + psize.ToString("X") +
-                " src0=0x" + first.ToString("X8") +
+            string ddi = "[Hive] ExtraROM ddi_nop CEDecompressROM a0=0x" +
+                src.ToString("X8") +
+                " a1=0x" + psize.ToString("X8") +
+                " a2=0x" + dest.ToString("X8") +
+                " a3=0x" + vsize.ToString("X8") +
+                " (src/cb/dest/vsize) src0=0x" + first.ToString("X8") +
                 " page0=0x" + page0.ToString("X8") +
                 " dest-" + (DestReadable(bus, dest) ? "mapped" : "unmapped") +
-                " (firmware 0x8004DBF8 skip=0 convert=1 step=0x1000; LZX window at page0; keep ExtraROM first word)");
+                " (firmware 0x8004DBF8 skip=0 convert=1 step=0x1000; dump dataptr src; do not rewrite a0 to ExtraRomTocSrc)";
+            System.Console.WriteLine(ddi);
+            BootLog.Write(ddi);
             return true;
         }
 
@@ -1659,11 +1671,13 @@ namespace ProcessorEmulator.Core
             uint vsize = _ddiNopDecompVsize;
             uint src = _ddiNopDecompSrc;
             uint cb = _ddiNopDecompCb;
+            uint hdr = _ddiNopDecompHdr;
             _ddiNopDecompRa = 0;
             uint v0 = regs != null && regs.Length > 2 ? regs[2] : 0;
             uint a0 = regs != null && regs.Length > 4 ? regs[4] : 0;
             uint a1 = regs != null && regs.Length > 5 ? regs[5] : 0;
             uint a2 = regs != null && regs.Length > 6 ? regs[6] : 0;
+            uint a3 = regs != null && regs.Length > 7 ? regs[7] : 0;
             uint word = 0;
             uint entry = 0;
             bool mapped = false;
@@ -1718,6 +1732,8 @@ namespace ProcessorEmulator.Core
                 note = " (firmware returned 0)";
             else
                 note = "";
+            if (mapped && word != 0 && hdr != 0 && word == hdr)
+                note += " (dest is src header; not expanded)";
             string destKind = dest >= ExtraRomTocDestHost && dest < ExtraRomTocDestHostLim
                 ? "kseg0 ExtraRomTocDestHost"
                 : dest == Tv2FileDest
@@ -1732,10 +1748,12 @@ namespace ProcessorEmulator.Core
                 " a0=0x" + src.ToString("X8") +
                 " a1=0x" + cb.ToString("X8") +
                 " a2=0x" + dest.ToString("X8") +
-                " (src/cb/dest)" +
+                " a3=0x" + vsize.ToString("X8") +
+                " (src/cb/dest/vsize)" +
                 " live-a0=0x" + a0.ToString("X8") +
                 " live-a1=0x" + a1.ToString("X8") +
                 " live-a2=0x" + a2.ToString("X8") +
+                " live-a3=0x" + a3.ToString("X8") +
                 (mapped ? " word=0x" + word.ToString("X8") : " dest-unmapped") +
                 (entryMapped ? " entry=0x" + entry.ToString("X8") : "") +
                 " " + destKind +
@@ -1754,7 +1772,8 @@ namespace ProcessorEmulator.Core
                         " a2=0x" + dest.ToString("X8")
                     : (v0 == 0 ? "firmware returned 0" : "firmware CEDecompressROM");
             BootLog.DecompressRom(decompName, dest, v0, decompWhy);
-            bool expanded = v0 == vsize || (mapped && word != 0 && v0 != 0xFFFFFFFFu);
+            bool header = mapped && word != 0 && hdr != 0 && word == hdr;
+            bool expanded = mapped && word != 0 && !header && v0 != 0xFFFFFFFFu;
             if (expanded)
                 MarkExtraRomTocDecompressed(dest);
             _tocDecompSlot = null;
@@ -2493,6 +2512,7 @@ namespace ProcessorEmulator.Core
             _ddiNopDecompCb = 0;
             _ddiNopDecompDest = 0;
             _ddiNopDecompVsize = 0;
+            _ddiNopDecompHdr = 0;
             _ddiNopInnerCap = false;
             _ddiNopInnerPages = 0;
             _ddiNopBindHdr = false;
@@ -2710,7 +2730,13 @@ namespace ProcessorEmulator.Core
             _tocDestDump = null;
             _tocDestVsize = null;
             _tocDestKseg = null;
+            _tocDestReady = null;
             _tocDestN = 0;
+            _tocSrcPool = ExtraRomTocSrc;
+            _tocSrcPtr = null;
+            _tocSrcLen = null;
+            _tocSrcKseg = null;
+            _tocSrcN = 0;
             _tocDecompSlot = null;
             _loadE32Obj = 0;
         }
@@ -4556,34 +4582,20 @@ namespace ProcessorEmulator.Core
             uint real = slot.O32Words[4];
             if (vsize == 0 || psize == 0 || psize > 0x40000 || vsize > 0x80000)
                 return false;
-            // Slot-0 dump dest (bcmuart 0x00F21000) is not guest-RAM.
-            // ddi_nop expands to VALLOC 0x01981000; FILE[25] to
-            // 0x8F140000. Pass ExtraRomTocDestHost kseg0 as dest
-            // (dump vsize). Map dump dest/vbase onto that window.
-            // Do not invent 0x81360000. Do not force LoadE32 v0=1.
+            // a0 is dump o32 dataptr (bcmuart destDump 0x02F21000
+            // / ExtraROM compressed bytes). Do not rewrite a0 to
+            // ExtraRomTocSrc. Dest a2 is ExtraRomTocDestHost
+            // kseg0 like FILE[25] 0x8F140000. Dump vbase/vsize.
+            if (dataptr == 0)
+                dataptr = slot.Dest;
+            if (dataptr == 0)
+                return false;
             uint slot0 = real != 0 ? (real & SlotMask) : (slot.Dest & SlotMask);
             if (slot0 == 0)
                 return false;
-            uint src = ExtraRomTocSrc;
-            try
-            {
-                uint[] blob = slot.Data != null && slot.Data.Length > 0 ? slot.Data[0] : null;
-                uint n = (psize + 3) / 4;
-                for (uint w = 0; w < n; w++)
-                {
-                    uint word = blob != null && w < blob.Length
-                        ? blob[w]
-                        : (dataptr != 0 ? bus.Read32(dataptr + w * 4) : 0);
-                    bus.Write32(src + w * 4, word);
-                }
-            }
-            catch (System.Exception ex)
-            {
-                System.Console.WriteLine("[Hive] ExtraROM TOC[" + slot.Index + "] " +
-                    slot.Name + " src-prep fail " + ex.Message +
-                    " (do not invent 0x81360000)");
+            uint src = dataptr;
+            if (!HostSrcExtraRomToc(bus, slot, src, psize))
                 return false;
-            }
             uint dest;
             if (!HostBackExtraRomTocDest(bus, slot, slot0, vsize, out dest))
                 return false;
@@ -4611,6 +4623,7 @@ namespace ProcessorEmulator.Core
             _ddiNopDecompCb = psize;
             _ddiNopDecompDest = dest;
             _ddiNopDecompVsize = vsize;
+            _ddiNopDecompHdr = 0;
             _ddiNopInnerCap = false;
             _ddiNopInnerPages = 0;
             _tocDecompSlot = slot;
@@ -4619,6 +4632,7 @@ namespace ProcessorEmulator.Core
             try
             {
                 src0 = bus.Read32(src);
+                _ddiNopDecompHdr = src0;
             }
             catch
             {
@@ -4628,18 +4642,63 @@ namespace ProcessorEmulator.Core
                 slot.Name + " CEDecompressROM a0=0x" + src.ToString("X8") +
                 " a1=0x" + psize.ToString("X8") +
                 " a2=0x" + dest.ToString("X8") +
-                " (src/cb/dest) dest=0x" + dest.ToString("X8") +
+                " a3=0x" + vsize.ToString("X8") +
+                " (src/cb/dest/vsize) dest=0x" + dest.ToString("X8") +
+                " dataptr=0x" + dataptr.ToString("X8") +
                 " slot0=0x" + slot0.ToString("X8") +
                 " destDump=0x" + slot.Dest.ToString("X8") +
                 " vbase=0x" + vbase.ToString("X8") +
-                " vsize=0x" + vsize.ToString("X") +
                 " o32.real=0x" + real.ToString("X8") +
                 " src0=0x" + src0.ToString("X8") +
-                " (kseg0 ExtraRomTocDestHost like FILE[25] 0x8F140000; dump vbase/vsize; not slot-0 0x00F21000; do not invent 0x81360000)";
+                " (dump o32 dataptr src; dest kseg0 like FILE[25] 0x8F140000; do not rewrite a0 to ExtraRomTocSrc; do not invent 0x81360000)";
             System.Console.WriteLine(start);
             BootLog.Write(start);
             BootLog.DecompressRom(slot.Name, dest, 0,
-                "start dump o32 CEDecompressROM; dest kseg0 ExtraRomTocDestHost; dump vbase/vsize; do not invent e32");
+                "start dump o32 dataptr CEDecompressROM; dest kseg0 ExtraRomTocDestHost; do not rewrite a0");
+            return true;
+        }
+
+        // Dump o32 dataptr bytes stay at dump dataptr VA. Backing
+        // is ExtraRomTocSrc pool. a0 stays dump dataptr.
+        private static bool HostSrcExtraRomToc(MipsBus bus, ExtraRomTocMod slot,
+            uint dataptr, uint psize)
+        {
+            if (bus == null || dataptr == 0 || psize == 0)
+                return false;
+            uint pages = (psize + 0x1FFFu) & ~0xFFFu;
+            if (_tocSrcPool + pages > ExtraRomTocSrcLim)
+                return false;
+            uint kseg = _tocSrcPool;
+            try
+            {
+                uint[] blob = slot.Data != null && slot.Data.Length > 0 ? slot.Data[0] : null;
+                uint n = (psize + 3) / 4;
+                for (uint w = 0; w < n; w++)
+                {
+                    uint word = blob != null && w < blob.Length ? blob[w] : 0;
+                    bus.Write32(kseg + w * 4, word);
+                }
+            }
+            catch (System.Exception ex)
+            {
+                System.Console.WriteLine("[Hive] ExtraROM TOC[" + slot.Index + "] " +
+                    slot.Name + " src-host fail " + ex.Message +
+                    " (do not invent 0x81360000)");
+                return false;
+            }
+            if (_tocSrcPtr == null)
+            {
+                _tocSrcPtr = new uint[32];
+                _tocSrcLen = new uint[32];
+                _tocSrcKseg = new uint[32];
+            }
+            if (_tocSrcN >= _tocSrcPtr.Length)
+                return false;
+            _tocSrcPtr[_tocSrcN] = dataptr;
+            _tocSrcLen[_tocSrcN] = psize;
+            _tocSrcKseg[_tocSrcN] = kseg;
+            _tocSrcN++;
+            _tocSrcPool += pages;
             return true;
         }
 
@@ -4674,6 +4733,7 @@ namespace ProcessorEmulator.Core
                 _tocDestDump = new uint[32];
                 _tocDestVsize = new uint[32];
                 _tocDestKseg = new uint[32];
+                _tocDestReady = new bool[32];
             }
             if (_tocDestN >= _tocDestSlot0.Length)
                 return false;
@@ -4681,6 +4741,7 @@ namespace ProcessorEmulator.Core
             _tocDestDump[_tocDestN] = slot.Dest;
             _tocDestVsize[_tocDestN] = pages;
             _tocDestKseg[_tocDestN] = kseg;
+            _tocDestReady[_tocDestN] = false;
             _tocDestN++;
             _tocDestHostPool += pages;
             dest = kseg;
@@ -4694,6 +4755,26 @@ namespace ProcessorEmulator.Core
             return va;
         }
 
+        public static uint MapExtraRomTocSrcVa(uint va)
+        {
+            for (int i = 0; i < _tocSrcN; i++)
+            {
+                uint ptr = _tocSrcPtr[i];
+                uint len = _tocSrcLen[i];
+                uint kseg = _tocSrcKseg[i];
+                if (ptr == 0 || len == 0 || kseg == 0)
+                    continue;
+                if (va >= ptr && va < ptr + len)
+                    return kseg + (va - ptr);
+                uint slot0 = ptr & SlotMask;
+                uint off = va & SlotMask;
+                if ((va >> 25) == (ptr >> 25)
+                    && off >= slot0 && off < slot0 + len)
+                    return kseg + (off - slot0);
+            }
+            return va;
+        }
+
         public static uint MapExtraRomTocDestVa(uint va)
         {
             for (int i = 0; i < _tocDestN; i++)
@@ -4702,11 +4783,15 @@ namespace ProcessorEmulator.Core
                 uint dump = _tocDestDump[i];
                 uint vsize = _tocDestVsize[i];
                 uint kseg = _tocDestKseg[i];
-                if (slot0 == 0 || kseg == 0 || vsize == 0)
+                if (kseg == 0 || vsize == 0)
+                    continue;
+                if (va >= kseg && va < kseg + vsize)
+                    return va;
+                if (_tocDestReady == null || !_tocDestReady[i])
                     continue;
                 uint off = va & SlotMask;
                 uint base0 = slot0 & SlotMask;
-                if (off >= base0 && off < base0 + vsize)
+                if (slot0 != 0 && off >= base0 && off < base0 + vsize)
                     return kseg + (off - base0);
                 if (dump != 0)
                 {
@@ -4724,13 +4809,21 @@ namespace ProcessorEmulator.Core
             if (_tocDecompSlot != null
                 && (_tocDecompSlot.DecompDest == dest || dest == 0))
                 _tocDecompSlot.Decompressed = true;
-            if (_romTocMods == null || dest == 0)
-                return;
-            for (int i = 0; i < _romTocCount; i++)
+            if (_romTocMods != null && dest != 0)
             {
-                ExtraRomTocMod s = _romTocMods[i];
-                if (s != null && s.DecompDest != 0 && s.DecompDest == dest)
-                    s.Decompressed = true;
+                for (int i = 0; i < _romTocCount; i++)
+                {
+                    ExtraRomTocMod s = _romTocMods[i];
+                    if (s != null && s.DecompDest != 0 && s.DecompDest == dest)
+                        s.Decompressed = true;
+                }
+            }
+            if (_tocDestReady == null || dest == 0)
+                return;
+            for (int i = 0; i < _tocDestN; i++)
+            {
+                if (_tocDestKseg[i] == dest)
+                    _tocDestReady[i] = true;
             }
         }
 
@@ -4792,6 +4885,11 @@ namespace ProcessorEmulator.Core
             uint wordMap = mapped != 0 && mapped != dest0
                 ? PeekDestWord(bus, mapped) : 0;
             uint word = word0 != 0 ? word0 : (wordDump != 0 ? wordDump : wordMap);
+            uint hdr = 0;
+            if (slot.Data != null && slot.Data.Length > 0
+                && slot.Data[0] != null && slot.Data[0].Length > 0)
+                hdr = slot.Data[0][0];
+            bool header = hdr != 0 && word == hdr;
             bool ran = slot.Decompressed || slot.DecompDest != 0;
             string why;
             if (!ran)
@@ -4801,6 +4899,9 @@ namespace ProcessorEmulator.Core
                     " dump-dest=0x" + destDump.ToString("X8") +
                     " vbase=0x" + vbase.ToString("X8") +
                     " slot0-word=0 dump-word=0 map-word=0; expanded image not on hook dest";
+            else if (header)
+                why = "dest word=0x" + word.ToString("X8") +
+                    " is src header; not expanded; do not return dump vbase";
             else if (vbase == 0)
                 why = "dest word=0x" + word.ToString("X8") +
                     " but dump vbase=0; do not invent e32";
@@ -4820,7 +4921,7 @@ namespace ProcessorEmulator.Core
                 " (" + why + ")";
             System.Console.WriteLine(line);
             BootLog.Write(line);
-            if (word == 0 || vbase == 0)
+            if (word == 0 || header || vbase == 0)
             {
                 BootLog.Rom("miss", "ExtraROM", "TOC", slot.Index, slot.Name, 7, dest0, word, vbase, why);
                 return false;
@@ -9704,6 +9805,7 @@ namespace ProcessorEmulator.Core
             _ddiNopDecompCb = 0;
             _ddiNopDecompDest = 0;
             _ddiNopDecompVsize = 0;
+            _ddiNopDecompHdr = 0;
             _ddiNopInnerCap = false;
             _ddiNopInnerPages = 0;
             _ddiNopBindHdr = false;
