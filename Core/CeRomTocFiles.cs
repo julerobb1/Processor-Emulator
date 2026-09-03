@@ -6984,7 +6984,7 @@ namespace ProcessorEmulator.Core
 
         private static string FormatExtraRomHdrMapped(MipsBus bus)
         {
-            uint word;
+            uint word = 0;
             bool mapped = bus != null
                 && TryRead32(va => bus.Read32(va), ExtraRomDumpHdr, out word);
             string host = _extraRomHdr != 0
