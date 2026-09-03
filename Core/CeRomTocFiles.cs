@@ -1702,9 +1702,83 @@ namespace ProcessorEmulator.Core
             if (regs == null || regs.Length <= 6)
                 return false;
             uint dest = regs[4];
-            // ExtraROM type-7 VirtualAlloc is destDump (o32.real).
-            // Observe firmware a0/a2/a3. Do not rewrite those for
-            // mscoree/nleddrvr. ddi_nop Display dest stays.
+            ExtraRomTocMod type7 = FindCachedTocByDest(dest);
+            if (type7 == null && (dest & 0xF0000000u) == 0x60000000u
+                && !string.IsNullOrEmpty(_loadE32OkName))
+                type7 = FindCachedExtraRomToc(_loadE32OkName);
+            if (type7 != null && type7.Dest != 0
+                && !NamesMatchRom(type7.Name, "ddi_nop.dll"))
+                return TryReserveExtraRomType7DestDump(regs, type7);
+            // ddi_nop Display dest stays the working OpenFile path.
+            return TryReserveExtraRomVallocDdiNopTail(regs, dest);
+        }
+
+        // Live eaeb634: MEM_COMMIT of ExtraROM type-7 destDump
+        // (nleddrvr 0x02F81000 / bcmuart 0x02F21000 / mscoree
+        // 0x034B1000) returned 0. last-error 14. Wrapper v0=0xE
+        // is that OOM. Same miss as ddi_nop slot-1 0x03981000:
+        // current process has no reservation. destDump is the
+        // VA (o32.real). dest0 is only destDump&SlotMask.
+        // Live 0x800283FC one-liner a0=0x60002020 is o32 flags
+        // sampled at jal 0x8001AD50; dump jal a0=s4=destDump
+        // a2=0x1000 a3=0x40. Do not treat flags as the address.
+        // Add MEM_RESERVE so firmware COMMIT can succeed.
+        // Host-back zeros only. Do not invent dest bytes.
+        // Do not host-CEDecompressROM slot-0. ddi_nop stays
+        // on the OpenFile path below.
+        private static bool TryReserveExtraRomType7DestDump(uint[] regs, ExtraRomTocMod type7)
+        {
+            if (regs == null || regs.Length <= 6 || type7 == null)
+                return false;
+            uint destDump = type7.Dest;
+            if (destDump == 0 || destDump >= 0x80000000u)
+                return false;
+            if (NamesMatchRom(type7.Name, "ddi_nop.dll")
+                || IsExtraRomDdiNopDest(destDump)
+                || IsExtraRomDdiNopDest(type7.Dest & SlotMask))
+                return false;
+
+            uint a0 = regs[4];
+            uint size = regs[5];
+            uint type = regs[6];
+            uint dest0 = destDump & SlotMask;
+
+            if (a0 != destDump)
+                regs[4] = destDump;
+
+            if (size == 0 || size == 1 || size > 0x01000000u)
+            {
+                uint vsize = type7.O32Words != null && type7.O32Words.Length > 0
+                    ? type7.O32Words[0] : 0;
+                if (vsize == 0 || vsize > 0x01000000u)
+                    vsize = 0x1000;
+                size = (vsize + 0xFFFu) & ~0xFFFu;
+                regs[5] = size;
+            }
+
+            if (type == 0 || type == 1 || (type & 0xF0000000u) == 0x60000000u)
+                type = 0x1000u;
+            if ((type & MemReserve) == 0)
+                type |= MemReserve;
+            regs[6] = type;
+
+            if (MapVallocHostVa(destDump) == destDump)
+                TryHostBackValloc(destDump, destDump, size, type, false);
+
+            BootLog.Write(
+                "[Hive] TOC[" + type7.Index + "] " + type7.Name
+                + " destDump reserve destDump=0x" + destDump.ToString("X8")
+                + " dest0=0x" + dest0.ToString("X8")
+                + " a0was=0x" + a0.ToString("X8")
+                + " size=0x" + size.ToString("X")
+                + " type=0x" + type.ToString("X")
+                + " slot-" + (destDump >> 25)
+                + " MEM_RESERVE+COMMIT. no dest bytes.");
+            return true;
+        }
+
+        private static bool TryReserveExtraRomVallocDdiNopTail(uint[] regs, uint dest)
+        {
             if (!IsExtraRomDdiNopDest(dest))
                 return false;
             // o32[0].real is vbase+0x1000. BindImp reads IMP
@@ -7244,7 +7318,12 @@ namespace ProcessorEmulator.Core
                 _loadE32OkMapVallocA2 = regs != null && regs.Length > 6 ? regs[6] : 0;
                 _loadE32OkMapVallocA3 = regs != null && regs.Length > 7 ? regs[7] : 0;
                 _loadE32OkObj6 = PeekObj6(bus, _loadE32OkObj);
-                HiveWatch(bus, "0x800283FC a0=0x" + _loadE32OkMapVallocA0.ToString("X8")
+                uint a0log = _loadE32OkMapVallocA0;
+                if ((a0log & 0xF0000000u) == 0x60000000u && _loadE32OkDest != 0)
+                    a0log = _loadE32OkDest;
+                HiveWatch(bus, "0x800283FC a0=0x" + a0log.ToString("X8")
+                    + ((_loadE32OkMapVallocA0 & 0xF0000000u) == 0x60000000u
+                        ? " (flags; destDump)" : "")
                     + " a2=0x" + _loadE32OkMapVallocA2.ToString("X")
                     + " a3=0x" + _loadE32OkMapVallocA3.ToString("X"), 0);
                 return;

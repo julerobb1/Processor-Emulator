@@ -452,15 +452,13 @@ namespace ProcessorEmulator.Core
                         " a2=0x" + a2.ToString("X8"));
                 return false;
             }
+            if (pc == KernelValloc)
+                CeRomTocFiles.TryReserveExtraRomValloc(registers);
             if (pc == KernelValloc && (!string.IsNullOrEmpty(_cprocName)
                 || _logged.Contains("hive:ldde32")
                 || _gwesWatch
                 || CeRomTocFiles.IsTv2FileExpanded()))
             {
-                if (_logged.Contains("hive:ldde32")
-                    || _logged.Contains("hive:ldde32:mscoree")
-                    || _logged.Contains("hive:ldde32:ole32"))
-                    CeRomTocFiles.TryReserveExtraRomValloc(registers);
                 uint a0 = registers[4];
                 uint a1 = registers[5];
                 uint a2 = registers[6];
