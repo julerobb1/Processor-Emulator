@@ -1809,8 +1809,30 @@ namespace ProcessorEmulator.Core
                 if (pages > regs[5])
                     regs[5] = pages;
             }
+            // Live bcc3157b: 0x8001AE08 v0=0x01980000 then
+            // CEDecompressROM dest=0x01981000 v0=0x1743A.
+            // dest0-word stayed 0. dest0 is useg; stores
+            // TLB-miss and PeekDestWord returns 0. Existing
+            // ExtraRomDestKseg0 / TryHostBackValloc backs
+            // VALLOC dest at kseg0 (zeros only) so lbu/sb
+            // land. NoteExtraRomVallocRet sets DestOn too
+            // late (hive:ldde32). Back dest0 here, before
+            // firmware writes. Do not copy destDump onto
+            // dest0. Do not invent dest.
+            uint dest0Base = dest & SlotMask;
+            uint backSize = regs.Length > 5 ? regs[5] : 0x1000u;
+            if (backSize == 0 || backSize > 0x01000000u)
+                backSize = 0x30000u;
+            if (MapVallocHostVa(dest0Base) == dest0Base)
+                TryHostBackValloc(dest0Base, dest0Base, backSize, regs[6], false);
+            _ddiNopDestOn = true;
+            _ddiNopSlot0 = dest0Base != 0 ? dest0Base : (DdiNopVbase & SlotMask);
+            BootLog.Write("[Hive] ExtraROM ddi_nop dest0 back dest0=0x" +
+                dest0Base.ToString("X8") +
+                " size=0x" + backSize.ToString("X") +
+                " (slot-0 host-back so dest=0x01981000 stores land; zeros only)");
             if (!needReserve && header == 0)
-                return false;
+                return true;
             System.Console.WriteLine("[Hive] ExtraROM VALLOC a0=0x" +
                 dest.ToString("X8") + " type 0x" + type.ToString("X") +
                 " -> 0x" + regs[6].ToString("X") +
