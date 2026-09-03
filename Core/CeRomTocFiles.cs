@@ -7091,18 +7091,22 @@ namespace ProcessorEmulator.Core
             uint word0 = PeekDestWord(bus, dest0);
             uint slot = destDump >> 25;
             string miss = "";
-            if (_loadE32OkMapValloc && _loadE32OkMapVallocV0 == 0 && wordDump == 0)
+            if (_loadE32OkMapValloc && _loadE32OkMapVallocV0 == 0 && wordDump == 0 && word0 == 0)
                 miss = " slot-" + slot + " destDump COMMIT no reserve last-error 14";
-            else if (v0 == 0xE && ev != null && ev.IndexOf("wrapper", System.StringComparison.Ordinal) >= 0)
+            else if (v0 == 0xE && ev != null && ev.IndexOf("wrapper", System.StringComparison.Ordinal) >= 0
+                && word0 == 0)
                 miss = " MapO32 v0=0xE after slot-" + slot + " COMMIT no reserve; LoadO32 was 0";
             else if ((_loadE32OkMap28844 || _loadE32OkMapO32) && wordDump == 0 && word0 == 0)
                 miss = " destDump-word=0 dest0-word=0; slot-" + slot + " COMMIT miss";
+            else if (wordDump == 0 && word0 != 0)
+                miss = " dest0-word set; firmware dest is dest0";
             BootLog.Write("[Hive] TOC[" + _loadE32OkIndex + "] " + _loadE32OkName
                 + " " + ev
                 + " v0=0x" + v0.ToString("X")
                 + " destDump=0x" + destDump.ToString("X8")
                 + " dump-word=0x" + wordDump.ToString("X")
                 + " dest0=0x" + dest0.ToString("X8")
+                + " dest0-word=0x" + word0.ToString("X")
                 + " object+6=" + _loadE32OkObj6
                 + " 0x80028844=" + _loadE32OkMap28844
                 + miss);
@@ -7698,7 +7702,6 @@ namespace ProcessorEmulator.Core
                 slot = FindCachedExtraRomToc(name);
             if (slot == null)
                 return false;
-            uint vbase = DumpTocVbase(slot);
             uint destDump = slot.Dest;
             uint dest0 = destDump & SlotMask;
             uint wordDump = PeekDestWord(bus, destDump);
@@ -7707,18 +7710,49 @@ namespace ProcessorEmulator.Core
             if (slot.Data != null && slot.Data.Length > 0
                 && slot.Data[0] != null && slot.Data[0].Length > 0)
                 hdr = slot.Data[0][0];
-            bool header = hdr != 0 && wordDump == hdr;
+            bool headerDump = hdr != 0 && wordDump == hdr;
+            bool header0 = hdr != 0 && word0 == hdr;
+            // Live 112975ca: CEDecompressROM dest=0x01981000
+            // (dest0). 0x8001AE08 v0=0x01980000. destDump
+            // 0x03981000 stayed 0. Watch of destDump is a
+            // miss. Serve dest firmware wrote. When dest is
+            // dest0, serve dest0, not destDump / dump vbase.
+            // Do not copy destDump onto dest0. Do not invent
+            // dest. Do not host-CEDecompressROM.
+            uint fwDest = 0;
+            uint fwWord = 0;
+            if (wordDump != 0 && !headerDump)
+            {
+                fwDest = destDump;
+                fwWord = wordDump;
+            }
+            else if (word0 != 0 && !header0)
+            {
+                fwDest = dest0;
+                fwWord = word0;
+            }
+            uint vbase = DumpTocVbase(slot);
+            if (fwDest == dest0 && dest0 != destDump)
+            {
+                if (slot.O32Words != null && slot.O32Words.Length >= 2
+                    && slot.O32Words[1] == 0x1000 && dest0 >= 0x1000)
+                    vbase = dest0 - 0x1000;
+                else
+                    vbase = dest0;
+            }
             string why;
-            if (wordDump == 0)
+            if (fwDest == 0)
             {
                 why = slot.FwMapO32
                     ? "slot-" + (destDump >> 25) + " destDump COMMIT no reserve last-error 14"
-                    : "destDump-word=0; serve destDump only if firmware wrote it";
+                    : "dest-word=0 at destDump and dest0; serve dest firmware wrote";
             }
-            else if (header)
+            else if (headerDump && fwDest == destDump)
                 why = "destDump is src header; do not serve destDump";
+            else if (fwDest == dest0 && dest0 != destDump)
+                why = "CEDecompressROM dest is dest0; serve dest0";
             else if (vbase == 0)
-                why = "destDump-word set dump vbase=0; do not invent e32";
+                why = "dest-word set dump vbase=0; do not invent e32";
             else
                 why = "destDump-word set; serve destDump o32.real";
             BootLog.Write("[Hive] TOC[" + slot.Index + "] " + slot.Name +
@@ -7728,14 +7762,15 @@ namespace ProcessorEmulator.Core
                 " dest0-word=0x" + word0.ToString("X") +
                 " 0x80028844=" + slot.FwMapO32 +
                 " " + why);
-            if (wordDump == 0 || header || vbase == 0)
+            if (fwDest == 0 || vbase == 0)
             {
                 BootLog.Rom("miss", "ExtraROM", "TOC", slot.Index, slot.Name, 7, destDump, wordDump, vbase, why);
                 return false;
             }
+            slot.DecompDest = fwDest;
             slot.Vbase = vbase;
-            regs[2] = vbase;
-            BootLog.Rom("ok", "ExtraROM", "TOC", slot.Index, slot.Name, 7, destDump, wordDump, vbase, why);
+            regs[2] = fwDest == dest0 && dest0 != destDump ? dest0 : vbase;
+            BootLog.Rom("ok", "ExtraROM", "TOC", slot.Index, slot.Name, 7, fwDest, fwWord, regs[2], why);
             return true;
         }
 
