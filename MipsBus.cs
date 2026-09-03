@@ -120,16 +120,26 @@ namespace ProcessorEmulator.Emulation
             vaddr = CeRomTocFiles.MapExtraRomE32HostVa(vaddr);
             vaddr = CeRomTocFiles.MapExtraRomTocSrcVa(vaddr);
             vaddr = CeRomTocFiles.MapExtraRomTocDestVa(vaddr);
-            uint paddr = Translate(vaddr, isStore: true);
-            IBusDevice device = _lookupTable[paddr >> 16];
-
-            if (device != null)
+            bool watch = CeRomTocFiles.TryNoteDdiNopDecompStore(vaddr, value);
+            try
             {
-                uint valueToStore = IsBigEndian ? Swap(value) : value;
-                device.Write32(paddr - device.StartAddress, valueToStore);
-                return;
+                uint paddr = Translate(vaddr, isStore: true);
+                IBusDevice device = _lookupTable[paddr >> 16];
+
+                if (device != null)
+                {
+                    uint valueToStore = IsBigEndian ? Swap(value) : value;
+                    device.Write32(paddr - device.StartAddress, valueToStore);
+                    return;
+                }
+                throw new AddressErrorException($"Write to unmapped physical address 0x{paddr:X8}");
             }
-            throw new AddressErrorException($"Write to unmapped physical address 0x{paddr:X8}");
+            catch
+            {
+                if (watch)
+                    CeRomTocFiles.TryNoteDdiNopDecompStoreThrow(vaddr);
+                throw;
+            }
         }
         
         public byte Read8(uint vaddr)
@@ -166,15 +176,25 @@ namespace ProcessorEmulator.Emulation
             vaddr = CeRomTocFiles.MapExtraRomE32HostVa(vaddr);
             vaddr = CeRomTocFiles.MapExtraRomTocSrcVa(vaddr);
             vaddr = CeRomTocFiles.MapExtraRomTocDestVa(vaddr);
-            uint paddr = Translate(vaddr, isStore: true);
-            IBusDevice device = _lookupTable[paddr >> 16];
-
-            if (device != null)
+            bool watch = CeRomTocFiles.TryNoteDdiNopDecompStore(vaddr, value);
+            try
             {
-                device.Write8(paddr - device.StartAddress, value);
-                return;
+                uint paddr = Translate(vaddr, isStore: true);
+                IBusDevice device = _lookupTable[paddr >> 16];
+
+                if (device != null)
+                {
+                    device.Write8(paddr - device.StartAddress, value);
+                    return;
+                }
+                throw new AddressErrorException($"Write to unmapped physical address 0x{paddr:X8}");
             }
-            throw new AddressErrorException($"Write to unmapped physical address 0x{paddr:X8}");
+            catch
+            {
+                if (watch)
+                    CeRomTocFiles.TryNoteDdiNopDecompStoreThrow(vaddr);
+                throw;
+            }
         }
 
         public void WriteBytes(uint vaddr, byte[] data)

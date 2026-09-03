@@ -1947,6 +1947,10 @@ namespace ProcessorEmulator.Core
             catch
             {
             }
+            // Live c710c07: dest-word 0 at dest0/dest6;
+            // dest10 word 0x806F0000 is a kseg pointer, not MZ.
+            // Count host stores from this jal until ret.
+            BeginDdiNopDecompStoreWatch(bus);
         }
 
         public static bool TryNoteExtraRomInnerDest(MipsBus bus, uint[] regs)
@@ -2016,6 +2020,8 @@ namespace ProcessorEmulator.Core
             uint src = _ddiNopDecompSrc;
             uint cb = _ddiNopDecompCb;
             uint hdr = _ddiNopDecompHdr;
+            LogDdiNopDecompStores();
+            _ddiNopDecompWatch = false;
             _ddiNopDecompRa = 0;
             uint v0 = regs != null && regs.Length > 2 ? regs[2] : 0;
             uint a0 = regs != null && regs.Length > 4 ? regs[4] : 0;
@@ -3016,6 +3022,7 @@ namespace ProcessorEmulator.Core
             _ddiNopDecompDest = 0;
             _ddiNopDecompVsize = 0;
             _ddiNopDecompHdr = 0;
+            ResetDdiNopDecompStores();
             _ddiNopDestWordLogged = false;
             _ddiNopObserve = false;
             _ddiNopInnerCap = false;
@@ -7733,6 +7740,179 @@ namespace ProcessorEmulator.Core
             }
         }
 
+        // Live c710c07 dest6/dest10 from l2=0x401BC71E.
+        // dest10 word 0x806F0000 is a kseg page pointer, not MZ.
+        private const uint DdiNopDest0Page = 0x01981000u;
+        private const uint DdiNopDestDumpPage = 0x03981000u;
+        private const uint DdiNopDestKseg0Page = 0x81981000u;
+        private const uint DdiNopDest6Live = 0x86F1C000u;
+        private const uint DdiNopDest10Live = 0x806F1000u;
+
+        private static void ResetDdiNopDecompStores()
+        {
+            _ddiNopDecompWatch = false;
+            _ddiNopWatchDest6 = DdiNopDest6Live;
+            _ddiNopWatchDest10 = DdiNopDest10Live;
+            _ddiNopStoreN0 = 0;
+            _ddiNopStoreN6 = 0;
+            _ddiNopStoreN10 = 0;
+            _ddiNopStoreND = 0;
+            _ddiNopStoreNK = 0;
+            _ddiNopStoreFirstVa = 0;
+            _ddiNopStoreFirstVal = 0;
+            _ddiNopStoreLastVa = 0;
+            _ddiNopStoreLastVal = 0;
+            _ddiNopStoreThrew0 = false;
+            _ddiNopStoreThrew6 = false;
+            _ddiNopStoreThrew10 = false;
+            _ddiNopStoreThrewD = false;
+            _ddiNopStoreThrewK = false;
+        }
+
+        private static void WalkDdiNopWatchDests(MipsBus bus)
+        {
+            _ddiNopWatchDest6 = DdiNopDest6Live;
+            _ddiNopWatchDest10 = DdiNopDest10Live;
+            if (bus == null)
+                return;
+            uint dest0 = DdiNopDest0Page;
+            uint sec = PeekSection(bus, 0);
+            if (sec == 0 || sec == 1)
+                return;
+            uint l1Ptr = sec + (((dest0 >> 16) & 0x1FFu) * 4);
+            uint l1;
+            if (!TryPeekWord(bus, l1Ptr, out l1) || l1 == 0 || l1 == 1)
+                return;
+            uint l2Ptr = l1 + ((((dest0 >> 12) & 0xFu) + 3) * 4);
+            uint l2;
+            if (!TryPeekWord(bus, l2Ptr, out l2) || l2 == 0 || (l2 & 2) == 0)
+                return;
+            uint dest6 = 0x80000000u | ((((l2 >> 6) << 12) & 0x1FFFFFFFu));
+            dest6 |= dest0 & 0xFFFu;
+            uint dest10 = 0x80000000u | ((((l2 >> 10) << 12) & 0x1FFFFFFFu));
+            dest10 |= dest0 & 0xFFFu;
+            if (dest6 != 0)
+                _ddiNopWatchDest6 = dest6;
+            if (dest10 != 0)
+                _ddiNopWatchDest10 = dest10;
+        }
+
+        private static void BeginDdiNopDecompStoreWatch(MipsBus bus)
+        {
+            ResetDdiNopDecompStores();
+            WalkDdiNopWatchDests(bus);
+            _ddiNopDecompWatch = true;
+        }
+
+        private static int DdiNopDecompStoreSlot(uint mappedVa)
+        {
+            uint page = mappedVa & ~0xFFFu;
+            if (page == DdiNopDest0Page)
+                return 0;
+            if (page == (_ddiNopWatchDest6 & ~0xFFFu))
+                return 1;
+            if (page == (_ddiNopWatchDest10 & ~0xFFFu))
+                return 2;
+            if (page == DdiNopDestDumpPage)
+                return 3;
+            if (page == DdiNopDestKseg0Page)
+                return 4;
+            return -1;
+        }
+
+        // Count after Map* so dest0 remapped to dest6 counts
+        // as dest6. Do not invent dest.
+        public static bool TryNoteDdiNopDecompStore(uint mappedVa, uint value)
+        {
+            if (!_ddiNopDecompWatch)
+                return false;
+            int slot = DdiNopDecompStoreSlot(mappedVa);
+            if (slot < 0)
+                return false;
+            if (slot == 0)
+                _ddiNopStoreN0++;
+            else if (slot == 1)
+                _ddiNopStoreN6++;
+            else if (slot == 2)
+                _ddiNopStoreN10++;
+            else if (slot == 3)
+                _ddiNopStoreND++;
+            else
+                _ddiNopStoreNK++;
+            if (_ddiNopStoreFirstVa == 0)
+            {
+                _ddiNopStoreFirstVa = mappedVa;
+                _ddiNopStoreFirstVal = value;
+            }
+            _ddiNopStoreLastVa = mappedVa;
+            _ddiNopStoreLastVal = value;
+            return true;
+        }
+
+        public static void TryNoteDdiNopDecompStoreThrow(uint mappedVa)
+        {
+            if (!_ddiNopDecompWatch)
+                return;
+            int slot = DdiNopDecompStoreSlot(mappedVa);
+            if (slot == 0)
+                _ddiNopStoreThrew0 = true;
+            else if (slot == 1)
+                _ddiNopStoreThrew6 = true;
+            else if (slot == 2)
+                _ddiNopStoreThrew10 = true;
+            else if (slot == 3)
+                _ddiNopStoreThrewD = true;
+            else if (slot == 4)
+                _ddiNopStoreThrewK = true;
+        }
+
+        private static void LogDdiNopDecompStores()
+        {
+            BootLog.Write("[Hive] ExtraROM ddi_nop dest stores dest0=" +
+                _ddiNopStoreN0 +
+                " dest6=" + _ddiNopStoreN6 +
+                " dest10=" + _ddiNopStoreN10 +
+                " dump=" + _ddiNopStoreND +
+                " kseg0=" + _ddiNopStoreNK +
+                " first=0x" + _ddiNopStoreFirstVa.ToString("X8") +
+                ":0x" + _ddiNopStoreFirstVal.ToString("X8") +
+                " last=0x" + _ddiNopStoreLastVa.ToString("X8") +
+                ":0x" + _ddiNopStoreLastVal.ToString("X8") +
+                " threw=" + (_ddiNopStoreThrew6 ? "6" : "") +
+                (_ddiNopStoreThrew10 ? "A" : "") +
+                (_ddiNopStoreThrew0 ? "0" : "") +
+                (_ddiNopStoreThrewD ? "D" : "") +
+                (_ddiNopStoreThrewK ? "K" : ""));
+        }
+
+        // Live c710c07 dest10 pfn10-word 0x806F0000 is a
+        // kseg0 page pointer, not MZ. Do not serve dest10.
+        // First word must be expanded o32 (MZ or dump o32).
+        private static bool IsExpandedO32Word(uint word, uint hdr)
+        {
+            if (word == 0)
+                return false;
+            if (hdr != 0 && word == hdr)
+                return false;
+            if ((word & 0xE0000FFFu) == 0x80000000u)
+                return false;
+            if ((word & 0xFFFFu) == 0x5A4D)
+                return true;
+            uint dumpO32 = 0;
+            if (_ddiNopData != null && _ddiNopData.Length > 0
+                && _ddiNopData[0] != null && _ddiNopData[0].Length > 0)
+                dumpO32 = _ddiNopData[0][0];
+            if (dumpO32 != 0 && dumpO32 != hdr && word == dumpO32
+                && (dumpO32 & 0xFFFFu) == 0x5A4D)
+                return true;
+            return false;
+        }
+
+        private static bool DdiNopDestStoresAllowServe()
+        {
+            return _ddiNopStoreN0 != 0 || _ddiNopStoreN6 != 0;
+        }
+
         // Live 822671a: WalkFirmwarePte accepted pfn6 dest6
         // 0x86F1C000 because TryPeekWord succeeds on mapped
         // zeros. pfn10 never ran. After ddi_nop CEDecompressROM
@@ -7792,34 +7972,45 @@ namespace ProcessorEmulator.Core
             uint landed = 0;
             uint landedWord = 0;
             int hits = 0;
-            if (dest6 != 0 && w6 != 0 && (hdr == 0 || w6 != hdr))
+            // Live c710c07: dest10 word 0x806F0000 is a kseg
+            // pointer, not MZ. Store-count 0 at dest0 and
+            // dest6 means firmware did not land. Do not serve.
+            if (!DdiNopDestStoresAllowServe())
             {
-                hits++;
-                landed = dest6;
-                landedWord = w6;
+                _ddiNopLandedDest = 0;
+                _ddiNopLandedWord = 0;
             }
-            if (dest10 != 0 && w10 != 0 && (hdr == 0 || w10 != hdr))
+            else
             {
-                hits++;
-                landed = dest10;
-                landedWord = w10;
-            }
-            if (w0 != 0 && (hdr == 0 || w0 != hdr))
-            {
-                hits++;
-                landed = dest0;
-                landedWord = w0;
-            }
-            if (wd != 0 && (hdr == 0 || wd != hdr))
-            {
-                hits++;
-                landed = destDump;
-                landedWord = wd;
-            }
-            if (hits == 1)
-            {
-                _ddiNopLandedDest = landed;
-                _ddiNopLandedWord = landedWord;
+                if (dest6 != 0 && IsExpandedO32Word(w6, hdr))
+                {
+                    hits++;
+                    landed = dest6;
+                    landedWord = w6;
+                }
+                if (dest10 != 0 && IsExpandedO32Word(w10, hdr))
+                {
+                    hits++;
+                    landed = dest10;
+                    landedWord = w10;
+                }
+                if (IsExpandedO32Word(w0, hdr))
+                {
+                    hits++;
+                    landed = dest0;
+                    landedWord = w0;
+                }
+                if (IsExpandedO32Word(wd, hdr))
+                {
+                    hits++;
+                    landed = destDump;
+                    landedWord = wd;
+                }
+                if (hits == 1)
+                {
+                    _ddiNopLandedDest = landed;
+                    _ddiNopLandedWord = landedWord;
+                }
             }
         }
 
@@ -7857,23 +8048,27 @@ namespace ProcessorEmulator.Core
                 TryMeasureDdiNopDestAfterDecomp(bus, hdr);
             uint wordDump = PeekDestWordRaw(bus, destDump, out _);
             uint word0 = PeekDestWordRaw(bus, dest0, out _);
-            // Live 822671a: dest-word 0 at destDump, dest0, and
-            // pfn6 0x86F1C000. Serve dest firmware landed after
-            // dest6/dest10/dest0/destDump compare. Exactly one
-            // nonzero non-header dest. Do not invent dest.
+            // Live c710c07: dest10 pfn10-word 0x806F0000 is a
+            // kseg pointer, not MZ. Serve only expanded o32
+            // after dest0/dest6 stores. Do not invent dest.
             uint fwDest = 0;
             uint fwWord = 0;
-            if (_ddiNopLandedDest != 0 && _ddiNopLandedWord != 0)
+            if (!DdiNopDestStoresAllowServe())
+            {
+                fwDest = 0;
+                fwWord = 0;
+            }
+            else if (_ddiNopLandedDest != 0 && IsExpandedO32Word(_ddiNopLandedWord, hdr))
             {
                 fwDest = _ddiNopLandedDest;
                 fwWord = _ddiNopLandedWord;
             }
-            else if (wordDump != 0 && (hdr == 0 || wordDump != hdr))
+            else if (IsExpandedO32Word(wordDump, hdr))
             {
                 fwDest = destDump;
                 fwWord = wordDump;
             }
-            else if (word0 != 0 && (hdr == 0 || word0 != hdr))
+            else if (IsExpandedO32Word(word0, hdr))
             {
                 fwDest = dest0;
                 fwWord = word0;
@@ -7892,7 +8087,10 @@ namespace ProcessorEmulator.Core
             string why;
             if (fwDest == 0)
             {
-                why = "dest-word=0 at dest6 dest10 dest0 destDump; do not serve";
+                if (!DdiNopDestStoresAllowServe())
+                    why = "dest0 dest6 store-count=0; do not serve";
+                else
+                    why = "dest-word not MZ/o32; do not serve dest10 kseg";
             }
             else if (fwDest == _ddiNopLandedDest && _ddiNopLandedDest != 0)
                 why = "CEDecompressROM dest landed; serve dest-word dest";
@@ -12810,6 +13008,23 @@ namespace ProcessorEmulator.Core
         private static bool _ddiNopDestPteMeasured;
         private static uint _ddiNopLandedDest;
         private static uint _ddiNopLandedWord;
+        private static bool _ddiNopDecompWatch;
+        private static uint _ddiNopWatchDest6;
+        private static uint _ddiNopWatchDest10;
+        private static int _ddiNopStoreN0;
+        private static int _ddiNopStoreN6;
+        private static int _ddiNopStoreN10;
+        private static int _ddiNopStoreND;
+        private static int _ddiNopStoreNK;
+        private static uint _ddiNopStoreFirstVa;
+        private static uint _ddiNopStoreFirstVal;
+        private static uint _ddiNopStoreLastVa;
+        private static uint _ddiNopStoreLastVal;
+        private static bool _ddiNopStoreThrew0;
+        private static bool _ddiNopStoreThrew6;
+        private static bool _ddiNopStoreThrew10;
+        private static bool _ddiNopStoreThrewD;
+        private static bool _ddiNopStoreThrewK;
         private static bool _mscoreeDestOn;
         private static uint _mscoreeSlot0;
         private static uint _mscoreeVbase;
@@ -12842,6 +13057,7 @@ namespace ProcessorEmulator.Core
             _ddiNopDecompDest = 0;
             _ddiNopDecompVsize = 0;
             _ddiNopDecompHdr = 0;
+            ResetDdiNopDecompStores();
             _ddiNopDestWordLogged = false;
             _ddiNopObserve = false;
             _ddiNopInnerCap = false;
