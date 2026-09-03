@@ -48,19 +48,32 @@ namespace ProcessorEmulator.Core
         // as head; else if walk misses and a3!=0: 0x8001731C
         // lw old head; sw old,(a0 last node); sw *0x803429C8,
         // (a1) splices source chain in front.
-        // If *0x803429C8 is 0, OEM never published ExtraROM
-        // onto the source chain, so firmware never links
-        // 0x8134DA84. ExtraROM ulCopyEntries=0, copy_table
+        // Linker 0x8001728C has ONE caller: 0x80014420
+        // (early kernel, before mtc0 Status at 0x8001442C).
+        // One-shot. ExtraROM bytes can already be mapped
+        // (host NkBinLoader at Boot), but dump never
+        // publishes *0x803429C8: nk.exe .text only
+        // 0x800172B8 addiu/lw of 0x29c8, no sw; ExtraROM
+        // extracted PEs: zero lui 0x8034 + imm 0x29c8.
+        // If live *0x803429C8 is 0 at 0x80014420, firmware
+        // never links 0x8134DA84. Do not invent a
+        // ROMChain_t before that jal. Do not host-write
+        // 0x803429C8. ExtraROM ulCopyEntries=0, copy_table
         // empty. NK copy[0] src=0x8021F8EC dst=0x80320000
         // copy_len=0x5A4 dest_len=0x22C88. 0x80342B10 is
         // dst+0x22B10 (BSS tail past copy_len) until the
-        // linker sw. Do not invent a ROMChain_t. Do not
-        // host-write 0x803429C8 or 0x80342B10. Host attach
-        // is a workaround because ExtraROM is unlinked.
-        // object+6: firmware sh s5,6(fp) at 0x8001D4F0 only
-        // when CreateFileMapping 0x8003DA64 returns 0.
-        // BuiltIn LoadLibrary never takes that jal. Do not
-        // host-write object+6. Do not set 0x200.
+        // linker sw. Host attach is a workaround because
+        // ExtraROM is unlinked.
+        // LoadO32 jal CreateFileMapping 0x8003DA64 at
+        // 0x800167AC is on the 0x200 TAKEN path (after
+        // 0x8001665C andi/beqz skip). ExtraROM dumpToc0
+        // 0x807 never reaches it. ddi_nop dest is MapO32
+        // 0x8001AEB4 CreateFileMapping miss then 0x8001AECC
+        // SetFilePointer (object+6>=2), not LoadO32
+        // 0x800167AC. Do not set 0x200. Do not write
+        // object+6. Firmware sh s5,6(fp) at 0x8001D4F0
+        // only when CreateFileMapping 0x8003DA64 returns 0.
+        // BuiltIn LoadLibrary never takes that jal.
         public const uint TocWalkMiss = 0x80016B74;
         public const uint TocWalkMissContinue = 0x80016B78;
         public const uint LoadE32Rom = 0x800196E4;
@@ -131,7 +144,14 @@ namespace ProcessorEmulator.Core
         // thunk return. Skip leaves dest 0 and still
         // succeeds. 0x8003E660 only when fp&0x200
         // (a0=-1 a1=sp+0x20 a2=s7). ExtraROM 0x807 and
-        // ddi_nop 0x807 both skip it. Do not set 0x200.
+        // ddi_nop 0x807 both skip it. LoadO32 jal
+        // CreateFileMapping 0x8003DA64 at 0x800167AC is
+        // on the 0x200 TAKEN path after 0x8001665C
+        // andi/beqz skip. ExtraROM dumpToc0 0x807 never
+        // reaches it. ddi_nop dest is MapO32 0x8001AEB4
+        // CreateFileMapping miss then 0x8001AECC
+        // SetFilePointer (object+6>=2), not LoadO32
+        // 0x800167AC. Do not set 0x200.
         // Wrapper after LoadO32 v0=0:
         //   0x8001E428 andi s5,2 then jal 0x800283FC
         //   a0=0x7E000000 a2=0x1102000 VirtualAlloc-like,
@@ -163,6 +183,8 @@ namespace ProcessorEmulator.Core
         public const uint LoadO32Pred = 0x8001637C;
         public const uint LoadO32PredFail = 0x80016810;
         public const uint LoadO32SkipStore = 0x8001662C;
+        public const uint LoadO32Andi200 = 0x8001665C;
+        public const uint LoadO32CreateFileMapping = 0x800167AC;
         public const uint LoadO32SkipValloc = 0x80016830;
         public const uint LoadO32OkRet = 0x80016848;
         public const uint LoadO32WrapValloc = 0x800283FC;
@@ -203,6 +225,8 @@ namespace ProcessorEmulator.Core
         // object+6>=2. Do not invent 0x2000. Do not write
         // object+6. Do not invent dest.
         public const uint MapO32RomEpilogue = 0x8001AE50;
+        public const uint MapO32CreateFileMapping = 0x8001AEB4;
+        public const uint MapO32SetFilePointer = 0x8001AECC;
         public const uint MapO32Decompress = 0x80028844;
         public const uint MapO32DecompressSrcChk = 0x80028A48;
         public const uint MapO32DecompressFail = 0x80028A90;
@@ -612,6 +636,9 @@ namespace ProcessorEmulator.Core
         public const uint RomHdrSrcChain = 0x803429C8;
         public const uint RomHdrWalk = 0x80016AFC;
         public const uint RomHdrLink = 0x8001728C;
+        public const uint RomHdrLinkJal = 0x80014420;
+        public const uint RomHdrLinkJalStatus = 0x8001442C;
+        public const uint RomHdrSrcChainLw = 0x800172B8;
         public const uint RomHdrLinkPublish = 0x80017308;
         public const uint RomHdrLinkSplice = 0x8001731C;
         public const uint ExtraRomDumpHdr = 0x8134DA84;
@@ -1076,6 +1103,7 @@ namespace ProcessorEmulator.Core
         private static int _romHdrLinkEnterCount;
         private static int _romHdrLinkPublishCount;
         private static int _romHdrLinkSpliceCount;
+        private static bool _romHdrLinkJalLogged;
         private const int RomHdrLinkLogMax = 8;
         private static int _loadE32OkSteps;
         private static bool _nkLoadE32Watch;
@@ -2889,6 +2917,7 @@ namespace ProcessorEmulator.Core
             _romHdrLinkEnterCount = 0;
             _romHdrLinkPublishCount = 0;
             _romHdrLinkSpliceCount = 0;
+            _romHdrLinkJalLogged = false;
             _pendingRomFile = null;
             _lastRomAttachKey = null;
             _ddiNopTocEntry = 0;
@@ -5375,6 +5404,8 @@ namespace ProcessorEmulator.Core
         public static void TryWatchExtraRomLoadE32(MipsBus bus, uint[] regs, uint pc)
         {
             TryWatchExtraRomFwMap(bus, regs, pc);
+            if (pc == RomHdrLinkJal)
+                TryLogRomHdrLinkJal(bus, regs);
             if (pc == RomHdrLink)
                 TryLogRomHdrLinkEnter(bus, regs);
             if (pc == RomHdrLinkPublish)
@@ -6789,23 +6820,22 @@ namespace ProcessorEmulator.Core
         // 0x200. Do not copy NK 0x1007. Do not invent dest.
         private static string NameBuiltInMiss()
         {
-            return "honest miss: ExtraROM ROMHDR 0x8134DA84 is mapped but never linked on *(0x80342B10); after BuiltIn LoadO32 skip, 0x20(sp) stays 0 so dest out s4 is never sw; firmware never VirtualCopys ExtraROM o32; ddi_nop dest remains OpenFile/LoadDriver MapO32/CEDecompressROM object+6>=2 (c1c0bc4 a0=0x80764CE0 a1=0xD989 a2=0x01981000 v0=0x1743A), same dumpToc0 0x807; firmware sh s5,6(fp) at 0x8001D4F0 only when CreateFileMapping 0x8003DA64 returns 0; BuiltIn LoadLibrary never takes that jal; 0x80016830 is not MapO32; 0x8001E428 jal 0x800283FC VirtualAlloc-like; 0x8001AF20 is o32 page-sum not MapO32; 0x8001AC9C/0x80028844 not on skip path; do not set 0x200; do not write object+6; do not invent a ROMChain_t; do not invent dest; do not invent a map at 0x8178C000";
+            return "honest miss: ExtraROM ROMHDR 0x8134DA84 is mapped but never linked on *(0x80342B10); after BuiltIn LoadO32 skip, 0x20(sp) stays 0 so dest out s4 is never sw; firmware never VirtualCopys ExtraROM o32; LoadO32 jal CreateFileMapping 0x8003DA64 at 0x800167AC is on the 0x200 TAKEN path after 0x8001665C andi/beqz skip; ExtraROM dumpToc0 0x807 never reaches it; ddi_nop dest is MapO32 0x8001AEB4 CreateFileMapping miss then 0x8001AECC SetFilePointer object+6>=2 (c1c0bc4 a0=0x80764CE0 a1=0xD989 a2=0x01981000 v0=0x1743A), not LoadO32 0x800167AC, same dumpToc0 0x807; firmware sh s5,6(fp) at 0x8001D4F0 only when CreateFileMapping 0x8003DA64 returns 0; BuiltIn LoadLibrary never takes that jal; 0x80016830 is not MapO32; 0x8001E428 jal 0x800283FC VirtualAlloc-like; 0x8001AF20 is o32 page-sum not MapO32; 0x8001AC9C/0x80028844 not on skip path; do not set 0x200; do not write object+6; do not invent a ROMChain_t; do not invent dest; do not invent a map at 0x8178C000";
         }
 
-        // Dump-real: linker is 0x8001728C (addiu form; earlier
-        // lui/lw scan missed the sw). Walk *0x803429C8; if
-        // node+4 == *0x8001101C (dump NK romhdr 0x802808B4)
-        // then 0x80017308 publishes that chain as
-        // *(0x80342B10); else splice at 0x8001731C.
-        // pExtensions 0x80011020 is still 32 zeros next to
-        // 0x8001101C, not a linker. If *0x803429C8 is 0, OEM
-        // never published ExtraROM onto the source chain.
-        // Do not invent a ROMChain_t. Do not host-write
-        // 0x803429C8 or 0x80342B10. Host attach is a
-        // workaround because ExtraROM is unlinked.
+        // Dump-real: linker 0x8001728C has ONE caller,
+        // 0x80014420 (early kernel, before mtc0 Status at
+        // 0x8001442C). One-shot. nk.exe .text only
+        // 0x800172B8 addiu/lw of 0x29c8, no sw; ExtraROM
+        // extracted PEs: zero lui 0x8034 + imm 0x29c8.
+        // If *0x803429C8 is 0 at 0x80014420, firmware never
+        // links 0x8134DA84. Do not invent a ROMChain_t
+        // before that jal. Do not host-write 0x803429C8.
+        // Host attach is a workaround because ExtraROM is
+        // unlinked. 86e51ea linker enter/sw logs stay.
         private static string NameChainMiss()
         {
-            return "honest miss: OEM never published ExtraROM onto source chain *(0x803429C8) so firmware never links 0x8134DA84; linker 0x8001728C a2=0x803429C8 a1=0x80342B10 s6=0x8001101C walks *0x803429C8, if node+4==*0x8001101C (dump NK romhdr 0x802808B4) then 0x80017308 sw a3,(a1) publishes that chain as head, else if walk misses and a3!=0 0x8001731C splices source chain in front; ExtraROM 0x8134DA84 is mapped but not on the source chain; 0x80016AFC walks *(0x80342B10) node+4 ROMHDR TOC hdr+0x54 name entry+0x10 miss v0=2; LoadDriver/ActivateDevice never sees ExtraROM TOC names without host attach; pExtensions 0x80011020 is still 32 zeros next to 0x8001101C, not a linker; ExtraROM ulCopyEntries=0 copy_table empty; NK copy[0] src=0x8021F8EC dst=0x80320000 copy_len=0x5A4 dest_len=0x22C88; 0x80342B10 is dst+0x22B10 BSS tail past copy_len until the linker sw; earlier lui/lw scan missed the addiu form; do not invent a ROMChain_t; do not host-write 0x803429C8 or 0x80342B10; host attach is a workaround because ExtraROM is unlinked";
+            return "honest miss: OEM never published ExtraROM onto source chain *(0x803429C8) so firmware never links 0x8134DA84; linker 0x8001728C has ONE caller 0x80014420 (early kernel, before mtc0 Status 0x8001442C), one-shot; dump never publishes *0x803429C8 (nk.exe .text only 0x800172B8 addiu/lw of 0x29c8, no sw; ExtraROM extracted PEs: zero lui 0x8034 + imm 0x29c8); if live *0x803429C8 is 0 at 0x80014420, firmware never links ExtraROM; ExtraROM bytes can already be mapped (host NkBinLoader) but still unlinked; a2=0x803429C8 a1=0x80342B10 s6=0x8001101C walks *0x803429C8, if node+4==*0x8001101C (dump NK romhdr 0x802808B4) then 0x80017308 sw a3,(a1) publishes that chain as head, else if walk misses and a3!=0 0x8001731C splices source chain in front; 0x80016AFC walks *(0x80342B10) node+4 ROMHDR TOC hdr+0x54 name entry+0x10 miss v0=2; LoadDriver/ActivateDevice never sees ExtraROM TOC names without host attach; pExtensions 0x80011020 is still 32 zeros next to 0x8001101C, not a linker; ExtraROM ulCopyEntries=0 copy_table empty; do not invent a ROMChain_t before 0x80014420; do not host-write 0x803429C8 or 0x80342B10; host attach is a workaround because ExtraROM is unlinked";
         }
 
         public static void LogExtraRomHdrAtMap(ProcessorEmulator.Core.Emulation.IMemoryManager memory, uint romhdr)
@@ -6909,6 +6939,60 @@ namespace ProcessorEmulator.Core
                 " (" + NameChainMiss() + ")";
             System.Console.WriteLine(line);
             BootLog.Write(line);
+        }
+
+        // Observe 0x80014420 jal of 0x8001728C only. Peek
+        // *0x803429C8 and ExtraROM hdr mapped. Cite dump:
+        // one caller, no sw of 0x803429C8 in nk or ExtraROM
+        // PEs. Do not invent a ROMChain_t before that jal.
+        // Do not host-write 0x803429C8. 86e51ea enter/sw stay.
+        private static void TryLogRomHdrLinkJal(MipsBus bus, uint[] regs)
+        {
+            if (bus == null || _romHdrLinkJalLogged)
+                return;
+            _romHdrLinkJalLogged = true;
+            uint a0 = regs != null && regs.Length > 4 ? regs[4] : 0;
+            uint a1 = regs != null && regs.Length > 5 ? regs[5] : 0;
+            uint a2 = regs != null && regs.Length > 6 ? regs[6] : 0;
+            uint a3 = regs != null && regs.Length > 7 ? regs[7] : 0;
+            uint srcHead;
+            bool srcMapped = TryRead32(va => bus.Read32(va), RomHdrSrcChain, out srcHead);
+            string src = FormatSrcChainWalk(va => bus.Read32(va));
+            string mapped = FormatExtraRomHdrMapped(bus);
+            string empty = !srcMapped
+                ? " live-*(0x803429C8)-unmapped"
+                : srcHead == 0
+                    ? " live-*(0x803429C8)=0 firmware-never-links-0x8134DA84"
+                    : " live-*(0x803429C8)=0x" + srcHead.ToString("X8");
+            string line = "[Hive] ExtraROM ROMHDR linker jal 0x80014420"
+                + " a0=0x" + a0.ToString("X8")
+                + " a1=0x" + a1.ToString("X8")
+                + " a2=0x" + a2.ToString("X8")
+                + " a3=0x" + a3.ToString("X8")
+                + empty
+                + " " + mapped
+                + " " + src
+                + " (dump-real: one caller 0x80014420, before mtc0 Status 0x8001442C;"
+                + " nk.exe .text only 0x800172B8 addiu/lw of 0x29c8, no sw;"
+                + " ExtraROM extracted PEs: zero lui 0x8034 + imm 0x29c8;"
+                + " do not invent a ROMChain_t before this jal;"
+                + " do not host-write 0x803429C8; "
+                + NameChainMiss() + ")";
+            System.Console.WriteLine(line);
+            BootLog.Write(line);
+        }
+
+        private static string FormatExtraRomHdrMapped(MipsBus bus)
+        {
+            uint word;
+            bool mapped = bus != null
+                && TryRead32(va => bus.Read32(va), ExtraRomDumpHdr, out word);
+            string host = _extraRomHdr != 0
+                ? " host-NkBinLoader-hdr=0x" + _extraRomHdr.ToString("X8")
+                : " host-NkBinLoader-hdr-not-yet";
+            if (!mapped)
+                return "ExtraROM-hdr-0x8134DA84-unmapped" + host;
+            return "ExtraROM-hdr-0x8134DA84-mapped word0=0x" + word.ToString("X8") + host;
         }
 
         // Observe 0x8001728C only. Peek *0x803429C8 and walk
