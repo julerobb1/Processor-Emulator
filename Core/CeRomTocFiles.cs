@@ -1809,28 +1809,20 @@ namespace ProcessorEmulator.Core
                 if (pages > regs[5])
                     regs[5] = pages;
             }
-            // Live bcc3157b: 0x8001AE08 v0=0x01980000 then
-            // CEDecompressROM dest=0x01981000 v0=0x1743A.
-            // dest0-word stayed 0. dest0 is useg; stores
-            // TLB-miss and PeekDestWord returns 0. Existing
-            // ExtraRomDestKseg0 / TryHostBackValloc backs
-            // VALLOC dest at kseg0 (zeros only) so lbu/sb
-            // land. NoteExtraRomVallocRet sets DestOn too
-            // late (hive:ldde32). Back dest0 here, before
-            // firmware writes. Do not copy destDump onto
+            // Live 330f08b: dest0 back 0x01980000 size 0x1A000
+            // then CEDecompressROM dest=0x01981000 dest-word=0.
+            // ExtraRomDestKseg0 / TryHostBackValloc remapped
+            // dest0 to a kseg alias firmware does not write.
+            // dest0 stays useg. MapFirmwareSlotVa walks
+            // firmware PTE (0x80040278) so stores land on
+            // the VALLOC page. Do not copy destDump onto
             // dest0. Do not invent dest.
             uint dest0Base = dest & SlotMask;
-            uint backSize = regs.Length > 5 ? regs[5] : 0x1000u;
-            if (backSize == 0 || backSize > 0x01000000u)
-                backSize = 0x30000u;
-            if (MapVallocHostVa(dest0Base) == dest0Base)
-                TryHostBackValloc(dest0Base, dest0Base, backSize, regs[6], false);
             _ddiNopDestOn = true;
             _ddiNopSlot0 = dest0Base != 0 ? dest0Base : (DdiNopVbase & SlotMask);
-            BootLog.Write("[Hive] ExtraROM ddi_nop dest0 back dest0=0x" +
+            BootLog.Write("[Hive] ExtraROM ddi_nop dest0 useg dest0=0x" +
                 dest0Base.ToString("X8") +
-                " size=0x" + backSize.ToString("X") +
-                " (slot-0 host-back so dest=0x01981000 stores land; zeros only)");
+                " (firmware PTE walk; not ExtraRomDestKseg0)");
             if (!needReserve && header == 0)
                 return true;
             System.Console.WriteLine("[Hive] ExtraROM VALLOC a0=0x" +
@@ -2996,6 +2988,7 @@ namespace ProcessorEmulator.Core
             _ddiNopData = null;
             _ddiNopDestOn = false;
             _ddiNopSlot0 = 0;
+            _ddiNopDest0PteLogged = false;
             _mscoreeDestOn = false;
             _mscoreeSlot0 = 0;
             _mscoreeVbase = 0;
@@ -10627,7 +10620,9 @@ namespace ProcessorEmulator.Core
         // Do not invent dest. Do not invent a slot map.
         public static uint MapFirmwareSlotVa(MipsBus bus, uint va)
         {
-            if (_pteMapBusy || bus == null || _tv2ImplRa == 0)
+            bool dest0 = _ddiNopDestOn
+                && va >= 0x01980000u && va < 0x019B0000u;
+            if (_pteMapBusy || bus == null || (_tv2ImplRa == 0 && !dest0))
                 return va;
             if (va >= 0x80000000u)
                 return va;
@@ -10643,7 +10638,8 @@ namespace ProcessorEmulator.Core
                 && _tv2LeftoverCae8Logged
                 && va >= 0x00010000u
                 && va < 0x01FFF000u;
-            if (slot != 1 && slot != 6 && !walkSlot2 && !walkSlot0Info && !walkSlot0Fetch)
+            if (slot != 1 && slot != 6 && !walkSlot2 && !walkSlot0Info
+                && !walkSlot0Fetch && !dest0)
                 return va;
             uint sec = PeekSection(bus, slot);
             if (sec == 0)
@@ -10663,7 +10659,14 @@ namespace ProcessorEmulator.Core
                 // KSEG0 0x80000000 is physical page 0. Do not map it.
                 if ((dest & 0x1FFFFFFFu) < 0x00010000u)
                     return va;
-                if (walkSlot0Info && !_slot0InfoMapLogged)
+                if (dest0 && !_ddiNopDest0PteLogged)
+                {
+                    _ddiNopDest0PteLogged = true;
+                    BootLog.Write("[Hive] ExtraROM ddi_nop dest0 PTE va=0x" +
+                        va.ToString("X8") + " -> 0x" + dest.ToString("X8") +
+                        " (firmware 0x80040278; useg dest)");
+                }
+                else if (walkSlot0Info && !_slot0InfoMapLogged)
                 {
                     uint word = 0;
                     TryPeekWord(bus, dest, out word);
@@ -12658,6 +12661,7 @@ namespace ProcessorEmulator.Core
         // fetch 0x0398xxxx from 0x0198xxxx. Do not host-alias src.
         private static bool _ddiNopDestOn;
         private static uint _ddiNopSlot0;
+        private static bool _ddiNopDest0PteLogged;
         private static bool _mscoreeDestOn;
         private static uint _mscoreeSlot0;
         private static uint _mscoreeVbase;
@@ -12674,6 +12678,7 @@ namespace ProcessorEmulator.Core
             _aliasLoggedRom = 0;
             _ddiNopDestOn = false;
             _ddiNopSlot0 = 0;
+            _ddiNopDest0PteLogged = false;
             _mscoreeDestOn = false;
             _mscoreeSlot0 = 0;
             _ole32DestOn = false;
@@ -12733,8 +12738,9 @@ namespace ProcessorEmulator.Core
             {
                 if (va >= DdiNopVbase && va < 0x039B0000u)
                     va = _ddiNopSlot0 + (va - DdiNopVbase);
-                if (va >= 0x01980000u && va < 0x019B0000u)
-                    return ExtraRomDestKseg0 + (va - 0x01980000u);
+                // Live 330f08b: ExtraRomDestKseg0 did not
+                // receive dest=0x01981000 stores. dest0 stays
+                // useg; MapFirmwareSlotVa walks firmware PTE.
                 if (va >= 0x01F57000u && va < 0x01F67000u)
                     return ExtraRomDestKseg1 + (va - 0x01F57000u);
             }
