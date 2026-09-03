@@ -2030,7 +2030,13 @@ namespace ProcessorEmulator.Core
             {
                 if (bus != null && dest != 0)
                 {
-                    word = bus.Read32(dest);
+                    // Live 6f80c88: dest0 PTE 0x01981000 ->
+                    // 0x86F1C000. Peek useg dest-word stayed 0.
+                    // Peek the PTE dest after CEDecompressROM.
+                    uint peek = dest;
+                    if (dest == 0x01981000u && _ddiNopDest0Pte != 0)
+                        peek = _ddiNopDest0Pte;
+                    word = bus.Read32(peek);
                     mapped = true;
                 }
             }
@@ -2096,12 +2102,15 @@ namespace ProcessorEmulator.Core
             // 0x8004DBF8 is not ddi_nop on every hit. sipcfg/shell
             // dest 0x00011000 stays firmware. One line when
             // VALLOC dest 0x01981000 first becomes nonzero.
-            if (dest == 0x01981000u && mapped && word != 0 && !header
+            if ((dest == 0x01981000u || dest == _ddiNopDest0Pte)
+                && mapped && word != 0 && !header
                 && !_ddiNopDestWordLogged)
             {
                 _ddiNopDestWordLogged = true;
                 string first = "[Hive] ExtraROM ddi_nop dest 0x01981000 first nonzero word=0x" +
                     word.ToString("X8") +
+                    (_ddiNopDest0Pte != 0
+                        ? " pteDest=0x" + _ddiNopDest0Pte.ToString("X8") : "") +
                     " a0=0x" + src.ToString("X8") +
                     " a1=0x" + cb.ToString("X8") +
                     " a2=0x" + dest.ToString("X8") +
@@ -2989,6 +2998,7 @@ namespace ProcessorEmulator.Core
             _ddiNopDestOn = false;
             _ddiNopSlot0 = 0;
             _ddiNopDest0PteLogged = false;
+            _ddiNopDest0Pte = 0;
             _mscoreeDestOn = false;
             _mscoreeSlot0 = 0;
             _mscoreeVbase = 0;
@@ -7683,6 +7693,11 @@ namespace ProcessorEmulator.Core
         {
             if (bus == null || va == 0)
                 return 0;
+            // Live 6f80c88: dest0 PTE 0x01981000 -> 0x86F1C000.
+            // Peek of useg dest0 stayed 0. Firmware dest is
+            // the PTE result. Peek that kseg. Do not invent dest.
+            if (_ddiNopDest0Pte != 0 && (va & 0xFFFFF000u) == 0x01981000u)
+                va = _ddiNopDest0Pte | (va & 0xFFFu);
             try
             {
                 return bus.Read32(va);
@@ -7721,22 +7736,28 @@ namespace ProcessorEmulator.Core
             uint dest0 = destDump & SlotMask;
             uint wordDump = PeekDestWord(bus, destDump);
             uint word0 = PeekDestWord(bus, dest0);
+            uint pteDest = _ddiNopDest0Pte;
+            uint wordPte = pteDest != 0 ? PeekDestWord(bus, pteDest) : 0;
             uint hdr = 0;
             if (slot.Data != null && slot.Data.Length > 0
                 && slot.Data[0] != null && slot.Data[0].Length > 0)
                 hdr = slot.Data[0][0];
             bool headerDump = hdr != 0 && wordDump == hdr;
             bool header0 = hdr != 0 && word0 == hdr;
-            // Live 112975ca: CEDecompressROM dest=0x01981000
-            // (dest0). 0x8001AE08 v0=0x01980000. destDump
-            // 0x03981000 stayed 0. Watch of destDump is a
-            // miss. Serve dest firmware wrote. When dest is
-            // dest0, serve dest0, not destDump / dump vbase.
-            // Do not copy destDump onto dest0. Do not invent
-            // dest. Do not host-CEDecompressROM.
+            bool headerPte = hdr != 0 && wordPte == hdr;
+            // Live 6f80c88: dest0 PTE 0x01981000 -> 0x86F1C000.
+            // dest0-word at useg stayed 0. Peek the PTE dest
+            // after CEDecompressROM. If that word != 0, serve
+            // that dest (firmware landed). Do not copy destDump
+            // onto dest0. Do not invent dest.
             uint fwDest = 0;
             uint fwWord = 0;
-            if (wordDump != 0 && !headerDump)
+            if (wordPte != 0 && !headerPte)
+            {
+                fwDest = pteDest;
+                fwWord = wordPte;
+            }
+            else if (wordDump != 0 && !headerDump)
             {
                 fwDest = destDump;
                 fwWord = wordDump;
@@ -7747,7 +7768,9 @@ namespace ProcessorEmulator.Core
                 fwWord = word0;
             }
             uint vbase = DumpTocVbase(slot);
-            if (fwDest == dest0 && dest0 != destDump)
+            if (fwDest == pteDest && pteDest != 0)
+                vbase = pteDest;
+            else if (fwDest == dest0 && dest0 != destDump)
             {
                 if (slot.O32Words != null && slot.O32Words.Length >= 2
                     && slot.O32Words[1] == 0x1000 && dest0 >= 0x1000)
@@ -7760,10 +7783,12 @@ namespace ProcessorEmulator.Core
             {
                 why = slot.FwMapO32
                     ? "slot-" + (destDump >> 25) + " destDump COMMIT no reserve last-error 14"
-                    : "dest-word=0 at destDump and dest0; serve dest firmware wrote";
+                    : "dest-word=0 at destDump dest0 and PTE dest; serve dest firmware wrote";
             }
             else if (headerDump && fwDest == destDump)
                 why = "destDump is src header; do not serve destDump";
+            else if (fwDest == pteDest && pteDest != 0)
+                why = "CEDecompressROM dest is PTE dest; serve PTE dest";
             else if (fwDest == dest0 && dest0 != destDump)
                 why = "CEDecompressROM dest is dest0; serve dest0";
             else if (vbase == 0)
@@ -7775,6 +7800,8 @@ namespace ProcessorEmulator.Core
                 " dump-word=0x" + wordDump.ToString("X") +
                 " dest0=0x" + dest0.ToString("X8") +
                 " dest0-word=0x" + word0.ToString("X") +
+                " pteDest=0x" + pteDest.ToString("X8") +
+                " pte-word=0x" + wordPte.ToString("X") +
                 " 0x80028844=" + slot.FwMapO32 +
                 " " + why);
             if (fwDest == 0 || vbase == 0)
@@ -7784,7 +7811,9 @@ namespace ProcessorEmulator.Core
             }
             slot.DecompDest = fwDest;
             slot.Vbase = vbase;
-            regs[2] = fwDest == dest0 && dest0 != destDump ? dest0 : vbase;
+            regs[2] = fwDest == pteDest && pteDest != 0
+                ? pteDest
+                : (fwDest == dest0 && dest0 != destDump ? dest0 : vbase);
             BootLog.Rom("ok", "ExtraROM", "TOC", slot.Index, slot.Name, 7, fwDest, fwWord, regs[2], why);
             return true;
         }
@@ -10659,12 +10688,17 @@ namespace ProcessorEmulator.Core
                 // KSEG0 0x80000000 is physical page 0. Do not map it.
                 if ((dest & 0x1FFFFFFFu) < 0x00010000u)
                     return va;
-                if (dest0 && !_ddiNopDest0PteLogged)
+                if (dest0)
                 {
-                    _ddiNopDest0PteLogged = true;
-                    BootLog.Write("[Hive] ExtraROM ddi_nop dest0 PTE va=0x" +
-                        va.ToString("X8") + " -> 0x" + dest.ToString("X8") +
-                        " (firmware 0x80040278; useg dest)");
+                    if ((va & 0xFFFFF000u) == 0x01981000u)
+                        _ddiNopDest0Pte = dest & ~0xFFFu;
+                    if (!_ddiNopDest0PteLogged)
+                    {
+                        _ddiNopDest0PteLogged = true;
+                        BootLog.Write("[Hive] ExtraROM ddi_nop dest0 PTE va=0x" +
+                            va.ToString("X8") + " -> 0x" + dest.ToString("X8") +
+                            " (firmware 0x80040278; useg dest)");
+                    }
                 }
                 else if (walkSlot0Info && !_slot0InfoMapLogged)
                 {
@@ -12662,6 +12696,10 @@ namespace ProcessorEmulator.Core
         private static bool _ddiNopDestOn;
         private static uint _ddiNopSlot0;
         private static bool _ddiNopDest0PteLogged;
+        // Live 6f80c88: dest0 PTE 0x01981000 -> 0x86F1C000.
+        // PeekDestWord(useg) stayed 0. Firmware dest is the
+        // PTE result. Do not invent this; walk fills it.
+        private static uint _ddiNopDest0Pte;
         private static bool _mscoreeDestOn;
         private static uint _mscoreeSlot0;
         private static uint _mscoreeVbase;
@@ -12679,6 +12717,7 @@ namespace ProcessorEmulator.Core
             _ddiNopDestOn = false;
             _ddiNopSlot0 = 0;
             _ddiNopDest0PteLogged = false;
+            _ddiNopDest0Pte = 0;
             _mscoreeDestOn = false;
             _mscoreeSlot0 = 0;
             _ole32DestOn = false;
