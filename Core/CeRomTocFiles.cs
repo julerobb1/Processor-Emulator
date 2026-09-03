@@ -1776,7 +1776,9 @@ namespace ProcessorEmulator.Core
                     " 0x800283FC-ret v0=0x" + v0.ToString("X") +
                     " destDump=0x" + slot.Dest.ToString("X8") +
                     " a0=0x" + dest.ToString("X8") +
-                    (v0 == 0 ? " OOM; serve destDump only if firmware wrote it" : ""));
+                    (v0 == 0
+                        ? " slot-" + (dest >> 25) + " destDump COMMIT no reserve last-error 14"
+                        : ""));
             if (!IsExtraRomCompressedDest(dest))
                 return;
             System.Console.WriteLine("[Hive] ExtraROM VALLOC dest=0x" +
@@ -6999,25 +7001,28 @@ namespace ProcessorEmulator.Core
                 aliasName;
         }
 
-        // One short Hive line: name, v0, destDump-word, destDump,
-        // dest0, object+6, 0x80028844. destDump is o32.real.
-        // dest0 is destDump&0x01FFFFFF (wrong watch VA). Both
-        // words 0 after MapO32 is VirtualAlloc 0x800283FC of
-        // destDump returning 0 (ERROR_OUTOFMEMORY=14). Serve
-        // destDump only if firmware wrote dump-word.
+        // destDump is o32.real (nleddrvr 0x02F81000 / mscoree
+        // 0x034B1000, CE slot 1). dest0 is destDump&0x01FFFFFF.
+        // Live bfa911a: both words 0 after MapO32. jal
+        // 0x800283FC a0=destDump a2=0x1000 (MEM_COMMIT).
+        // Current process has no reservation on that slot-1
+        // VA (same last-error 14 as ddi_nop slot-1 0x03981000).
+        // MapO32 memcpy/decomp never run. Serve destDump only
+        // if firmware wrote dump-word. Do not invent dest.
         private static void HiveWatch(MipsBus bus, string ev, uint v0)
         {
             uint destDump = _loadE32OkDest;
             uint dest0 = _loadE32OkDest0;
             uint wordDump = PeekDestWord(bus, destDump);
             uint word0 = PeekDestWord(bus, dest0);
+            uint slot = destDump >> 25;
             string miss = "";
             if (_loadE32OkMapValloc && _loadE32OkMapVallocV0 == 0 && wordDump == 0)
-                miss = " 0x800283FC(o32.real) v0=0 OOM";
+                miss = " slot-" + slot + " destDump COMMIT no reserve last-error 14";
             else if (v0 == 0xE && ev != null && ev.IndexOf("wrapper", System.StringComparison.Ordinal) >= 0)
-                miss = " MapO32 v0=0xE after 0x800283FC=0; LoadO32 was 0";
+                miss = " MapO32 v0=0xE after slot-" + slot + " COMMIT no reserve; LoadO32 was 0";
             else if ((_loadE32OkMap28844 || _loadE32OkMapO32) && wordDump == 0 && word0 == 0)
-                miss = " destDump-word=0 dest0-word=0; not a dest0-watch miss";
+                miss = " destDump-word=0 dest0-word=0; slot-" + slot + " COMMIT miss";
             BootLog.Write("[Hive] TOC[" + _loadE32OkIndex + "] " + _loadE32OkName
                 + " " + ev
                 + " v0=0x" + v0.ToString("X")
@@ -7628,11 +7633,8 @@ namespace ProcessorEmulator.Core
             if (wordDump == 0)
             {
                 why = slot.FwMapO32
-                    ? "MapO32 ran destDump-word=0 destDump=0x" + destDump.ToString("X8")
-                        + " dest0=0x" + dest0.ToString("X8")
-                        + "; 0x800283FC(o32.real) v0=0 OOM; serve destDump only if firmware wrote it"
-                    : "destDump-word=0 destDump=0x" + destDump.ToString("X8")
-                        + "; serve destDump only if firmware wrote it";
+                    ? "slot-" + (destDump >> 25) + " destDump COMMIT no reserve last-error 14"
+                    : "destDump-word=0; serve destDump only if firmware wrote it";
             }
             else if (header)
                 why = "destDump is src header; do not serve destDump";
