@@ -93,7 +93,7 @@ namespace ProcessorEmulator.Emulation
                 // so an interrupt/TLB storm after BindImp
                 // skipped CallDLL-miss forever. Count here
                 // too. Keep the post-BinBlk poll.
-                CeRomTocFiles.TryPollDdiNopCallDllMiss(_bus);
+                CeRomTocFiles.TryPollDdiNopCallDllMiss(_bus, registers, programCounter);
 
                 // Check for and handle pending hardware interrupts before executing an instruction.
                 if (_cp0.ShouldTriggerInterrupt())
@@ -110,7 +110,7 @@ namespace ProcessorEmulator.Emulation
                     continue;
                 }
 
-                CeRomTocFiles.TryPollDdiNopCallDllMiss(_bus);
+                CeRomTocFiles.TryPollDdiNopCallDllMiss(_bus, registers, programCounter);
 
                 _currentPc = programCounter;
                 try
@@ -218,7 +218,7 @@ namespace ProcessorEmulator.Emulation
 
                 if (programCounter == CeRomTocFiles.CallDllStartip)
                 {
-                    CeRomTocFiles.NoteDdiNopCallDllPc(programCounter);
+                    CeRomTocFiles.NoteDdiNopCallDllPc(_bus, registers, programCounter);
                     CeRomTocFiles.TryFillTocStartip(_bus, registers[23], true);
                 }
 
@@ -228,7 +228,7 @@ namespace ProcessorEmulator.Emulation
                 // (a1=1) here, same continue as EXE skip.
                 if (programCounter == CeRomTocFiles.XipCallDllUsegChk)
                 {
-                    CeRomTocFiles.NoteDdiNopCallDllPc(programCounter);
+                    CeRomTocFiles.NoteDdiNopCallDllPc(_bus, registers, programCounter);
                     if (CeRomTocFiles.TryForceDdiNopCallDll(_bus, registers, ref programCounter))
                     {
                         _cp0.UpdateTimer(1);
@@ -239,7 +239,7 @@ namespace ProcessorEmulator.Emulation
 
                 if (programCounter == CeRomTocFiles.XipExeCallDllSkip)
                 {
-                    CeRomTocFiles.NoteDdiNopCallDllPc(programCounter);
+                    CeRomTocFiles.NoteDdiNopCallDllPc(_bus, registers, programCounter);
                     if (CeRomTocFiles.TryForceDdiNopCallDll(_bus, registers, ref programCounter))
                     {
                         _cp0.UpdateTimer(1);

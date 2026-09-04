@@ -2301,7 +2301,12 @@ namespace ProcessorEmulator.Core
                     LogDdiNopBindWalkOnce(bus);
                 else if (_ddiNopLandedBySig)
                 {
+                    // Live c231655: NK/filesys CallDLL during
+                    // early boot set saw=true. Reset so this
+                    // load's poll is a fresh window.
                     _ddiNopAwaitCallDll = true;
+                    _ddiNopSawCallDllPc = false;
+                    _ddiNopCallDllMissPoll = 0;
                     // Live b4b6454: BindImp vbase is VALLOC
                     // 0x01980000; IAT FT is .data RVA 0x19000.
                     // Only .text was CEDecompress'd. Observe
@@ -8583,6 +8588,7 @@ namespace ProcessorEmulator.Core
             _ddiNopSawCallDllPc = false;
             _ddiNopCallDllMissLogged = false;
             _ddiNopCallDllMissPoll = 0;
+            _ddiNopStallLogged = false;
             _ddiNopIatLogged = false;
             _ddiNopDataO32Logged = false;
             _ddiNopWalkSeedN = 0;
@@ -9341,28 +9347,59 @@ namespace ProcessorEmulator.Core
             }
         }
 
-        public static void NoteDdiNopCallDllPc(uint pc)
+        public static void NoteDdiNopCallDllPc(MipsBus bus, uint[] regs, uint pc)
         {
-            if (pc == XipCallDllUsegChk || pc == XipExeCallDllSkip
-                || pc == CallDllStartip || pc == XipDllCallDllJal
-                || pc == CallDllAfterJalr)
+            // Live c231655: any module's CallDLL PC set saw
+            // before await armed, so the poll never logged.
+            // Only this load, only ddi_nop.
+            if (!_ddiNopAwaitCallDll || bus == null || regs == null
+                || regs.Length <= 30)
+                return;
+            if (pc != XipCallDllUsegChk && pc != XipExeCallDllSkip
+                && pc != CallDllStartip && pc != XipDllCallDllJal
+                && pc != CallDllAfterJalr)
+                return;
+            bool hit = IsDdiNopModule(bus, regs[30]);
+            if (!hit && (pc == CallDllStartip || pc == CallDllAfterJalr))
+            {
+                if (regs.Length > 23 && IsDdiNopModule(bus, regs[23]))
+                    hit = true;
+                else if (regs.Length > 4 && IsDdiNopModule(bus, regs[4]))
+                    hit = true;
+            }
+            if (hit)
                 _ddiNopSawCallDllPc = true;
         }
 
         // Observe only. After BindImp, startip is set but
         // firmware may never reach 0x8001DD6C. Do not
         // invent a CallDLL site.
-        public static void TryPollDdiNopCallDllMiss(MipsBus bus)
+        public static void TryPollDdiNopCallDllMiss(MipsBus bus, uint pc)
+        {
+            TryPollDdiNopCallDllMiss(bus, null, pc);
+        }
+
+        public static void TryPollDdiNopCallDllMiss(MipsBus bus, uint[] regs, uint pc)
         {
             if (!_ddiNopAwaitCallDll || _ddiNopCallDllMissLogged || _ddiNopSawCallDllPc)
                 return;
             _ddiNopCallDllMissPoll++;
             if (_ddiNopCallDllMissPoll < 4096)
                 return;
-            TryLogDdiNopCallDllMiss(bus);
+            TryLogDdiNopCallDllMiss(bus, regs, pc);
         }
 
         public static void TryLogDdiNopCallDllMiss(MipsBus bus)
+        {
+            TryLogDdiNopCallDllMiss(bus, null, 0);
+        }
+
+        public static void TryLogDdiNopCallDllMiss(MipsBus bus, uint pc)
+        {
+            TryLogDdiNopCallDllMiss(bus, null, pc);
+        }
+
+        public static void TryLogDdiNopCallDllMiss(MipsBus bus, uint[] regs, uint pc)
         {
             if (_ddiNopCallDllMissLogged || !_ddiNopAwaitCallDll || _ddiNopSawCallDllPc)
                 return;
@@ -9378,6 +9415,36 @@ namespace ProcessorEmulator.Core
                 " mod+0x50=0x" + p50.ToString("X8") +
                 " startip=0x" + ip.ToString("X8") +
                 " no-0x8001DD6C");
+            TryLogDdiNopBindImpStall(bus, regs, pc);
+        }
+
+        // Observe only. Do not invent a CallDLL site. If
+        // stall is BinaryDecompress/MapO32 for o32[1],
+        // say so; do not host-CEDecompress .data.
+        private static void TryLogDdiNopBindImpStall(MipsBus bus, uint[] regs, uint pc)
+        {
+            if (_ddiNopStallLogged)
+                return;
+            _ddiNopStallLogged = true;
+            string why = "";
+            if (pc == BinaryDecompressRom || pc == MapO32Decompress)
+                why = " BinaryDecompress";
+            else if (pc == MapO32Rom || pc == MapO32InnerJal
+                || pc == MapO32FlagsBnez || pc == MapO32VallocJal)
+                why = " MapO32";
+            uint dest = 0;
+            if (regs != null && regs.Length > 4)
+                dest = regs[4];
+            uint iat = DdiNopVbasePage + DdiNopIatRva;
+            uint l2 = 0;
+            uint dest6 = 0;
+            uint dest10 = 0;
+            WalkDdiNopPteDests(bus, iat, out l2, out dest6, out dest10);
+            if (dest != 0 && (dest == iat
+                || (dest6 != 0 && (dest & ~0xFFFu) == (dest6 & ~0xFFFu))))
+                why += " o32[1]";
+            BootLog.Write("[Hive] ExtraROM BindImp-stall pc=0x" +
+                pc.ToString("X8") + why);
         }
 
         public static bool TryForceDdiNopCallDll(MipsBus bus, uint[] regs, ref uint programCounter)
@@ -13955,6 +14022,7 @@ namespace ProcessorEmulator.Core
         private static bool _ddiNopSawCallDllPc;
         private static bool _ddiNopCallDllMissLogged;
         private static int _ddiNopCallDllMissPoll;
+        private static bool _ddiNopStallLogged;
         private static bool _ddiNopIatLogged;
         private static bool _ddiNopDataO32Logged;
         private static uint[] _ddiNopWalkSeeds;
