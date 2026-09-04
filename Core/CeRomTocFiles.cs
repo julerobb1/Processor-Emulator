@@ -280,6 +280,14 @@ namespace ProcessorEmulator.Core
         public const uint BindImpOrdLookup = 0x8001F7BC;
         public const uint BindImpOrdBaseLw = 0x8001F7D0;
         public const uint BindImpOrdJalRet = 0x80019098;
+        // Live d79cd40: after beq $a2,$v0 at 0x80019104
+        // BindImp addiu $a3,$0,0x5800 sign-extends to
+        // 0xFFFF5800, lw 0($a3), then sw $v0,0($v1) at
+        // 0x80019124. v1 was *(fp+0x1C) at 0x800190FC.
+        public const uint BindImpIatKdata = 0x8001910C;
+        public const uint BindImpIatSw = 0x80019124;
+        public const uint BindImpIatAfter = 0x80019128;
+        public const uint BindImpFpIatOff = 0x1C;
         public const uint ModuleExpRva = 0x8C;
         public const uint ModuleExpEnd = 0x90;
         // 0x80018B34 CallDLLEntry jalrs module+0x5C with no
@@ -612,6 +620,10 @@ namespace ProcessorEmulator.Core
         public const uint CoredllSharedLo = 0x03F50000;
         public const uint CoredllSharedHi = 0x03FE0000;
         public const uint BindImpNameWalk = 0x80018580;
+        // KDataNest 0xFFFFD885 is cNest at KData+0x85.
+        // UserKData 0x5800 addiu sign-extends to this page.
+        public const uint KDataBase = 0xFFFFD800;
+        public const uint UserKPage = 0xFFFF5800;
         public const uint KDataSection = 0xFFFFD8C0;
         // 0x8001521C ori k1, epc, 0xFFFC / addiu 2 / beq
         // syscall. 0xFFFFF3DA is coredll 0x80095A98
@@ -2350,6 +2362,7 @@ namespace ProcessorEmulator.Core
             if (pc == BindImpOrdBaseLw && regs.Length > 4)
                 TryKeepCoredllImageBasePtr(bus, regs[4]);
             TryNoteBindImpAfterGoodV0(bus, pc);
+            TryNoteBindImpIatWindow(bus, regs, pc);
             if (pc == BindImpOrdJalRet)
             {
                 uint v0 = regs[2];
@@ -2369,6 +2382,7 @@ namespace ProcessorEmulator.Core
                         " va=0x" + (DdiNopVbasePage + DdiNopIatRva).ToString("X8") +
                         (iat == 0 ? " (no-store-yet)" : " (iat-has)"));
                     _ddiNopOrdRetLog++;
+                    TryArmUserKPageAlias(bus);
                     return;
                 }
                 if (_ddiNopOrdRetLog >= 5)
@@ -8525,6 +8539,121 @@ namespace ProcessorEmulator.Core
                 _ddiNopOrdGoodV0.ToString("X8") +
                 " no-IAT last=0x" + pc.ToString("X8") +
                 (backGetProc ? " (back-GetProc)" : ""));
+            TryNoteBindImpIatSwSkipped();
+        }
+
+        // Live d79cd40: BindImp touches 0xFFFF5800 before
+        // sw $v0,0($v1) at 0x80019124. UserKData addiu
+        // sign-extends; kernel KData is already live at
+        // 0xFFFFD800 (nest/CurProc/ThreadPtr). Alias the
+        // user page onto that KData. Do not invent bytes.
+        public static uint MapUserKDataVa(uint va)
+        {
+            if (!_userKPageAlias)
+                return va;
+            if ((va & ~0xFFFu) != (UserKPage & ~0xFFFu))
+                return va;
+            return (KDataBase & ~0xFFFu) | (va & 0xFFFu);
+        }
+
+        private static void TryArmUserKPageAlias(MipsBus bus)
+        {
+            if (_userKPageAliasNoted)
+                return;
+            _userKPageAliasNoted = true;
+            uint userWord = 0;
+            bool userMapped = TryPeekWord(bus, UserKPage, out userWord);
+            uint kdataWord = 0;
+            bool kdataMapped = TryPeekWord(bus, KDataBase, out kdataWord);
+            if (!userMapped)
+            {
+                BootLog.Write("[Hive] ExtraROM BindImp-iat FFFF5800-unmapped" +
+                    (kdataMapped
+                        ? " kdata=0x" + kdataWord.ToString("X8")
+                        : " KData-unmapped"));
+            }
+            else if (userWord == 0)
+            {
+                BootLog.Write("[Hive] ExtraROM BindImp-iat FFFF5800=0" +
+                    (kdataMapped
+                        ? " kdata=0x" + kdataWord.ToString("X8")
+                        : " KData-unmapped"));
+            }
+            if (userMapped && userWord != 0)
+                return;
+            if (!kdataMapped)
+                return;
+            _userKPageAlias = true;
+            BootLog.Write("[Hive] ExtraROM BindImp-iat alias 0x" +
+                UserKPage.ToString("X8") +
+                " -> 0x" + KDataBase.ToString("X8") +
+                " (KData live; do not invent contents)");
+        }
+
+        private static void TryNoteBindImpIatWindow(MipsBus bus, uint[] regs, uint pc)
+        {
+            if (!_ddiNopAwaitCallDll || regs == null || regs.Length <= 3)
+                return;
+            if (pc < BindImpIatKdata || pc > BindImpIatAfter)
+                return;
+            if (pc == BindImpIatSw)
+                _bindImpIatSwExpect = true;
+            TryArmUserKPageAlias(bus);
+            if (pc == _bindImpIatWinLast)
+                return;
+            if (_bindImpIatWinLog >= 8)
+                return;
+            _bindImpIatWinLast = pc;
+            _bindImpIatWinLog++;
+            uint v0 = regs[2];
+            uint v1 = regs[3];
+            uint fp = regs.Length > 30 ? regs[30] : 0;
+            uint fp1c = 0;
+            bool fpOk = fp != 0 && TryPeekWord(bus, fp + BindImpFpIatOff, out fp1c);
+            uint kdata = 0;
+            bool kOk = TryPeekWord(bus, UserKPage, out kdata);
+            uint iat = DdiNopVbasePage + DdiNopIatRva;
+            bool slot = v1 == iat || fp1c == iat
+                || (_ddiNopIatDest6 != 0
+                    && ((v1 & ~0xFFFu) == (_ddiNopIatDest6 & ~0xFFFu)
+                        || (fp1c & ~0xFFFu) == (_ddiNopIatDest6 & ~0xFFFu)));
+            BootLog.Write("[Hive] ExtraROM BindImp-iat pc=0x" +
+                pc.ToString("X8") +
+                " v0=0x" + v0.ToString("X8") +
+                " v1=0x" + v1.ToString("X8") +
+                " fp1c=0x" + fp1c.ToString("X8") +
+                (fpOk ? "" : " fp1c-unmapped") +
+                (kOk
+                    ? " FFFF5800=0x" + kdata.ToString("X8")
+                    : " FFFF5800-unmapped") +
+                (slot ? "" : " (not-IAT-slot)"));
+        }
+
+        public static void TryNoteBindImpIatSw(uint origVa, uint value)
+        {
+            if (!_bindImpIatSwExpect || _bindImpIatSwLogged || _ddiNopDestPeekRaw)
+                return;
+            _bindImpIatSwLogged = true;
+            _bindImpIatSwExpect = false;
+            uint iat = DdiNopVbasePage + DdiNopIatRva;
+            bool hit = (origVa & ~0xFFFu) == iat
+                || (_ddiNopIatDest6 != 0
+                    && !IsDdiNopDest10Page(_ddiNopIatDest6)
+                    && (origVa & ~0xFFFu) == (_ddiNopIatDest6 & ~0xFFFu));
+            BootLog.Write("[Hive] ExtraROM BindImp-iat sw va=0x" +
+                origVa.ToString("X8") +
+                " word=0x" + value.ToString("X8") +
+                (hit ? " (IAT)" : " (not-IAT)"));
+        }
+
+        private static void TryNoteBindImpIatSwSkipped()
+        {
+            if (_bindImpIatSwLogged || _ddiNopOrdGoodV0 == 0)
+                return;
+            if (_bindImpIatWinLog == 0 && !_userKPageAliasNoted)
+                return;
+            _bindImpIatSwLogged = true;
+            BootLog.Write("[Hive] ExtraROM BindImp-iat 19124-skipped");
         }
 
         private static bool IsDdiNopDest10Page(uint dest)
@@ -8874,6 +9003,12 @@ namespace ProcessorEmulator.Core
             _ddiNopOrdAfterDone = false;
             _ddiNopOrdAfterN = 0;
             _ddiNopOrdAfterLast = 0;
+            _userKPageAlias = false;
+            _userKPageAliasNoted = false;
+            _bindImpIatSwExpect = false;
+            _bindImpIatSwLogged = false;
+            _bindImpIatWinLog = 0;
+            _bindImpIatWinLast = 0;
             _ddiNopWalkSeedN = 0;
             _ddiNopNoModDiag = false;
             _ddiNopWalkDiag = false;
@@ -9744,6 +9879,7 @@ namespace ProcessorEmulator.Core
                 _ddiNopOrdGoodV0.ToString("X8") +
                 " no-IAT last=0x" + pc.ToString("X8") +
                 " (stall)");
+            TryNoteBindImpIatSwSkipped();
         }
 
         public static bool TryForceDdiNopCallDll(MipsBus bus, uint[] regs, ref uint programCounter)
@@ -14339,6 +14475,12 @@ namespace ProcessorEmulator.Core
         private static bool _ddiNopOrdAfterDone;
         private static int _ddiNopOrdAfterN;
         private static uint _ddiNopOrdAfterLast;
+        private static bool _userKPageAlias;
+        private static bool _userKPageAliasNoted;
+        private static bool _bindImpIatSwExpect;
+        private static bool _bindImpIatSwLogged;
+        private static int _bindImpIatWinLog;
+        private static uint _bindImpIatWinLast;
         private static uint[] _ddiNopWalkSeeds;
         private static int _ddiNopWalkSeedN;
         private static bool _ddiNopNoModDiag;
