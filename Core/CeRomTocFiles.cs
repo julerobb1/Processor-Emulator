@@ -631,6 +631,12 @@ namespace ProcessorEmulator.Core
         // Walk the live section. Do not invent 0x03FD0000.
         public const uint CoredllSharedLo = 0x03F50000;
         public const uint CoredllSharedHi = 0x03FE0000;
+        // Live 147e54f: I-fetch TLBL 0x03FB492C (IAT slot6).
+        // ImageBase keep-imagebase=0x03F50000. MapCoredllSharedVa
+        // still refuses >=0x03FA0000 until tv2 startip
+        // (wait77 OEMIdle). After DllMain, demand-map any
+        // remaining COREDLL page via slot-1 firmware PTE.
+        public const int CoredllImagePageCap = 32;
         public const uint BindImpNameWalk = 0x80018580;
         // KDataNest 0xFFFFD885 is cNest at KData+0x85.
         // UserKData 0x5800 addiu sign-extends to this page.
@@ -8964,6 +8970,12 @@ namespace ProcessorEmulator.Core
             {
                 TryNoteDdiNopGwesImageTlbl(bus, regs, epc, vaddr, vector);
             }
+            if (code == 2
+                && IsDdiNopCoredllImageVa(vaddr)
+                && (_ddiNopDllMainLogged || _ddiNopIatStoreN >= BindImpObserveMax))
+            {
+                TryNoteDdiNopCoredllImageTlbl(bus, regs, epc, vaddr, vector);
+            }
             if (_bindImpExnLogged)
                 return;
             _bindImpExnLogged = true;
@@ -9863,6 +9875,163 @@ namespace ProcessorEmulator.Core
             }
         }
 
+        // Live 147e54f: I-fetch TLBL 0x03FB492C after gwes
+        // image generalize. IAT slot6 word. COREDLL
+        // ImageBase 0x03F50000. MapCoredllSharedVa still
+        // caps at 0x03FA0000 until tv2 (OEMIdle). Demand-
+        // map remaining COREDLL pages after DllMain via
+        // slot-1 firmware PTE only. Do not invent dest.
+        public static uint MapDdiNopCoredllImageVa(MipsBus bus, uint va)
+        {
+            if (_coredllImageBusy)
+                return va;
+            if (!IsDdiNopCoredllImageArmed())
+                return va;
+            if (!IsDdiNopCoredllImageVa(va))
+                return va;
+            uint kseg = LookupCoredllImageKseg(va);
+            if (kseg != 0)
+                return kseg | (va & 0xFFFu);
+            TryResolveDdiNopCoredllImage(bus, va);
+            kseg = LookupCoredllImageKseg(va);
+            if (kseg != 0)
+                return kseg | (va & 0xFFFu);
+            return va;
+        }
+
+        private static bool IsDdiNopCoredllImageArmed()
+        {
+            if (!_ddiNopAwaitCallDll)
+                return false;
+            return _ddiNopDllMainLogged || _coredllImageDemand;
+        }
+
+        private static bool IsDdiNopCoredllImageVa(uint va)
+        {
+            return va >= CoredllSharedLo && va < CoredllSharedHi;
+        }
+
+        private static void EnsureCoredllImageMaps()
+        {
+            if (_coredllImagePage != null)
+                return;
+            _coredllImagePage = new uint[CoredllImagePageCap];
+            _coredllImageKseg = new uint[CoredllImagePageCap];
+            _coredllImageDone = new bool[CoredllImagePageCap];
+            _coredllImageTlbl = new bool[CoredllImagePageCap];
+        }
+
+        private static int FindCoredllImageSlot(uint page)
+        {
+            EnsureCoredllImageMaps();
+            for (int i = 0; i < _coredllImageN; i++)
+            {
+                if (_coredllImagePage[i] == page)
+                    return i;
+            }
+            return -1;
+        }
+
+        private static int ClaimCoredllImageSlot(uint page)
+        {
+            int i = FindCoredllImageSlot(page);
+            if (i >= 0)
+                return i;
+            if (_coredllImageN >= CoredllImagePageCap)
+                return -1;
+            i = _coredllImageN;
+            _coredllImageN++;
+            _coredllImagePage[i] = page;
+            return i;
+        }
+
+        private static uint LookupCoredllImageKseg(uint va)
+        {
+            int i = FindCoredllImageSlot(va & ~0xFFFu);
+            if (i < 0)
+                return 0;
+            return _coredllImageKseg[i];
+        }
+
+        private static void TryNoteDdiNopCoredllImageTlbl(MipsBus bus, uint[] regs,
+            uint epc, uint vaddr, uint vector)
+        {
+            _coredllImageDemand = true;
+            uint page = vaddr & ~0xFFFu;
+            int slot = ClaimCoredllImageSlot(page);
+            if (slot >= 0 && !_coredllImageTlbl[slot])
+            {
+                _coredllImageTlbl[slot] = true;
+                uint v0 = regs != null && regs.Length > 2 ? regs[2] : 0;
+                uint ra = regs != null && regs.Length > 31 ? regs[31] : 0;
+                BootLog.Write("[Hive] ExtraROM ddi_nop coredll-page TLBL epc=0x" +
+                    epc.ToString("X8") +
+                    " badvaddr=0x" + vaddr.ToString("X8") +
+                    " vec=0x" + vector.ToString("X8") +
+                    " v0=0x" + v0.ToString("X8") +
+                    " ra=0x" + ra.ToString("X8") +
+                    " (COREDLL ImageBase 0x03F50000 page 0x" +
+                    page.ToString("X8") +
+                    "; IAT slot6 class; do not invent dest)");
+            }
+            TryResolveDdiNopCoredllImage(bus, vaddr);
+        }
+
+        private static void TryResolveDdiNopCoredllImage(MipsBus bus, uint va)
+        {
+            if (bus == null || _coredllImageBusy)
+                return;
+            if (!IsDdiNopCoredllImageVa(va))
+                return;
+            uint page = va & ~0xFFFu;
+            int slot = FindCoredllImageSlot(page);
+            if (slot >= 0 && (_coredllImageKseg[slot] != 0 || _coredllImageDone[slot]))
+                return;
+            try
+            {
+                _coredllImageBusy = true;
+                uint sec = _coredllLiveSec != 0 ? _coredllLiveSec : PeekSection(bus, 1);
+                uint l1 = 0;
+                uint l2 = 0;
+                uint pfn = 0;
+                uint kseg = 0;
+                slot = ClaimCoredllImageSlot(page);
+                if (slot < 0)
+                    return;
+                if (sec != 0
+                    && WalkFirmwarePte(bus, sec, va, out l1, out l2, out pfn, out kseg)
+                    && (kseg & 0x1FFFFFFFu) >= 0x00010000u)
+                {
+                    _coredllImageKseg[slot] = kseg & ~0xFFFu;
+                    if (!_coredllImageDone[slot])
+                    {
+                        _coredllImageDone[slot] = true;
+                        uint word = 0;
+                        TryPeekWord(bus, _coredllImageKseg[slot] | (va & 0xFFFu), out word);
+                        BootLog.Write("[Hive] ExtraROM ddi_nop coredll-page map va=0x" +
+                            page.ToString("X8") +
+                            " -> 0x" + _coredllImageKseg[slot].ToString("X8") +
+                            " l2=0x" + l2.ToString("X8") +
+                            " dest-word=0x" + word.ToString("X8") +
+                            " (firmware PTE; COREDLL ImageBase; do not invent dest)");
+                    }
+                    return;
+                }
+                if (!_coredllImageDone[slot])
+                {
+                    _coredllImageDone[slot] = true;
+                    BootLog.Write("[Hive] ExtraROM ddi_nop coredll-page map va=0x" +
+                        page.ToString("X8") +
+                        " pte-miss sec=0x" + sec.ToString("X8") +
+                        " (COREDLL image TLBL; do not invent dest)");
+                }
+            }
+            finally
+            {
+                _coredllImageBusy = false;
+            }
+        }
+
         // During BindImp, dump-real IAT (o32.real) is the
         // same bytes as VALLOC dest. MapDdiNopDestVa
         // otherwise sends 0x01F57000 to ExtraRomDestKseg1.
@@ -10310,6 +10479,19 @@ namespace ProcessorEmulator.Core
                     _gwesImageKseg[i] = 0;
                     _gwesImageDone[i] = false;
                     _gwesImageTlbl[i] = false;
+                }
+            }
+            _coredllImageDemand = false;
+            _coredllImageBusy = false;
+            _coredllImageN = 0;
+            if (_coredllImagePage != null)
+            {
+                for (int i = 0; i < _coredllImagePage.Length; i++)
+                {
+                    _coredllImagePage[i] = 0;
+                    _coredllImageKseg[i] = 0;
+                    _coredllImageDone[i] = false;
+                    _coredllImageTlbl[i] = false;
                 }
             }
             _ddiNopWalkSeedN = 0;
@@ -11223,6 +11405,8 @@ namespace ProcessorEmulator.Core
             TryResolveDdiNopGwesText2(bus);
             if (IsDdiNopGwesImageVa(pc) && !IsNamedDdiNopGwesPage(pc))
                 TryResolveDdiNopGwesImage(bus, pc);
+            if (IsDdiNopCoredllImageVa(pc))
+                TryResolveDdiNopCoredllImage(bus, pc);
         }
 
         // Observe only. After BindImp, startip is set but
@@ -16101,6 +16285,13 @@ namespace ProcessorEmulator.Core
         private static int _gwesImageN;
         private static bool _gwesImageDemand;
         private static bool _gwesImageBusy;
+        private static uint[] _coredllImagePage;
+        private static uint[] _coredllImageKseg;
+        private static bool[] _coredllImageDone;
+        private static bool[] _coredllImageTlbl;
+        private static int _coredllImageN;
+        private static bool _coredllImageDemand;
+        private static bool _coredllImageBusy;
         private static uint[] _ddiNopWalkSeeds;
         private static int _ddiNopWalkSeedN;
         private static bool _ddiNopNoModDiag;
