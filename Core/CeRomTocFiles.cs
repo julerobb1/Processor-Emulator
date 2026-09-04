@@ -2049,7 +2049,10 @@ namespace ProcessorEmulator.Core
             {
             }
             if (dest == 0x01981000u)
+            {
                 TryMeasureDdiNopDestAfterDecomp(bus, hdr, v0);
+                TryServeDdiNopAtDecompRet(bus);
+            }
             try
             {
                 // entryrva 0x18014 is dest+0x17014 (o32[0] rva 0x1000).
@@ -7757,6 +7760,9 @@ namespace ProcessorEmulator.Core
         // not PE bytes. Do not invent this word.
         private const uint DdiNopTextSigRva2000 = 0x8C481B78u;
         private const uint DdiNopTextVsize = 0x1743Au;
+        // ExtraROM extract ddi_nop.dll AddressOfEntryPoint.
+        // Prefer slot e32[1] (e32_entryrva). Do not invent e32.
+        private const uint DdiNopEntryRvaExtract = 0x18014u;
 
         private static void ResetDdiNopDecompStores()
         {
@@ -8079,6 +8085,67 @@ namespace ProcessorEmulator.Core
             {
                 _ddiNopLandedDest = vbase;
                 _ddiNopLandedWord = vw0;
+            }
+        }
+
+        // Live 37c4995: sig matched but LoadLibrary v0!=0
+        // (firmware already MapO32'd; BindImp COREDLL). Serve
+        // dest6 here, not on a LoadLibrary miss that will not
+        // come. Do not serve dest10.
+        private static void TryServeDdiNopAtDecompRet(MipsBus bus)
+        {
+            if (!_ddiNopLandedBySig || _ddiNopLandedDest == 0)
+                return;
+            if ((_ddiNopLandedDest & ~0xFFFu) == DdiNopDest10Live)
+                return;
+            ExtraRomTocMod slot = FindCachedExtraRomToc("ddi_nop.dll");
+            if (slot == null)
+                return;
+            uint dest6 = _ddiNopLandedDest;
+            uint vbase = DdiNopVbasePage;
+            slot.DecompDest = dest6;
+            slot.Vbase = vbase;
+            slot.Decompressed = true;
+            MarkExtraRomTocDecompressed(dest6);
+            uint entryrva = DdiNopEntryRvaFromSlot(slot);
+            TrySetDdiNopModuleStartip(bus, vbase, entryrva);
+            BootLog.Write("[Hive] TOC[" + slot.Index + "] ddi_nop.dll serve dest6=0x" +
+                dest6.ToString("X8") +
+                " sig=0x" + _ddiNopLandedWord.ToString("X8") +
+                " vbase=0x" + vbase.ToString("X8") +
+                " (CEDecompressROM .text sig; not LoadLibrary miss)");
+            BootLog.Rom("ok", "ExtraROM", "TOC", slot.Index, slot.Name, 7,
+                dest6, _ddiNopLandedWord, vbase,
+                "CEDecompressROM .text sig; serve dest6");
+        }
+
+        private static uint DdiNopEntryRvaFromSlot(ExtraRomTocMod slot)
+        {
+            if (slot != null && slot.E32Words != null
+                && slot.E32Words.Length > 1 && slot.E32Words[1] != 0)
+                return slot.E32Words[1];
+            return DdiNopEntryRvaExtract;
+        }
+
+        // Only when CurProc+ProcModule is the ExtraROM TOC
+        // attach already used by TryFillTocStartip. Do not
+        // invent a module walk from the LoadE32 file object.
+        private static void TrySetDdiNopModuleStartip(MipsBus bus, uint vbase, uint entryrva)
+        {
+            if (bus == null || vbase == 0 || entryrva == 0)
+                return;
+            try
+            {
+                uint proc = 0;
+                if (!TryPeekWord(bus, CurProc, out proc) || proc == 0)
+                    return;
+                uint module = proc + ProcModule;
+                if (!IsDdiNopTocObject(bus, module + ModuleFileObj))
+                    return;
+                bus.Write32(module + ModuleStartip, vbase + entryrva);
+            }
+            catch
+            {
             }
         }
 
