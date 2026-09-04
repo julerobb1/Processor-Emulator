@@ -1006,11 +1006,12 @@ namespace ProcessorEmulator.Core
         // 0x800152CC sw $ra,220($s0) saves
         // that $ra to +DC. +EC this Boot is
         // 0x80015B9C (ExnAfterFetch2; aligned
-        // NK). Replay +EC into COP0 EPC / +DC
-        // / $ra when that is a sane aligned
-        // NK/useg PC. Clear latch only then.
-        // Do not leftover hop. Do not invent
-        // dest.
+        // NK leftover mid, not adel resume).
+        // Replay +EC into COP0 EPC / +DC / $ra
+        // only when that is a sane aligned
+        // NK/useg PC, not leftover mid / idle.
+        // Clear latch only then. Do not leftover
+        // hop. Do not invent dest.
         // Live 3b847b7: plant-clr first-win
         // (+EC=0x80015B9C). Later C2 $sp
         // 0xC201FE88; sp-fix +EC=0x800373C0
@@ -9817,15 +9818,19 @@ namespace ProcessorEmulator.Core
             return pc == NkIdleJal || pc == C2TlbsFunc;
         }
 
-        // Live aa0b26c: +EC=0x80015B9C is aligned NK
-        // (ExnAfterFetch2). leftover dest / adel-pc
-        // / near-null / NK idle poll are not a
-        // resume. Do not invent dest.
+        // Live e3cc519: +EC=0x80015B9C is leftover
+        // mid (ExnAfterFetch2; dump addiu $sp,-304
+        // then jal 0x80020FA0), not an adel resume.
+        // plant-clr of that leftover then later
+        // +EC idle. leftover dest / adel-pc /
+        // near-null / NK idle / leftover mid are
+        // not a resume. Do not invent dest.
         private static bool IsSaneAdelResumePc(uint pc)
         {
             if ((pc & 3) != 0 || IsAdelPoisonEpc(pc) || IsPoisonPlant(pc)
                 || IsNearNullVa(pc) || IsLeftoverDestVa(pc)
-                || IsNkIdleResumePc(pc))
+                || IsNkIdleResumePc(pc) || pc == ExnAfterFetch
+                || pc == ExnAfterFetch2)
                 return false;
             if (IsSaneNkResumePc(pc))
                 return true;
@@ -9877,6 +9882,11 @@ namespace ProcessorEmulator.Core
         // C2 $sp sp-fix +EC=0x800373C0 idle.
         // Refuse that ERET (idle-halt). Do not
         // leftover hop. Do not invent dest.
+        // Live e3cc519: plant-clr of leftover
+        // mid 0x80015B9C cleared the latch;
+        // later +EC idle. Keep latch / epc-halt
+        // when +EC is leftover mid. Do not
+        // invent dest.
         public static bool TryRefuseC2SpResume(MipsBus bus, uint[] regs,
             ref uint programCounter)
         {
