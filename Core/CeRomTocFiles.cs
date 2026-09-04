@@ -758,6 +758,13 @@ namespace ProcessorEmulator.Core
         // 0x01FFFCA4. Same page as *0x01FFFFA0 / wait96.
         public const uint ProcessInfoPage = 0x01FFF000;
         public const uint ProcessInfoFaultVa = 0x01FFFCA4;
+        // Live 6b8a9eb: after DllMain, I-fetch TLBL
+        // epc==badvaddr==0x0005D2E0. In-tree gwes
+        // Display 0x0005D250 (GwesVaDispAlloc) is the
+        // same page. Not COREDLL RVA 0x5D2E0 — do not
+        // invent 0x03FAD2E0.
+        public const uint GwesDispFetchPage = 0x0005D000;
+        public const uint GwesDispFetchFault = 0x0005D2E0;
         // FSDMGR 0x03E896D8 is GetProcAddress. After TOC-attach,
         // 0x800196E4 copies e32_rom units to e32_lite+0x1C.
         // Kernel GPA reads EXP at +0x20 (that dword is the
@@ -2384,6 +2391,7 @@ namespace ProcessorEmulator.Core
             TryNoteBindImpExnSave(bus, regs, pc);
             TryNoteDdiNopProcessInfo(bus, regs);
             TryNoteDdiNopDllMain(bus, regs, pc);
+            TryNoteDdiNopAfterDllMain(bus, regs, pc);
             if (pc == BindImpOrdJalRet)
             {
                 uint v0 = regs[2];
@@ -8856,6 +8864,13 @@ namespace ProcessorEmulator.Core
                 _ddiNopInfoDemand = true;
                 TryResolveDdiNopProcessInfo(bus);
             }
+            if (code == 2
+                && epc == vaddr
+                && (vaddr & ~0xFFFu) == GwesDispFetchPage
+                && (_ddiNopDllMainLogged || _ddiNopIatStoreN >= BindImpObserveMax))
+            {
+                TryNoteDdiNopGwesDispFetchTlbl(bus, regs, epc, vaddr, vector);
+            }
             if (_bindImpExnLogged)
                 return;
             _bindImpExnLogged = true;
@@ -9006,6 +9021,99 @@ namespace ProcessorEmulator.Core
             finally
             {
                 _ddiNopInfoBusy = false;
+            }
+        }
+
+        // Live 6b8a9eb: I-fetch TLBL at 0x0005D2E0 after
+        // DllMain. Same page as GwesVaDispAlloc 0x0005D250.
+        // Demand-map via firmware PTE only. Do not invent
+        // dest / 0x03FAD2E0 / zero code bytes.
+        public static uint MapDdiNopGwesDispFetchVa(MipsBus bus, uint va)
+        {
+            if (_ddiNopGwesFetchBusy)
+                return va;
+            if (!IsDdiNopGwesDispFetchArmed())
+                return va;
+            if ((va & ~0xFFFu) != GwesDispFetchPage)
+                return va;
+            if (_ddiNopGwesFetchKseg != 0)
+                return _ddiNopGwesFetchKseg | (va & 0xFFFu);
+            TryResolveDdiNopGwesDispFetch(bus);
+            if (_ddiNopGwesFetchKseg != 0)
+                return _ddiNopGwesFetchKseg | (va & 0xFFFu);
+            return va;
+        }
+
+        private static bool IsDdiNopGwesDispFetchArmed()
+        {
+            if (!_ddiNopAwaitCallDll)
+                return false;
+            return _ddiNopDllMainLogged || _ddiNopGwesFetchDemand;
+        }
+
+        private static void TryNoteDdiNopGwesDispFetchTlbl(MipsBus bus, uint[] regs,
+            uint epc, uint vaddr, uint vector)
+        {
+            _ddiNopGwesFetchDemand = true;
+            if (!_ddiNopGwesFetchTlblLogged)
+            {
+                _ddiNopGwesFetchTlblLogged = true;
+                uint ra = regs != null && regs.Length > 31 ? regs[31] : 0;
+                BootLog.Write("[Hive] ExtraROM ddi_nop fetch-TLBL epc=0x" +
+                    epc.ToString("X8") +
+                    " badvaddr=0x" + vaddr.ToString("X8") +
+                    " vec=0x" + vector.ToString("X8") +
+                    " ra=0x" + ra.ToString("X8") +
+                    " dllmain-ra=0x" + _ddiNopDllMainRa.ToString("X8") +
+                    " (I-fetch; gwes Display page 0x0005D000; not COREDLL 0x03FAD2E0)");
+            }
+            TryResolveDdiNopGwesDispFetch(bus);
+        }
+
+        private static void TryResolveDdiNopGwesDispFetch(MipsBus bus)
+        {
+            if (_ddiNopGwesFetchKseg != 0 || _ddiNopGwesFetchBusy || bus == null)
+                return;
+            try
+            {
+                _ddiNopGwesFetchBusy = true;
+                uint sec = PeekSection(bus, 0);
+                uint l1 = 0;
+                uint l2 = 0;
+                uint pfn = 0;
+                uint kseg = 0;
+                if (sec != 0
+                    && WalkFirmwarePte(bus, sec, GwesDispFetchFault,
+                        out l1, out l2, out pfn, out kseg)
+                    && (kseg & 0x1FFFFFFFu) >= 0x00010000u)
+                {
+                    _ddiNopGwesFetchKseg = kseg & ~0xFFFu;
+                    if (!_ddiNopGwesFetchLogged)
+                    {
+                        _ddiNopGwesFetchLogged = true;
+                        uint word = 0;
+                        TryPeekWord(bus, kseg | (GwesDispFetchFault & 0xFFFu), out word);
+                        BootLog.Write("[Hive] ExtraROM ddi_nop gwes-disp map va=0x" +
+                            GwesDispFetchPage.ToString("X8") +
+                            " -> 0x" + _ddiNopGwesFetchKseg.ToString("X8") +
+                            " l2=0x" + l2.ToString("X8") +
+                            " dest-word=0x" + word.ToString("X8") +
+                            " (firmware PTE; GwesVaDispAlloc page; do not invent dest)");
+                    }
+                    return;
+                }
+                if (!_ddiNopGwesFetchLogged)
+                {
+                    _ddiNopGwesFetchLogged = true;
+                    BootLog.Write("[Hive] ExtraROM ddi_nop gwes-disp map va=0x" +
+                        GwesDispFetchPage.ToString("X8") +
+                        " pte-miss sec=0x" + sec.ToString("X8") +
+                        " (I-fetch 0x0005D2E0; do not invent dest or 0x03FAD2E0)");
+                }
+            }
+            finally
+            {
+                _ddiNopGwesFetchBusy = false;
             }
         }
 
@@ -9412,6 +9520,14 @@ namespace ProcessorEmulator.Core
             _ddiNopInfoKseg = 0;
             _ddiNopCallDllHiveLogged = false;
             _ddiNopDllMainLogged = false;
+            _ddiNopDllMainRa = 0;
+            _ddiNopCallDllSite = 0;
+            _ddiNopAfterDllMainLogged = false;
+            _ddiNopGwesFetchKseg = 0;
+            _ddiNopGwesFetchLogged = false;
+            _ddiNopGwesFetchBusy = false;
+            _ddiNopGwesFetchDemand = false;
+            _ddiNopGwesFetchTlblLogged = false;
             _ddiNopWalkSeedN = 0;
             _ddiNopNoModDiag = false;
             _ddiNopWalkDiag = false;
@@ -10188,9 +10304,15 @@ namespace ProcessorEmulator.Core
                 else if (regs.Length > 4 && IsDdiNopModule(bus, regs[4]))
                     hit = true;
             }
-            if (hit)
+            bool startipHit = false;
+            if (!hit && (pc == CallDllStartip || pc == CallDllAfterJalr
+                || pc == XipDllCallDllJal))
+                startipHit = IsDdiNopStartipModule(bus, regs);
+            if (hit || startipHit)
             {
                 _ddiNopSawCallDllPc = true;
+                if (_ddiNopCallDllSite == 0)
+                    _ddiNopCallDllSite = pc;
                 if (!_ddiNopCallDllHiveLogged)
                 {
                     _ddiNopCallDllHiveLogged = true;
@@ -10202,10 +10324,45 @@ namespace ProcessorEmulator.Core
                         pc.ToString("X8") +
                         " module=0x" + regs[30].ToString("X8") +
                         " a1=0x" + a1.ToString("X8") +
-                        " startip=0x" + ip.ToString("X8"));
+                        " startip=0x" + ip.ToString("X8") +
+                        (startipHit && !hit ? " (startip-site)" : ""));
                 }
                 TryNoteDdiNopProcessInfo(bus, regs);
             }
+        }
+
+        private static bool IsDdiNopStartipModule(MipsBus bus, uint[] regs)
+        {
+            if (bus == null || regs == null)
+                return false;
+            uint ip = 0;
+            if (_ddiNopModule != 0
+                && TryPeekWord(bus, _ddiNopModule + ModuleStartip, out ip)
+                && IsDdiNopRamStartip(ip))
+                return true;
+            for (int i = 0; i < 3; i++)
+            {
+                uint mod = 0;
+                if (i == 0 && regs.Length > 30)
+                    mod = regs[30];
+                else if (i == 1 && regs.Length > 23)
+                    mod = regs[23];
+                else if (i == 2 && regs.Length > 4)
+                    mod = regs[4];
+                if (mod == 0)
+                    continue;
+                if (!TryPeekWord(bus, mod + ModuleStartip, out ip))
+                    continue;
+                if (IsDdiNopRamStartip(ip))
+                    return true;
+            }
+            return false;
+        }
+
+        private static bool IsDdiNopRamStartip(uint ip)
+        {
+            return ip == DdiNopVbasePage + DdiNopEntryRvaExtract
+                || ip == DdiNopVbase + DdiNopEntryRvaExtract;
         }
 
         // Live edf15b0: DllMain / CallDLL already had
@@ -10227,12 +10384,49 @@ namespace ProcessorEmulator.Core
             _ddiNopSawCallDllPc = true;
             uint a0 = regs != null && regs.Length > 4 ? regs[4] : 0;
             uint a1 = regs != null && regs.Length > 5 ? regs[5] : 0;
+            uint ra = regs != null && regs.Length > 31 ? regs[31] : 0;
+            _ddiNopDllMainRa = ra;
             BootLog.Write("[Hive] ExtraROM ddi_nop DllMain startip=0x" +
                 ip.ToString("X8") +
                 " a0=0x" + a0.ToString("X8") +
                 " a1=0x" + a1.ToString("X8") +
-                " module=0x" + _ddiNopModule.ToString("X8"));
+                " ra=0x" + ra.ToString("X8") +
+                " module=0x" + _ddiNopModule.ToString("X8") +
+                " calldll-site=" +
+                (_ddiNopCallDllSite != 0
+                    ? "0x" + _ddiNopCallDllSite.ToString("X8")
+                    : "none"));
             TryNoteDdiNopProcessInfo(bus, regs);
+            TryResolveDdiNopGwesDispFetch(bus);
+        }
+
+        // Live 6b8a9eb: after DllMain the next I-fetch
+        // was 0x0005D2E0 (gwes Display page). Name that
+        // PC/$ra once. Do not invent a jump.
+        private static void TryNoteDdiNopAfterDllMain(MipsBus bus, uint[] regs, uint pc)
+        {
+            if (!_ddiNopDllMainLogged || _ddiNopAfterDllMainLogged)
+                return;
+            if (pc >= DdiNopVbasePage && pc < 0x019B0000u)
+                return;
+            if (pc >= BindImpExnLo && pc <= BindImpExnHi)
+                return;
+            if (pc == 0 || pc == 0x80000000u || pc == 0x80000180u)
+                return;
+            _ddiNopAfterDllMainLogged = true;
+            uint ra = regs != null && regs.Length > 31 ? regs[31] : 0;
+            bool fetchPage = (pc & ~0xFFFu) == GwesDispFetchPage;
+            BootLog.Write("[Hive] ExtraROM ddi_nop after-DllMain pc=0x" +
+                pc.ToString("X8") +
+                " ra=0x" + ra.ToString("X8") +
+                " dllmain-ra=0x" + _ddiNopDllMainRa.ToString("X8") +
+                (fetchPage ? " (gwes Display fetch page)" : "") +
+                " calldll-site=" +
+                (_ddiNopCallDllSite != 0
+                    ? "0x" + _ddiNopCallDllSite.ToString("X8")
+                    : "none"));
+            if (fetchPage)
+                TryResolveDdiNopGwesDispFetch(bus);
         }
 
         // Observe only. After BindImp, startip is set but
@@ -12872,7 +13066,9 @@ namespace ProcessorEmulator.Core
                 && va >= 0x01980000u && va < 0x019B0000u;
             bool ddiInfo = va >= ProcessInfoPage && va < 0x02000000u
                 && IsDdiNopProcessInfoArmed();
-            if (_pteMapBusy || bus == null || (_tv2ImplRa == 0 && !dest0 && !ddiInfo))
+            bool ddiFetch = (va & ~0xFFFu) == GwesDispFetchPage
+                && IsDdiNopGwesDispFetchArmed();
+            if (_pteMapBusy || bus == null || (_tv2ImplRa == 0 && !dest0 && !ddiInfo && !ddiFetch))
                 return va;
             if (va >= 0x80000000u)
                 return va;
@@ -12885,9 +13081,9 @@ namespace ProcessorEmulator.Core
                 && va >= ProcessInfoPage
                 && va < 0x02000000u;
             bool walkSlot0Fetch = slot == 0
-                && _tv2LeftoverCae8Logged
                 && va >= 0x00010000u
-                && va < 0x01FFF000u;
+                && va < 0x01FFF000u
+                && (_tv2LeftoverCae8Logged || ddiFetch);
             if (slot != 1 && slot != 6 && !walkSlot2 && !walkSlot0Info
                 && !walkSlot0Fetch && !dest0)
                 return va;
@@ -12955,15 +13151,27 @@ namespace ProcessorEmulator.Core
                     TryPeekWord(bus, dest, out word);
                     _slot0FetchMapLogged = true;
                     _pteMapLogged = true;
-                    System.Console.WriteLine("[Hive] FILE[25] slot-0 fetch PTE 0x" +
-                        va.ToString("X8") + " -> 0x" + dest.ToString("X8") +
-                        " slot=" + slot +
-                        " sec=0x" + sec.ToString("X8") +
-                        " l1=0x" + l1.ToString("X8") +
-                        " l2=0x" + l2.ToString("X8") +
-                        " pfn=0x" + pfn.ToString("X8") +
-                        " dest-word=0x" + word.ToString("X8") +
-                        " (gwes leftover-CAE8; firmware 0x80040278; dest already expanded; do not map page 0; do not invent dest bytes)");
+                    if (ddiFetch && !_tv2LeftoverCae8Logged)
+                    {
+                        if (_ddiNopGwesFetchKseg == 0)
+                            _ddiNopGwesFetchKseg = dest & ~0xFFFu;
+                        BootLog.Write("[Hive] ExtraROM ddi_nop gwes-disp PTE 0x" +
+                            va.ToString("X8") + " -> 0x" + dest.ToString("X8") +
+                            " dest-word=0x" + word.ToString("X8") +
+                            " (firmware 0x80040278; GwesVaDispAlloc page; do not invent dest)");
+                    }
+                    else
+                    {
+                        System.Console.WriteLine("[Hive] FILE[25] slot-0 fetch PTE 0x" +
+                            va.ToString("X8") + " -> 0x" + dest.ToString("X8") +
+                            " slot=" + slot +
+                            " sec=0x" + sec.ToString("X8") +
+                            " l1=0x" + l1.ToString("X8") +
+                            " l2=0x" + l2.ToString("X8") +
+                            " pfn=0x" + pfn.ToString("X8") +
+                            " dest-word=0x" + word.ToString("X8") +
+                            " (gwes leftover-CAE8; firmware 0x80040278; dest already expanded; do not map page 0; do not invent dest bytes)");
+                    }
                 }
                 else if (walkSlot2 && !_slot2MapLogged)
                 {
@@ -14991,6 +15199,14 @@ namespace ProcessorEmulator.Core
         private static uint _ddiNopInfoKseg;
         private static bool _ddiNopCallDllHiveLogged;
         private static bool _ddiNopDllMainLogged;
+        private static uint _ddiNopDllMainRa;
+        private static uint _ddiNopCallDllSite;
+        private static bool _ddiNopAfterDllMainLogged;
+        private static uint _ddiNopGwesFetchKseg;
+        private static bool _ddiNopGwesFetchLogged;
+        private static bool _ddiNopGwesFetchBusy;
+        private static bool _ddiNopGwesFetchDemand;
+        private static bool _ddiNopGwesFetchTlblLogged;
         private static uint[] _ddiNopWalkSeeds;
         private static int _ddiNopWalkSeedN;
         private static bool _ddiNopNoModDiag;
