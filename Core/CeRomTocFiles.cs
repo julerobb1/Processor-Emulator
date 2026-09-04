@@ -271,6 +271,17 @@ namespace ProcessorEmulator.Core
         public const uint BindImpDllName = 0x80018EC0;
         public const uint BindImpLoadLib = 0x8001E9D4;
         public const uint BindImpLoadLibRet = 0x80018EF8;
+        // Live 404d06b BindImp-stall pc=0x8001F7D0.
+        // Same nk cluster as LoadExeE32Ret 0x8001F870.
+        // BindImp jal 0x8001F7BC (ordinal GetProc) from
+        // 0x80019090; ret 0x80019098. lw v1,80(a0) is
+        // MODULE+0x50 BasePtr. Observe only. Do not
+        // invent COREDLL BasePtr or export bytes.
+        public const uint BindImpOrdLookup = 0x8001F7BC;
+        public const uint BindImpOrdBaseLw = 0x8001F7D0;
+        public const uint BindImpOrdJalRet = 0x80019098;
+        public const uint ModuleExpRva = 0x8C;
+        public const uint ModuleExpEnd = 0x90;
         // 0x80018B34 CallDLLEntry jalrs module+0x5C with no
         // null check. TOC-attach writes object+0/4 so 0x800196E4
         // can read e32, but 0x8001E960 skips the startip store
@@ -2315,10 +2326,82 @@ namespace ProcessorEmulator.Core
                     // not force CallDLL here.
                     TryServeDdiNopDataO32(bus);
                     TryLogDdiNopIatPage(bus);
+                    _ddiNopIatWatch = true;
                 }
                 return false;
             }
+            TryNoteDdiNopOrdGetProc(bus, regs, pc);
             return false;
+        }
+
+        // Live 404d06b: stall at 0x8001F7D0 lw MODULE+0x50.
+        // Rate-limit first + every 256th, max 5. Peek only.
+        // Do not invent BasePtr / export dir / GetProc VA.
+        public static void TryNoteDdiNopOrdGetProc(MipsBus bus, uint[] regs, uint pc)
+        {
+            if (!_ddiNopAwaitCallDll || regs == null || regs.Length <= 5)
+                return;
+            if (pc == BindImpOrdJalRet)
+            {
+                if (_ddiNopOrdRetLog >= 5)
+                    return;
+                _ddiNopOrdRetN++;
+                if (_ddiNopOrdRetN > 1 && (_ddiNopOrdRetN % 256) != 0)
+                    return;
+                _ddiNopOrdRetLog++;
+                uint v0 = regs[2];
+                uint a1 = regs[5];
+                BootLog.Write("[Hive] ExtraROM BindImp-ord ret v0=0x" +
+                    v0.ToString("X8") +
+                    " a1=0x" + a1.ToString("X8") +
+                    (v0 == 0 ? " (unresolved)" : ""));
+                return;
+            }
+            if (pc != BindImpOrdBaseLw)
+                return;
+            _ddiNopOrdN++;
+            bool log = _ddiNopOrdLog == 0
+                || (_ddiNopOrdN % 256 == 0 && _ddiNopOrdLog < 5);
+            if (!log)
+                return;
+            _ddiNopOrdLog++;
+            uint a0 = regs[4];
+            uint a1o = regs[5];
+            uint ra = regs.Length > 31 ? regs[31] : 0;
+            uint p50 = 0;
+            uint exp = 0;
+            uint end = 0;
+            bool p50ok = a0 != 0 && TryPeekWord(bus, a0 + ProcModule, out p50);
+            bool expok = a0 != 0 && TryPeekWord(bus, a0 + ModuleExpRva, out exp);
+            TryPeekWord(bus, a0 + ModuleExpEnd, out end);
+            BootLog.Write("[Hive] ExtraROM BindImp-ord a0=0x" +
+                a0.ToString("X8") +
+                " a1=0x" + a1o.ToString("X8") +
+                " p50=0x" + p50.ToString("X8") +
+                (p50ok ? "" : " unmapped") +
+                " exp=0x" + exp.ToString("X") +
+                (expok ? "" : " unread") +
+                " +90=0x" + end.ToString("X") +
+                " ra=0x" + ra.ToString("X8"));
+            if (_ddiNopOrdExpLogged || !p50ok || !expok || p50 == 0 || exp == 0)
+                return;
+            uint expVa = p50 + exp;
+            uint w0 = 0;
+            uint w1 = 0;
+            uint w2 = 0;
+            uint w3 = 0;
+            if (!TryPeekWord(bus, expVa, out w0)
+                || !TryPeekWord(bus, expVa + 4, out w1)
+                || !TryPeekWord(bus, expVa + 8, out w2)
+                || !TryPeekWord(bus, expVa + 12, out w3))
+                return;
+            _ddiNopOrdExpLogged = true;
+            BootLog.Write("[Hive] ExtraROM BindImp-ord expVA=0x" +
+                expVa.ToString("X8") +
+                " w0=0x" + w0.ToString("X8") +
+                " w1=0x" + w1.ToString("X8") +
+                " w2=0x" + w2.ToString("X8") +
+                " w3=0x" + w3.ToString("X8"));
         }
 
         private static void HostCommitExtraRomDest(MipsBus bus, uint dest, uint vsize)
@@ -8313,6 +8396,8 @@ namespace ProcessorEmulator.Core
             uint dest6 = 0;
             uint dest10 = 0;
             WalkDdiNopPteDests(bus, va, out l2, out dest6, out dest10);
+            if (dest6 != 0 && !IsDdiNopDest10Page(dest6))
+                _ddiNopIatDest6 = dest6;
             bool threw;
             uint word = 0;
             bool mapped = false;
@@ -8357,6 +8442,39 @@ namespace ProcessorEmulator.Core
                 " word=0x" + word.ToString("X8") +
                 (mapped ? " mapped" : " unmapped") +
                 (writable ? " writable" : " not-writable"));
+        }
+
+        // First guest store into VALLOC IAT 0x01999000 /
+        // dest6. Host IAT poke sets destPeekRaw. Do not
+        // invent the written word.
+        public static void TryNoteDdiNopIatStore(uint origVa, uint mappedVa, uint value)
+        {
+            if (!_ddiNopIatWatch || _ddiNopIatStoreLogged || _ddiNopDestPeekRaw)
+                return;
+            uint iat = DdiNopVbasePage + DdiNopIatRva;
+            uint dest6 = _ddiNopIatDest6;
+            uint page = origVa & ~0xFFFu;
+            uint mappedPage = mappedVa & ~0xFFFu;
+            bool hit = page == iat
+                || mappedPage == iat
+                || (dest6 != 0 && !IsDdiNopDest10Page(dest6)
+                    && (page == (dest6 & ~0xFFFu)
+                        || mappedPage == (dest6 & ~0xFFFu)));
+            if (!hit)
+                return;
+            _ddiNopIatStoreLogged = true;
+            uint baseVa = page == iat ? iat
+                : mappedPage == iat ? iat
+                : (dest6 & ~0xFFFu);
+            uint slotVa = page == iat ? origVa
+                : mappedPage == iat ? mappedVa
+                : (mappedPage == (dest6 & ~0xFFFu) ? mappedVa : origVa);
+            uint slot = (slotVa - baseVa) / 4;
+            BootLog.Write("[Hive] ExtraROM ddi_nop IAT-store va=0x" +
+                origVa.ToString("X8") +
+                " dest6=0x" + dest6.ToString("X8") +
+                " word=0x" + value.ToString("X8") +
+                " slot=" + slot);
         }
 
         private static bool TryFindDdiNopDataO32(out int sec, out uint vsize,
@@ -8591,6 +8709,14 @@ namespace ProcessorEmulator.Core
             _ddiNopStallLogged = false;
             _ddiNopIatLogged = false;
             _ddiNopDataO32Logged = false;
+            _ddiNopIatWatch = false;
+            _ddiNopIatStoreLogged = false;
+            _ddiNopIatDest6 = 0;
+            _ddiNopOrdN = 0;
+            _ddiNopOrdLog = 0;
+            _ddiNopOrdRetN = 0;
+            _ddiNopOrdRetLog = 0;
+            _ddiNopOrdExpLogged = false;
             _ddiNopWalkSeedN = 0;
             _ddiNopNoModDiag = false;
             _ddiNopWalkDiag = false;
@@ -9381,6 +9507,7 @@ namespace ProcessorEmulator.Core
 
         public static void TryPollDdiNopCallDllMiss(MipsBus bus, uint[] regs, uint pc)
         {
+            TryNoteDdiNopOrdGetProc(bus, regs, pc);
             if (!_ddiNopAwaitCallDll || _ddiNopCallDllMissLogged || _ddiNopSawCallDllPc)
                 return;
             _ddiNopCallDllMissPoll++;
@@ -9432,6 +9559,8 @@ namespace ProcessorEmulator.Core
             else if (pc == MapO32Rom || pc == MapO32InnerJal
                 || pc == MapO32FlagsBnez || pc == MapO32VallocJal)
                 why = " MapO32";
+            else if (pc == BindImpOrdBaseLw)
+                why = " GetProc-ord";
             uint dest = 0;
             if (regs != null && regs.Length > 4)
                 dest = regs[4];
@@ -14025,6 +14154,14 @@ namespace ProcessorEmulator.Core
         private static bool _ddiNopStallLogged;
         private static bool _ddiNopIatLogged;
         private static bool _ddiNopDataO32Logged;
+        private static bool _ddiNopIatWatch;
+        private static bool _ddiNopIatStoreLogged;
+        private static uint _ddiNopIatDest6;
+        private static int _ddiNopOrdN;
+        private static int _ddiNopOrdLog;
+        private static int _ddiNopOrdRetN;
+        private static int _ddiNopOrdRetLog;
+        private static bool _ddiNopOrdExpLogged;
         private static uint[] _ddiNopWalkSeeds;
         private static int _ddiNopWalkSeedN;
         private static bool _ddiNopNoModDiag;

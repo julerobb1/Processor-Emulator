@@ -112,6 +112,7 @@ namespace ProcessorEmulator.Emulation
         public void Write32(uint vaddr, uint value)
         {
             HostHardDisk.NoteDispC8Write(vaddr, value, this);
+            uint origVa = vaddr;
             vaddr = CeRomTocFiles.MapDdiNopDestVa(vaddr);
             vaddr = CeRomTocFiles.MapProcessHeapSlotVa(this, vaddr);
             vaddr = CeRomTocFiles.MapCoredllSharedVa(this, vaddr);
@@ -120,6 +121,7 @@ namespace ProcessorEmulator.Emulation
             vaddr = CeRomTocFiles.MapExtraRomE32HostVa(vaddr);
             vaddr = CeRomTocFiles.MapExtraRomTocSrcVa(vaddr);
             vaddr = CeRomTocFiles.MapExtraRomTocDestVa(vaddr);
+            CeRomTocFiles.TryNoteDdiNopIatStore(origVa, vaddr, value);
             bool watch = CeRomTocFiles.TryNoteDdiNopDecompStore(vaddr, value);
             try
             {
