@@ -636,7 +636,15 @@ namespace ProcessorEmulator.Core
         // still refuses >=0x03FA0000 until tv2 startip
         // (wait77 OEMIdle). After DllMain, demand-map any
         // remaining COREDLL page via slot-1 firmware PTE.
+        // Live 1bba9df: filesys-slot4 mapped. Next
+        // data-TLBL epc=0x0001E4DC badvaddr=0x09F574F8.
+        // Slot 4 view of IB page 0x03F57000→0x8007B000.
+        // Relative [0x01F50000, 0x01FE0000). Slot 0 is
+        // IAT real 0x01F57000 — exclude. Do not rewrite
+        // ImageBase. Do not lift 0x03FA0000 cap.
         public const int CoredllImagePageCap = 32;
+        public const uint CoredllImageRelLo = 0x01F50000;
+        public const uint CoredllImageRelHi = 0x01FE0000;
         public const uint BindImpNameWalk = 0x80018580;
         // KDataNest 0xFFFFD885 is cNest at KData+0x85.
         // UserKData 0x5800 addiu sign-extends to this page.
@@ -9972,7 +9980,9 @@ namespace ProcessorEmulator.Core
         // ImageBase 0x03F50000. MapCoredllSharedVa still
         // caps at 0x03FA0000 until tv2 (OEMIdle). Demand-
         // map remaining COREDLL pages after DllMain via
-        // slot-1 firmware PTE only. Do not invent dest.
+        // slot-1 firmware PTE only. Live 1bba9df: slot-4
+        // view 0x09F574F8 ≡ 0x03F574F8. Canon to slot-1
+        // IB VA; alias dest. Do not invent dest.
         public static uint MapDdiNopCoredllImageVa(MipsBus bus, uint va)
         {
             if (_coredllImageBusy)
@@ -9981,13 +9991,20 @@ namespace ProcessorEmulator.Core
                 return va;
             if (!IsDdiNopCoredllImageVa(va))
                 return va;
-            uint kseg = LookupCoredllImageKseg(va);
+            uint use = CoredllImageCanonVa(va);
+            uint kseg = LookupCoredllImageKseg(use);
             if (kseg != 0)
+            {
+                TryLogCoredllSlotView(bus, va, use, kseg, 0);
                 return kseg | (va & 0xFFFu);
+            }
             TryResolveDdiNopCoredllImage(bus, va);
-            kseg = LookupCoredllImageKseg(va);
+            kseg = LookupCoredllImageKseg(use);
             if (kseg != 0)
+            {
+                TryLogCoredllSlotView(bus, va, use, kseg, 0);
                 return kseg | (va & 0xFFFu);
+            }
             return va;
         }
 
@@ -9998,9 +10015,25 @@ namespace ProcessorEmulator.Core
             return _ddiNopDllMainLogged || _coredllImageDemand;
         }
 
+        // Slot-relative COREDLL ImageBase pages.
+        // Rel in [0x01F50000, 0x01FE0000). Slot 1 is
+        // 0x03F5xxxx (keep ImageBase). Slot 4 is
+        // 0x09F5xxxx (live 1bba9df). Slot 0 is IAT
+        // real 0x01F57000 — exclude. Not a blanket
+        // bit25 walk. Not MapCoredllSharedVa.
         private static bool IsDdiNopCoredllImageVa(uint va)
         {
-            return va >= CoredllSharedLo && va < CoredllSharedHi;
+            uint rel = va & 0x01FFFFFFu;
+            if (rel < CoredllImageRelLo || rel >= CoredllImageRelHi)
+                return false;
+            uint slot = (va & ~0xFFFu) >> 25;
+            return slot >= 1 && slot <= 31;
+        }
+
+        // Slot-1 ImageBase view. Keep 0x03F50000.
+        private static uint CoredllImageCanonVa(uint va)
+        {
+            return (CoredllSharedLo & ~0x01FFFFFFu) | (va & 0x01FFFFFFu);
         }
 
         private static void EnsureCoredllImageMaps()
@@ -10039,7 +10072,7 @@ namespace ProcessorEmulator.Core
 
         private static uint LookupCoredllImageKseg(uint va)
         {
-            int i = FindCoredllImageSlot(va & ~0xFFFu);
+            int i = FindCoredllImageSlot(CoredllImageCanonVa(va) & ~0xFFFu);
             if (i < 0)
                 return 0;
             return _coredllImageKseg[i];
@@ -10050,10 +10083,19 @@ namespace ProcessorEmulator.Core
         {
             _coredllImageDemand = true;
             uint page = vaddr & ~0xFFFu;
-            int slot = ClaimCoredllImageSlot(page);
-            if (slot >= 0 && !_coredllImageTlbl[slot])
+            uint use = CoredllImageCanonVa(vaddr);
+            uint canon = use & ~0xFFFu;
+            bool view = page != canon;
+            int slot = ClaimCoredllImageSlot(canon);
+            bool first = view
+                ? !_coredllSlotViewTlbl
+                : (slot >= 0 && !_coredllImageTlbl[slot]);
+            if (first)
             {
-                _coredllImageTlbl[slot] = true;
+                if (view)
+                    _coredllSlotViewTlbl = true;
+                else if (slot >= 0)
+                    _coredllImageTlbl[slot] = true;
                 uint v0 = regs != null && regs.Length > 2 ? regs[2] : 0;
                 uint ra = regs != null && regs.Length > 31 ? regs[31] : 0;
                 BootLog.Write("[Hive] ExtraROM ddi_nop coredll-page TLBL epc=0x" +
@@ -10064,6 +10106,7 @@ namespace ProcessorEmulator.Core
                     " ra=0x" + ra.ToString("X8") +
                     " (COREDLL ImageBase 0x03F50000 page 0x" +
                     page.ToString("X8") +
+                    " canon=0x" + canon.ToString("X8") +
                     "; IAT slot6 class; do not invent dest)");
             }
             TryResolveDdiNopCoredllImage(bus, vaddr);
@@ -10075,7 +10118,8 @@ namespace ProcessorEmulator.Core
                 return;
             if (!IsDdiNopCoredllImageVa(va))
                 return;
-            uint page = va & ~0xFFFu;
+            uint use = CoredllImageCanonVa(va);
+            uint page = use & ~0xFFFu;
             int slot = FindCoredllImageSlot(page);
             if (slot >= 0 && (_coredllImageKseg[slot] != 0 || _coredllImageDone[slot]))
                 return;
@@ -10091,7 +10135,7 @@ namespace ProcessorEmulator.Core
                 if (slot < 0)
                     return;
                 if (sec != 0
-                    && WalkFirmwarePte(bus, sec, va, out l1, out l2, out pfn, out kseg)
+                    && WalkFirmwarePte(bus, sec, use, out l1, out l2, out pfn, out kseg)
                     && (kseg & 0x1FFFFFFFu) >= 0x00010000u)
                 {
                     _coredllImageKseg[slot] = kseg & ~0xFFFu;
@@ -10122,6 +10166,30 @@ namespace ProcessorEmulator.Core
             {
                 _coredllImageBusy = false;
             }
+        }
+
+        // Live 1bba9df: first process-slot view of an
+        // already-mapped IB page. Same dest. Do not
+        // invent dest. Do not rewrite ImageBase.
+        private static void TryLogCoredllSlotView(MipsBus bus, uint va,
+            uint canon, uint kseg, uint l2)
+        {
+            uint page = va & ~0xFFFu;
+            uint ib = canon & ~0xFFFu;
+            if (page == ib)
+                return;
+            if (_coredllSlotViewLogged)
+                return;
+            _coredllSlotViewLogged = true;
+            uint word = 0;
+            TryPeekWord(bus, (kseg & ~0xFFFu) | (va & 0xFFFu), out word);
+            BootLog.Write("[Hive] ExtraROM ddi_nop coredll-page map va=0x" +
+                page.ToString("X8") +
+                " -> 0x" + (kseg & ~0xFFFu).ToString("X8") +
+                " l2=0x" + l2.ToString("X8") +
+                " dest-word=0x" + word.ToString("X8") +
+                " via=slot-1-alias canon=0x" + ib.ToString("X8") +
+                " (COREDLL ImageBase slot view; do not invent dest)");
         }
 
         // Live a633b83: NK 0x8003D254 data-TLBL
@@ -11390,6 +11458,8 @@ namespace ProcessorEmulator.Core
             _coredllImageDemand = false;
             _coredllImageBusy = false;
             _coredllImageN = 0;
+            _coredllSlotViewLogged = false;
+            _coredllSlotViewTlbl = false;
             if (_coredllImagePage != null)
             {
                 for (int i = 0; i < _coredllImagePage.Length; i++)
@@ -17233,6 +17303,8 @@ namespace ProcessorEmulator.Core
         private static int _coredllImageN;
         private static bool _coredllImageDemand;
         private static bool _coredllImageBusy;
+        private static bool _coredllSlotViewLogged;
+        private static bool _coredllSlotViewTlbl;
         private static uint _filesysSlot2Kseg;
         private static bool _filesysSlot2Logged;
         private static bool _filesysSlot2Busy;
