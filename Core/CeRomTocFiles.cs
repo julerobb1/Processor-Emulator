@@ -772,6 +772,13 @@ namespace ProcessorEmulator.Core
         // 0x00010000 / vsize 0xBB000. Do not invent dest.
         public const uint GwesDispDataPage = 0x000B6000;
         public const uint GwesDispDataFault = 0x000B6008;
+        // Live 8623be5: after IAT data map, NK 0x80020174
+        // (near ThreadContextSetup 0x80020BE4) data-TLBL
+        // badvaddr=0x00011C10. Same page as gwes VA
+        // 0x00011000 (GwesRomText) and FILESYS API table
+        // 0x000111A8. Do not invent dest / sipcfg dest.
+        public const uint GwesTextBasePage = 0x00011000;
+        public const uint GwesTextBaseFault = 0x00011C10;
         // FSDMGR 0x03E896D8 is GetProcAddress. After TOC-attach,
         // 0x800196E4 copies e32_rom units to e32_lite+0x1C.
         // Kernel GPA reads EXP at +0x20 (that dword is the
@@ -8885,6 +8892,13 @@ namespace ProcessorEmulator.Core
             {
                 TryNoteDdiNopGwesDispDataTlbl(bus, regs, epc, vaddr, vector);
             }
+            if (code == 2
+                && epc != vaddr
+                && (vaddr & ~0xFFFu) == GwesTextBasePage
+                && (_ddiNopDllMainLogged || _ddiNopIatStoreN >= BindImpObserveMax))
+            {
+                TryNoteDdiNopGwesTextBaseTlbl(bus, regs, epc, vaddr, vector);
+            }
             if (_bindImpExnLogged)
                 return;
             _bindImpExnLogged = true;
@@ -9222,6 +9236,101 @@ namespace ProcessorEmulator.Core
             finally
             {
                 _ddiNopGwesDataBusy = false;
+            }
+        }
+
+        // Live 8623be5: NK 0x80020174 data-TLBL on
+        // 0x00011C10. First gwes .text page (VA
+        // 0x00011000 / FILESYS API 0x000111A8).
+        // Firmware PTE only. Do not invent dest or
+        // steal sipcfg 0x00011000.
+        public static uint MapDdiNopGwesTextBaseVa(MipsBus bus, uint va)
+        {
+            if (_ddiNopGwesTextBusy)
+                return va;
+            if (!IsDdiNopGwesTextBaseArmed())
+                return va;
+            if ((va & ~0xFFFu) != GwesTextBasePage)
+                return va;
+            if (_ddiNopGwesTextKseg != 0)
+                return _ddiNopGwesTextKseg | (va & 0xFFFu);
+            TryResolveDdiNopGwesTextBase(bus);
+            if (_ddiNopGwesTextKseg != 0)
+                return _ddiNopGwesTextKseg | (va & 0xFFFu);
+            return va;
+        }
+
+        private static bool IsDdiNopGwesTextBaseArmed()
+        {
+            if (!_ddiNopAwaitCallDll)
+                return false;
+            return _ddiNopDllMainLogged || _ddiNopGwesTextDemand;
+        }
+
+        private static void TryNoteDdiNopGwesTextBaseTlbl(MipsBus bus, uint[] regs,
+            uint epc, uint vaddr, uint vector)
+        {
+            _ddiNopGwesTextDemand = true;
+            if (!_ddiNopGwesTextTlblLogged)
+            {
+                _ddiNopGwesTextTlblLogged = true;
+                uint a1 = regs != null && regs.Length > 5 ? regs[5] : 0;
+                uint v0 = regs != null && regs.Length > 2 ? regs[2] : 0;
+                BootLog.Write("[Hive] ExtraROM ddi_nop text-TLBL epc=0x" +
+                    epc.ToString("X8") +
+                    " badvaddr=0x" + vaddr.ToString("X8") +
+                    " vec=0x" + vector.ToString("X8") +
+                    " a1=0x" + a1.ToString("X8") +
+                    " v0=0x" + v0.ToString("X8") +
+                    " (nk near ThreadContextSetup; gwes .text 0x00011000; do not invent dest)");
+            }
+            TryResolveDdiNopGwesTextBase(bus);
+        }
+
+        private static void TryResolveDdiNopGwesTextBase(MipsBus bus)
+        {
+            if (_ddiNopGwesTextKseg != 0 || _ddiNopGwesTextBusy || bus == null)
+                return;
+            try
+            {
+                _ddiNopGwesTextBusy = true;
+                uint sec = PeekSection(bus, 0);
+                uint l1 = 0;
+                uint l2 = 0;
+                uint pfn = 0;
+                uint kseg = 0;
+                if (sec != 0
+                    && WalkFirmwarePte(bus, sec, GwesTextBaseFault,
+                        out l1, out l2, out pfn, out kseg)
+                    && (kseg & 0x1FFFFFFFu) >= 0x00010000u)
+                {
+                    _ddiNopGwesTextKseg = kseg & ~0xFFFu;
+                    if (!_ddiNopGwesTextLogged)
+                    {
+                        _ddiNopGwesTextLogged = true;
+                        uint word = 0;
+                        TryPeekWord(bus, kseg | (GwesTextBaseFault & 0xFFFu), out word);
+                        BootLog.Write("[Hive] ExtraROM ddi_nop gwes-text map va=0x" +
+                            GwesTextBasePage.ToString("X8") +
+                            " -> 0x" + _ddiNopGwesTextKseg.ToString("X8") +
+                            " l2=0x" + l2.ToString("X8") +
+                            " dest-word=0x" + word.ToString("X8") +
+                            " (firmware PTE; gwes VA 0x00011000 / FILESYS API page; do not invent dest)");
+                    }
+                    return;
+                }
+                if (!_ddiNopGwesTextLogged)
+                {
+                    _ddiNopGwesTextLogged = true;
+                    BootLog.Write("[Hive] ExtraROM ddi_nop gwes-text map va=0x" +
+                        GwesTextBasePage.ToString("X8") +
+                        " pte-miss sec=0x" + sec.ToString("X8") +
+                        " (data TLBL 0x00011C10; do not invent dest or sipcfg dest)");
+                }
+            }
+            finally
+            {
+                _ddiNopGwesTextBusy = false;
             }
         }
 
@@ -9641,6 +9750,11 @@ namespace ProcessorEmulator.Core
             _ddiNopGwesDataBusy = false;
             _ddiNopGwesDataDemand = false;
             _ddiNopGwesDataTlblLogged = false;
+            _ddiNopGwesTextKseg = 0;
+            _ddiNopGwesTextLogged = false;
+            _ddiNopGwesTextBusy = false;
+            _ddiNopGwesTextDemand = false;
+            _ddiNopGwesTextTlblLogged = false;
             _ddiNopWalkSeedN = 0;
             _ddiNopNoModDiag = false;
             _ddiNopWalkDiag = false;
@@ -10512,6 +10626,7 @@ namespace ProcessorEmulator.Core
             TryNoteDdiNopProcessInfo(bus, regs);
             TryResolveDdiNopGwesDispFetch(bus);
             TryResolveDdiNopGwesDispData(bus);
+            TryResolveDdiNopGwesTextBase(bus);
         }
 
         // Live 6b8a9eb: after DllMain the next I-fetch
@@ -10542,6 +10657,7 @@ namespace ProcessorEmulator.Core
             if (fetchPage)
                 TryResolveDdiNopGwesDispFetch(bus);
             TryResolveDdiNopGwesDispData(bus);
+            TryResolveDdiNopGwesTextBase(bus);
         }
 
         // Observe only. After BindImp, startip is set but
@@ -13185,7 +13301,9 @@ namespace ProcessorEmulator.Core
                 && IsDdiNopGwesDispFetchArmed();
             bool ddiData = (va & ~0xFFFu) == GwesDispDataPage
                 && IsDdiNopGwesDispDataArmed();
-            if (_pteMapBusy || bus == null || (_tv2ImplRa == 0 && !dest0 && !ddiInfo && !ddiFetch && !ddiData))
+            bool ddiText = (va & ~0xFFFu) == GwesTextBasePage
+                && IsDdiNopGwesTextBaseArmed();
+            if (_pteMapBusy || bus == null || (_tv2ImplRa == 0 && !dest0 && !ddiInfo && !ddiFetch && !ddiData && !ddiText))
                 return va;
             if (va >= 0x80000000u)
                 return va;
@@ -13200,7 +13318,7 @@ namespace ProcessorEmulator.Core
             bool walkSlot0Fetch = slot == 0
                 && va >= 0x00010000u
                 && va < 0x01FFF000u
-                && (_tv2LeftoverCae8Logged || ddiFetch || ddiData);
+                && (_tv2LeftoverCae8Logged || ddiFetch || ddiData || ddiText);
             if (slot != 1 && slot != 6 && !walkSlot2 && !walkSlot0Info
                 && !walkSlot0Fetch && !dest0)
                 return va;
@@ -13268,7 +13386,16 @@ namespace ProcessorEmulator.Core
                     TryPeekWord(bus, dest, out word);
                     _slot0FetchMapLogged = true;
                     _pteMapLogged = true;
-                    if (ddiData && !_tv2LeftoverCae8Logged)
+                    if (ddiText && !_tv2LeftoverCae8Logged)
+                    {
+                        if (_ddiNopGwesTextKseg == 0)
+                            _ddiNopGwesTextKseg = dest & ~0xFFFu;
+                        BootLog.Write("[Hive] ExtraROM ddi_nop gwes-text PTE 0x" +
+                            va.ToString("X8") + " -> 0x" + dest.ToString("X8") +
+                            " dest-word=0x" + word.ToString("X8") +
+                            " (firmware 0x80040278; gwes VA 0x00011000; do not invent dest)");
+                    }
+                    else if (ddiData && !_tv2LeftoverCae8Logged)
                     {
                         if (_ddiNopGwesDataKseg == 0)
                             _ddiNopGwesDataKseg = dest & ~0xFFFu;
@@ -15338,6 +15465,11 @@ namespace ProcessorEmulator.Core
         private static bool _ddiNopGwesDataBusy;
         private static bool _ddiNopGwesDataDemand;
         private static bool _ddiNopGwesDataTlblLogged;
+        private static uint _ddiNopGwesTextKseg;
+        private static bool _ddiNopGwesTextLogged;
+        private static bool _ddiNopGwesTextBusy;
+        private static bool _ddiNopGwesTextDemand;
+        private static bool _ddiNopGwesTextTlblLogged;
         private static uint[] _ddiNopWalkSeeds;
         private static int _ddiNopWalkSeedN;
         private static bool _ddiNopNoModDiag;
