@@ -1011,6 +1011,15 @@ namespace ProcessorEmulator.Core
         // NK/useg PC. Clear latch only then.
         // Do not leftover hop. Do not invent
         // dest.
+        // Live 3b847b7: plant-clr first-win
+        // (+EC=0x80015B9C). Later C2 $sp
+        // 0xC201FE88; sp-fix +EC=0x800373C0
+        // (dump: or $a3,$s0 then jal
+        // 0x80031D34 poll). Latch already
+        // clear; ERET2 idle; silent CPU burn
+        // (same as 695e734). Refuse ERET when
+        // +EC is that idle mid-poll. Do not
+        // leftover hop. Do not invent dest.
         public const uint C2SpLoadPc = 0x80015660;
         public const uint C2SpFirstPc = 0x80015664;
         public const uint ThreadCtxEret = 0x8001568C;
@@ -9800,14 +9809,23 @@ namespace ProcessorEmulator.Core
             return (pc & 3) == 0 && pc >= 0x80010000u && pc < NkImageEnd;
         }
 
+        // Live 3b847b7 / 695e734: 0x800373C0 is
+        // mid NK idle (jal 0x80031D34). Not a
+        // resume. Do not leftover hop.
+        private static bool IsNkIdleResumePc(uint pc)
+        {
+            return pc == NkIdleJal || pc == C2TlbsFunc;
+        }
+
         // Live aa0b26c: +EC=0x80015B9C is aligned NK
         // (ExnAfterFetch2). leftover dest / adel-pc
-        // / near-null are not a resume. Do not
-        // invent dest.
+        // / near-null / NK idle poll are not a
+        // resume. Do not invent dest.
         private static bool IsSaneAdelResumePc(uint pc)
         {
             if ((pc & 3) != 0 || IsAdelPoisonEpc(pc) || IsPoisonPlant(pc)
-                || IsNearNullVa(pc) || IsLeftoverDestVa(pc))
+                || IsNearNullVa(pc) || IsLeftoverDestVa(pc)
+                || IsNkIdleResumePc(pc))
                 return false;
             if (IsSaneNkResumePc(pc))
                 return true;
@@ -9855,6 +9873,10 @@ namespace ProcessorEmulator.Core
         // into EPC / +DC / $ra when +EC is a
         // sane aligned NK/useg PC, then clear
         // the latch. Do not invent dest.
+        // Live 3b847b7: after that clear, later
+        // C2 $sp sp-fix +EC=0x800373C0 idle.
+        // Refuse that ERET (idle-halt). Do not
+        // leftover hop. Do not invent dest.
         public static bool TryRefuseC2SpResume(MipsBus bus, uint[] regs,
             ref uint programCounter)
         {
@@ -9997,6 +10019,18 @@ namespace ProcessorEmulator.Core
                         " +EC=0x" + ec.ToString("X8") +
                         " pc=0x" + programCounter.ToString("X8") +
                         " (refuse ERET; adel-pc latch; do not invent dest)");
+                }
+                return true;
+            }
+            if (IsNkIdleResumePc(ec))
+            {
+                if (!_idleHaltLogged)
+                {
+                    _idleHaltLogged = true;
+                    BootLog.Write("[Hive] ExtraROM ddi_nop idle-halt +EC=0x" +
+                        ec.ToString("X8") +
+                        " pc=0x" + programCounter.ToString("X8") +
+                        " (refuse ERET; NK idle poll; do not invent dest)");
                 }
                 return true;
             }
@@ -13155,6 +13189,7 @@ namespace ProcessorEmulator.Core
             _adelPcEpc = 0;
             _adelPcSp = 0;
             _adelPlantClrLogged = false;
+            _idleHaltLogged = false;
             _exnContinueWord = 0;
             _thrSpLogged = false;
             _spFixLogged = false;
@@ -19152,6 +19187,7 @@ namespace ProcessorEmulator.Core
         private static uint _adelPcEpc;
         private static uint _adelPcSp;
         private static bool _adelPlantClrLogged;
+        private static bool _idleHaltLogged;
         private static uint _exnContinueWord;
         private static bool _thrSpLogged;
         private static bool _spFixLogged;
