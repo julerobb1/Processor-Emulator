@@ -209,10 +209,35 @@ namespace ProcessorEmulator.Emulation
                 }
 
                 if (programCounter == CeRomTocFiles.CallDllStartip)
+                {
+                    CeRomTocFiles.NoteDdiNopCallDllPc(programCounter);
                     CeRomTocFiles.TryFillTocStartip(_bus, registers[23], true);
+                }
+
+                // Live f13b33e: startip 0x01998014 on MODULE
+                // 0x86FACC50; mod+0x50=0x03980000 is useg.
+                // 0x8001DD6C skips CallDLL. Force the DLL jal
+                // (a1=1) here, same continue as EXE skip.
+                if (programCounter == CeRomTocFiles.XipCallDllUsegChk)
+                {
+                    CeRomTocFiles.NoteDdiNopCallDllPc(programCounter);
+                    if (CeRomTocFiles.TryForceDdiNopCallDll(_bus, registers, ref programCounter))
+                    {
+                        _cp0.UpdateTimer(1);
+                        _bus.Tick(1);
+                        continue;
+                    }
+                }
 
                 if (programCounter == CeRomTocFiles.XipExeCallDllSkip)
                 {
+                    CeRomTocFiles.NoteDdiNopCallDllPc(programCounter);
+                    if (CeRomTocFiles.TryForceDdiNopCallDll(_bus, registers, ref programCounter))
+                    {
+                        _cp0.UpdateTimer(1);
+                        _bus.Tick(1);
+                        continue;
+                    }
                     if (CeRomTocFiles.TryForceXipExeCallDll(_bus, registers, ref programCounter))
                     {
                         _cp0.UpdateTimer(1);

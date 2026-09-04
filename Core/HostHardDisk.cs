@@ -559,6 +559,7 @@ namespace ProcessorEmulator.Core
             }
             if (pc == CeRomTocFiles.CallDllStartip)
             {
+                CeRomTocFiles.NoteDdiNopCallDllPc(pc);
                 CeRomTocFiles.TryFillTocStartip(bus, registers[23], true);
                 LogCallDllStartip(registers, bus);
                 return false;
@@ -571,13 +572,15 @@ namespace ProcessorEmulator.Core
             }
             if (pc == CeRomTocFiles.XipCallDllUsegChk)
             {
+                CeRomTocFiles.NoteDdiNopCallDllPc(pc);
                 if (!_logged.Contains("hive:ddi:words")
                     && CeRomTocFiles.TryForceDdiNopCallDll(bus, registers, ref programCounter))
-                    return false;
+                    return true;
                 return false;
             }
             if (pc == CeRomTocFiles.XipExeCallDllSkip)
             {
+                CeRomTocFiles.NoteDdiNopCallDllPc(pc);
                 if (!_logged.Contains("hive:ddi:words")
                     && CeRomTocFiles.TryForceDdiNopCallDll(bus, registers, ref programCounter))
                     return false;
@@ -1957,6 +1960,7 @@ namespace ProcessorEmulator.Core
             }
             if (pc == CoredllLoadDriverRet && _logged.Contains("hive:ll:ddi_nop.dll"))
             {
+                CeRomTocFiles.TryLogDdiNopCallDllMiss(bus);
                 if (_logged.Add("hive:ldret"))
                     System.Console.WriteLine("[Hive] LoadDriver ret v0=0x" +
                         (registers != null && registers.Length > 2
@@ -2219,6 +2223,7 @@ namespace ProcessorEmulator.Core
             }
             if (pc == CeRomTocFiles.LoadLibSyscallRet)
             {
+                CeRomTocFiles.TryLogDdiNopCallDllMiss(bus);
                 if (!string.IsNullOrEmpty(_pendingLoadLib))
                     CeRomTocFiles.TryServeExtraRomLoadLibrary(bus, _pendingLoadLib, registers);
                 uint v0 = registers != null && registers.Length > 2 ? registers[2] : 0;

@@ -2294,6 +2294,8 @@ namespace ProcessorEmulator.Core
                     TrySetDdiNopRamStartip(bus, 0, regs);
                 if (_ddiNopModule == 0)
                     LogDdiNopBindWalkOnce(bus);
+                else if (_ddiNopLandedBySig)
+                    _ddiNopAwaitCallDll = true;
                 return false;
             }
             return false;
@@ -8256,6 +8258,9 @@ namespace ProcessorEmulator.Core
             _ddiNopBindLibV0 = 0;
             _ddiNopFileObj = 0;
             _ddiNopStartipAttempted = false;
+            _ddiNopAwaitCallDll = false;
+            _ddiNopSawCallDllPc = false;
+            _ddiNopCallDllMissLogged = false;
             _ddiNopWalkSeedN = 0;
             _ddiNopNoModDiag = false;
             _ddiNopWalkDiag = false;
@@ -9012,6 +9017,35 @@ namespace ProcessorEmulator.Core
             }
         }
 
+        public static void NoteDdiNopCallDllPc(uint pc)
+        {
+            if (pc == XipCallDllUsegChk || pc == XipExeCallDllSkip
+                || pc == CallDllStartip || pc == XipDllCallDllJal
+                || pc == CallDllAfterJalr)
+                _ddiNopSawCallDllPc = true;
+        }
+
+        // Observe only. After BindImp, startip is set but
+        // firmware may never reach 0x8001DD6C. Do not
+        // invent a CallDLL site.
+        public static void TryLogDdiNopCallDllMiss(MipsBus bus)
+        {
+            if (_ddiNopCallDllMissLogged || !_ddiNopAwaitCallDll || _ddiNopSawCallDllPc)
+                return;
+            if (_ddiNopModule == 0)
+                return;
+            _ddiNopCallDllMissLogged = true;
+            uint p50 = 0;
+            uint ip = 0;
+            TryPeekWord(bus, _ddiNopModule + ProcModule, out p50);
+            TryPeekWord(bus, _ddiNopModule + ModuleStartip, out ip);
+            BootLog.Write("[Hive] ExtraROM ddi_nop CallDLL-miss module=0x" +
+                _ddiNopModule.ToString("X8") +
+                " mod+0x50=0x" + p50.ToString("X8") +
+                " startip=0x" + ip.ToString("X8") +
+                " no-0x8001DD6C");
+        }
+
         public static bool TryForceDdiNopCallDll(MipsBus bus, uint[] regs, ref uint programCounter)
         {
             if (bus == null || regs == null || regs.Length <= 30 || !_ddiNopLandedBySig)
@@ -9041,6 +9075,7 @@ namespace ProcessorEmulator.Core
                 regs[4] = module;
                 regs[5] = 1;
                 programCounter = XipDllCallDllJal;
+                _ddiNopSawCallDllPc = true;
                 BootLog.Write("[Hive] force CallDLL ExtraROM ddi_nop module=0x" +
                     module.ToString("X8") +
                     " mod+0x50=0x" + p50.ToString("X8") +
@@ -13582,6 +13617,9 @@ namespace ProcessorEmulator.Core
         private static uint _ddiNopBindLibV0;
         private static uint _ddiNopFileObj;
         private static bool _ddiNopStartipAttempted;
+        private static bool _ddiNopAwaitCallDll;
+        private static bool _ddiNopSawCallDllPc;
+        private static bool _ddiNopCallDllMissLogged;
         private static uint[] _ddiNopWalkSeeds;
         private static int _ddiNopWalkSeedN;
         private static bool _ddiNopNoModDiag;
