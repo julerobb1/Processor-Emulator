@@ -835,6 +835,21 @@ namespace ProcessorEmulator.Core
         // invent dest.
         public const uint FilesysSlot2Page = 0x04011000;
         public const uint FilesysSlot2Fault = 0x040110FC;
+        // Live 017b67e: filesys-slot2 mapped. Next miss is
+        // data-TLBL epc=0x0001E534 badvaddr=0x48D000F0.
+        // Slot 0 is filesys (HostHardDisk). ROM =
+        // FilesysRomText+(0x0001E534-0x00011000)=0x80112534.
+        // Between CreateFile 0x00019CB8 and RegOpen
+        // 0x0001FEB0. Not kernel LoadO32WrapC1 0x8001E534.
+        // 0x48D000F0>>25=36 — outside CE 32MB slots 0-31.
+        // Equals 0x40000000|0x08D000F0 (PTE-flag bit;
+        // WalkFirmwarePte wait77 l2 0x40002A1A). v0=
+        // 0x080DF51C is gwes-slot VALLOC 0x080D0000
+        // (wait42), not KData 0xFFFFD800. Observe only.
+        // Do not invent dest. Do not walk slot-2.
+        public const uint Filesys48dEpc = 0x0001E534;
+        public const uint Filesys48dPage = 0x48D00000;
+        public const uint Filesys48dFault = 0x48D000F0;
         // FSDMGR 0x03E896D8 is GetProcAddress. After TOC-attach,
         // 0x800196E4 copies e32_rom units to e32_lite+0x1C.
         // Kernel GPA reads EXP at +0x20 (that dword is the
@@ -9006,6 +9021,14 @@ namespace ProcessorEmulator.Core
                 TryNoteDdiNopFilesysSlot2Tlbl(bus, regs, epc, vaddr, vector);
             }
             if (code == 2
+                && epc != vaddr
+                && epc == Filesys48dEpc
+                && (vaddr & ~0xFFFu) == Filesys48dPage
+                && (_ddiNopDllMainLogged || _ddiNopIatStoreN >= BindImpObserveMax))
+            {
+                TryNoteDdiNopFilesys48dTlbl(bus, regs, epc, vaddr, vector);
+            }
+            if (code == 2
                 && IsDdiNopVallocDataVa(vaddr)
                 && (_ddiNopDllMainLogged || _ddiNopIatStoreN >= BindImpObserveMax))
             {
@@ -10180,6 +10203,81 @@ namespace ProcessorEmulator.Core
                 " (firmware PTE; filesys slot-2 / FILESYS API page; do not invent dest)");
         }
 
+        // Live 017b67e: filesys 0x0001E534 data-TLBL
+        // 0x48D000F0. Name the insn and why the VA is
+        // not a map target. Do not invent dest.
+        private static void TryNoteDdiNopFilesys48dTlbl(MipsBus bus, uint[] regs,
+            uint epc, uint vaddr, uint vector)
+        {
+            if (_filesys48dLogged)
+                return;
+            _filesys48dLogged = true;
+            uint a0 = regs != null && regs.Length > 4 ? regs[4] : 0;
+            uint a1 = regs != null && regs.Length > 5 ? regs[5] : 0;
+            uint a2 = regs != null && regs.Length > 6 ? regs[6] : 0;
+            uint a3 = regs != null && regs.Length > 7 ? regs[7] : 0;
+            uint v0 = regs != null && regs.Length > 2 ? regs[2] : 0;
+            uint v1 = regs != null && regs.Length > 3 ? regs[3] : 0;
+            uint s0 = regs != null && regs.Length > 16 ? regs[16] : 0;
+            uint s1 = regs != null && regs.Length > 17 ? regs[17] : 0;
+            uint s2 = regs != null && regs.Length > 18 ? regs[18] : 0;
+            uint s3 = regs != null && regs.Length > 19 ? regs[19] : 0;
+            uint s4 = regs != null && regs.Length > 20 ? regs[20] : 0;
+            uint s5 = regs != null && regs.Length > 21 ? regs[21] : 0;
+            uint s6 = regs != null && regs.Length > 22 ? regs[22] : 0;
+            uint s7 = regs != null && regs.Length > 23 ? regs[23] : 0;
+            uint sp = regs != null && regs.Length > 29 ? regs[29] : 0;
+            uint ra = regs != null && regs.Length > 31 ? regs[31] : 0;
+            uint insn = 0;
+            uint insnRom = 0;
+            uint rom = HostHardDisk.FilesysRomText + (Filesys48dEpc - GwesTextBasePage);
+            TryPeekWord(bus, epc, out insn);
+            TryPeekWord(bus, rom, out insnRom);
+            uint word = insn != 0 ? insn : insnRom;
+            string dis = word != 0 ? FormatMipsOp(epc, word) : "peek-miss";
+            uint rs = (word >> 21) & 31;
+            int simm = (short)(word & 0xFFFF);
+            uint rsVal = regs != null && rs < (uint)regs.Length ? regs[rs] : 0;
+            uint ea = rsVal + (uint)simm;
+            uint stripped = vaddr & ~0x40000000u;
+            uint sec36 = 0;
+            TryPeekWord(bus, KDataSection + (36u * 4u), out sec36);
+            uint v0w = 0;
+            TryPeekWord(bus, v0, out v0w);
+            BootLog.Write("[Hive] ExtraROM ddi_nop filesys-48d TLBL epc=0x" +
+                epc.ToString("X8") +
+                " badvaddr=0x" + vaddr.ToString("X8") +
+                " vec=0x" + vector.ToString("X8") +
+                " insn=0x" + word.ToString("X8") +
+                " rom=0x" + rom.ToString("X8") +
+                " " + dis +
+                " rs=" + MipsRn(rs) +
+                "=0x" + rsVal.ToString("X8") +
+                " ea=0x" + ea.ToString("X8") +
+                " a0=0x" + a0.ToString("X8") +
+                " a1=0x" + a1.ToString("X8") +
+                " a2=0x" + a2.ToString("X8") +
+                " a3=0x" + a3.ToString("X8") +
+                " v0=0x" + v0.ToString("X8") +
+                " v0w=0x" + v0w.ToString("X8") +
+                " v1=0x" + v1.ToString("X8") +
+                " s0=0x" + s0.ToString("X8") +
+                " s1=0x" + s1.ToString("X8") +
+                " s2=0x" + s2.ToString("X8") +
+                " s3=0x" + s3.ToString("X8") +
+                " s4=0x" + s4.ToString("X8") +
+                " s5=0x" + s5.ToString("X8") +
+                " s6=0x" + s6.ToString("X8") +
+                " s7=0x" + s7.ToString("X8") +
+                " sp=0x" + sp.ToString("X8") +
+                " ra=0x" + ra.ToString("X8") +
+                " strip=0x" + stripped.ToString("X8") +
+                " sec36=0x" + sec36.ToString("X8") +
+                " (filesys 0x0001E534 / ROM 0x80112534; 0x48D000F0=" +
+                "0x40000000|0x08D000F0 slot36 not CE slot; v0 gwes " +
+                "VALLOC 0x080Dxxxx not KData; do not invent dest or walk slot-2)");
+        }
+
         // Live 68b9567: data-TLBL epc=0x039833A4
         // badvaddr=0x0199B050. IAT page 0x01999000 was
         // mapped; .data vsz continues. 0x0398* is linked
@@ -10971,6 +11069,7 @@ namespace ProcessorEmulator.Core
             _filesysSlot2Busy = false;
             _filesysSlot2Demand = false;
             _filesysSlot2TlblLogged = false;
+            _filesys48dLogged = false;
             _ddiDataDemand = false;
             _ddiDataBusy = false;
             _ddiDataN = 0;
@@ -16791,6 +16890,7 @@ namespace ProcessorEmulator.Core
         private static bool _filesysSlot2Busy;
         private static bool _filesysSlot2Demand;
         private static bool _filesysSlot2TlblLogged;
+        private static bool _filesys48dLogged;
         private static uint[] _ddiDataPage;
         private static uint[] _ddiDataKseg;
         private static bool[] _ddiDataDone;
