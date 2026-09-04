@@ -922,9 +922,20 @@ namespace ProcessorEmulator.Core
         // to 0x0001xxxx — not a C2 PTE. Do not
         // map. C2* TLBS does not consume
         // BindImp-exn.
+        // Live 7827498: insn is sw ra,60(sp). Dump
+        // nk.exe 0x80031D34 is addiu $sp,-64 then
+        // that store (ThreadPtr 0xFFFFDAC0). Incoming
+        // $sp was 0xC201FE88. Slot 97 (NK.EXE) +
+        // 0x0001FE48 is image, not a thread stack.
+        // a1=0x8033FE1C is past B000FF end
+        // 0x8031B3BC (caller arg, not the C2 stack).
+        // Do not map 0xC201F000. Observe first C2
+        // $sp. Do not invent dest.
         public const uint C2TlbsEpc = 0x80031D38;
         public const uint C2TlbsVaddr = 0xC201FE84;
         public const uint C2VaPrefix = 0xC2000000;
+        public const uint C2TlbsFunc = 0x80031D34;
+        public const uint NkImageEnd = 0x8031B3BC;
         public const int GwesImagePageCap = 32;
         // TOC[7] o32[0] dataptr. Same as HostHardDisk.
         // VA 0x00011000 → 0x80146000. Live d01f68a:
@@ -9215,6 +9226,7 @@ namespace ProcessorEmulator.Core
                 return;
             if (_ddiNopIatStoreN < 7 && !_ddiNopIatStoreLogged)
                 return;
+            TryNoteC2SpObserve(regs, epc);
             _bindImpExnCode = code;
             _bindImpExnEpc = epc;
             _bindImpExnVaddr = vaddr;
@@ -9648,6 +9660,38 @@ namespace ProcessorEmulator.Core
         private static bool IsC2TlbsVa(uint code, uint va)
         {
             return code == 3 && (va & 0xFF000000u) == C2VaPrefix;
+        }
+
+        private static bool IsC2Sp(uint sp)
+        {
+            return (sp & 0xFF000000u) == C2VaPrefix;
+        }
+
+        // Live 7827498: $sp=0xC201FE48 at sw ra,60(sp).
+        // Dump 0x80031D34 is a kernel prologue, not a
+        // missing page. Log the first C2 $sp (pc/sp/ra
+        // /a1). Slot 97 image is not a stack. Do not
+        // map. Do not invent dest.
+        private static void TryNoteC2SpObserve(uint[] regs, uint pc)
+        {
+            if (_c2SpLogged)
+                return;
+            if (!_ddiNopAwaitCallDll)
+                return;
+            if (!_ddiNopDllMainLogged && _ddiNopIatStoreN < BindImpObserveMax)
+                return;
+            uint sp = PeekGpr(regs, 29);
+            if (!IsC2Sp(sp))
+                return;
+            _c2SpLogged = true;
+            uint low = sp & 0x01FFFFFFu;
+            BootLog.Write("[Hive] ExtraROM ddi_nop sp-c2 pc=0x" +
+                pc.ToString("X8") +
+                " sp=0x" + sp.ToString("X8") +
+                " low=0x" + low.ToString("X8") +
+                " ra=" + GprHex(regs, 31) +
+                " a1=" + GprHex(regs, 5) +
+                " (NK slot97; not a stack; do not invent dest)");
         }
 
         // Live 3275fe9: kernel 0x80031D38 TLBS
@@ -12639,6 +12683,7 @@ namespace ProcessorEmulator.Core
             _ffffFb2aAdelLogged = false;
             _adelC6FaLogged = false;
             _c2TlbsLogged = false;
+            _c2SpLogged = false;
             _ddiNopInfoObserved = false;
             _ddiNopInfoDemand = false;
             _ddiNopInfoBusy = false;
@@ -13694,6 +13739,7 @@ namespace ProcessorEmulator.Core
 
         public static void TryPollDdiNopCallDllMiss(MipsBus bus, uint[] regs, uint pc)
         {
+            TryNoteC2SpObserve(regs, pc);
             TryNoteDdiNopOrdGetProc(bus, regs, pc);
             NoteDdiNopCallDllPc(bus, regs, pc);
             TryNoteGwesB9SpinObserve(bus, regs, pc);
@@ -18585,6 +18631,7 @@ namespace ProcessorEmulator.Core
         private static bool _ffffFb2aAdelLogged;
         private static bool _adelC6FaLogged;
         private static bool _c2TlbsLogged;
+        private static bool _c2SpLogged;
         private static bool _ddiNopInfoObserved;
         private static bool _ddiNopInfoDemand;
         private static bool _ddiNopInfoBusy;
