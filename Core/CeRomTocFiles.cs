@@ -866,6 +866,13 @@ namespace ProcessorEmulator.Core
         // stretch .text. Do not hard-done pte-miss.
         public const uint GwesDataB9Page = 0x000B9000;
         public const uint GwesDataB9Fault = 0x000B9FF4;
+        // Live c0347e8: dest0 map won after a transient
+        // TLBL / BindImp-exn. Hive then froze while the
+        // host burned CPU. Do not consume BindImp-exn
+        // on that dest0 refill. One spin-observe if PC
+        // sticks after the map. Do not invent XIP.
+        public const int GwesDataB9SpinSame = 262144;
+        public const int GwesDataB9SpinVec = 16384;
         public const int GwesImagePageCap = 32;
         // TOC[7] o32[0] dataptr. Same as HostHardDisk.
         // VA 0x00011000 → 0x80146000. Live d01f68a:
@@ -9231,6 +9238,11 @@ namespace ProcessorEmulator.Core
             {
                 TryNoteFfffFce1Observe(bus, regs, epc, vaddr, vector);
             }
+            // Live c0347e8: B9 dest0 PTE fills after the
+            // first TLBL. BindImp-exn on that refill hid
+            // the next real miss and left Hive quiet.
+            if (code == 2 && IsGwesDataB9Page(vaddr))
+                return;
             if (_bindImpExnLogged)
                 return;
             _bindImpExnLogged = true;
@@ -9356,6 +9368,8 @@ namespace ProcessorEmulator.Core
             if (pc < BindImpExnLo || pc > BindImpExnHi)
                 return;
             if (_bindImpExnSaveLogged)
+                return;
+            if (IsGwesDataB9Page(_bindImpExnVaddr))
                 return;
             _bindImpExnSaveLogged = true;
             uint a1 = regs != null && regs.Length > 5 ? regs[5] : 0;
@@ -12113,6 +12127,9 @@ namespace ProcessorEmulator.Core
             _bindImpExnCode = 0;
             _bindImpExnEpc = 0;
             _bindImpExnVaddr = 0;
+            _gwesB9SpinLogged = false;
+            _gwesB9SpinPage = 0;
+            _gwesB9SpinN = 0;
             _ddiNopInfoObserved = false;
             _ddiNopInfoDemand = false;
             _ddiNopInfoBusy = false;
@@ -13157,6 +13174,7 @@ namespace ProcessorEmulator.Core
         {
             TryNoteDdiNopOrdGetProc(bus, regs, pc);
             NoteDdiNopCallDllPc(bus, regs, pc);
+            TryNoteGwesB9SpinObserve(bus, regs, pc);
             if (!_ddiNopAwaitCallDll || _ddiNopCallDllMissLogged || _ddiNopSawCallDllPc)
                 return;
             // Live edf15b0: CallDLL-miss still fired
@@ -13173,6 +13191,45 @@ namespace ProcessorEmulator.Core
             if (_ddiNopCallDllMissPoll < 4096)
                 return;
             TryLogDdiNopCallDllMiss(bus, regs, pc);
+        }
+
+        // Live c0347e8: after B9 dest0 map, Hive froze
+        // (~84KB) while the host burned CPU. Observe
+        // the stuck PC. Do not invent dest. Do not hop.
+        private static void TryNoteGwesB9SpinObserve(MipsBus bus, uint[] regs,
+            uint pc)
+        {
+            if (_gwesB9SpinLogged || pc == 0)
+                return;
+            if (LookupGwesImageKseg(GwesDataB9Page) == 0)
+                return;
+            uint page = pc & ~0xFFFu;
+            if (page != _gwesB9SpinPage)
+            {
+                _gwesB9SpinPage = page;
+                _gwesB9SpinN = 0;
+                return;
+            }
+            _gwesB9SpinN++;
+            bool vec = (pc >= 0x80000000u && pc < 0x80000200u)
+                || (pc >= BindImpExnLo && pc <= BindImpExnHi);
+            int need = vec ? GwesDataB9SpinVec : GwesDataB9SpinSame;
+            if (_gwesB9SpinN < need)
+                return;
+            _gwesB9SpinLogged = true;
+            uint v0 = regs != null && regs.Length > 2 ? regs[2] : 0;
+            uint a0 = regs != null && regs.Length > 4 ? regs[4] : 0;
+            uint a1 = regs != null && regs.Length > 5 ? regs[5] : 0;
+            uint ra = regs != null && regs.Length > 31 ? regs[31] : 0;
+            BootLog.Write("[Hive] ExtraROM ddi_nop spin-observe epc=0x" +
+                pc.ToString("X8") +
+                " badvaddr=0x" + _bindImpExnVaddr.ToString("X8") +
+                " cause=" + _bindImpExnCode +
+                " v0=0x" + v0.ToString("X8") +
+                " a0=0x" + a0.ToString("X8") +
+                " a1=0x" + a1.ToString("X8") +
+                " ra=0x" + ra.ToString("X8") +
+                " (after B9 dest0; do not invent dest)");
         }
 
         public static void TryLogDdiNopCallDllMiss(MipsBus bus)
@@ -18002,6 +18059,9 @@ namespace ProcessorEmulator.Core
         private static uint _bindImpExnCode;
         private static uint _bindImpExnEpc;
         private static uint _bindImpExnVaddr;
+        private static bool _gwesB9SpinLogged;
+        private static uint _gwesB9SpinPage;
+        private static int _gwesB9SpinN;
         private static bool _ddiNopInfoObserved;
         private static bool _ddiNopInfoDemand;
         private static bool _ddiNopInfoBusy;
