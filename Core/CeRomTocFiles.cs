@@ -2309,7 +2309,7 @@ namespace ProcessorEmulator.Core
                 if (v0 != 0 && NamesMatchRom(_ddiNopBindLibName, "coredll.dll"))
                 {
                     _coredllModule = v0;
-                    TrySetCoredllXipBasePtr(bus, v0);
+                    TryKeepCoredllImageBasePtr(bus, v0);
                 }
                 NoteDdiNopWalkSeeds(regs);
                 if (_ddiNopLandedBySig)
@@ -2348,17 +2348,35 @@ namespace ProcessorEmulator.Core
             if (!_ddiNopAwaitCallDll || regs == null || regs.Length <= 5)
                 return;
             if (pc == BindImpOrdBaseLw && regs.Length > 4)
-                TrySetCoredllXipBasePtr(bus, regs[4]);
+                TryKeepCoredllImageBasePtr(bus, regs[4]);
+            TryNoteBindImpAfterGoodV0(bus, pc);
             if (pc == BindImpOrdJalRet)
             {
+                uint v0 = regs[2];
+                uint a1 = regs[5];
+                if (v0 != 0 && _ddiNopOrdGoodV0 == 0)
+                {
+                    _ddiNopOrdGoodV0 = v0;
+                    _ddiNopOrdAfterN = 0;
+                    uint iat = 0;
+                    uint dest6 = 0;
+                    PeekDdiNopIatWord(bus, out iat, out dest6);
+                    BootLog.Write("[Hive] ExtraROM BindImp-ord ret v0=0x" +
+                        v0.ToString("X8") +
+                        " a1=0x" + a1.ToString("X8") +
+                        " iat=0x" + iat.ToString("X8") +
+                        " dest6=0x" + dest6.ToString("X8") +
+                        " va=0x" + (DdiNopVbasePage + DdiNopIatRva).ToString("X8") +
+                        (iat == 0 ? " (no-store-yet)" : " (iat-has)"));
+                    _ddiNopOrdRetLog++;
+                    return;
+                }
                 if (_ddiNopOrdRetLog >= 5)
                     return;
                 _ddiNopOrdRetN++;
                 if (_ddiNopOrdRetN > 1 && (_ddiNopOrdRetN % 256) != 0)
                     return;
                 _ddiNopOrdRetLog++;
-                uint v0 = regs[2];
-                uint a1 = regs[5];
                 BootLog.Write("[Hive] ExtraROM BindImp-ord ret v0=0x" +
                     v0.ToString("X8") +
                     " a1=0x" + a1.ToString("X8") +
@@ -8385,13 +8403,13 @@ namespace ProcessorEmulator.Core
                 " set-valloc=0x" + DdiNopVbasePage.ToString("X8"));
         }
 
-        // Live 94038eb: COREDLL MODULE+0x50 stayed dump
-        // ImageBase 0x03F50000 (CoredllSharedLo). GetProc
-        // returned 0x03F57EB4. NK TOC type-7 XIP load_va
-        // is the live image (rom extract 0x800B2000).
-        // Read load_va from NK ROMHDR TOC. Do not invent
-        // 0x800B2000 if TOC is unread. Only this field.
-        private static void TrySetCoredllXipBasePtr(MipsBus bus, uint module)
+        // Live 5166cf2: set-xip 0x800B2000 made F7BC treat
+        // MIPS prologues as the export dir (expVA words
+        // 0xAFAA0014…). 94038eb GetProc was correct with
+        // ImageBase 0x03F50000 → v0=0x03F57EB4. Keep that
+        // BasePtr. Undo leftover XIP. Do not invent a
+        // new BasePtr. Do not serve PE into 0x800B2000.
+        private static void TryKeepCoredllImageBasePtr(MipsBus bus, uint module)
         {
             if (bus == null || module == 0)
                 return;
@@ -8402,83 +8420,111 @@ namespace ProcessorEmulator.Core
                 return;
             bool coredll = module == _coredllModule
                 || p50 == CoredllSharedLo
-                || (NamesMatchRom(_ddiNopBindLibName, "coredll.dll")
+                || (p50 >= 0x80000000u
+                    && NamesMatchRom(_ddiNopBindLibName, "coredll.dll")
                     && module == _ddiNopBindLibV0);
             if (!coredll)
                 return;
             if (p50 >= 0x80000000u)
-                return;
-            if (p50 == 0)
-                return;
-            uint want = FindCoredllNkXipLoadVa(bus);
-            if (want == 0)
             {
-                if (_coredllBasePtrLogged)
-                    return;
-                _coredllBasePtrLogged = true;
+                bus.Write32(module + ProcModule, CoredllSharedLo);
                 BootLog.Write("[Hive] ExtraROM coredll baseptr module=0x" +
                     module.ToString("X8") +
                     " was=0x" + p50.ToString("X8") +
-                    " skip-no-xip (NK TOC load_va unread)");
+                    " undo-xip=0x" + CoredllSharedLo.ToString("X8"));
                 return;
             }
-            if (p50 == want)
+            if (p50 != CoredllSharedLo)
                 return;
-            bus.Write32(module + ProcModule, want);
-            BootLog.Write("[Hive] ExtraROM coredll baseptr module=0x" +
-                module.ToString("X8") +
-                " was=0x" + p50.ToString("X8") +
-                " set-xip=0x" + want.ToString("X8"));
+            if (_coredllBasePtrLogged)
+                return;
+            _coredllBasePtrLogged = true;
+            BootLog.Write("[Hive] ExtraROM coredll baseptr keep-imagebase=0x" +
+                CoredllSharedLo.ToString("X8") +
+                " (XIP+exp was code, not export dir)");
         }
 
-        private static uint FindCoredllNkXipLoadVa(MipsBus bus)
+        private static void PeekDdiNopIatWord(MipsBus bus, out uint word, out uint dest6)
         {
-            if (_coredllNkLoadVa != 0)
-                return _coredllNkLoadVa;
-            uint live = 0;
-            TryPeekWord(bus, NkRomHdrPtr, out live);
-            uint va = ReadCoredllNkTocLoadVa(bus, live);
-            if (va == 0)
-                va = ReadCoredllNkTocLoadVa(bus, NkDumpHdr);
-            if (va != 0)
-                _coredllNkLoadVa = va;
-            return va;
-        }
-
-        private static uint ReadCoredllNkTocLoadVa(MipsBus bus, uint hdr)
-        {
-            if (bus == null || hdr == 0)
-                return 0;
-            uint nmods;
-            if (!TryPeekWord(bus, hdr + RomHdrNumMods, out nmods)
-                || nmods == 0 || nmods > 80)
-                return 0;
-            for (uint i = 0; i < nmods; i++)
+            word = 0;
+            dest6 = _ddiNopIatDest6;
+            uint va = DdiNopVbasePage + DdiNopIatRva;
+            uint l2 = 0;
+            uint dest10 = 0;
+            if (dest6 == 0)
+                WalkDdiNopPteDests(bus, va, out l2, out dest6, out dest10);
+            if (dest6 != 0 && !IsDdiNopDest10Page(dest6))
             {
-                uint entry = hdr + TocFirst + i * TocEntrySize;
-                uint namePtr;
-                if (!TryPeekWord(bus, entry + 0x10, out namePtr) || namePtr == 0)
-                    continue;
-                string name = "";
-                try
-                {
-                    name = ReadAscii(bus, namePtr);
-                }
-                catch
-                {
-                }
-                if (!NamesMatchRom(name, "coredll.dll"))
-                    continue;
-                uint load;
-                if (!TryPeekWord(bus, entry + 0x1C, out load))
-                    return 0;
-                if (load < 0x80000000u || load >= 0xC0000000u)
-                    return 0;
-                if (IsDdiNopDest10Page(load))
-                    return 0;
-                return load;
+                bool threw;
+                word = PeekDestWordRaw(bus, dest6, out threw);
+                if (!threw)
+                    return;
             }
-            return 0;
+            TryPeekWord(bus, va, out word);
+        }
+
+        // Live 5166cf2: after a good GetProc v0 the IAT
+        // stayed 0. Observe whether BindImp stores into
+        // 0x01999000 / dest6. Log the next BindImp PCs
+        // if it does not. Do not invent IAT fills.
+        private static void TryNoteBindImpAfterGoodV0(MipsBus bus, uint pc)
+        {
+            if (_ddiNopOrdGoodV0 == 0 || _ddiNopOrdAfterDone)
+                return;
+            if (pc == BindImpOrdJalRet)
+                return;
+            if (pc >= 0x80000000u && pc < 0x80000400u)
+                return;
+            if (pc == _ddiNopOrdAfterLast)
+                return;
+            uint iat = 0;
+            uint dest6 = 0;
+            PeekDdiNopIatWord(bus, out iat, out dest6);
+            uint va = DdiNopVbasePage + DdiNopIatRva;
+            if (_ddiNopIatStoreLogged || iat == _ddiNopOrdGoodV0)
+            {
+                _ddiNopOrdAfterDone = true;
+                BootLog.Write("[Hive] ExtraROM BindImp-after pc=0x" +
+                    pc.ToString("X8") +
+                    " iat=0x" + iat.ToString("X8") +
+                    " dest6=0x" + dest6.ToString("X8") +
+                    " va=0x" + va.ToString("X8") +
+                    " (store)");
+                return;
+            }
+            if (iat != 0)
+            {
+                _ddiNopOrdAfterDone = true;
+                BootLog.Write("[Hive] ExtraROM BindImp-after pc=0x" +
+                    pc.ToString("X8") +
+                    " iat=0x" + iat.ToString("X8") +
+                    " dest6=0x" + dest6.ToString("X8") +
+                    " va=0x" + va.ToString("X8") +
+                    " (iat-has)");
+                return;
+            }
+            _ddiNopOrdAfterLast = pc;
+            _ddiNopOrdAfterN++;
+            if (_ddiNopOrdAfterN <= 6)
+            {
+                BootLog.Write("[Hive] ExtraROM BindImp-after pc=0x" +
+                    pc.ToString("X8") +
+                    " iat=0x00000000 dest6=0x" + dest6.ToString("X8") +
+                    " va=0x" + va.ToString("X8") +
+                    " (no-store)");
+            }
+            // Back at GetProc without an IAT write is the
+            // drop. Do not conclude after four sequential
+            // BindImp instructions — the store may be later.
+            bool backGetProc = pc == BindImpOrdBaseLw
+                || pc == BindImpOrdLookup;
+            if (!backGetProc && _ddiNopOrdAfterN < 16)
+                return;
+            _ddiNopOrdAfterDone = true;
+            BootLog.Write("[Hive] ExtraROM BindImp-ord drop-v0=0x" +
+                _ddiNopOrdGoodV0.ToString("X8") +
+                " no-IAT last=0x" + pc.ToString("X8") +
+                (backGetProc ? " (back-GetProc)" : ""));
         }
 
         private static bool IsDdiNopDest10Page(uint dest)
@@ -8824,6 +8870,10 @@ namespace ProcessorEmulator.Core
             _ddiNopOrdRetN = 0;
             _ddiNopOrdRetLog = 0;
             _ddiNopOrdExpLogged = false;
+            _ddiNopOrdGoodV0 = 0;
+            _ddiNopOrdAfterDone = false;
+            _ddiNopOrdAfterN = 0;
+            _ddiNopOrdAfterLast = 0;
             _ddiNopWalkSeedN = 0;
             _ddiNopNoModDiag = false;
             _ddiNopWalkDiag = false;
@@ -9681,6 +9731,19 @@ namespace ProcessorEmulator.Core
                 why += " o32[1]";
             BootLog.Write("[Hive] ExtraROM BindImp-stall pc=0x" +
                 pc.ToString("X8") + why);
+            if (_ddiNopOrdGoodV0 == 0 || _ddiNopIatStoreLogged
+                || _ddiNopOrdAfterDone)
+                return;
+            uint iatWord = 0;
+            uint iatDest6 = 0;
+            PeekDdiNopIatWord(bus, out iatWord, out iatDest6);
+            if (iatWord != 0)
+                return;
+            _ddiNopOrdAfterDone = true;
+            BootLog.Write("[Hive] ExtraROM BindImp-ord drop-v0=0x" +
+                _ddiNopOrdGoodV0.ToString("X8") +
+                " no-IAT last=0x" + pc.ToString("X8") +
+                " (stall)");
         }
 
         public static bool TryForceDdiNopCallDll(MipsBus bus, uint[] regs, ref uint programCounter)
@@ -14254,7 +14317,6 @@ namespace ProcessorEmulator.Core
         private static uint _ddiNopBindLibV0;
         private static string _ddiNopBindLibName;
         private static uint _coredllModule;
-        private static uint _coredllNkLoadVa;
         private static bool _coredllBasePtrLogged;
         private static uint _ddiNopFileObj;
         private static bool _ddiNopStartipAttempted;
@@ -14273,6 +14335,10 @@ namespace ProcessorEmulator.Core
         private static int _ddiNopOrdRetN;
         private static int _ddiNopOrdRetLog;
         private static bool _ddiNopOrdExpLogged;
+        private static uint _ddiNopOrdGoodV0;
+        private static bool _ddiNopOrdAfterDone;
+        private static int _ddiNopOrdAfterN;
+        private static uint _ddiNopOrdAfterLast;
         private static uint[] _ddiNopWalkSeeds;
         private static int _ddiNopWalkSeedN;
         private static bool _ddiNopNoModDiag;
