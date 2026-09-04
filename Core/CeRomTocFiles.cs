@@ -8042,6 +8042,14 @@ namespace ProcessorEmulator.Core
         // Extract IAT FirstThunk / .data VA. VALLOC IAT is
         // vbase+this. Do not invent dest10.
         private const uint DdiNopIatRva = 0x19000u;
+        // Live 68b9567: data-TLBL 0x0199B050 after coredll-
+        // page. o32[.data] dest 0x01999000 + vsz covers
+        // past the IAT page. dest0 walk stopped at
+        // 0x019B0000. Demand-map remaining VALLOC .data
+        // via firmware PTE. Do not invent dest.
+        private const uint DdiNopVallocLo = 0x01980000u;
+        private const uint DdiNopVallocHi = 0x019B0000u;
+        private const int DdiNopDataPageCap = 32;
 
         private static void ResetDdiNopDecompStores()
         {
@@ -8975,6 +8983,12 @@ namespace ProcessorEmulator.Core
                 && (_ddiNopDllMainLogged || _ddiNopIatStoreN >= BindImpObserveMax))
             {
                 TryNoteDdiNopCoredllImageTlbl(bus, regs, epc, vaddr, vector);
+            }
+            if (code == 2
+                && IsDdiNopVallocDataVa(vaddr)
+                && (_ddiNopDllMainLogged || _ddiNopIatStoreN >= BindImpObserveMax))
+            {
+                TryNoteDdiNopVallocDataTlbl(bus, regs, epc, vaddr, vector);
             }
             if (_bindImpExnLogged)
                 return;
@@ -10032,6 +10046,223 @@ namespace ProcessorEmulator.Core
             }
         }
 
+        // Live 68b9567: data-TLBL epc=0x039833A4
+        // badvaddr=0x0199B050. IAT page 0x01999000 was
+        // mapped; .data vsz continues. 0x0398* is linked
+        // preferred (MapDdiNopDestVa aliases fetch). Do
+        // not rewrite PC. Firmware PTE only.
+        public static uint MapDdiNopVallocDataVa(MipsBus bus, uint va)
+        {
+            if (_ddiDataBusy)
+                return va;
+            if (!IsDdiNopVallocDataArmed())
+                return va;
+            uint use = DdiNopVallocAlias(va);
+            if (!IsDdiNopVallocDataVa(use))
+                return va;
+            uint kseg = LookupDdiDataKseg(use);
+            if (kseg != 0)
+                return kseg | (use & 0xFFFu);
+            TryResolveDdiNopVallocData(bus, use);
+            kseg = LookupDdiDataKseg(use);
+            if (kseg != 0)
+                return kseg | (use & 0xFFFu);
+            return va;
+        }
+
+        private static bool IsDdiNopVallocDataArmed()
+        {
+            if (!_ddiNopAwaitCallDll)
+                return false;
+            return _ddiNopDllMainLogged || _ddiDataDemand;
+        }
+
+        private static uint DdiNopVallocAlias(uint va)
+        {
+            if (va >= DdiNopVbase && va < 0x039B0000u)
+                return DdiNopVbasePage + (va - DdiNopVbase);
+            return va;
+        }
+
+        private static uint DdiNopVallocDataHi()
+        {
+            uint hi = DdiNopVallocHi;
+            if (_ddiNopIatSpan == 0)
+                return hi;
+            uint end = DdiNopVbasePage + DdiNopIatRva + _ddiNopIatSpan;
+            uint pageHi = (end + 0xFFFu) & ~0xFFFu;
+            if (pageHi > hi)
+                return pageHi;
+            return hi;
+        }
+
+        private static bool IsDdiNopVallocDataVa(uint va)
+        {
+            uint use = DdiNopVallocAlias(va);
+            return use >= DdiNopVallocLo && use < DdiNopVallocDataHi();
+        }
+
+        private static void EnsureDdiDataMaps()
+        {
+            if (_ddiDataPage != null)
+                return;
+            _ddiDataPage = new uint[DdiNopDataPageCap];
+            _ddiDataKseg = new uint[DdiNopDataPageCap];
+            _ddiDataDone = new bool[DdiNopDataPageCap];
+            _ddiDataTlbl = new bool[DdiNopDataPageCap];
+        }
+
+        private static int FindDdiDataSlot(uint page)
+        {
+            EnsureDdiDataMaps();
+            for (int i = 0; i < _ddiDataN; i++)
+            {
+                if (_ddiDataPage[i] == page)
+                    return i;
+            }
+            return -1;
+        }
+
+        private static int ClaimDdiDataSlot(uint page)
+        {
+            int i = FindDdiDataSlot(page);
+            if (i >= 0)
+                return i;
+            if (_ddiDataN >= DdiNopDataPageCap)
+                return -1;
+            i = _ddiDataN;
+            _ddiDataN++;
+            _ddiDataPage[i] = page;
+            return i;
+        }
+
+        private static uint LookupDdiDataKseg(uint va)
+        {
+            int i = FindDdiDataSlot(va & ~0xFFFu);
+            if (i < 0)
+                return 0;
+            return _ddiDataKseg[i];
+        }
+
+        private static void TryNoteDdiNopPrefPc(uint epc, uint[] regs)
+        {
+            if (_ddiPrefPcLogged)
+                return;
+            if (epc < DdiNopVbase || epc >= 0x039B0000u)
+                return;
+            _ddiPrefPcLogged = true;
+            uint a1 = regs != null && regs.Length > 5 ? regs[5] : 0;
+            BootLog.Write("[Hive] ExtraROM ddi_nop ddi-pref-pc epc=0x" +
+                epc.ToString("X8") +
+                " a1=0x" + a1.ToString("X8") +
+                " valloc=0x" + DdiNopVbasePage.ToString("X8") +
+                " alias=0x" + DdiNopVallocAlias(epc).ToString("X8") +
+                " (linked preferred; dest alias; do not rewrite PC)");
+        }
+
+        private static void TryNoteDdiNopVallocDataTlbl(MipsBus bus, uint[] regs,
+            uint epc, uint vaddr, uint vector)
+        {
+            _ddiDataDemand = true;
+            TryNoteDdiNopPrefPc(epc, regs);
+            uint use = DdiNopVallocAlias(vaddr);
+            uint page = use & ~0xFFFu;
+            int slot = ClaimDdiDataSlot(page);
+            if (slot >= 0 && !_ddiDataTlbl[slot])
+            {
+                _ddiDataTlbl[slot] = true;
+                uint v0 = regs != null && regs.Length > 2 ? regs[2] : 0;
+                uint a1 = regs != null && regs.Length > 5 ? regs[5] : 0;
+                BootLog.Write("[Hive] ExtraROM ddi_nop ddi-data TLBL epc=0x" +
+                    epc.ToString("X8") +
+                    " badvaddr=0x" + vaddr.ToString("X8") +
+                    " vec=0x" + vector.ToString("X8") +
+                    " a1=0x" + a1.ToString("X8") +
+                    " v0=0x" + v0.ToString("X8") +
+                    " (VALLOC .data page 0x" + page.ToString("X8") +
+                    "; do not invent dest)");
+            }
+            TryResolveDdiNopVallocData(bus, use);
+        }
+
+        private static void TryResolveDdiNopVallocData(MipsBus bus, uint va)
+        {
+            if (bus == null || _ddiDataBusy)
+                return;
+            uint use = DdiNopVallocAlias(va);
+            if (!IsDdiNopVallocDataVa(use))
+                return;
+            uint page = use & ~0xFFFu;
+            int slot = FindDdiDataSlot(page);
+            if (slot >= 0 && (_ddiDataKseg[slot] != 0 || _ddiDataDone[slot]))
+                return;
+            try
+            {
+                _ddiDataBusy = true;
+                uint sec = PeekSection(bus, 0);
+                uint l1 = 0;
+                uint l2 = 0;
+                uint pfn = 0;
+                uint kseg = 0;
+                slot = ClaimDdiDataSlot(page);
+                if (slot < 0)
+                    return;
+                if (sec != 0
+                    && WalkFirmwarePte(bus, sec, use, out l1, out l2, out pfn, out kseg)
+                    && (kseg & 0x1FFFFFFFu) >= 0x00010000u)
+                {
+                    RememberDdiDataMap(bus, slot, page, kseg, l2, use, false);
+                    return;
+                }
+                uint dest6 = 0;
+                uint dest10 = 0;
+                if (WalkDdiNopPteDests(bus, use, out l2, out dest6, out dest10)
+                    && dest6 != 0
+                    && !IsDdiNopDest10Page(dest6)
+                    && (dest6 & 0x1FFFFFFFu) >= 0x00010000u)
+                {
+                    uint word = 0;
+                    if (TryPeekWord(bus, dest6, out word))
+                    {
+                        RememberDdiDataMap(bus, slot, page, dest6, l2, use, true);
+                        return;
+                    }
+                }
+                if (!_ddiDataDone[slot])
+                {
+                    _ddiDataDone[slot] = true;
+                    BootLog.Write("[Hive] ExtraROM ddi_nop ddi-data map va=0x" +
+                        page.ToString("X8") +
+                        " pte-miss sec=0x" + sec.ToString("X8") +
+                        " dest6=0x" + dest6.ToString("X8") +
+                        " (VALLOC .data TLBL; do not invent dest)");
+                }
+            }
+            finally
+            {
+                _ddiDataBusy = false;
+            }
+        }
+
+        private static void RememberDdiDataMap(MipsBus bus, int slot, uint page,
+            uint dest, uint l2, uint va, bool dest6Walk)
+        {
+            _ddiDataKseg[slot] = dest & ~0xFFFu;
+            if (_ddiDataDone[slot])
+                return;
+            _ddiDataDone[slot] = true;
+            uint word = 0;
+            TryPeekWord(bus, (dest & ~0xFFFu) | (va & 0xFFFu), out word);
+            BootLog.Write("[Hive] ExtraROM ddi_nop ddi-data map va=0x" +
+                page.ToString("X8") +
+                " -> 0x" + _ddiDataKseg[slot].ToString("X8") +
+                " l2=0x" + l2.ToString("X8") +
+                " dest-word=0x" + word.ToString("X8") +
+                (dest6Walk
+                    ? " (firmware dest6; VALLOC .data; do not invent dest)"
+                    : " (firmware PTE; VALLOC .data; do not invent dest)"));
+        }
+
         // During BindImp, dump-real IAT (o32.real) is the
         // same bytes as VALLOC dest. MapDdiNopDestVa
         // otherwise sends 0x01F57000 to ExtraRomDestKseg1.
@@ -10492,6 +10723,20 @@ namespace ProcessorEmulator.Core
                     _coredllImageKseg[i] = 0;
                     _coredllImageDone[i] = false;
                     _coredllImageTlbl[i] = false;
+                }
+            }
+            _ddiDataDemand = false;
+            _ddiDataBusy = false;
+            _ddiDataN = 0;
+            _ddiPrefPcLogged = false;
+            if (_ddiDataPage != null)
+            {
+                for (int i = 0; i < _ddiDataPage.Length; i++)
+                {
+                    _ddiDataPage[i] = 0;
+                    _ddiDataKseg[i] = 0;
+                    _ddiDataDone[i] = false;
+                    _ddiDataTlbl[i] = false;
                 }
             }
             _ddiNopWalkSeedN = 0;
@@ -11407,6 +11652,8 @@ namespace ProcessorEmulator.Core
                 TryResolveDdiNopGwesImage(bus, pc);
             if (IsDdiNopCoredllImageVa(pc))
                 TryResolveDdiNopCoredllImage(bus, pc);
+            if (IsDdiNopVallocDataVa(pc))
+                TryResolveDdiNopVallocData(bus, pc);
         }
 
         // Observe only. After BindImp, startip is set but
@@ -14043,7 +14290,7 @@ namespace ProcessorEmulator.Core
             if (_ddiNopDestPeekRaw || _ddiNopInfoPeekRaw)
                 return va;
             bool dest0 = _ddiNopDestOn
-                && va >= 0x01980000u && va < 0x019B0000u;
+                && va >= DdiNopVallocLo && va < DdiNopVallocDataHi();
             bool ddiInfo = va >= ProcessInfoPage && va < 0x02000000u
                 && IsDdiNopProcessInfoArmed();
             bool ddiFetch = (va & ~0xFFFu) == GwesDispFetchPage
@@ -16292,6 +16539,14 @@ namespace ProcessorEmulator.Core
         private static int _coredllImageN;
         private static bool _coredllImageDemand;
         private static bool _coredllImageBusy;
+        private static uint[] _ddiDataPage;
+        private static uint[] _ddiDataKseg;
+        private static bool[] _ddiDataDone;
+        private static bool[] _ddiDataTlbl;
+        private static int _ddiDataN;
+        private static bool _ddiDataDemand;
+        private static bool _ddiDataBusy;
+        private static bool _ddiPrefPcLogged;
         private static uint[] _ddiNopWalkSeeds;
         private static int _ddiNopWalkSeedN;
         private static bool _ddiNopNoModDiag;
