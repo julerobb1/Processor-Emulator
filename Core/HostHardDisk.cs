@@ -688,6 +688,8 @@ namespace ProcessorEmulator.Core
             CeRomTocFiles.TryNoteTv2LeftoverPast(bus, pc);
             CeRomTocFiles.TryNoteTv2LeftoverPastCae8(bus, registers, pc);
             CeRomTocFiles.TryNoteTv2LeftoverPastCaf0(bus, pc);
+            if (CeRomTocFiles.TryRefuseMinusOnePlant(bus, registers, ref programCounter))
+                return true;
             CeRomTocFiles.TryRestoreTv2LeftoverEret(bus, registers, pc);
             CeRomTocFiles.TryRestoreTv2LeftoverDestLiveEret(bus, registers, pc);
             CeRomTocFiles.TryResumeTv2LeftoverAfterCaf0(bus, registers, ref programCounter);

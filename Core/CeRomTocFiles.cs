@@ -695,7 +695,18 @@ namespace ProcessorEmulator.Core
         // or $ra,$v0; 0x80015A08 mtc0 $t4,$14.
         // That word is the 0x800397B0 resume
         // plant (wait99: -1 → EPC 0xFFFFFFFF).
+        // Dump 0x800399A4 lw $s3,-688; branches to
+        // 0x800399A8 skip that load so $s3 stays
+        // stale. 0x800399E8 or $v0,$s3 returns it.
+        // Sole ROM store 0x800370F8 is a GetProc
+        // delay-slot (jal 0x8001C468 a1=6), not a
+        // per-exception EPC. Live f66919d: plant
+        // still -1 after adel-pc gone; leftover
+        // dest hop then Code-10 spin. Replay
+        // thread+0xEC or refuse leftover ERET.
         public const uint ExnContinueWord = 0x8033FD50;
+        public const uint LeftoverDestLo = 0x03F6C000;
+        public const uint LeftoverDestHi = 0x03F80000;
         public const uint O32Compressed = 0x4000;
         // ExtraROM o32[0] 0x60002020: 0x2000 lets CopyO32 accept
         // unaligned dataptr 0x80764CE0. MapO32 still VirtualCopys
@@ -9878,6 +9889,143 @@ namespace ProcessorEmulator.Core
             return true;
         }
 
+        private static bool IsDdiNopDestLive()
+        {
+            return _ddiNopDllMainLogged || _ddiNopDestWordLogged;
+        }
+
+        private static bool IsPoisonPlant(uint pc)
+        {
+            if (pc == 0 || pc == 0xFFFFFFFFu)
+                return true;
+            if ((pc & 3) != 0)
+                return true;
+            return (pc & 0xFF000000u) == 0xC6000000u;
+        }
+
+        private static bool IsLeftoverDestVa(uint pc)
+        {
+            return pc >= LeftoverDestLo && pc < LeftoverDestHi;
+        }
+
+        private static bool IsSanePlantResumePc(uint pc)
+        {
+            if ((pc & 3) != 0 || IsPoisonPlant(pc) || IsNearNullVa(pc))
+                return false;
+            if (IsLeftoverDestVa(pc))
+                return false;
+            if (pc == LeftoverOrRa || pc == LeftoverMtc0Epc
+                || pc == LeftoverJrRa || pc == LeftoverEret
+                || pc == ExnAfterFetch || pc == ExnAfterFetch2
+                || pc == ThreadCtxRestore || pc == ThreadCtxRestore2
+                || pc == C2SpFirstPc || pc == 0x800397B0u)
+                return false;
+            if (pc >= 0x80010000u && pc < NkImageEnd)
+                return true;
+            return pc >= 0x00010000u && pc < 0x80000000u;
+        }
+
+        private static bool TryPeekThreadCtxPc(MipsBus bus, out uint thr, out uint ec,
+            out uint dc, out uint plant)
+        {
+            thr = 0;
+            ec = 0;
+            dc = 0;
+            plant = _exnContinueWord;
+            if (bus == null)
+                return false;
+            try
+            {
+                thr = bus.Read32(ThreadPtr);
+                if (thr != 0)
+                {
+                    ec = bus.Read32(thr + ThreadCtxPc);
+                    dc = bus.Read32(thr + ThreadCtxRa);
+                }
+                uint word;
+                if (TryPeekWord(bus, ExnContinueWord, out word))
+                    plant = word;
+                return thr != 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static void ApplyPlantResume(uint[] regs, uint pc, uint dest)
+        {
+            if (regs == null || regs.Length <= 31)
+                return;
+            if (pc == LeftoverOrRa || pc == LeftoverEret)
+                regs[2] = dest;
+            if (pc == LeftoverMtc0Epc || pc == LeftoverEret || pc == LeftoverJrRa)
+            {
+                regs[12] = dest;
+                regs[31] = dest;
+            }
+            if (pc == LeftoverEret)
+                regs[2] = dest;
+        }
+
+        // Live f66919d: adel-pc gone; ddi_nop dest live;
+        // leftover eret-restore was=0xFFFFFFFF. Dump
+        // 0x800397B0 returns $s3; 0x800399A4 load of
+        // *(0x8033FD50) is skipped by beq/bne to
+        // 0x800399A8 so $s3 stays -1. leftover hop to
+        // dest-live then ~2.8M Code-10. Replay
+        // thread+0xEC when that is a sane aligned PC.
+        // Else refuse leftover ERET. Do not leftover
+        // dest hop. Do not invent dest.
+        public static bool TryRefuseMinusOnePlant(MipsBus bus, uint[] regs,
+            ref uint programCounter)
+        {
+            uint pc = programCounter;
+            if (pc != LeftoverOrRa && pc != LeftoverMtc0Epc
+                && pc != LeftoverJrRa && pc != LeftoverEret)
+                return false;
+            if (!IsDdiNopDestLive())
+                return false;
+            if (regs == null || regs.Length <= 31)
+                return false;
+            uint was = pc == LeftoverOrRa || pc == LeftoverEret
+                ? regs[2]
+                : (pc == LeftoverMtc0Epc ? regs[12] : regs[31]);
+            if (!IsPoisonPlant(was))
+                return false;
+            uint thr;
+            uint ec;
+            uint dc;
+            uint plant;
+            TryPeekThreadCtxPc(bus, out thr, out ec, out dc, out plant);
+            if (IsSanePlantResumePc(ec))
+            {
+                ApplyPlantResume(regs, pc, ec);
+                if (!_plantFixLogged)
+                {
+                    _plantFixLogged = true;
+                    BootLog.Write("[Hive] ExtraROM ddi_nop plant-fix was=0x" +
+                        was.ToString("X8") +
+                        " +EC=0x" + ec.ToString("X8") +
+                        " +DC=0x" + dc.ToString("X8") +
+                        " plant=0x" + plant.ToString("X8") +
+                        " (replay thread+0xEC; do not leftover dest)");
+                }
+                return false;
+            }
+            if (!_plantHaltLogged)
+            {
+                _plantHaltLogged = true;
+                BootLog.Write("[Hive] ExtraROM ddi_nop plant-halt was=0x" +
+                    was.ToString("X8") +
+                    " +EC=0x" + ec.ToString("X8") +
+                    " +DC=0x" + dc.ToString("X8") +
+                    " plant=0x" + plant.ToString("X8") +
+                    " (refuse leftover ERET; do not invent dest)");
+            }
+            return true;
+        }
+
         // Live 3275fe9: kernel 0x80031D38 TLBS
         // 0xC201FE84. Peek insn / rs / rt / base.
         // a1 is nk ROM evidence, not a hop. One
@@ -12870,6 +13018,8 @@ namespace ProcessorEmulator.Core
             _exnContinueWord = 0;
             _thrSpLogged = false;
             _spFixLogged = false;
+            _plantFixLogged = false;
+            _plantHaltLogged = false;
             _c2TlbsLogged = false;
             _c2SpLogged = false;
             _c2EretHaltLogged = false;
@@ -14534,6 +14684,8 @@ namespace ProcessorEmulator.Core
         // startip. Do not invent dest bytes.
         public static void TryResumeTv2LeftoverFetch(MipsBus bus, uint[] regs, ref uint pc)
         {
+            if (IsDdiNopDestLive())
+                return;
             if (!_tv2FetchLogged || !_tv2StoreContLogged)
                 return;
             if (pc != ExnAfterFetch)
@@ -14615,6 +14767,8 @@ namespace ProcessorEmulator.Core
         // 28($sp). Do not invent dest.
         public static void TryRestoreTv2LeftoverEret(MipsBus bus, uint[] regs, uint pc)
         {
+            if (IsDdiNopDestLive())
+                return;
             if (_tv2LeftoverEretLogged)
                 return;
             if (!_tv2LeftoverCae8Logged)
@@ -14650,6 +14804,35 @@ namespace ProcessorEmulator.Core
 
         public static bool TryFixTv2LeftoverJump(MipsBus bus, uint[] regs, ref uint target)
         {
+            if (IsDdiNopDestLive())
+            {
+                if (target != 0xFFFFFFFFu)
+                    return false;
+                uint thr;
+                uint ec;
+                uint dc;
+                uint plant;
+                TryPeekThreadCtxPc(bus, out thr, out ec, out dc, out plant);
+                if (!IsSanePlantResumePc(ec))
+                    return false;
+                target = ec;
+                if (regs != null && regs.Length > 31)
+                {
+                    regs[12] = ec;
+                    regs[31] = ec;
+                    regs[2] = ec;
+                }
+                if (!_plantFixLogged)
+                {
+                    _plantFixLogged = true;
+                    BootLog.Write("[Hive] ExtraROM ddi_nop plant-fix was=0xFFFFFFFF +EC=0x" +
+                        ec.ToString("X8") +
+                        " +DC=0x" + dc.ToString("X8") +
+                        " plant=0x" + plant.ToString("X8") +
+                        " (replay thread+0xEC; do not leftover dest)");
+                }
+                return true;
+            }
             if (_tv2LeftoverEretLogged || !_tv2LeftoverCae8Logged)
                 return false;
             if (target != 0xFFFFFFFFu)
@@ -15394,6 +15577,8 @@ namespace ProcessorEmulator.Core
         // 0x03F73238.
         public static void TryResumeTv2LeftoverDestLiveContinue(MipsBus bus, uint[] regs, ref uint pc)
         {
+            if (IsDdiNopDestLive())
+                return;
             if (!_tv2LeftoverPastS4NextLogged)
                 return;
             // wait127: leftover dest-live I-fetch of dest-live
@@ -15556,6 +15741,8 @@ namespace ProcessorEmulator.Core
         // hop at 0x03F73238.
         public static void TryKeepLeftoverDestLiveDispatch(MipsBus bus, uint pc)
         {
+            if (IsDdiNopDestLive())
+                return;
             if (!_tv2LeftoverPastS4NextLogged)
                 return;
             uint dest;
@@ -15677,6 +15864,8 @@ namespace ProcessorEmulator.Core
         // rewrite 0x80015B9C.
         public static void TryRestoreTv2LeftoverDestLiveEret(MipsBus bus, uint[] regs, uint pc)
         {
+            if (IsDdiNopDestLive())
+                return;
             if (!_tv2LeftoverPastS4NextLogged)
                 return;
             bool leftoverEret = pc == LeftoverOrRa || pc == LeftoverMtc0Epc
@@ -18823,6 +19012,8 @@ namespace ProcessorEmulator.Core
         private static uint _exnContinueWord;
         private static bool _thrSpLogged;
         private static bool _spFixLogged;
+        private static bool _plantFixLogged;
+        private static bool _plantHaltLogged;
         private static bool _c2TlbsLogged;
         private static bool _c2SpLogged;
         private static bool _c2EretHaltLogged;
