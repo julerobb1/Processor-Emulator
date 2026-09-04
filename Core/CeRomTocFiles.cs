@@ -988,6 +988,14 @@ namespace ProcessorEmulator.Core
         // still 0xC6FA7C9A at 0x80015664. sp-fix
         // then ERET2 resumes that idle / re-AdEL.
         // Refuse ERET while EPC is adel-pc poison.
+        // Live cf2477b: after sp-fix $sp is
+        // 0x040DFE80 (not C2). Live PeekEpc is
+        // already rewritten (plant / +EC idle).
+        // C2-$sp gate and live-EPC==C6FA both
+        // missed; zero epc-halt; silent CPU
+        // burn. Latch adel-pc EPC. Refuse ERET
+        // while that latch is set. Do not
+        // leftover hop. Do not invent dest.
         public const uint C2SpLoadPc = 0x80015660;
         public const uint C2SpFirstPc = 0x80015664;
         public const uint ThreadCtxEret = 0x8001568C;
@@ -9696,6 +9704,7 @@ namespace ProcessorEmulator.Core
             if (_adelC6FaLogged)
                 return;
             _adelC6FaLogged = true;
+            _adelPcEpc = epc;
             _adelPcSp = PeekGpr(regs, 29);
             uint plant = 0;
             TryPeekWord(bus, ExnContinueWord, out plant);
@@ -9802,6 +9811,12 @@ namespace ProcessorEmulator.Core
         // 0x80015264). Else refuse ERET. Do not
         // hop EPC to 0x80030264. Do not invent
         // dest. Do not map 0xC201F000.
+        // Live cf2477b: after that replay, $sp
+        // is adel-pc slot-2 (not C2) and live
+        // PeekEpc is already rewritten. Refuse
+        // ERET while the adel-pc latch is set,
+        // even when live EPC is not C6FA. Observe
+        // latch/live/+EC/pc. Do not leftover hop.
         public static bool TryRefuseC2SpResume(MipsBus bus, uint[] regs,
             ref uint programCounter)
         {
@@ -9813,10 +9828,12 @@ namespace ProcessorEmulator.Core
                 return false;
             if (!_ddiNopDllMainLogged && _ddiNopIatStoreN < BindImpObserveMax)
                 return false;
-            if (!_adelC6FaLogged && !_nearNullTlblLogged && !_c2SpLogged)
+            if (_adelPcEpc == 0 && !_adelC6FaLogged
+                && !_nearNullTlblLogged && !_c2SpLogged)
                 return false;
             uint sp = PeekGpr(regs, 29);
-            if (!IsC2ImageSp(sp))
+            bool c2 = IsC2ImageSp(sp);
+            if (!c2 && _adelPcEpc == 0)
                 return false;
             uint d4 = 0;
             uint t24 = 0;
@@ -9858,7 +9875,8 @@ namespace ProcessorEmulator.Core
                     " adel-sp=0x" + _adelPcSp.ToString("X8") +
                     " plant=0x" + plant.ToString("X8"));
             }
-            if (thr != 0 && bus != null
+            bool fixedSp = false;
+            if (c2 && thr != 0 && bus != null
                 && IsSaneReplaySp(_adelPcSp) && IsSaneNkResumePc(ec))
             {
                 try
@@ -9866,6 +9884,7 @@ namespace ProcessorEmulator.Core
                     bus.Write32(thr + ThreadCtxSp, _adelPcSp);
                     if (regs != null && regs.Length > 29)
                         regs[29] = _adelPcSp;
+                    fixedSp = true;
                 }
                 catch
                 {
@@ -9890,23 +9909,26 @@ namespace ProcessorEmulator.Core
                         " +EC=0x" + ec.ToString("X8") +
                         " (replay adel-pc $sp; do not invent dest)");
                 }
-                uint epc = 0;
-                if (bus != null)
-                    epc = bus.PeekEpc();
-                if (_adelC6FaLogged && (IsAdelPoisonEpc(epc) || epc == 0))
-                {
-                    if (!_epcHaltLogged)
-                    {
-                        _epcHaltLogged = true;
-                        BootLog.Write("[Hive] ExtraROM ddi_nop epc-halt epc=0x" +
-                            epc.ToString("X8") +
-                            " +EC=0x" + ec.ToString("X8") +
-                            " (refuse ERET; COP0 EPC adel-pc; do not invent dest)");
-                    }
-                    return true;
-                }
-                return false;
             }
+            if (_adelPcEpc != 0)
+            {
+                uint live = 0;
+                if (bus != null)
+                    live = bus.PeekEpc();
+                if (!_epcHaltLogged)
+                {
+                    _epcHaltLogged = true;
+                    BootLog.Write("[Hive] ExtraROM ddi_nop epc-halt latch=0x" +
+                        _adelPcEpc.ToString("X8") +
+                        " live=0x" + live.ToString("X8") +
+                        " +EC=0x" + ec.ToString("X8") +
+                        " pc=0x" + programCounter.ToString("X8") +
+                        " (refuse ERET; adel-pc latch; do not invent dest)");
+                }
+                return true;
+            }
+            if (fixedSp || !c2)
+                return false;
             if (!_c2EretHaltLogged)
             {
                 _c2EretHaltLogged = true;
@@ -13057,6 +13079,7 @@ namespace ProcessorEmulator.Core
             _nearNullTlblLogged = false;
             _ffffFb2aAdelLogged = false;
             _adelC6FaLogged = false;
+            _adelPcEpc = 0;
             _adelPcSp = 0;
             _exnContinueWord = 0;
             _thrSpLogged = false;
@@ -19052,6 +19075,7 @@ namespace ProcessorEmulator.Core
         private static bool _nearNullTlblLogged;
         private static bool _ffffFb2aAdelLogged;
         private static bool _adelC6FaLogged;
+        private static uint _adelPcEpc;
         private static uint _adelPcSp;
         private static uint _exnContinueWord;
         private static bool _thrSpLogged;
