@@ -1956,6 +1956,7 @@ namespace ProcessorEmulator.Core
             // dest10 word 0x806F0000 is a kseg pointer, not MZ.
             // Count host stores from this jal until ret.
             BeginDdiNopDecompStoreWatch(bus);
+            TryHuntDdiNopModuleFromRegs(bus, regs);
         }
 
         public static bool TryNoteExtraRomInnerDest(MipsBus bus, uint[] regs)
@@ -2291,6 +2292,8 @@ namespace ProcessorEmulator.Core
                 NoteDdiNopWalkSeeds(regs);
                 if (_ddiNopLandedBySig)
                     TrySetDdiNopRamStartip(bus, 0, regs);
+                if (_ddiNopModule == 0)
+                    LogDdiNopBindWalkOnce(bus);
                 return false;
             }
             return false;
@@ -5063,6 +5066,8 @@ namespace ProcessorEmulator.Core
             {
                 BeginLoadE32Watch(slot, regs, lastError);
                 _loadE32RomBit = type & LoadE32RomBit;
+                if (NamesMatchRom(slot.Name, "ddi_nop.dll"))
+                    LatchDdiNopFileObj(obj);
             }
             else
             {
@@ -5483,6 +5488,8 @@ namespace ProcessorEmulator.Core
             _loadE32WatchA1 = regs != null && regs.Length > 5 ? regs[5] : 0;
             _loadE32WatchA2 = regs != null && regs.Length > 6 ? regs[6] : 0;
             _loadE32WatchA3 = regs != null && regs.Length > 7 ? regs[7] : 0;
+            if (NamesMatchRom(_loadE32WatchName, "ddi_nop.dll"))
+                LatchDdiNopFileObj(_loadE32WatchA0);
             _loadE32WatchErr0 = err;
             _loadE32WatchErrNow = err;
             _loadE32WatchErrPc = 0;
@@ -5606,6 +5613,8 @@ namespace ProcessorEmulator.Core
             _loadE32OkName = slot != null ? slot.Name : "";
             _loadE32OkIndex = slot != null ? slot.Index : -1;
             _loadE32OkObj = obj;
+            if (NamesMatchRom(_loadE32OkName, "ddi_nop.dll"))
+                LatchDdiNopFileObj(obj);
             _loadE32OkDest = slot != null ? slot.Dest : 0;
             _loadE32OkDest0 = _loadE32OkDest & SlotMask;
             _loadE32OkLiveEntry = slot != null ? slot.LiveEntry : 0;
@@ -7177,8 +7186,18 @@ namespace ProcessorEmulator.Core
             if (!_loadE32OkWatch)
                 return;
             _loadE32OkSteps++;
+            bool ddiOk = NamesMatchRom(_loadE32OkName, "ddi_nop.dll") || _ddiNopFileObj != 0;
+            if (ddiOk && (pc == BinaryDecompressRom || (_loadE32OkSteps & 0xFFF) == 0))
+                TryHuntDdiNopModuleFromRegs(bus, regs);
             if (pc == LoadLibSyscallRet || _loadE32OkSteps > 200000)
             {
+                // Live e29762a: 200k cap cleared the watch
+                // during CEDecompressROM, so startip saw
+                // obj=0. Keep ddi_nop until one startip
+                // attempt after the .text sig serve.
+                if (ddiOk && pc != LoadLibSyscallRet
+                    && (!_ddiNopLandedBySig || !_ddiNopStartipAttempted))
+                    return;
                 if (!_loadE32OkLoadO32)
                     HiveWatch(bus, "LoadO32-not-entered", 0);
                 else if (!_loadE32OkMapInner && !_loadE32OkMap28844 && !_loadE32OkMapO32 && !_loadE32OkDecomp)
@@ -7421,6 +7440,8 @@ namespace ProcessorEmulator.Core
                 _loadE32OkDecomp = true;
                 MarkFwMapO32();
                 HiveWatch(bus, "CEDecompressROM", 0);
+                if (NamesMatchRom(_loadE32OkName, "ddi_nop.dll") || _ddiNopFileObj != 0)
+                    TryHuntDdiNopModuleFromRegs(bus, regs);
                 return;
             }
             if (bus == null || regs == null)
@@ -8184,6 +8205,7 @@ namespace ProcessorEmulator.Core
             string why;
             try
             {
+                _ddiNopStartipAttempted = true;
                 module = FindInFlightDdiNopModule(bus, hintModule);
                 if (module == 0)
                 {
@@ -8232,12 +8254,49 @@ namespace ProcessorEmulator.Core
         private static void ResetDdiNopModuleHunt()
         {
             _ddiNopBindLibV0 = 0;
+            _ddiNopFileObj = 0;
+            _ddiNopStartipAttempted = false;
             _ddiNopWalkSeedN = 0;
             _ddiNopNoModDiag = false;
+            _ddiNopWalkDiag = false;
             if (_ddiNopWalkSeeds != null)
             {
                 for (int i = 0; i < _ddiNopWalkSeeds.Length; i++)
                     _ddiNopWalkSeeds[i] = 0;
+            }
+        }
+
+        // Sticky ddi_nop file object. ClearLoadE32OkWatch
+        // must not drop this; first startip is after the
+        // 200k cap. Reset only on Boot / hunt reset.
+        private static void LatchDdiNopFileObj(uint obj)
+        {
+            if (obj == 0 || obj == 0xDEADBEEFu)
+                return;
+            if (_ddiNopFileObj == 0)
+                _ddiNopFileObj = obj;
+        }
+
+        // Live e29762a: $fp is often the heap file object.
+        // Accept only a trusted MODULE whose +96 is the
+        // sticky TOC object. Do not invent obj-96.
+        private static void TryHuntDdiNopModuleFromRegs(MipsBus bus, uint[] regs)
+        {
+            if (bus == null || regs == null)
+                return;
+            if (_ddiNopModule != 0 && IsDdiNopModule(bus, _ddiNopModule))
+                return;
+            if (_ddiNopFileObj == 0
+                && !NamesMatchRom(_loadE32OkName, "ddi_nop.dll")
+                && !NamesMatchRom(_loadE32WatchName, "ddi_nop.dll"))
+                return;
+            NoteDdiNopWalkSeeds(regs);
+            if (_ddiNopWalkSeeds == null)
+                return;
+            for (int i = 0; i < _ddiNopWalkSeedN; i++)
+            {
+                if (AcceptDdiNopModule(bus, _ddiNopWalkSeeds[i]) != 0)
+                    return;
             }
         }
 
@@ -8281,6 +8340,8 @@ namespace ProcessorEmulator.Core
             uint p;
             if (!TryPeekWord(bus, module + ModuleFileObj, out p) || p == 0)
                 return false;
+            if (_ddiNopFileObj != 0 && p == _ddiNopFileObj)
+                return true;
             if (IsDdiNopTocObject(bus, p))
                 return true;
             if (p != _loadE32Obj && p != _loadE32OkObj && p != _loadE32WatchA0)
@@ -8357,7 +8418,9 @@ namespace ProcessorEmulator.Core
             hit = AcceptDdiNopModule(bus, _ddiNopModule);
             if (hit != 0)
                 return hit;
-            uint fromObj = ModuleFromEmbeddedDdiNopFileObj(bus, _loadE32OkObj);
+            uint fromObj = ModuleFromEmbeddedDdiNopFileObj(bus, _ddiNopFileObj);
+            if (fromObj == 0)
+                fromObj = ModuleFromEmbeddedDdiNopFileObj(bus, _loadE32OkObj);
             if (fromObj == 0)
                 fromObj = ModuleFromEmbeddedDdiNopFileObj(bus, _loadE32Obj);
             if (fromObj == 0)
@@ -8428,27 +8491,48 @@ namespace ProcessorEmulator.Core
             TryPeekWord(bus, CurProc, out proc);
             if (proc != 0)
                 TryPeekWord(bus, proc + ProcModule, out p50);
-            bool emb = ModuleFromEmbeddedDdiNopFileObj(bus, _loadE32OkObj) != 0
+            bool emb = ModuleFromEmbeddedDdiNopFileObj(bus, _ddiNopFileObj) != 0
+                || ModuleFromEmbeddedDdiNopFileObj(bus, _loadE32OkObj) != 0
                 || ModuleFromEmbeddedDdiNopFileObj(bus, _loadE32Obj) != 0
                 || ModuleFromEmbeddedDdiNopFileObj(bus, _loadE32WatchA0) != 0;
+            bool p50Self = IsTrustedModule(bus, p50);
             BootLog.Write("[Hive] ExtraROM ddi_nop skip-no-mod obj=0x" +
                 _loadE32Obj.ToString("X8") +
                 " okObj=0x" + _loadE32OkObj.ToString("X8") +
+                " sticky=0x" + _ddiNopFileObj.ToString("X8") +
                 " emb=" + (emb ? "1" : "0") +
                 " CurProc=0x" + proc.ToString("X8") +
-                " +50=0x" + p50.ToString("X8"));
+                " +50=0x" + p50.ToString("X8") +
+                " lpSelf=" + (p50Self ? "1" : "0"));
+            LogDdiNopBindWalkOnce(bus);
+        }
+
+        // Always walk 3 nodes from the live BindImp
+        // LoadLibrary ret MODULE, even when CurProc+50
+        // failed lpSelf. Do not invent the list head.
+        private static void LogDdiNopBindWalkOnce(MipsBus bus)
+        {
+            if (_ddiNopWalkDiag || _ddiNopBindLibV0 == 0)
+                return;
+            _ddiNopWalkDiag = true;
+            string walk = FormatDdiNopWalk(bus, _ddiNopBindLibV0, 3);
+            if (walk.Length == 0)
+                walk = "v0=0x" + _ddiNopBindLibV0.ToString("X8") +
+                    (IsTrustedModule(bus, _ddiNopBindLibV0) ? "" : " not-lpSelf");
+            BootLog.Write("[Hive] ExtraROM ddi_nop walk " + walk);
+        }
+
+        private static string FormatDdiNopWalk(MipsBus bus, uint seed, int cap)
+        {
+            if (!IsTrustedModule(bus, seed))
+                return "";
             string walk = "";
-            uint seed = p50 != 0 ? p50 : _ddiNopBindLibV0;
             uint m = seed;
             int n = 0;
-            while (n < 3 && m != 0 && m != 0xDEADBEEFu)
+            while (n < cap && m != 0 && m != 0xDEADBEEFu)
             {
                 if (!IsTrustedModule(bus, m))
-                {
-                    if (walk.Length == 0 && _ddiNopBindLibV0 != 0)
-                        walk = "v0=0x" + _ddiNopBindLibV0.ToString("X8") + " not-lpSelf";
                     break;
-                }
                 uint oe = 0;
                 uint ip = 0;
                 TryPeekWord(bus, m + ModuleFileObj, out oe);
@@ -8464,8 +8548,7 @@ namespace ProcessorEmulator.Core
                 m = next;
                 n++;
             }
-            if (walk.Length > 0)
-                BootLog.Write("[Hive] ExtraROM ddi_nop walk " + walk);
+            return walk;
         }
 
         // PTE dest6 at RAM entry 0x01998014. Peek 0 is
@@ -13497,9 +13580,12 @@ namespace ProcessorEmulator.Core
         private static bool _ddiNopLandedBySig;
         private static uint _ddiNopModule;
         private static uint _ddiNopBindLibV0;
+        private static uint _ddiNopFileObj;
+        private static bool _ddiNopStartipAttempted;
         private static uint[] _ddiNopWalkSeeds;
         private static int _ddiNopWalkSeedN;
         private static bool _ddiNopNoModDiag;
+        private static bool _ddiNopWalkDiag;
         private static bool _ddiNopDecompWatch;
         private static uint _ddiNopWatchDest6;
         private static uint _ddiNopWatchDest10;
