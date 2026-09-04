@@ -845,11 +845,20 @@ namespace ProcessorEmulator.Core
         // Equals 0x40000000|0x08D000F0 (PTE-flag bit;
         // WalkFirmwarePte wait77 l2 0x40002A1A). v0=
         // 0x080DF51C is gwes-slot VALLOC 0x080D0000
-        // (wait42), not KData 0xFFFFD800. Observe only.
-        // Do not invent dest. Do not walk slot-2.
+        // (wait42), not KData 0xFFFFD800.
+        // Live 98b8fa6: insn 0x8D4B00F0 lw t3,0xF0(t2)
+        // t2=0x48D00000. Same word is dest-word of
+        // gwes-page 0x00081000→0x86F8C000 l2=0x001BE31E
+        // (firmware PTE consistent; not a backing miss).
+        // Tagged gwes-slot VA: clear bit30 → 0x08D00000
+        // (GwesSlot|0x00D00000). Demand-map that page
+        // via slot-4 firmware PTE only. Do not invent
+        // 0x48D dest. Do not walk slot-2. Observe stays.
         public const uint Filesys48dEpc = 0x0001E534;
         public const uint Filesys48dPage = 0x48D00000;
         public const uint Filesys48dFault = 0x48D000F0;
+        public const uint Filesys48dClearPage = 0x08D00000;
+        public const uint Filesys48dGwesSlot = 4;
         // FSDMGR 0x03E896D8 is GetProcAddress. After TOC-attach,
         // 0x800196E4 copies e32_rom units to e32_lite+0x1C.
         // Kernel GPA reads EXP at +0x20 (that dword is the
@@ -10276,6 +10285,86 @@ namespace ProcessorEmulator.Core
                 " (filesys 0x0001E534 / ROM 0x80112534; 0x48D000F0=" +
                 "0x40000000|0x08D000F0 slot36 not CE slot; v0 gwes " +
                 "VALLOC 0x080Dxxxx not KData; do not invent dest or walk slot-2)");
+            TryResolveDdiNopFilesys48d(bus);
+        }
+
+        // Live 98b8fa6: t2=0x48D00000 is dest-word of
+        // gwes-page 0x00081000 (firmware PTE). filesys
+        // lw t3,0xF0(t2). Clear bit30 only for this
+        // named page → gwes-slot 0x08D00000. Slot-4
+        // firmware PTE. Do not invent 0x48D dest.
+        public static uint MapDdiNopFilesys48dVa(MipsBus bus, uint va)
+        {
+            if (_filesys48dBusy)
+                return va;
+            if (!IsDdiNopFilesys48dArmed())
+                return va;
+            if ((va & ~0xFFFu) != Filesys48dPage)
+                return va;
+            uint use = Filesys48dClearPage | (va & 0xFFFu);
+            if (_filesys48dKseg != 0)
+                return _filesys48dKseg | (va & 0xFFFu);
+            TryResolveDdiNopFilesys48d(bus);
+            if (_filesys48dKseg != 0)
+                return _filesys48dKseg | (va & 0xFFFu);
+            return use;
+        }
+
+        private static bool IsDdiNopFilesys48dArmed()
+        {
+            if (!_ddiNopAwaitCallDll)
+                return false;
+            return _ddiNopDllMainLogged || _filesys48dLogged;
+        }
+
+        private static void TryResolveDdiNopFilesys48d(MipsBus bus)
+        {
+            if (_filesys48dKseg != 0 || _filesys48dBusy || bus == null)
+                return;
+            try
+            {
+                _filesys48dBusy = true;
+                uint l1 = 0;
+                uint l2 = 0;
+                uint pfn = 0;
+                uint kseg = 0;
+                uint sec = PeekSection(bus, Filesys48dGwesSlot);
+                uint use = Filesys48dClearPage | (Filesys48dFault & 0xFFFu);
+                if (sec != 0
+                    && WalkFirmwarePte(bus, sec, use,
+                        out l1, out l2, out pfn, out kseg)
+                    && (kseg & 0x1FFFFFFFu) >= 0x00010000u)
+                {
+                    _filesys48dKseg = kseg & ~0xFFFu;
+                    if (!_filesys48dMapLogged)
+                    {
+                        _filesys48dMapLogged = true;
+                        uint word = 0;
+                        TryPeekWord(bus, _filesys48dKseg | (Filesys48dFault & 0xFFFu), out word);
+                        BootLog.Write("[Hive] ExtraROM ddi_nop filesys-48d map va=0x" +
+                            Filesys48dPage.ToString("X8") +
+                            " -> 0x" + Filesys48dClearPage.ToString("X8") +
+                            " -> 0x" + _filesys48dKseg.ToString("X8") +
+                            " l2=0x" + l2.ToString("X8") +
+                            " dest-word=0x" + word.ToString("X8") +
+                            " (tagged gwes-slot; bit30 clear; slot-4 firmware PTE; do not invent dest)");
+                    }
+                    return;
+                }
+                if (!_filesys48dMapLogged)
+                {
+                    _filesys48dMapLogged = true;
+                    BootLog.Write("[Hive] ExtraROM ddi_nop filesys-48d map va=0x" +
+                        Filesys48dPage.ToString("X8") +
+                        " -> 0x" + Filesys48dClearPage.ToString("X8") +
+                        " pte-miss sec4=0x" + sec.ToString("X8") +
+                        " (tagged gwes-slot 0x08D00000; do not invent dest or walk slot-2)");
+                }
+            }
+            finally
+            {
+                _filesys48dBusy = false;
+            }
         }
 
         // Live 68b9567: data-TLBL epc=0x039833A4
@@ -11070,6 +11159,9 @@ namespace ProcessorEmulator.Core
             _filesysSlot2Demand = false;
             _filesysSlot2TlblLogged = false;
             _filesys48dLogged = false;
+            _filesys48dKseg = 0;
+            _filesys48dBusy = false;
+            _filesys48dMapLogged = false;
             _ddiDataDemand = false;
             _ddiDataBusy = false;
             _ddiDataN = 0;
@@ -16891,6 +16983,9 @@ namespace ProcessorEmulator.Core
         private static bool _filesysSlot2Demand;
         private static bool _filesysSlot2TlblLogged;
         private static bool _filesys48dLogged;
+        private static uint _filesys48dKseg;
+        private static bool _filesys48dBusy;
+        private static bool _filesys48dMapLogged;
         private static uint[] _ddiDataPage;
         private static uint[] _ddiDataKseg;
         private static bool[] _ddiDataDone;
