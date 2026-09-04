@@ -921,19 +921,20 @@ namespace ProcessorEmulator.Core
         public const uint FilesysSlot4Fault = 0x08011BE8;
         public const uint FilesysSlotRelPage = 0x00011000;
         public const uint FilesysSlotMask = 0x01FFFFFFu;
-        // Live ddd472a: 0x0407F000→0x86FAA000 dest-word
-        // 0x00690066. Next BindImp-exn cause=2
-        // epc=0x80046738 badvaddr=0x0405C000
-        // a1=0x04061000 v0=0x0405C000 v1=0x3750.
-        // Extra slot-2 pages [0x0405C000, 0x04080000)
-        // (includes 0x0405C000 / 0x04061000 /
-        // 0x0407F000). Per-page firmware PTE, own
-        // kseg. Not FILESYS API +0x11000. Do not
+        // Live 725f2f4: 0x0405C000→0x86F95000 and
+        // 0x0405D000→0x86F96000. Next BindImp-exn
+        // cause=2 epc=0x800525D8 badvaddr=0x04021ABC
+        // a1=1 v0=0x00021ABC (slot-2 view of gwes
+        // null-store PC). Widen extra Lo down to
+        // the page after FILESYS API 0x04011000.
+        // [0x04012000, 0x04080000) includes
+        // 0x04021000 / 0x0405C000 / 0x0407F000.
+        // Per-page firmware PTE, own kseg. Do not
         // alias onto 0x80105000. Do not walk all
         // slot-2 (wait77 OEMIdle). Do not steal
-        // slot-0 gwes (rel 0x0005C000). Do not
+        // slot-0 gwes (rel 0x00021000). Do not
         // invent dest. Do not map VA 0.
-        public const uint FilesysSlot2ExtraLo = 0x0405C000;
+        public const uint FilesysSlot2ExtraLo = 0x04012000;
         public const uint FilesysSlot2ExtraHi = 0x04080000;
         public const int FilesysSlot2ExtraCap = 32;
         public const uint FilesysSlot27FPage = 0x0407F000;
@@ -11061,8 +11062,9 @@ namespace ProcessorEmulator.Core
         }
 
         // Slot 2 extra pages only. Not FILESYS API
-        // +0x11000. Not slot-0 gwes. Not a blanket
-        // slot-2 walk.
+        // +0x11000 (0x04011000). Not slot-0 gwes
+        // (rel 0x00021000 is gwes .text). Not a
+        // blanket slot-2 walk.
         private static bool IsFilesysSlot2ExtraPage(uint va)
         {
             if ((va >> 25) != 2)
@@ -11239,11 +11241,11 @@ namespace ProcessorEmulator.Core
                 " (FILESYS API page; do not invent dest or walk slot-2/4)");
         }
 
-        // Live ddd472a: 0x0407F000 dest 0x86FAA000.
-        // Next miss 0x0405C000. Per-page firmware
-        // PTE after DllMain. Do not alias FILESYS
-        // API dest 0x80105000. Do not walk all
-        // slot-2. Do not invent dest.
+        // Live 725f2f4: extra maps won through
+        // 0x0405D000. Next miss 0x04021ABC.
+        // Per-page firmware PTE after DllMain.
+        // Do not alias FILESYS API dest 0x80105000.
+        // Do not walk all slot-2. Do not invent dest.
         private static void EnsureFilesysSlot2ExtraMaps()
         {
             if (_filesysSlot2ExtraPage != null)
