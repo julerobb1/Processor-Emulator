@@ -2285,6 +2285,7 @@ namespace ProcessorEmulator.Core
                 System.Console.WriteLine("[Hive] ExtraROM BindImp LoadLibrary \"" +
                     (dll.Length > 0 ? dll : "(empty)") +
                     "\" a0=0x" + a0.ToString("X8"));
+                _ddiNopBindLibName = dll;
                 LogRomAttach("ok", "ExtraROM", "", -1, dll.Length > 0 ? dll : "(empty)", 0, 0, 0, 0,
                     "BindImp LoadLibrary; do not invent the DLL");
                 return false;
@@ -2305,6 +2306,11 @@ namespace ProcessorEmulator.Core
                 // (heap TOC-attach openexe, not obj-96).
                 // Walk the MODULE list from live v0 / $fp.
                 _ddiNopBindLibV0 = v0;
+                if (v0 != 0 && NamesMatchRom(_ddiNopBindLibName, "coredll.dll"))
+                {
+                    _coredllModule = v0;
+                    TrySetCoredllXipBasePtr(bus, v0);
+                }
                 NoteDdiNopWalkSeeds(regs);
                 if (_ddiNopLandedBySig)
                     TrySetDdiNopRamStartip(bus, 0, regs);
@@ -2341,6 +2347,8 @@ namespace ProcessorEmulator.Core
         {
             if (!_ddiNopAwaitCallDll || regs == null || regs.Length <= 5)
                 return;
+            if (pc == BindImpOrdBaseLw && regs.Length > 4)
+                TrySetCoredllXipBasePtr(bus, regs[4]);
             if (pc == BindImpOrdJalRet)
             {
                 if (_ddiNopOrdRetLog >= 5)
@@ -8377,6 +8385,102 @@ namespace ProcessorEmulator.Core
                 " set-valloc=0x" + DdiNopVbasePage.ToString("X8"));
         }
 
+        // Live 94038eb: COREDLL MODULE+0x50 stayed dump
+        // ImageBase 0x03F50000 (CoredllSharedLo). GetProc
+        // returned 0x03F57EB4. NK TOC type-7 XIP load_va
+        // is the live image (rom extract 0x800B2000).
+        // Read load_va from NK ROMHDR TOC. Do not invent
+        // 0x800B2000 if TOC is unread. Only this field.
+        private static void TrySetCoredllXipBasePtr(MipsBus bus, uint module)
+        {
+            if (bus == null || module == 0)
+                return;
+            if (IsDdiNopModule(bus, module))
+                return;
+            uint p50;
+            if (!TryPeekWord(bus, module + ProcModule, out p50))
+                return;
+            bool coredll = module == _coredllModule
+                || p50 == CoredllSharedLo
+                || (NamesMatchRom(_ddiNopBindLibName, "coredll.dll")
+                    && module == _ddiNopBindLibV0);
+            if (!coredll)
+                return;
+            if (p50 >= 0x80000000u)
+                return;
+            if (p50 == 0)
+                return;
+            uint want = FindCoredllNkXipLoadVa(bus);
+            if (want == 0)
+            {
+                if (_coredllBasePtrLogged)
+                    return;
+                _coredllBasePtrLogged = true;
+                BootLog.Write("[Hive] ExtraROM coredll baseptr module=0x" +
+                    module.ToString("X8") +
+                    " was=0x" + p50.ToString("X8") +
+                    " skip-no-xip (NK TOC load_va unread)");
+                return;
+            }
+            if (p50 == want)
+                return;
+            bus.Write32(module + ProcModule, want);
+            BootLog.Write("[Hive] ExtraROM coredll baseptr module=0x" +
+                module.ToString("X8") +
+                " was=0x" + p50.ToString("X8") +
+                " set-xip=0x" + want.ToString("X8"));
+        }
+
+        private static uint FindCoredllNkXipLoadVa(MipsBus bus)
+        {
+            if (_coredllNkLoadVa != 0)
+                return _coredllNkLoadVa;
+            uint live = 0;
+            TryPeekWord(bus, NkRomHdrPtr, out live);
+            uint va = ReadCoredllNkTocLoadVa(bus, live);
+            if (va == 0)
+                va = ReadCoredllNkTocLoadVa(bus, NkDumpHdr);
+            if (va != 0)
+                _coredllNkLoadVa = va;
+            return va;
+        }
+
+        private static uint ReadCoredllNkTocLoadVa(MipsBus bus, uint hdr)
+        {
+            if (bus == null || hdr == 0)
+                return 0;
+            uint nmods;
+            if (!TryPeekWord(bus, hdr + RomHdrNumMods, out nmods)
+                || nmods == 0 || nmods > 80)
+                return 0;
+            for (uint i = 0; i < nmods; i++)
+            {
+                uint entry = hdr + TocFirst + i * TocEntrySize;
+                uint namePtr;
+                if (!TryPeekWord(bus, entry + 0x10, out namePtr) || namePtr == 0)
+                    continue;
+                string name = "";
+                try
+                {
+                    name = ReadAscii(bus, namePtr);
+                }
+                catch
+                {
+                }
+                if (!NamesMatchRom(name, "coredll.dll"))
+                    continue;
+                uint load;
+                if (!TryPeekWord(bus, entry + 0x1C, out load))
+                    return 0;
+                if (load < 0x80000000u || load >= 0xC0000000u)
+                    return 0;
+                if (IsDdiNopDest10Page(load))
+                    return 0;
+                return load;
+            }
+            return 0;
+        }
+
         private static bool IsDdiNopDest10Page(uint dest)
         {
             if (dest == 0)
@@ -8700,6 +8804,9 @@ namespace ProcessorEmulator.Core
         private static void ResetDdiNopModuleHunt()
         {
             _ddiNopBindLibV0 = 0;
+            _ddiNopBindLibName = null;
+            _coredllModule = 0;
+            _coredllBasePtrLogged = false;
             _ddiNopFileObj = 0;
             _ddiNopStartipAttempted = false;
             _ddiNopAwaitCallDll = false;
@@ -14145,6 +14252,10 @@ namespace ProcessorEmulator.Core
         private static bool _ddiNopLandedBySig;
         private static uint _ddiNopModule;
         private static uint _ddiNopBindLibV0;
+        private static string _ddiNopBindLibName;
+        private static uint _coredllModule;
+        private static uint _coredllNkLoadVa;
+        private static bool _coredllBasePtrLogged;
         private static uint _ddiNopFileObj;
         private static bool _ddiNopStartipAttempted;
         private static bool _ddiNopAwaitCallDll;
