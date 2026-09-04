@@ -2056,7 +2056,7 @@ namespace ProcessorEmulator.Core
             if (dest == 0x01981000u)
             {
                 TryMeasureDdiNopDestAfterDecomp(bus, hdr, v0);
-                TryServeDdiNopAtDecompRet(bus);
+                TryServeDdiNopAtDecompRet(bus, regs);
             }
             try
             {
@@ -2228,6 +2228,9 @@ namespace ProcessorEmulator.Core
                     " nameRVA=0x" + nameRva.ToString("X") +
                     (dll.Length > 0 ? " \"" + dll + "\"" : " (name unread)") +
                     " (do not invent 0x81360000)");
+                NoteDdiNopWalkSeeds(regs);
+                if (_ddiNopLandedBySig)
+                    TrySetDdiNopRamStartip(bus, 0, regs);
                 return false;
             }
             if (pc == BindImpDllName && !_ddiNopBindName)
@@ -2280,11 +2283,14 @@ namespace ProcessorEmulator.Core
                     v0 == 0
                         ? "BindImp LoadLibrary ret v0=0 import miss; last-error 126; do not invent the DLL"
                         : "BindImp LoadLibrary ret v0=0x" + v0.ToString("X8"));
-                // Live 9f130fd: serve dest6 worked; startip
-                // never written (CurProc module is not
-                // ddi_nop). Retry from the LoadE32 object.
+                // Live 9183b83: serve dest6 + entry-word
+                // 0x27BDFFD8; FindInFlight returned 0
+                // (heap TOC-attach openexe, not obj-96).
+                // Walk the MODULE list from live v0 / $fp.
+                _ddiNopBindLibV0 = v0;
+                NoteDdiNopWalkSeeds(regs);
                 if (_ddiNopLandedBySig)
-                    TrySetDdiNopRamStartip(bus, 0);
+                    TrySetDdiNopRamStartip(bus, 0, regs);
                 return false;
             }
             return false;
@@ -3025,6 +3031,7 @@ namespace ProcessorEmulator.Core
             _ddiNopLandedWord = 0;
             _ddiNopLandedBySig = false;
             _ddiNopModule = 0;
+            ResetDdiNopModuleHunt();
             _mscoreeDestOn = false;
             _mscoreeSlot0 = 0;
             _mscoreeVbase = 0;
@@ -3046,6 +3053,7 @@ namespace ProcessorEmulator.Core
             _ddiNopBindName = false;
             _ddiNopBindLib = false;
             _ddiNopBindLibRet = false;
+            ResetDdiNopModuleHunt();
             _tv2FileEntry = 0;
             _tv2FileWords = null;
             _tv2FileName = 0;
@@ -8103,7 +8111,7 @@ namespace ProcessorEmulator.Core
         // (firmware already MapO32'd; BindImp COREDLL). Serve
         // dest6 here, not on a LoadLibrary miss that will not
         // come. Do not serve dest10.
-        private static void TryServeDdiNopAtDecompRet(MipsBus bus)
+        private static void TryServeDdiNopAtDecompRet(MipsBus bus, uint[] regs)
         {
             if (!_ddiNopLandedBySig || _ddiNopLandedDest == 0)
                 return;
@@ -8118,7 +8126,7 @@ namespace ProcessorEmulator.Core
             slot.Vbase = vbase;
             slot.Decompressed = true;
             MarkExtraRomTocDecompressed(dest6);
-            TrySetDdiNopRamStartip(bus, 0);
+            TrySetDdiNopRamStartip(bus, 0, regs);
             BootLog.Write("[Hive] TOC[" + slot.Index + "] ddi_nop.dll serve dest6=0x" +
                 dest6.ToString("X8") +
                 " sig=0x" + _ddiNopLandedWord.ToString("X8") +
@@ -8137,15 +8145,19 @@ namespace ProcessorEmulator.Core
             return DdiNopEntryRvaExtract;
         }
 
-        // Live 9f130fd: CurProc+ProcModule is filesys/device/
-        // gwes, not ddi_nop, so startip was never written.
-        // Find the in-flight MODULE whose ModuleFileObj is
-        // the LoadE32/TOC-attach object already tracked.
-        // Do not invent a module. Do not write obj-96 unless
-        // that obj is the embedded openexe (IsDdiNopTocObject
-        // and kernel MODULE). Always log set-or-skip.
+        // Live 9183b83: heap TOC-attach openexe, so
+        // obj-96 is not a MODULE. Find the real in-flight
+        // MODULE via pointer oe or a pmodNext walk from
+        // live seeds. Do not invent a module.
         private static void TrySetDdiNopRamStartip(MipsBus bus, uint hintModule)
         {
+            TrySetDdiNopRamStartip(bus, hintModule, null);
+        }
+
+        private static void TrySetDdiNopRamStartip(MipsBus bus, uint hintModule, uint[] regs)
+        {
+            if (regs != null)
+                NoteDdiNopWalkSeeds(regs);
             ExtraRomTocMod slot = FindCachedExtraRomToc("ddi_nop.dll");
             uint entryrva = DdiNopEntryRvaFromSlot(slot);
             TrySetDdiNopModuleStartip(bus, DdiNopVbasePage, entryrva, hintModule);
@@ -8174,7 +8186,10 @@ namespace ProcessorEmulator.Core
             {
                 module = FindInFlightDdiNopModule(bus, hintModule);
                 if (module == 0)
+                {
                     why = "skip-no-mod";
+                    LogDdiNopNoModOnce(bus);
+                }
                 else
                 {
                     TryPeekWord(bus, module + ProcModule, out p50);
@@ -8209,19 +8224,139 @@ namespace ProcessorEmulator.Core
                 " entry-word=0x" + entryWord.ToString("X8"));
         }
 
-        // Prefer the MODULE whose ModuleFileObj is the
-        // tracked LoadE32/TOC-attach object. $fp hint at
-        // CallDLL is that same in-flight MODULE. Inverse
-        // of ModuleFileObj only when obj is embedded.
+        private const uint ModuleLpSelf = 0;
+        private const uint ModulePmodNext = 4;
+        private const int DdiNopWalkCap = 32;
+        private const int DdiNopWalkSeedMax = 12;
+
+        private static void ResetDdiNopModuleHunt()
+        {
+            _ddiNopBindLibV0 = 0;
+            _ddiNopWalkSeedN = 0;
+            _ddiNopNoModDiag = false;
+            if (_ddiNopWalkSeeds != null)
+            {
+                for (int i = 0; i < _ddiNopWalkSeeds.Length; i++)
+                    _ddiNopWalkSeeds[i] = 0;
+            }
+        }
+
+        private static void NoteDdiNopWalkSeed(uint va)
+        {
+            if (va == 0 || va == 0xDEADBEEFu)
+                return;
+            if (_ddiNopWalkSeeds == null)
+                _ddiNopWalkSeeds = new uint[DdiNopWalkSeedMax];
+            for (int i = 0; i < _ddiNopWalkSeedN; i++)
+            {
+                if (_ddiNopWalkSeeds[i] == va)
+                    return;
+            }
+            if (_ddiNopWalkSeedN >= _ddiNopWalkSeeds.Length)
+                return;
+            _ddiNopWalkSeeds[_ddiNopWalkSeedN++] = va;
+        }
+
+        private static void NoteDdiNopWalkSeeds(uint[] regs)
+        {
+            if (regs == null)
+                return;
+            for (int r = 16; r <= 23 && r < regs.Length; r++)
+                NoteDdiNopWalkSeed(regs[r]);
+            if (regs.Length > 30)
+                NoteDdiNopWalkSeed(regs[30]);
+            if (regs.Length > 2)
+                NoteDdiNopWalkSeed(regs[2]);
+        }
+
+        // Pointer oe: module+96 is either the embedded
+        // openexe or a pointer to the heap TOC-attach
+        // object. Do not invent obj-96.
+        private static bool IsDdiNopModule(MipsBus bus, uint module)
+        {
+            if (bus == null || module == 0)
+                return false;
+            if (IsDdiNopTocObject(bus, module + ModuleFileObj))
+                return true;
+            uint p;
+            if (!TryPeekWord(bus, module + ModuleFileObj, out p) || p == 0)
+                return false;
+            if (IsDdiNopTocObject(bus, p))
+                return true;
+            if (p != _loadE32Obj && p != _loadE32OkObj && p != _loadE32WatchA0)
+                return false;
+            return IsDdiNopTocObject(bus, p);
+        }
+
+        private static bool IsTrustedModule(MipsBus bus, uint module)
+        {
+            if (module == 0 || module == 0xDEADBEEFu)
+                return false;
+            uint self;
+            if (!TryPeekWord(bus, module + ModuleLpSelf, out self))
+                return false;
+            return self == module;
+        }
+
+        private static bool MatchesDdiNopRamOrDumpStartip(MipsBus bus, uint module)
+        {
+            uint ip;
+            if (!TryPeekWord(bus, module + ModuleStartip, out ip) || ip == 0)
+                return false;
+            if (ip == DdiNopVbasePage + DdiNopEntryRvaExtract)
+                return true;
+            return ip == DdiNopVbase + DdiNopEntryRvaExtract;
+        }
+
+        private static uint AcceptDdiNopModule(MipsBus bus, uint module)
+        {
+            if (module == 0)
+                return 0;
+            if (IsDdiNopModule(bus, module))
+            {
+                _ddiNopModule = module;
+                return module;
+            }
+            if (IsTrustedModule(bus, module) && MatchesDdiNopRamOrDumpStartip(bus, module))
+            {
+                _ddiNopModule = module;
+                return module;
+            }
+            return 0;
+        }
+
+        private static uint WalkDdiNopModuleList(MipsBus bus, uint seed)
+        {
+            uint m = seed;
+            for (int i = 0; i < DdiNopWalkCap && m != 0 && m != 0xDEADBEEFu; i++)
+            {
+                if (!IsTrustedModule(bus, m))
+                    return 0;
+                uint hit = AcceptDdiNopModule(bus, m);
+                if (hit != 0)
+                    return hit;
+                uint next;
+                if (!TryPeekWord(bus, m + ModulePmodNext, out next))
+                    return 0;
+                if (next == 0 || next == m)
+                    return 0;
+                m = next;
+            }
+            return 0;
+        }
+
+        // Live 9183b83: skip-no-mod. Heap TOC-attach
+        // openexe is not an embedded MODULE+96. Walk
+        // pmodNext from CurProc+0x50, BindImp LoadLibrary
+        // ret v0, and $fp / callee-saved. No invent.
         private static uint FindInFlightDdiNopModule(MipsBus bus, uint hintModule)
         {
-            if (IsDdiNopModule(bus, hintModule))
-            {
-                _ddiNopModule = hintModule;
-                return hintModule;
-            }
-            if (IsDdiNopModule(bus, _ddiNopModule))
-                return _ddiNopModule;
+            uint hit = AcceptDdiNopModule(bus, hintModule);
+            if (hit != 0)
+                return hit;
+            hit = AcceptDdiNopModule(bus, _ddiNopModule);
+            if (hit != 0)
+                return hit;
             uint fromObj = ModuleFromEmbeddedDdiNopFileObj(bus, _loadE32OkObj);
             if (fromObj == 0)
                 fromObj = ModuleFromEmbeddedDdiNopFileObj(bus, _loadE32Obj);
@@ -8232,29 +8367,33 @@ namespace ProcessorEmulator.Core
                 _ddiNopModule = fromObj;
                 return fromObj;
             }
-            uint proc;
+            uint proc = 0;
+            uint p50 = 0;
             if (TryPeekWord(bus, CurProc, out proc) && proc != 0)
+                TryPeekWord(bus, proc + ProcModule, out p50);
+            hit = WalkDdiNopModuleList(bus, p50);
+            if (hit != 0)
+                return hit;
+            hit = WalkDdiNopModuleList(bus, hintModule);
+            if (hit != 0)
+                return hit;
+            hit = WalkDdiNopModuleList(bus, _ddiNopBindLibV0);
+            if (hit != 0)
+                return hit;
+            if (_ddiNopWalkSeeds != null)
             {
-                uint p50;
-                if (TryPeekWord(bus, proc + ProcModule, out p50)
-                    && IsDdiNopModule(bus, p50))
+                for (int i = 0; i < _ddiNopWalkSeedN; i++)
                 {
-                    _ddiNopModule = p50;
-                    return p50;
-                }
-                uint embedded = proc + ProcModule;
-                if (IsDdiNopModule(bus, embedded))
-                {
-                    _ddiNopModule = embedded;
-                    return embedded;
+                    uint seed = _ddiNopWalkSeeds[i];
+                    hit = AcceptDdiNopModule(bus, seed);
+                    if (hit != 0)
+                        return hit;
+                    hit = WalkDdiNopModuleList(bus, seed);
+                    if (hit != 0)
+                        return hit;
                 }
             }
             return 0;
-        }
-
-        private static bool IsDdiNopModule(MipsBus bus, uint module)
-        {
-            return module != 0 && IsDdiNopTocObject(bus, module + ModuleFileObj);
         }
 
         // obj-96 is the MODULE only when obj is the
@@ -8269,12 +8408,64 @@ namespace ProcessorEmulator.Core
                 return 0;
             if (!IsDdiNopTocObject(bus, module + ModuleFileObj))
                 return 0;
+            if (!IsTrustedModule(bus, module))
+                return 0;
             uint unused;
             if (!TryPeekWord(bus, module + ModuleStartip, out unused))
                 return 0;
             if (!TryPeekWord(bus, module + ProcModule, out unused))
                 return 0;
             return module;
+        }
+
+        private static void LogDdiNopNoModOnce(MipsBus bus)
+        {
+            if (_ddiNopNoModDiag)
+                return;
+            _ddiNopNoModDiag = true;
+            uint proc = 0;
+            uint p50 = 0;
+            TryPeekWord(bus, CurProc, out proc);
+            if (proc != 0)
+                TryPeekWord(bus, proc + ProcModule, out p50);
+            bool emb = ModuleFromEmbeddedDdiNopFileObj(bus, _loadE32OkObj) != 0
+                || ModuleFromEmbeddedDdiNopFileObj(bus, _loadE32Obj) != 0
+                || ModuleFromEmbeddedDdiNopFileObj(bus, _loadE32WatchA0) != 0;
+            BootLog.Write("[Hive] ExtraROM ddi_nop skip-no-mod obj=0x" +
+                _loadE32Obj.ToString("X8") +
+                " okObj=0x" + _loadE32OkObj.ToString("X8") +
+                " emb=" + (emb ? "1" : "0") +
+                " CurProc=0x" + proc.ToString("X8") +
+                " +50=0x" + p50.ToString("X8"));
+            string walk = "";
+            uint seed = p50 != 0 ? p50 : _ddiNopBindLibV0;
+            uint m = seed;
+            int n = 0;
+            while (n < 3 && m != 0 && m != 0xDEADBEEFu)
+            {
+                if (!IsTrustedModule(bus, m))
+                {
+                    if (walk.Length == 0 && _ddiNopBindLibV0 != 0)
+                        walk = "v0=0x" + _ddiNopBindLibV0.ToString("X8") + " not-lpSelf";
+                    break;
+                }
+                uint oe = 0;
+                uint ip = 0;
+                TryPeekWord(bus, m + ModuleFileObj, out oe);
+                TryPeekWord(bus, m + ModuleStartip, out ip);
+                if (walk.Length > 0)
+                    walk += " ";
+                walk += "m=0x" + m.ToString("X8") +
+                    " +96=0x" + oe.ToString("X8") +
+                    " ip=0x" + ip.ToString("X8");
+                uint next;
+                if (!TryPeekWord(bus, m + ModulePmodNext, out next) || next == 0 || next == m)
+                    break;
+                m = next;
+                n++;
+            }
+            if (walk.Length > 0)
+                BootLog.Write("[Hive] ExtraROM ddi_nop walk " + walk);
         }
 
         // PTE dest6 at RAM entry 0x01998014. Peek 0 is
@@ -13305,6 +13496,10 @@ namespace ProcessorEmulator.Core
         private static uint _ddiNopLandedWord;
         private static bool _ddiNopLandedBySig;
         private static uint _ddiNopModule;
+        private static uint _ddiNopBindLibV0;
+        private static uint[] _ddiNopWalkSeeds;
+        private static int _ddiNopWalkSeedN;
+        private static bool _ddiNopNoModDiag;
         private static bool _ddiNopDecompWatch;
         private static uint _ddiNopWatchDest6;
         private static uint _ddiNopWatchDest10;
@@ -13349,6 +13544,7 @@ namespace ProcessorEmulator.Core
             _ddiNopLandedWord = 0;
             _ddiNopLandedBySig = false;
             _ddiNopModule = 0;
+            ResetDdiNopModuleHunt();
             _mscoreeDestOn = false;
             _mscoreeSlot0 = 0;
             _ole32DestOn = false;
@@ -13368,6 +13564,7 @@ namespace ProcessorEmulator.Core
             _ddiNopBindName = false;
             _ddiNopBindLib = false;
             _ddiNopBindLibRet = false;
+            ResetDdiNopModuleHunt();
             _vallocHostN = 0;
             _vallocHostPool = VallocHostKseg;
             _heapSlotBusy = false;
