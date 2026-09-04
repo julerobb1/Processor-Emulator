@@ -883,6 +883,15 @@ namespace ProcessorEmulator.Core
         // insn/rs/rt/base. Do not map VA 0. Do not
         // invent SharedUserData / KData / dest.
         public const uint GwesNullStoreEpc = 0x00021ABC;
+        // Live 73486bc: after 0x04021000→0x80115000,
+        // BindImp-exn cause=2 epc=0x80052010
+        // badvaddr=0x50 a1=0x50 v0=0x74. Near-null
+        // TLBL. Observe insn/rs/rt/base. Do not
+        // map VA 0 / page 0. Do not invent
+        // SharedUserData / KData / dest.
+        public const uint NearNullTlblEpc = 0x80052010;
+        public const uint NearNullTlblVaddr = 0x00000050;
+        public const uint NearNullPageHi = 0x00001000;
         public const int GwesImagePageCap = 32;
         // TOC[7] o32[0] dataptr. Same as HostHardDisk.
         // VA 0x00011000 → 0x80146000. Live d01f68a:
@@ -9276,13 +9285,17 @@ namespace ProcessorEmulator.Core
             // one-shot on that refill.
             if (code == 2 && IsFilesysSlot2ExtraPage(vaddr))
                 return;
-            // Live 98db5d5: null TLBS consumed the
-            // one-shot and hid later real TLBL.
-            // Observe the named store. Do not map VA 0.
-            if (code == 3 && vaddr == 0)
+            // Live 98db5d5 / 73486bc: page-0 TLBS/TLBL
+            // consumed the one-shot and hid later
+            // real misses. Observe the named sites.
+            // Do not map VA 0 / page 0.
+            if (IsNearNullVa(vaddr))
             {
-                if (epc == GwesNullStoreEpc)
+                if (code == 3 && epc == GwesNullStoreEpc && vaddr == 0)
                     TryNoteGwesNullStoreObserve(bus, regs, epc);
+                else if (code == 2 && epc == NearNullTlblEpc
+                    && vaddr == NearNullTlblVaddr)
+                    TryNoteNearNullTlblObserve(bus, regs, epc, vaddr);
                 return;
             }
             if (_bindImpExnLogged)
@@ -9452,6 +9465,54 @@ namespace ProcessorEmulator.Core
                 " (do not map VA 0)");
         }
 
+        private static bool IsNearNullVa(uint va)
+        {
+            return va < NearNullPageHi;
+        }
+
+        // Live 73486bc: kernel 0x80052010 TLBL 0x50.
+        // Peek insn / rs / rt / base. One Hive line.
+        // Do not map page 0. Do not invent dest.
+        private static void TryNoteNearNullTlblObserve(MipsBus bus, uint[] regs,
+            uint epc, uint vaddr)
+        {
+            if (_nearNullTlblLogged)
+                return;
+            _nearNullTlblLogged = true;
+            uint insn = 0;
+            string via = "peek-miss";
+            if (TryPeekWord(bus, epc, out insn))
+                via = "kseg";
+            string dis = via != "peek-miss" ? FormatMipsOp(epc, insn) : "peek-miss";
+            uint rs = (insn >> 21) & 31;
+            uint rt = (insn >> 16) & 31;
+            int simm = (short)(insn & 0xFFFFu);
+            uint bas = PeekGpr(regs, (int)rs);
+            uint formed = bas + (uint)simm;
+            string why;
+            if (rs == 0)
+                why = "rs0";
+            else if (bas == 0)
+                why = "base0";
+            else if (IsNearNullVa(formed))
+                why = "formed0";
+            else
+                why = "page0";
+            string extra = via == "kseg" ? "" : " via=" + via;
+            BootLog.Write("[Hive] ExtraROM ddi_nop near-null epc=0x" +
+                epc.ToString("X8") +
+                " insn=0x" + insn.ToString("X8") +
+                " " + dis +
+                " rs=" + rs +
+                " rt=" + rt +
+                " base=0x" + bas.ToString("X8") +
+                " formed=0x" + formed.ToString("X8") +
+                " why=" + why +
+                extra +
+                " v0=" + GprHex(regs, 2) +
+                " (do not map page 0)");
+        }
+
         private static void TryNoteBindImpExnSave(MipsBus bus, uint[] regs, uint pc)
         {
             if (!_ddiNopAwaitCallDll || !_ddiNopIatStoreLogged)
@@ -9464,7 +9525,7 @@ namespace ProcessorEmulator.Core
                 return;
             if (IsFilesysSlot2ExtraPage(_bindImpExnVaddr))
                 return;
-            if (_bindImpExnCode == 3 && _bindImpExnVaddr == 0)
+            if (IsNearNullVa(_bindImpExnVaddr))
                 return;
             _bindImpExnSaveLogged = true;
             uint a1 = regs != null && regs.Length > 5 ? regs[5] : 0;
@@ -12395,6 +12456,7 @@ namespace ProcessorEmulator.Core
             _gwesB9SpinPage = 0;
             _gwesB9SpinN = 0;
             _gwesNullStoreLogged = false;
+            _nearNullTlblLogged = false;
             _ddiNopInfoObserved = false;
             _ddiNopInfoDemand = false;
             _ddiNopInfoBusy = false;
@@ -18337,6 +18399,7 @@ namespace ProcessorEmulator.Core
         private static uint _gwesB9SpinPage;
         private static int _gwesB9SpinN;
         private static bool _gwesNullStoreLogged;
+        private static bool _nearNullTlblLogged;
         private static bool _ddiNopInfoObserved;
         private static bool _ddiNopInfoDemand;
         private static bool _ddiNopInfoBusy;
