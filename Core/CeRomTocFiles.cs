@@ -753,6 +753,11 @@ namespace ProcessorEmulator.Core
         // LocalAlloc call HeapAlloc(0) and RegOpen returns 14.
         public const uint HeapCreateStore = 0x03F7A964;
         public const uint ProcessHeapPtr = 0x01FFFFA0;
+        // Live edf15b0: after IAT stores=24, TLBL cause=2
+        // epc=0x03F6C908 lw $v0,0($s5). $s5==BadVAddr==
+        // 0x01FFFCA4. Same page as *0x01FFFFA0 / wait96.
+        public const uint ProcessInfoPage = 0x01FFF000;
+        public const uint ProcessInfoFaultVa = 0x01FFFCA4;
         // FSDMGR 0x03E896D8 is GetProcAddress. After TOC-attach,
         // 0x800196E4 copies e32_rom units to e32_lite+0x1C.
         // Kernel GPA reads EXP at +0x20 (that dword is the
@@ -2377,6 +2382,8 @@ namespace ProcessorEmulator.Core
             TryNoteBindImpAfterGoodV0(bus, pc);
             TryNoteBindImpIatWindow(bus, regs, pc);
             TryNoteBindImpExnSave(bus, regs, pc);
+            TryNoteDdiNopProcessInfo(bus, regs);
+            TryNoteDdiNopDllMain(bus, regs, pc);
             if (pc == BindImpOrdJalRet)
             {
                 uint v0 = regs[2];
@@ -8827,6 +8834,12 @@ namespace ProcessorEmulator.Core
         public static void TryNoteBindImpException(uint code, uint epc, uint vaddr,
             uint vector, uint[] regs)
         {
+            TryNoteBindImpException(code, epc, vaddr, vector, regs, null);
+        }
+
+        public static void TryNoteBindImpException(uint code, uint epc, uint vaddr,
+            uint vector, uint[] regs, MipsBus bus)
+        {
             if (!_ddiNopAwaitCallDll || !_ddiNopIatWatch || code == 0)
                 return;
             if (_ddiNopIatStoreN < 7 && !_ddiNopIatStoreLogged)
@@ -8834,6 +8847,15 @@ namespace ProcessorEmulator.Core
             _bindImpExnCode = code;
             _bindImpExnEpc = epc;
             _bindImpExnVaddr = vaddr;
+            if (code == 2
+                && vaddr >= ProcessInfoPage && vaddr < 0x02000000u
+                && (_ddiNopIatStoreN >= BindImpObserveMax
+                    || _ddiNopIatStoreLogged
+                    || _ddiNopSawCallDllPc))
+            {
+                _ddiNopInfoDemand = true;
+                TryResolveDdiNopProcessInfo(bus);
+            }
             if (_bindImpExnLogged)
                 return;
             _bindImpExnLogged = true;
@@ -8868,6 +8890,123 @@ namespace ProcessorEmulator.Core
                 " badvaddr=0x" + _bindImpExnVaddr.ToString("X8") +
                 " a1=0x" + a1.ToString("X8") +
                 " stores=" + _ddiNopIatStoreN);
+        }
+
+        // Live edf15b0: after stores=24, coredll
+        // 0x03F6C908 lw $v0,0($s5) TLBL on 0x01FFFCA4.
+        // Observe $s5 / mappedness, then demand-map the
+        // process-info page via firmware PTE, KData keep,
+        // or a zero valloc host page. Do not invent heap.
+        private static void TryNoteDdiNopProcessInfo(MipsBus bus, uint[] regs)
+        {
+            if (_ddiNopInfoObserved || !_ddiNopAwaitCallDll)
+                return;
+            if (_ddiNopIatStoreN < BindImpObserveMax && !_ddiNopSawCallDllPc)
+                return;
+            _ddiNopInfoObserved = true;
+            uint s5 = regs != null && regs.Length > 21 ? regs[21] : 0;
+            uint word = 0;
+            bool mapped = false;
+            _ddiNopInfoPeekRaw = true;
+            try
+            {
+                mapped = TryPeekWord(bus, ProcessInfoFaultVa, out word);
+            }
+            finally
+            {
+                _ddiNopInfoPeekRaw = false;
+            }
+            BootLog.Write("[Hive] ExtraROM ddi_nop proc-info s5=0x" +
+                s5.ToString("X8") +
+                " va=0x" + ProcessInfoFaultVa.ToString("X8") +
+                (mapped ? " mapped" : " unmapped") +
+                " word=0x" + word.ToString("X8") +
+                " stores=" + _ddiNopIatStoreN);
+            TryResolveDdiNopProcessInfo(bus);
+        }
+
+        private static bool IsDdiNopProcessInfoArmed()
+        {
+            if (!_ddiNopAwaitCallDll)
+                return false;
+            if (_ddiNopInfoDemand || _ddiNopSawCallDllPc)
+                return true;
+            return _ddiNopIatStoreN >= BindImpObserveMax;
+        }
+
+        public static uint MapDdiNopProcessInfoVa(MipsBus bus, uint va)
+        {
+            if (_ddiNopInfoPeekRaw || _ddiNopInfoBusy)
+                return va;
+            if (!IsDdiNopProcessInfoArmed())
+                return va;
+            if (va < ProcessInfoPage || va >= 0x02000000u)
+                return va;
+            if (_ddiNopInfoKseg != 0)
+                return _ddiNopInfoKseg | (va & 0xFFFu);
+            TryResolveDdiNopProcessInfo(bus);
+            if (_ddiNopInfoKseg != 0)
+                return _ddiNopInfoKseg | (va & 0xFFFu);
+            return va;
+        }
+
+        private static void TryResolveDdiNopProcessInfo(MipsBus bus)
+        {
+            if (_ddiNopInfoKseg != 0 || _ddiNopInfoBusy || bus == null)
+                return;
+            try
+            {
+                _ddiNopInfoBusy = true;
+                uint sec = PeekSection(bus, 0);
+                uint l1 = 0;
+                uint l2 = 0;
+                uint pfn = 0;
+                uint kseg = 0;
+                if (sec != 0
+                    && WalkFirmwarePte(bus, sec, ProcessInfoFaultVa,
+                        out l1, out l2, out pfn, out kseg)
+                    && (kseg & 0x1FFFFFFFu) >= 0x00010000u)
+                {
+                    _ddiNopInfoKseg = kseg & ~0xFFFu;
+                    if (!_ddiNopInfoMapLogged)
+                    {
+                        _ddiNopInfoMapLogged = true;
+                        BootLog.Write("[Hive] ExtraROM ddi_nop proc-info map va=0x" +
+                            ProcessInfoPage.ToString("X8") +
+                            " -> 0x" + _ddiNopInfoKseg.ToString("X8") +
+                            " l2=0x" + l2.ToString("X8") +
+                            " (firmware PTE; same page as *0x01FFFFA0; do not invent heap bytes)");
+                    }
+                    return;
+                }
+                uint kdata = (KDataBase & ~0xFFFu) | (ProcessInfoFaultVa & 0xFFFu);
+                uint word = 0;
+                if (TryPeekWord(bus, kdata, out word))
+                {
+                    _ddiNopInfoKseg = KDataBase & ~0xFFFu;
+                    if (!_ddiNopInfoMapLogged)
+                    {
+                        _ddiNopInfoMapLogged = true;
+                        BootLog.Write("[Hive] ExtraROM ddi_nop proc-info map va=0x" +
+                            ProcessInfoPage.ToString("X8") +
+                            " -> 0x" + _ddiNopInfoKseg.ToString("X8") +
+                            " (KData keep; same page as UserKPage alias; do not invent heap bytes)");
+                    }
+                    return;
+                }
+                if (TryHostBackProcessInfoPage() && !_ddiNopInfoMapLogged)
+                {
+                    _ddiNopInfoMapLogged = true;
+                    BootLog.Write("[Hive] ExtraROM ddi_nop proc-info map va=0x" +
+                        ProcessInfoPage.ToString("X8") +
+                        " -> 0x" + _ddiNopInfoKseg.ToString("X8") +
+                        " (zero page; existing valloc host; do not invent heap bytes)");
+                }
+            }
+            finally
+            {
+                _ddiNopInfoBusy = false;
+            }
         }
 
         // During BindImp, dump-real IAT (o32.real) is the
@@ -9265,6 +9404,14 @@ namespace ProcessorEmulator.Core
             _bindImpExnCode = 0;
             _bindImpExnEpc = 0;
             _bindImpExnVaddr = 0;
+            _ddiNopInfoObserved = false;
+            _ddiNopInfoDemand = false;
+            _ddiNopInfoBusy = false;
+            _ddiNopInfoPeekRaw = false;
+            _ddiNopInfoMapLogged = false;
+            _ddiNopInfoKseg = 0;
+            _ddiNopCallDllHiveLogged = false;
+            _ddiNopDllMainLogged = false;
             _ddiNopWalkSeedN = 0;
             _ddiNopNoModDiag = false;
             _ddiNopWalkDiag = false;
@@ -10042,7 +10189,50 @@ namespace ProcessorEmulator.Core
                     hit = true;
             }
             if (hit)
+            {
                 _ddiNopSawCallDllPc = true;
+                if (!_ddiNopCallDllHiveLogged)
+                {
+                    _ddiNopCallDllHiveLogged = true;
+                    uint a1 = regs.Length > 5 ? regs[5] : 0;
+                    uint ip = 0;
+                    if (_ddiNopModule != 0)
+                        TryPeekWord(bus, _ddiNopModule + ModuleStartip, out ip);
+                    BootLog.Write("[Hive] ExtraROM ddi_nop CallDLL pc=0x" +
+                        pc.ToString("X8") +
+                        " module=0x" + regs[30].ToString("X8") +
+                        " a1=0x" + a1.ToString("X8") +
+                        " startip=0x" + ip.ToString("X8"));
+                }
+                TryNoteDdiNopProcessInfo(bus, regs);
+            }
+        }
+
+        // Live edf15b0: DllMain / CallDLL already had
+        // a1=1 and MODULE in v0, but died in coredll
+        // lw $v0,0($s5) before any Hive. Log startip
+        // when it actually runs. Do not invent CallDLL.
+        private static void TryNoteDdiNopDllMain(MipsBus bus, uint[] regs, uint pc)
+        {
+            if (_ddiNopDllMainLogged || !_ddiNopAwaitCallDll)
+                return;
+            if (_ddiNopModule == 0 || bus == null)
+                return;
+            uint ip = 0;
+            if (!TryPeekWord(bus, _ddiNopModule + ModuleStartip, out ip) || ip == 0)
+                return;
+            if (pc != ip)
+                return;
+            _ddiNopDllMainLogged = true;
+            _ddiNopSawCallDllPc = true;
+            uint a0 = regs != null && regs.Length > 4 ? regs[4] : 0;
+            uint a1 = regs != null && regs.Length > 5 ? regs[5] : 0;
+            BootLog.Write("[Hive] ExtraROM ddi_nop DllMain startip=0x" +
+                ip.ToString("X8") +
+                " a0=0x" + a0.ToString("X8") +
+                " a1=0x" + a1.ToString("X8") +
+                " module=0x" + _ddiNopModule.ToString("X8"));
+            TryNoteDdiNopProcessInfo(bus, regs);
         }
 
         // Observe only. After BindImp, startip is set but
@@ -10070,7 +10260,13 @@ namespace ProcessorEmulator.Core
         public static void TryPollDdiNopCallDllMiss(MipsBus bus, uint[] regs, uint pc)
         {
             TryNoteDdiNopOrdGetProc(bus, regs, pc);
+            NoteDdiNopCallDllPc(bus, regs, pc);
             if (!_ddiNopAwaitCallDll || _ddiNopCallDllMissLogged || _ddiNopSawCallDllPc)
+                return;
+            // Live edf15b0: CallDLL-miss still fired
+            // mid-bind after slot0..23. Wait until the
+            // IAT walk is done (24 stores).
+            if (_ddiNopIatStoreN < BindImpObserveMax)
                 return;
             // Live 1c3b70a: slot0 IAT-store won, then
             // CallDLL-miss fired while BindImp was still
@@ -10096,6 +10292,8 @@ namespace ProcessorEmulator.Core
         public static void TryLogDdiNopCallDllMiss(MipsBus bus, uint[] regs, uint pc)
         {
             if (_ddiNopCallDllMissLogged || !_ddiNopAwaitCallDll || _ddiNopSawCallDllPc)
+                return;
+            if (_ddiNopIatStoreN < BindImpObserveMax)
                 return;
             if (_ddiNopModule == 0)
                 return;
@@ -12668,11 +12866,13 @@ namespace ProcessorEmulator.Core
         // Do not invent dest. Do not invent a slot map.
         public static uint MapFirmwareSlotVa(MipsBus bus, uint va)
         {
-            if (_ddiNopDestPeekRaw)
+            if (_ddiNopDestPeekRaw || _ddiNopInfoPeekRaw)
                 return va;
             bool dest0 = _ddiNopDestOn
                 && va >= 0x01980000u && va < 0x019B0000u;
-            if (_pteMapBusy || bus == null || (_tv2ImplRa == 0 && !dest0))
+            bool ddiInfo = va >= ProcessInfoPage && va < 0x02000000u
+                && IsDdiNopProcessInfoArmed();
+            if (_pteMapBusy || bus == null || (_tv2ImplRa == 0 && !dest0 && !ddiInfo))
                 return va;
             if (va >= 0x80000000u)
                 return va;
@@ -12681,8 +12881,8 @@ namespace ProcessorEmulator.Core
             uint slot = va >> 25;
             bool walkSlot2 = slot == 2 && _tv2LeftoverLiveLogged;
             bool walkSlot0Info = slot == 0
-                && _tv2LeftoverPastLogged
-                && va >= 0x01FFF000u
+                && (_tv2LeftoverPastLogged || ddiInfo)
+                && va >= ProcessInfoPage
                 && va < 0x02000000u;
             bool walkSlot0Fetch = slot == 0
                 && _tv2LeftoverCae8Logged
@@ -12727,15 +12927,27 @@ namespace ProcessorEmulator.Core
                     TryPeekWord(bus, dest, out word);
                     _slot0InfoMapLogged = true;
                     _pteMapLogged = true;
-                    System.Console.WriteLine("[Hive] FILE[25] slot-0 info PTE 0x" +
-                        va.ToString("X8") + " -> 0x" + dest.ToString("X8") +
-                        " slot=" + slot +
-                        " sec=0x" + sec.ToString("X8") +
-                        " l1=0x" + l1.ToString("X8") +
-                        " l2=0x" + l2.ToString("X8") +
-                        " pfn=0x" + pfn.ToString("X8") +
-                        " dest-word=0x" + word.ToString("X8") +
-                        " (process-info leftover-past; firmware 0x80040278; dest already expanded; do not map page 0; do not invent dest bytes)");
+                    if (ddiInfo && !_tv2LeftoverPastLogged)
+                    {
+                        if (_ddiNopInfoKseg == 0)
+                            _ddiNopInfoKseg = dest & ~0xFFFu;
+                        BootLog.Write("[Hive] ExtraROM ddi_nop proc-info PTE 0x" +
+                            va.ToString("X8") + " -> 0x" + dest.ToString("X8") +
+                            " dest-word=0x" + word.ToString("X8") +
+                            " (firmware 0x80040278; same page as *0x01FFFFA0; do not invent heap bytes)");
+                    }
+                    else
+                    {
+                        System.Console.WriteLine("[Hive] FILE[25] slot-0 info PTE 0x" +
+                            va.ToString("X8") + " -> 0x" + dest.ToString("X8") +
+                            " slot=" + slot +
+                            " sec=0x" + sec.ToString("X8") +
+                            " l1=0x" + l1.ToString("X8") +
+                            " l2=0x" + l2.ToString("X8") +
+                            " pfn=0x" + pfn.ToString("X8") +
+                            " dest-word=0x" + word.ToString("X8") +
+                            " (process-info leftover-past; firmware 0x80040278; dest already expanded; do not map page 0; do not invent dest bytes)");
+                    }
                 }
                 else if (walkSlot0Fetch && !_slot0FetchMapLogged)
                 {
@@ -14771,6 +14983,14 @@ namespace ProcessorEmulator.Core
         private static uint _bindImpExnCode;
         private static uint _bindImpExnEpc;
         private static uint _bindImpExnVaddr;
+        private static bool _ddiNopInfoObserved;
+        private static bool _ddiNopInfoDemand;
+        private static bool _ddiNopInfoBusy;
+        private static bool _ddiNopInfoPeekRaw;
+        private static bool _ddiNopInfoMapLogged;
+        private static uint _ddiNopInfoKseg;
+        private static bool _ddiNopCallDllHiveLogged;
+        private static bool _ddiNopDllMainLogged;
         private static uint[] _ddiNopWalkSeeds;
         private static int _ddiNopWalkSeedN;
         private static bool _ddiNopNoModDiag;
@@ -14998,6 +15218,42 @@ namespace ProcessorEmulator.Core
                     return _vallocHostKseg[i] + (va - _vallocHostLo[i]);
             }
             return va;
+        }
+
+        // Live edf15b0: process-info page had no PTE and
+        // KData peek missed. Host-back one zero 4K via
+        // the existing valloc pool. Do not invent heap.
+        private static bool TryHostBackProcessInfoPage()
+        {
+            uint lo = ProcessInfoPage;
+            uint hi = ProcessInfoPage + 0x1000u;
+            if (_ddiNopInfoKseg != 0)
+                return true;
+            if (VallocHostCovers(lo, hi))
+            {
+                for (int i = 0; i < _vallocHostN; i++)
+                {
+                    if (_vallocHostLo[i] <= lo && _vallocHostHi[i] >= hi)
+                    {
+                        _ddiNopInfoKseg = _vallocHostKseg[i];
+                        return _ddiNopInfoKseg != 0;
+                    }
+                }
+                return false;
+            }
+            if (_vallocHostN >= _vallocHostLo.Length)
+                return false;
+            uint span = 0x1000u;
+            uint kseg = _vallocHostPool;
+            if (kseg < VallocHostKseg || kseg + span > VallocHostKsegLim)
+                return false;
+            _vallocHostLo[_vallocHostN] = lo;
+            _vallocHostHi[_vallocHostN] = hi;
+            _vallocHostKseg[_vallocHostN] = kseg;
+            _vallocHostN++;
+            _vallocHostPool += span;
+            _ddiNopInfoKseg = kseg;
+            return true;
         }
 
         // wait42: DllMain dest+0x520 $fp=0x080E1970 is slot-4 of
