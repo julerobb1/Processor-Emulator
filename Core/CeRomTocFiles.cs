@@ -806,6 +806,16 @@ namespace ProcessorEmulator.Core
         // dest or steal tv2 PE 0x00014000.
         public const uint GwesText2Page = 0x00014000;
         public const uint GwesText2Fault = 0x00014B3C;
+        // Live 187f5be: I-fetch TLBL 0x000B4B80 (page
+        // 0x000B4000). Same page as jal 0x000B4D20
+        // (IAT LocalAlloc thunk 0x000B60D0). Same miss
+        // class as prior gwes text/data pages. Image
+        // vbase 0x00010000 / vsize 0xBB000. Named pages
+        // keep their Hive tags; new pages demand-map
+        // via firmware PTE only. Do not invent dest.
+        public const uint GwesImageLo = 0x00011000;
+        public const uint GwesImageHi = 0x000CB000;
+        public const int GwesImagePageCap = 32;
         // FSDMGR 0x03E896D8 is GetProcAddress. After TOC-attach,
         // 0x800196E4 copies e32_rom units to e32_lite+0x1C.
         // Kernel GPA reads EXP at +0x20 (that dword is the
@@ -8947,6 +8957,13 @@ namespace ProcessorEmulator.Core
             {
                 TryNoteDdiNopGwesText2Tlbl(bus, regs, epc, vaddr, vector);
             }
+            if (code == 2
+                && IsDdiNopGwesImageVa(vaddr)
+                && !IsNamedDdiNopGwesPage(vaddr)
+                && (_ddiNopDllMainLogged || _ddiNopIatStoreN >= BindImpObserveMax))
+            {
+                TryNoteDdiNopGwesImageTlbl(bus, regs, epc, vaddr, vector);
+            }
             if (_bindImpExnLogged)
                 return;
             _bindImpExnLogged = true;
@@ -9662,6 +9679,190 @@ namespace ProcessorEmulator.Core
             }
         }
 
+        // Live 187f5be: fetch-TLBL 0x000B4B80 after text2.
+        // Same firmware-PTE demand-map as 0x00011000 /
+        // 0x00014000 / 0x0005D000 / 0x000B6000 / 0x000B7000
+        // / 0x000BA000. Any remaining gwes image page after
+        // DllMain. Named pages keep their Hive tags.
+        public static uint MapDdiNopGwesImageVa(MipsBus bus, uint va)
+        {
+            if (_gwesImageBusy)
+                return va;
+            if (!IsDdiNopGwesImageArmed())
+                return va;
+            if (!IsDdiNopGwesImageVa(va) || IsNamedDdiNopGwesPage(va))
+                return va;
+            uint kseg = LookupGwesImageKseg(va);
+            if (kseg != 0)
+                return kseg | (va & 0xFFFu);
+            TryResolveDdiNopGwesImage(bus, va);
+            kseg = LookupGwesImageKseg(va);
+            if (kseg != 0)
+                return kseg | (va & 0xFFFu);
+            return va;
+        }
+
+        private static bool IsDdiNopGwesImageArmed()
+        {
+            if (!_ddiNopAwaitCallDll)
+                return false;
+            return _ddiNopDllMainLogged || _gwesImageDemand;
+        }
+
+        private static bool IsDdiNopGwesImageVa(uint va)
+        {
+            if ((va >> 25) != 0)
+                return false;
+            uint page = va & ~0xFFFu;
+            return page >= GwesImageLo && page < GwesImageHi;
+        }
+
+        private static bool IsNamedDdiNopGwesPage(uint va)
+        {
+            uint page = va & ~0xFFFu;
+            return page == GwesDispFetchPage
+                || page == GwesDispDataPage
+                || page == GwesTextBasePage
+                || page == GwesDispData2Page
+                || page == GwesDispData3Page
+                || page == GwesText2Page;
+        }
+
+        private static void EnsureGwesImageMaps()
+        {
+            if (_gwesImagePage != null)
+                return;
+            _gwesImagePage = new uint[GwesImagePageCap];
+            _gwesImageKseg = new uint[GwesImagePageCap];
+            _gwesImageDone = new bool[GwesImagePageCap];
+            _gwesImageTlbl = new bool[GwesImagePageCap];
+        }
+
+        private static int FindGwesImageSlot(uint page)
+        {
+            EnsureGwesImageMaps();
+            for (int i = 0; i < _gwesImageN; i++)
+            {
+                if (_gwesImagePage[i] == page)
+                    return i;
+            }
+            return -1;
+        }
+
+        private static int ClaimGwesImageSlot(uint page)
+        {
+            int i = FindGwesImageSlot(page);
+            if (i >= 0)
+                return i;
+            if (_gwesImageN >= GwesImagePageCap)
+                return -1;
+            i = _gwesImageN;
+            _gwesImageN++;
+            _gwesImagePage[i] = page;
+            return i;
+        }
+
+        private static uint LookupGwesImageKseg(uint va)
+        {
+            int i = FindGwesImageSlot(va & ~0xFFFu);
+            if (i < 0)
+                return 0;
+            return _gwesImageKseg[i];
+        }
+
+        private static void RememberGwesImageKseg(uint va, uint dest)
+        {
+            if (!IsDdiNopGwesImageVa(va) || IsNamedDdiNopGwesPage(va))
+                return;
+            int i = ClaimGwesImageSlot(va & ~0xFFFu);
+            if (i < 0)
+                return;
+            uint kseg = dest & ~0xFFFu;
+            if (kseg != 0)
+            {
+                _gwesImageKseg[i] = kseg;
+                _gwesImageDone[i] = true;
+            }
+        }
+
+        private static void TryNoteDdiNopGwesImageTlbl(MipsBus bus, uint[] regs,
+            uint epc, uint vaddr, uint vector)
+        {
+            _gwesImageDemand = true;
+            uint page = vaddr & ~0xFFFu;
+            int slot = ClaimGwesImageSlot(page);
+            if (slot >= 0 && !_gwesImageTlbl[slot])
+            {
+                _gwesImageTlbl[slot] = true;
+                uint v0 = regs != null && regs.Length > 2 ? regs[2] : 0;
+                uint ra = regs != null && regs.Length > 31 ? regs[31] : 0;
+                BootLog.Write("[Hive] ExtraROM ddi_nop gwes-page TLBL epc=0x" +
+                    epc.ToString("X8") +
+                    " badvaddr=0x" + vaddr.ToString("X8") +
+                    " vec=0x" + vector.ToString("X8") +
+                    " v0=0x" + v0.ToString("X8") +
+                    " ra=0x" + ra.ToString("X8") +
+                    " (gwes image page 0x" + page.ToString("X8") +
+                    "; do not invent dest)");
+            }
+            TryResolveDdiNopGwesImage(bus, vaddr);
+        }
+
+        private static void TryResolveDdiNopGwesImage(MipsBus bus, uint va)
+        {
+            if (bus == null || _gwesImageBusy)
+                return;
+            if (!IsDdiNopGwesImageVa(va) || IsNamedDdiNopGwesPage(va))
+                return;
+            uint page = va & ~0xFFFu;
+            int slot = FindGwesImageSlot(page);
+            if (slot >= 0 && (_gwesImageKseg[slot] != 0 || _gwesImageDone[slot]))
+                return;
+            try
+            {
+                _gwesImageBusy = true;
+                uint sec = PeekSection(bus, 0);
+                uint l1 = 0;
+                uint l2 = 0;
+                uint pfn = 0;
+                uint kseg = 0;
+                slot = ClaimGwesImageSlot(page);
+                if (slot < 0)
+                    return;
+                if (sec != 0
+                    && WalkFirmwarePte(bus, sec, va, out l1, out l2, out pfn, out kseg)
+                    && (kseg & 0x1FFFFFFFu) >= 0x00010000u)
+                {
+                    _gwesImageKseg[slot] = kseg & ~0xFFFu;
+                    if (!_gwesImageDone[slot])
+                    {
+                        _gwesImageDone[slot] = true;
+                        uint word = 0;
+                        TryPeekWord(bus, _gwesImageKseg[slot] | (va & 0xFFFu), out word);
+                        BootLog.Write("[Hive] ExtraROM ddi_nop gwes-page map va=0x" +
+                            page.ToString("X8") +
+                            " -> 0x" + _gwesImageKseg[slot].ToString("X8") +
+                            " l2=0x" + l2.ToString("X8") +
+                            " dest-word=0x" + word.ToString("X8") +
+                            " (firmware PTE; gwes image; do not invent dest)");
+                    }
+                    return;
+                }
+                if (!_gwesImageDone[slot])
+                {
+                    _gwesImageDone[slot] = true;
+                    BootLog.Write("[Hive] ExtraROM ddi_nop gwes-page map va=0x" +
+                        page.ToString("X8") +
+                        " pte-miss sec=0x" + sec.ToString("X8") +
+                        " (gwes image TLBL; do not invent dest)");
+                }
+            }
+            finally
+            {
+                _gwesImageBusy = false;
+            }
+        }
+
         // During BindImp, dump-real IAT (o32.real) is the
         // same bytes as VALLOC dest. MapDdiNopDestVa
         // otherwise sends 0x01F57000 to ExtraRomDestKseg1.
@@ -10098,6 +10299,19 @@ namespace ProcessorEmulator.Core
             _ddiNopGwesText2Busy = false;
             _ddiNopGwesText2Demand = false;
             _ddiNopGwesText2TlblLogged = false;
+            _gwesImageDemand = false;
+            _gwesImageBusy = false;
+            _gwesImageN = 0;
+            if (_gwesImagePage != null)
+            {
+                for (int i = 0; i < _gwesImagePage.Length; i++)
+                {
+                    _gwesImagePage[i] = 0;
+                    _gwesImageKseg[i] = 0;
+                    _gwesImageDone[i] = false;
+                    _gwesImageTlbl[i] = false;
+                }
+            }
             _ddiNopWalkSeedN = 0;
             _ddiNopNoModDiag = false;
             _ddiNopWalkDiag = false;
@@ -11007,6 +11221,8 @@ namespace ProcessorEmulator.Core
             TryResolveDdiNopGwesDispData2(bus);
             TryResolveDdiNopGwesDispData3(bus);
             TryResolveDdiNopGwesText2(bus);
+            if (IsDdiNopGwesImageVa(pc) && !IsNamedDdiNopGwesPage(pc))
+                TryResolveDdiNopGwesImage(bus, pc);
         }
 
         // Observe only. After BindImp, startip is set but
@@ -13658,7 +13874,10 @@ namespace ProcessorEmulator.Core
                 && IsDdiNopGwesDispData3Armed();
             bool ddiText2 = (va & ~0xFFFu) == GwesText2Page
                 && IsDdiNopGwesText2Armed();
-            if (_pteMapBusy || bus == null || (_tv2ImplRa == 0 && !dest0 && !ddiInfo && !ddiFetch && !ddiData && !ddiText && !ddiData2 && !ddiData3 && !ddiText2))
+            bool ddiGwes = IsDdiNopGwesImageArmed()
+                && IsDdiNopGwesImageVa(va)
+                && !IsNamedDdiNopGwesPage(va);
+            if (_pteMapBusy || bus == null || (_tv2ImplRa == 0 && !dest0 && !ddiInfo && !ddiFetch && !ddiData && !ddiText && !ddiData2 && !ddiData3 && !ddiText2 && !ddiGwes))
                 return va;
             if (va >= 0x80000000u)
                 return va;
@@ -13673,7 +13892,7 @@ namespace ProcessorEmulator.Core
             bool walkSlot0Fetch = slot == 0
                 && va >= 0x00010000u
                 && va < 0x01FFF000u
-                && (_tv2LeftoverCae8Logged || ddiFetch || ddiData || ddiText || ddiData2 || ddiData3 || ddiText2);
+                && (_tv2LeftoverCae8Logged || ddiFetch || ddiData || ddiText || ddiData2 || ddiData3 || ddiText2 || ddiGwes);
             if (slot != 1 && slot != 6 && !walkSlot2 && !walkSlot0Info
                 && !walkSlot0Fetch && !dest0)
                 return va;
@@ -13741,7 +13960,15 @@ namespace ProcessorEmulator.Core
                     TryPeekWord(bus, dest, out word);
                     _slot0FetchMapLogged = true;
                     _pteMapLogged = true;
-                    if (ddiText2 && !_tv2LeftoverCae8Logged)
+                    if (ddiGwes && !_tv2LeftoverCae8Logged)
+                    {
+                        RememberGwesImageKseg(va, dest);
+                        BootLog.Write("[Hive] ExtraROM ddi_nop gwes-page PTE 0x" +
+                            va.ToString("X8") + " -> 0x" + dest.ToString("X8") +
+                            " dest-word=0x" + word.ToString("X8") +
+                            " (firmware 0x80040278; gwes image; do not invent dest)");
+                    }
+                    else if (ddiText2 && !_tv2LeftoverCae8Logged)
                     {
                         if (_ddiNopGwesText2Kseg == 0)
                             _ddiNopGwesText2Kseg = dest & ~0xFFFu;
@@ -15867,6 +16094,13 @@ namespace ProcessorEmulator.Core
         private static bool _ddiNopGwesText2Busy;
         private static bool _ddiNopGwesText2Demand;
         private static bool _ddiNopGwesText2TlblLogged;
+        private static uint[] _gwesImagePage;
+        private static uint[] _gwesImageKseg;
+        private static bool[] _gwesImageDone;
+        private static bool[] _gwesImageTlbl;
+        private static int _gwesImageN;
+        private static bool _gwesImageDemand;
+        private static bool _gwesImageBusy;
         private static uint[] _ddiNopWalkSeeds;
         private static int _ddiNopWalkSeedN;
         private static bool _ddiNopNoModDiag;
