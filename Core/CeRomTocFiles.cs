@@ -982,8 +982,16 @@ namespace ProcessorEmulator.Core
         // aligned NK PC. Else refuse ERET. Do
         // not map 0xC201F000. Do not hop EPC
         // to 0x80030264. Do not leftover/ERET2.
+        // Live 695e734: +EC=0x800373C0 is mid NK
+        // idle (dump: jal 0x80031D34 poll at
+        // 0x800373CC). After AdEL, COP0 EPC is
+        // still 0xC6FA7C9A at 0x80015664. sp-fix
+        // then ERET2 resumes that idle / re-AdEL.
+        // Refuse ERET while EPC is adel-pc poison.
         public const uint C2SpLoadPc = 0x80015660;
         public const uint C2SpFirstPc = 0x80015664;
+        public const uint ThreadCtxEret = 0x8001568C;
+        public const uint NkIdleJal = 0x800373C0;
         public const uint C2SlotImageHi = 0x00100000;
         public const int GwesImagePageCap = 32;
         // TOC[7] o32[0] dataptr. Same as HostHardDisk.
@@ -9756,6 +9764,13 @@ namespace ProcessorEmulator.Core
             return IsC2Sp(sp) && (sp & 0x01FFFFFFu) < C2SlotImageHi;
         }
 
+        private static bool IsAdelPoisonEpc(uint pc)
+        {
+            if (pc == AdelC6FaEpc || (pc & 0xFF000000u) == 0xC6000000u)
+                return true;
+            return pc != 0 && (pc & 3) != 0;
+        }
+
         private static bool IsSaneNkResumePc(uint pc)
         {
             return (pc & 3) == 0 && pc >= 0x80010000u && pc < NkImageEnd;
@@ -9791,7 +9806,8 @@ namespace ProcessorEmulator.Core
             ref uint programCounter)
         {
             if (programCounter != C2SpFirstPc
-                && programCounter != ThreadCtxRestore2)
+                && programCounter != ThreadCtxRestore2
+                && programCounter != ThreadCtxEret)
                 return false;
             if (!_ddiNopAwaitCallDll)
                 return false;
@@ -9873,6 +9889,21 @@ namespace ProcessorEmulator.Core
                         " to=0x" + _adelPcSp.ToString("X8") +
                         " +EC=0x" + ec.ToString("X8") +
                         " (replay adel-pc $sp; do not invent dest)");
+                }
+                uint epc = 0;
+                if (bus != null)
+                    epc = bus.PeekEpc();
+                if (_adelC6FaLogged && (IsAdelPoisonEpc(epc) || epc == 0))
+                {
+                    if (!_epcHaltLogged)
+                    {
+                        _epcHaltLogged = true;
+                        BootLog.Write("[Hive] ExtraROM ddi_nop epc-halt epc=0x" +
+                            epc.ToString("X8") +
+                            " +EC=0x" + ec.ToString("X8") +
+                            " (refuse ERET; COP0 EPC adel-pc; do not invent dest)");
+                    }
+                    return true;
                 }
                 return false;
             }
@@ -9984,20 +10015,32 @@ namespace ProcessorEmulator.Core
             if (pc != LeftoverOrRa && pc != LeftoverMtc0Epc
                 && pc != LeftoverJrRa && pc != LeftoverEret)
                 return false;
-            if (!IsDdiNopDestLive())
-                return false;
             if (regs == null || regs.Length <= 31)
                 return false;
             uint was = pc == LeftoverOrRa || pc == LeftoverEret
                 ? regs[2]
                 : (pc == LeftoverMtc0Epc ? regs[12] : regs[31]);
-            if (!IsPoisonPlant(was))
+            bool adel = IsAdelPoisonEpc(was);
+            if (!adel && !(IsDdiNopDestLive() && IsPoisonPlant(was)))
                 return false;
             uint thr;
             uint ec;
             uint dc;
             uint plant;
             TryPeekThreadCtxPc(bus, out thr, out ec, out dc, out plant);
+            if (adel)
+            {
+                if (!_epcHaltLogged)
+                {
+                    _epcHaltLogged = true;
+                    BootLog.Write("[Hive] ExtraROM ddi_nop epc-halt was=0x" +
+                        was.ToString("X8") +
+                        " +EC=0x" + ec.ToString("X8") +
+                        " plant=0x" + plant.ToString("X8") +
+                        " (refuse leftover ERET adel-pc; do not invent dest)");
+                }
+                return true;
+            }
             if (IsSanePlantResumePc(ec))
             {
                 ApplyPlantResume(regs, pc, ec);
@@ -13020,6 +13063,7 @@ namespace ProcessorEmulator.Core
             _spFixLogged = false;
             _plantFixLogged = false;
             _plantHaltLogged = false;
+            _epcHaltLogged = false;
             _c2TlbsLogged = false;
             _c2SpLogged = false;
             _c2EretHaltLogged = false;
@@ -19014,6 +19058,7 @@ namespace ProcessorEmulator.Core
         private static bool _spFixLogged;
         private static bool _plantFixLogged;
         private static bool _plantHaltLogged;
+        private static bool _epcHaltLogged;
         private static bool _c2TlbsLogged;
         private static bool _c2SpLogged;
         private static bool _c2EretHaltLogged;

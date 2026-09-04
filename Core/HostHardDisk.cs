@@ -516,7 +516,8 @@ namespace ProcessorEmulator.Core
             }
             if (pc == CeRomTocFiles.C2SpFirstPc
                 || pc == CeRomTocFiles.ThreadCtxRestore
-                || pc == CeRomTocFiles.ThreadCtxRestore2)
+                || pc == CeRomTocFiles.ThreadCtxRestore2
+                || pc == CeRomTocFiles.ThreadCtxEret)
             {
                 if (pc == CeRomTocFiles.ThreadCtxRestore
                     || pc == CeRomTocFiles.ThreadCtxRestore2)

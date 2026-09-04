@@ -22,6 +22,11 @@ namespace ProcessorEmulator.Emulation
             _cp0 = cp0;
         }
 
+        public uint PeekEpc()
+        {
+            return _cp0 != null ? _cp0.EPC : 0;
+        }
+
         public bool TryFindTlbPfn(uint vaddr, out uint pfn, out bool valid)
         {
             return _cp0.TryFindTlbPfn(vaddr, out pfn, out valid);
