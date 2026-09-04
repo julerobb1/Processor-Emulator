@@ -680,6 +680,22 @@ namespace ProcessorEmulator.Core
         public const uint ThreadPtr = 0xFFFFDAC0;
         public const uint ThreadLastErr = 56;
         public const uint ThreadStack = 0x24;
+        // Dump 0x800158C8 lw $t2,44($t3) then
+        // 0x800158CC sw $t2,36($t3) and
+        // 0x800158DC addiu $sp,$t2,-48. +0x2C is
+        // the implicit-API stack cookie.
+        // 0x80030210 sw $v0,44($fp) writes
+        // (ThreadStack&0xFFFF)+$s0 there.
+        // Live fb58a7e: that word plus -48 is
+        // 0xC201FE88 (slot97 image-low).
+        public const uint ThreadStackAlt = 0x2C;
+        // Dump 0x800399A4 lw $s3,-688($v0) with
+        // $v0=0x80340000, then 0x800399E8
+        // or $v0,$s3. leftover 0x800159B4
+        // or $ra,$v0; 0x80015A08 mtc0 $t4,$14.
+        // That word is the 0x800397B0 resume
+        // plant (wait99: -1 → EPC 0xFFFFFFFF).
+        public const uint ExnContinueWord = 0x8033FD50;
         public const uint O32Compressed = 0x4000;
         // ExtraROM o32[0] 0x60002020: 0x2000 lets CopyO32 accept
         // unaligned dataptr 0x80764CE0. MapO32 still VirtualCopys
@@ -936,13 +952,25 @@ namespace ProcessorEmulator.Core
         public const uint C2VaPrefix = 0xC2000000;
         public const uint C2TlbsFunc = 0x80031D34;
         public const uint NkImageEnd = 0x8031B3BC;
-        // Live 155d918: first C2 $sp at 0x80015664.
-        // Dump: 0x80015660 lw $sp,212($s0) (thread
-        // +0xD4). 0x8001563C lw $ra,220($s0) is
-        // 0x80030264. 0x8001566C lw $k0,236($s0)
-        // then ERET. After adel-pc that $sp is
-        // slot97+0x1FE88 (image). Refuse ERET.
-        // Do not map. Do not leftover/ERET2 hop.
+        // Live 155d918 / fb58a7e: first C2 $sp at
+        // 0x80015664. Dump: 0x80015660 lw $sp,
+        // 212($s0) (thread+0xD4). 0x8001563C lw
+        // $ra,220($s0) is 0x80030264 (saved $ra,
+        // not EPC). 0x8001566C lw $k0,236($s0)
+        // then ERET. +0xD4 writers: 0x80015264
+        // sw $sp,212($t0) only when nest==1
+        // (0xFFFFD885); nest!=1 takes 0x80015488
+        // ($sp-248, not the thread). 0x80020BF4
+        // ThreadContextSetup v0=a1+a2-256 → +0x24
+        // / v1=v0-48 → +0xD4. 0x80030210 writes
+        // +0x2C; implicit-API 0x800158DC does
+        // $sp=+0x2C-48. 0xC201FE88 = slot97+
+        // 0x1FE88 (image, not a stack). Adel-pc
+        // $sp was not C2 (nested). Replay that
+        // $sp into +0xD4 when +0xEC is a sane
+        // aligned NK PC. Else refuse ERET. Do
+        // not map 0xC201F000. Do not hop EPC
+        // to 0x80030264. Do not leftover/ERET2.
         public const uint C2SpLoadPc = 0x80015660;
         public const uint C2SpFirstPc = 0x80015664;
         public const uint C2SlotImageHi = 0x00100000;
@@ -9636,15 +9664,23 @@ namespace ProcessorEmulator.Core
                 " (AdEL; do not map 0xFFFFF000)");
         }
 
-        // Live 3ac5ed9: AdEL epc=badvaddr=0xC6FA7C9A.
-        // Peek insn if mapped. One Hive line. Do not
-        // map that VA. Do not invent dest.
+        // Live 3ac5ed9 / fb58a7e: AdEL epc=badvaddr=
+        // 0xC6FA7C9A (unaligned I-fetch). Dump:
+        // leftover 0x800159A8 jal 0x800397B0 returns
+        // *(0x8033FD50), then 0x80015A08 mtc0 EPC.
+        // 0xC6FA7C9A = 0x86FA7C9A|0x40000000. Keep
+        // adel-pc $sp (not C2; nested nest!=1). Do
+        // not map that VA. Do not invent dest.
         private static void TryNoteAdelC6FaObserve(MipsBus bus, uint[] regs,
             uint epc, uint vaddr)
         {
             if (_adelC6FaLogged)
                 return;
             _adelC6FaLogged = true;
+            _adelPcSp = PeekGpr(regs, 29);
+            uint plant = 0;
+            TryPeekWord(bus, ExnContinueWord, out plant);
+            _exnContinueWord = plant;
             uint insn = 0;
             bool peeked = TryPeekWord(bus, epc, out insn);
             string dis = peeked ? FormatMipsOp(epc, insn) : "peek-miss";
@@ -9661,9 +9697,9 @@ namespace ProcessorEmulator.Core
                 " insn=" + (peeked ? "0x" + insn.ToString("X8") : "peek-miss") +
                 (peeked ? " " + dis : "") +
                 " why=" + why +
+                " sp=0x" + _adelPcSp.ToString("X8") +
                 " a1=" + GprHex(regs, 5) +
                 " v0=" + GprHex(regs, 2) +
-                " v1=" + GprHex(regs, 3) +
                 " (AdEL; do not map)");
         }
 
@@ -9709,12 +9745,39 @@ namespace ProcessorEmulator.Core
             return IsC2Sp(sp) && (sp & 0x01FFFFFFu) < C2SlotImageHi;
         }
 
-        // Live 155d918: adel-pc then 0x80015664
-        // $sp=0xC201FE88 from thread+0xD4, then
-        // 0x80031D34 sw ra,60(sp). Refuse ERET
-        // on that C2 image $sp. Spin here. Do
-        // not hop. Do not invent dest.
-        public static bool TryRefuseC2SpResume(uint[] regs, ref uint programCounter)
+        private static bool IsSaneNkResumePc(uint pc)
+        {
+            return (pc & 3) == 0 && pc >= 0x80010000u && pc < NkImageEnd;
+        }
+
+        private static bool IsSaneReplaySp(uint sp)
+        {
+            if (sp == 0 || (sp & 3) != 0)
+                return false;
+            if (IsNearNullVa(sp) || IsC2ImageSp(sp))
+                return false;
+            if ((sp & 0xFF000000u) == 0xC6000000u)
+                return false;
+            if (sp >= 0xFFFFD000u && sp < 0xFFFFE000u)
+                return true;
+            if (sp >= 0x80000000u && sp < 0xC0000000u)
+                return true;
+            return sp >= 0x00010000u && sp < 0x80000000u;
+        }
+
+        // Live 155d918 / fb58a7e: adel-pc then
+        // 0x80015664 $sp=0xC201FE88 from thread
+        // +0xD4. Nested AdEL (0x80015488) does
+        // not update +0xD4, so ERET2 reloads the
+        // ThreadContextSetup / +0x2C-48 image
+        // cookie. Replay adel-pc $sp into +0xD4
+        // when +0xEC is a sane aligned NK PC
+        // (firmware's own first-level save at
+        // 0x80015264). Else refuse ERET. Do not
+        // hop EPC to 0x80030264. Do not invent
+        // dest. Do not map 0xC201F000.
+        public static bool TryRefuseC2SpResume(MipsBus bus, uint[] regs,
+            ref uint programCounter)
         {
             if (programCounter != C2SpFirstPc
                 && programCounter != ThreadCtxRestore2)
@@ -9728,6 +9791,80 @@ namespace ProcessorEmulator.Core
             uint sp = PeekGpr(regs, 29);
             if (!IsC2ImageSp(sp))
                 return false;
+            uint d4 = 0;
+            uint t24 = 0;
+            uint t2c = 0;
+            uint ec = 0;
+            uint dc = 0;
+            uint plant = _exnContinueWord;
+            uint thr = 0;
+            if (bus != null)
+            {
+                try
+                {
+                    thr = bus.Read32(ThreadPtr);
+                    if (thr != 0)
+                    {
+                        d4 = bus.Read32(thr + ThreadCtxSp);
+                        t24 = bus.Read32(thr + ThreadStack);
+                        t2c = bus.Read32(thr + ThreadStackAlt);
+                        ec = bus.Read32(thr + ThreadCtxPc);
+                        dc = bus.Read32(thr + ThreadCtxRa);
+                    }
+                    uint word;
+                    if (TryPeekWord(bus, ExnContinueWord, out word))
+                        plant = word;
+                }
+                catch
+                {
+                }
+            }
+            if (!_thrSpLogged)
+            {
+                _thrSpLogged = true;
+                BootLog.Write("[Hive] ExtraROM ddi_nop thr-sp +D4=0x" +
+                    d4.ToString("X8") +
+                    " +24=0x" + t24.ToString("X8") +
+                    " +2C=0x" + t2c.ToString("X8") +
+                    " +EC=0x" + ec.ToString("X8") +
+                    " +DC=0x" + dc.ToString("X8") +
+                    " adel-sp=0x" + _adelPcSp.ToString("X8") +
+                    " plant=0x" + plant.ToString("X8"));
+            }
+            if (thr != 0 && bus != null
+                && IsSaneReplaySp(_adelPcSp) && IsSaneNkResumePc(ec))
+            {
+                try
+                {
+                    bus.Write32(thr + ThreadCtxSp, _adelPcSp);
+                    if (regs != null && regs.Length > 29)
+                        regs[29] = _adelPcSp;
+                }
+                catch
+                {
+                    if (!_c2EretHaltLogged)
+                    {
+                        _c2EretHaltLogged = true;
+                        BootLog.Write("[Hive] ExtraROM ddi_nop eret-c2-halt pc=0x" +
+                            programCounter.ToString("X8") +
+                            " sp=0x" + sp.ToString("X8") +
+                            " ra=" + GprHex(regs, 31) +
+                            " +EC=0x" + ec.ToString("X8") +
+                            " (refuse ERET after adel-pc; do not invent dest)");
+                    }
+                    return true;
+                }
+                if (!_spFixLogged)
+                {
+                    _spFixLogged = true;
+                    BootLog.Write("[Hive] ExtraROM ddi_nop sp-fix +D4=0x" +
+                        sp.ToString("X8") +
+                        " to=0x" + _adelPcSp.ToString("X8") +
+                        " +EC=0x" + ec.ToString("X8") +
+                        " (replay adel-pc $sp; do not invent dest)");
+                }
+                return false;
+            }
             if (!_c2EretHaltLogged)
             {
                 _c2EretHaltLogged = true;
@@ -9735,6 +9872,7 @@ namespace ProcessorEmulator.Core
                     programCounter.ToString("X8") +
                     " sp=0x" + sp.ToString("X8") +
                     " ra=" + GprHex(regs, 31) +
+                    " +EC=0x" + ec.ToString("X8") +
                     " (refuse ERET after adel-pc; do not invent dest)");
             }
             return true;
@@ -12728,6 +12866,10 @@ namespace ProcessorEmulator.Core
             _nearNullTlblLogged = false;
             _ffffFb2aAdelLogged = false;
             _adelC6FaLogged = false;
+            _adelPcSp = 0;
+            _exnContinueWord = 0;
+            _thrSpLogged = false;
+            _spFixLogged = false;
             _c2TlbsLogged = false;
             _c2SpLogged = false;
             _c2EretHaltLogged = false;
@@ -18677,6 +18819,10 @@ namespace ProcessorEmulator.Core
         private static bool _nearNullTlblLogged;
         private static bool _ffffFb2aAdelLogged;
         private static bool _adelC6FaLogged;
+        private static uint _adelPcSp;
+        private static uint _exnContinueWord;
+        private static bool _thrSpLogged;
+        private static bool _spFixLogged;
         private static bool _c2TlbsLogged;
         private static bool _c2SpLogged;
         private static bool _c2EretHaltLogged;
