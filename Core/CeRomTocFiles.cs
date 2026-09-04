@@ -892,6 +892,14 @@ namespace ProcessorEmulator.Core
         public const uint NearNullTlblEpc = 0x80052010;
         public const uint NearNullTlblVaddr = 0x00000050;
         public const uint NearNullPageHi = 0x00001000;
+        // Live f3c2d62: after near-null observe,
+        // BindImp-exn cause=4 epc=badvaddr=0xFFFFFB2A
+        // (AdEL; 0xB2A unaligned). Observe only.
+        // Do not map 0xFFFFF000. Do not invent
+        // SharedUserData / KData / dest. FFFF*
+        // AdEL must not consume BindImp-exn.
+        public const uint FfffFb2aEpc = 0xFFFFFB2A;
+        public const uint FfffFb2aVaddr = 0xFFFFFB2A;
         public const int GwesImagePageCap = 32;
         // TOC[7] o32[0] dataptr. Same as HostHardDisk.
         // VA 0x00011000 → 0x80146000. Live d01f68a:
@@ -9298,6 +9306,15 @@ namespace ProcessorEmulator.Core
                     TryNoteNearNullTlblObserve(bus, regs, epc, vaddr);
                 return;
             }
+            // Live f3c2d62: FFFF* AdEL consumed the
+            // one-shot. Observe 0xFFFFFB2A. Do not
+            // map 0xFFFFF000. Do not invent dest.
+            if (IsFfffAdelVa(code, vaddr))
+            {
+                if (epc == FfffFb2aEpc && vaddr == FfffFb2aVaddr)
+                    TryNoteFfffFb2aAdelObserve(bus, regs, epc, vaddr);
+                return;
+            }
             if (_bindImpExnLogged)
                 return;
             _bindImpExnLogged = true;
@@ -9513,6 +9530,36 @@ namespace ProcessorEmulator.Core
                 " (do not map page 0)");
         }
 
+        private static bool IsFfffAdelVa(uint code, uint va)
+        {
+            return code == 4 && (va & 0xFF000000u) == 0xFF000000u;
+        }
+
+        // Live f3c2d62: AdEL epc=badvaddr=0xFFFFFB2A.
+        // Peek insn if mapped. One Hive line. Do not
+        // map 0xFFFFF000. Do not invent dest.
+        private static void TryNoteFfffFb2aAdelObserve(MipsBus bus, uint[] regs,
+            uint epc, uint vaddr)
+        {
+            if (_ffffFb2aAdelLogged)
+                return;
+            _ffffFb2aAdelLogged = true;
+            uint insn = 0;
+            bool peeked = TryPeekWord(bus, epc, out insn);
+            string dis = peeked ? FormatMipsOp(epc, insn) : "peek-miss";
+            string why = (epc & 3) != 0 ? "unaligned" : (peeked ? "adel" : "unmapped");
+            BootLog.Write("[Hive] ExtraROM ddi_nop adel-ffff epc=0x" +
+                epc.ToString("X8") +
+                " badvaddr=0x" + vaddr.ToString("X8") +
+                " insn=" + (peeked ? "0x" + insn.ToString("X8") : "peek-miss") +
+                (peeked ? " " + dis : "") +
+                " why=" + why +
+                " a1=" + GprHex(regs, 5) +
+                " v0=" + GprHex(regs, 2) +
+                " v1=" + GprHex(regs, 3) +
+                " (AdEL; do not map 0xFFFFF000)");
+        }
+
         private static void TryNoteBindImpExnSave(MipsBus bus, uint[] regs, uint pc)
         {
             if (!_ddiNopAwaitCallDll || !_ddiNopIatStoreLogged)
@@ -9526,6 +9573,8 @@ namespace ProcessorEmulator.Core
             if (IsFilesysSlot2ExtraPage(_bindImpExnVaddr))
                 return;
             if (IsNearNullVa(_bindImpExnVaddr))
+                return;
+            if (IsFfffAdelVa(_bindImpExnCode, _bindImpExnVaddr))
                 return;
             _bindImpExnSaveLogged = true;
             uint a1 = regs != null && regs.Length > 5 ? regs[5] : 0;
@@ -12457,6 +12506,7 @@ namespace ProcessorEmulator.Core
             _gwesB9SpinN = 0;
             _gwesNullStoreLogged = false;
             _nearNullTlblLogged = false;
+            _ffffFb2aAdelLogged = false;
             _ddiNopInfoObserved = false;
             _ddiNopInfoDemand = false;
             _ddiNopInfoBusy = false;
@@ -18400,6 +18450,7 @@ namespace ProcessorEmulator.Core
         private static int _gwesB9SpinN;
         private static bool _gwesNullStoreLogged;
         private static bool _nearNullTlblLogged;
+        private static bool _ffffFb2aAdelLogged;
         private static bool _ddiNopInfoObserved;
         private static bool _ddiNopInfoDemand;
         private static bool _ddiNopInfoBusy;
