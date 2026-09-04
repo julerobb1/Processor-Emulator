@@ -822,6 +822,19 @@ namespace ProcessorEmulator.Core
         public const uint GwesImageLo = 0x00011000;
         public const uint GwesImageHi = 0x000CB000;
         public const int GwesImagePageCap = 32;
+        // Live a633b83: after ddi-data dest6-adj, NK
+        // 0x8003D254 data-TLBL 0x040110FC (a1=1,
+        // v0=0x86FA7800 next MODULE*). CE 32MB slot 2:
+        // 0x04000000 + 0x000110FC. Same page as filesys
+        // VA 0x00011000 / FILESYS API 0x000111A8.
+        // HostHardDisk: slot 0 is filesys. MapFirmwareSlotVa:
+        // slot 2 is filesys. TryGetTocO32ByVbase: ROM DLL
+        // vbases are unique and < 0x04000000 — not a
+        // BuiltIn preferred base. Do not walk all slot-2
+        // (wait77 OEMIdle). Firmware PTE only. Do not
+        // invent dest.
+        public const uint FilesysSlot2Page = 0x04011000;
+        public const uint FilesysSlot2Fault = 0x040110FC;
         // FSDMGR 0x03E896D8 is GetProcAddress. After TOC-attach,
         // 0x800196E4 copies e32_rom units to e32_lite+0x1C.
         // Kernel GPA reads EXP at +0x20 (that dword is the
@@ -8986,6 +8999,13 @@ namespace ProcessorEmulator.Core
                 TryNoteDdiNopCoredllImageTlbl(bus, regs, epc, vaddr, vector);
             }
             if (code == 2
+                && epc != vaddr
+                && (vaddr & ~0xFFFu) == FilesysSlot2Page
+                && (_ddiNopDllMainLogged || _ddiNopIatStoreN >= BindImpObserveMax))
+            {
+                TryNoteDdiNopFilesysSlot2Tlbl(bus, regs, epc, vaddr, vector);
+            }
+            if (code == 2
                 && IsDdiNopVallocDataVa(vaddr)
                 && (_ddiNopDllMainLogged || _ddiNopIatStoreN >= BindImpObserveMax))
             {
@@ -10047,6 +10067,119 @@ namespace ProcessorEmulator.Core
             }
         }
 
+        // Live a633b83: NK 0x8003D254 data-TLBL
+        // 0x040110FC. One filesys slot-2 page after
+        // DllMain. Slot-2 section first; slot-0
+        // 0x00011000 is the same filesys page
+        // (HostHardDisk). Do not walk all slot-2.
+        // Do not invent dest or steal gwes ROM.
+        public static uint MapDdiNopFilesysSlot2Va(MipsBus bus, uint va)
+        {
+            if (_filesysSlot2Busy)
+                return va;
+            if (!IsDdiNopFilesysSlot2Armed())
+                return va;
+            if ((va & ~0xFFFu) != FilesysSlot2Page)
+                return va;
+            if (_filesysSlot2Kseg != 0)
+                return _filesysSlot2Kseg | (va & 0xFFFu);
+            TryResolveDdiNopFilesysSlot2(bus);
+            if (_filesysSlot2Kseg != 0)
+                return _filesysSlot2Kseg | (va & 0xFFFu);
+            return va;
+        }
+
+        private static bool IsDdiNopFilesysSlot2Armed()
+        {
+            if (!_ddiNopAwaitCallDll)
+                return false;
+            return _ddiNopDllMainLogged || _filesysSlot2Demand;
+        }
+
+        private static void TryNoteDdiNopFilesysSlot2Tlbl(MipsBus bus, uint[] regs,
+            uint epc, uint vaddr, uint vector)
+        {
+            _filesysSlot2Demand = true;
+            if (!_filesysSlot2TlblLogged)
+            {
+                _filesysSlot2TlblLogged = true;
+                uint a1 = regs != null && regs.Length > 5 ? regs[5] : 0;
+                uint v0 = regs != null && regs.Length > 2 ? regs[2] : 0;
+                BootLog.Write("[Hive] ExtraROM ddi_nop filesys-slot2 TLBL epc=0x" +
+                    epc.ToString("X8") +
+                    " badvaddr=0x" + vaddr.ToString("X8") +
+                    " vec=0x" + vector.ToString("X8") +
+                    " a1=0x" + a1.ToString("X8") +
+                    " v0=0x" + v0.ToString("X8") +
+                    " (filesys slot-2 page 0x04011000 / VA 0x00011000; do not invent dest)");
+            }
+            TryResolveDdiNopFilesysSlot2(bus);
+        }
+
+        private static void TryResolveDdiNopFilesysSlot2(MipsBus bus)
+        {
+            if (_filesysSlot2Kseg != 0 || _filesysSlot2Busy || bus == null)
+                return;
+            try
+            {
+                _filesysSlot2Busy = true;
+                uint l1 = 0;
+                uint l2 = 0;
+                uint pfn = 0;
+                uint kseg = 0;
+                uint sec2 = PeekSection(bus, 2);
+                if (sec2 != 0
+                    && WalkFirmwarePte(bus, sec2, FilesysSlot2Fault,
+                        out l1, out l2, out pfn, out kseg)
+                    && (kseg & 0x1FFFFFFFu) >= 0x00010000u)
+                {
+                    RememberFilesysSlot2Kseg(bus, kseg, l2, "slot-2");
+                    return;
+                }
+                // Same filesys page at slot 0 (HostHardDisk:
+                // slot 0 is filesys). Firmware PTE only.
+                uint sec0 = PeekSection(bus, 0);
+                if (sec0 != 0
+                    && WalkFirmwarePte(bus, sec0, GwesTextBasePage,
+                        out l1, out l2, out pfn, out kseg)
+                    && (kseg & 0x1FFFFFFFu) >= 0x00010000u)
+                {
+                    RememberFilesysSlot2Kseg(bus, kseg, l2, "slot-0");
+                    return;
+                }
+                if (!_filesysSlot2Logged)
+                {
+                    _filesysSlot2Logged = true;
+                    BootLog.Write("[Hive] ExtraROM ddi_nop filesys-slot2 map va=0x" +
+                        FilesysSlot2Page.ToString("X8") +
+                        " pte-miss sec2=0x" + sec2.ToString("X8") +
+                        " sec0=0x" + sec0.ToString("X8") +
+                        " (filesys slot-2 TLBL 0x040110FC; do not invent dest or walk slot-2)");
+                }
+            }
+            finally
+            {
+                _filesysSlot2Busy = false;
+            }
+        }
+
+        private static void RememberFilesysSlot2Kseg(MipsBus bus, uint kseg, uint l2, string via)
+        {
+            _filesysSlot2Kseg = kseg & ~0xFFFu;
+            if (_filesysSlot2Logged)
+                return;
+            _filesysSlot2Logged = true;
+            uint word = 0;
+            TryPeekWord(bus, _filesysSlot2Kseg | (FilesysSlot2Fault & 0xFFFu), out word);
+            BootLog.Write("[Hive] ExtraROM ddi_nop filesys-slot2 map va=0x" +
+                FilesysSlot2Page.ToString("X8") +
+                " -> 0x" + _filesysSlot2Kseg.ToString("X8") +
+                " l2=0x" + l2.ToString("X8") +
+                " dest-word=0x" + word.ToString("X8") +
+                " via=" + via +
+                " (firmware PTE; filesys slot-2 / FILESYS API page; do not invent dest)");
+        }
+
         // Live 68b9567: data-TLBL epc=0x039833A4
         // badvaddr=0x0199B050. IAT page 0x01999000 was
         // mapped; .data vsz continues. 0x0398* is linked
@@ -10833,6 +10966,11 @@ namespace ProcessorEmulator.Core
                     _coredllImageTlbl[i] = false;
                 }
             }
+            _filesysSlot2Kseg = 0;
+            _filesysSlot2Logged = false;
+            _filesysSlot2Busy = false;
+            _filesysSlot2Demand = false;
+            _filesysSlot2TlblLogged = false;
             _ddiDataDemand = false;
             _ddiDataBusy = false;
             _ddiDataN = 0;
@@ -16648,6 +16786,11 @@ namespace ProcessorEmulator.Core
         private static int _coredllImageN;
         private static bool _coredllImageDemand;
         private static bool _coredllImageBusy;
+        private static uint _filesysSlot2Kseg;
+        private static bool _filesysSlot2Logged;
+        private static bool _filesysSlot2Busy;
+        private static bool _filesysSlot2Demand;
+        private static bool _filesysSlot2TlblLogged;
         private static uint[] _ddiDataPage;
         private static uint[] _ddiDataKseg;
         private static bool[] _ddiDataDone;
