@@ -89,6 +89,7 @@ namespace ProcessorEmulator.Emulation
 
         public uint Read32(uint vaddr)
         {
+            vaddr = CeRomTocFiles.MapBindImpIatRealVa(vaddr);
             vaddr = CeRomTocFiles.MapDdiNopDestVa(vaddr);
             vaddr = CeRomTocFiles.MapProcessHeapSlotVa(this, vaddr);
             vaddr = CeRomTocFiles.MapCoredllSharedVa(this, vaddr);
@@ -114,6 +115,7 @@ namespace ProcessorEmulator.Emulation
         {
             HostHardDisk.NoteDispC8Write(vaddr, value, this);
             uint origVa = vaddr;
+            vaddr = CeRomTocFiles.MapBindImpIatRealVa(vaddr);
             vaddr = CeRomTocFiles.MapDdiNopDestVa(vaddr);
             vaddr = CeRomTocFiles.MapProcessHeapSlotVa(this, vaddr);
             vaddr = CeRomTocFiles.MapCoredllSharedVa(this, vaddr);
@@ -149,6 +151,7 @@ namespace ProcessorEmulator.Emulation
         
         public byte Read8(uint vaddr)
         {
+            vaddr = CeRomTocFiles.MapBindImpIatRealVa(vaddr);
             vaddr = CeRomTocFiles.MapDdiNopDestVa(vaddr);
             vaddr = CeRomTocFiles.MapProcessHeapSlotVa(this, vaddr);
             vaddr = CeRomTocFiles.MapCoredllSharedVa(this, vaddr);
@@ -174,6 +177,7 @@ namespace ProcessorEmulator.Emulation
         public void Write8(uint vaddr, byte value)
         {
             HostHardDisk.NoteDispC8Write(vaddr, value, this);
+            vaddr = CeRomTocFiles.MapBindImpIatRealVa(vaddr);
             vaddr = CeRomTocFiles.MapDdiNopDestVa(vaddr);
             vaddr = CeRomTocFiles.MapProcessHeapSlotVa(this, vaddr);
             vaddr = CeRomTocFiles.MapCoredllSharedVa(this, vaddr);

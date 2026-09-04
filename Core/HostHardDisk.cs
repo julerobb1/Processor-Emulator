@@ -2914,6 +2914,7 @@ namespace ProcessorEmulator.Core
                     " startip=0x" + startip.ToString("X8") +
                     " (dump PE dest; do not invent 0x81360000)");
             }
+            CeRomTocFiles.TryNoteBindImpException(code, epc, vaddr, vector, registers);
             CeRomTocFiles.TryNoteTv2PostFetchException(code, epc, vaddr, vector, bus, registers);
             if (!_gwesWatch || !_logged.Contains("hive:gpc:WinMain"))
                 return;

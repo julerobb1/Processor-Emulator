@@ -294,6 +294,12 @@ namespace ProcessorEmulator.Core
         public const uint BindImpIatNext = 0x800192EC;
         public const uint BindImpIatNextAfter = 0x800192F0;
         public const uint BindImpFpIatOff = 0x1C;
+        // Live d19770c: after IAT slot7, stall at
+        // 0x8001528C sw $t1,132($s0) in the exception
+        // register-save. Observe Cause/EPC/BadVAddr.
+        public const uint BindImpExnLo = 0x80015240;
+        public const uint BindImpExnHi = 0x8001528C;
+        public const int BindImpObserveMax = 24;
         public const uint ModuleExpRva = 0x8C;
         public const uint ModuleExpEnd = 0x90;
         // 0x80018B34 CallDLLEntry jalrs module+0x5C with no
@@ -2370,6 +2376,7 @@ namespace ProcessorEmulator.Core
             TryFixBindImpIatSlot(bus, regs, pc);
             TryNoteBindImpAfterGoodV0(bus, pc);
             TryNoteBindImpIatWindow(bus, regs, pc);
+            TryNoteBindImpExnSave(bus, regs, pc);
             if (pc == BindImpOrdJalRet)
             {
                 uint v0 = regs[2];
@@ -2381,7 +2388,7 @@ namespace ProcessorEmulator.Core
                     TryArmUserKPageAlias(bus);
                     TryFixBindImpIatSlot(bus, regs, pc);
                 }
-                if (a1 == _ddiNopOrdRetLastA1 || _ddiNopOrdRetLog >= 8)
+                if (a1 == _ddiNopOrdRetLastA1 || _ddiNopOrdRetLog >= BindImpObserveMax)
                     return;
                 _ddiNopOrdRetLastA1 = a1;
                 _ddiNopOrdRetLog++;
@@ -2405,7 +2412,7 @@ namespace ProcessorEmulator.Core
                 return;
             uint a0 = regs[4];
             uint a1o = regs[5];
-            if (a1o == _ddiNopOrdLastA1 || _ddiNopOrdLog >= 8)
+            if (a1o == _ddiNopOrdLastA1 || _ddiNopOrdLog >= BindImpObserveMax)
                 return;
             _ddiNopOrdLastA1 = a1o;
             _ddiNopOrdLog++;
@@ -8719,7 +8726,7 @@ namespace ProcessorEmulator.Core
             }
             if (written == 0)
                 return;
-            if (_bindImpIatSlotLog < 8)
+            if (_bindImpIatSlotLog < BindImpObserveMax)
             {
                 _bindImpIatSlotLog++;
                 BootLog.Write("[Hive] ExtraROM BindImp-iat slot was=0x" +
@@ -8734,7 +8741,7 @@ namespace ProcessorEmulator.Core
         {
             if (pc != BindImpIatNext && pc != BindImpIatNextAfter)
                 return;
-            if (fp1c == _bindImpIatNextLast || _bindImpIatNextLog >= 8)
+            if (fp1c == _bindImpIatNextLast || _bindImpIatNextLog >= BindImpObserveMax)
                 return;
             _bindImpIatNextLast = fp1c;
             _bindImpIatNextLog++;
@@ -8790,7 +8797,7 @@ namespace ProcessorEmulator.Core
                 return;
             _bindImpIatSwExpect = false;
             _bindImpIatSwLogged = true;
-            if (_bindImpIatSwLog >= 8)
+            if (_bindImpIatSwLog >= BindImpObserveMax)
                 return;
             _bindImpIatSwLog++;
             uint iat = DdiNopVbasePage + DdiNopIatRva;
@@ -8812,6 +8819,75 @@ namespace ProcessorEmulator.Core
                 return;
             _bindImpIatSwLogged = true;
             BootLog.Write("[Hive] ExtraROM BindImp-iat 19124-skipped");
+        }
+
+        // Live d19770c: after slot7, exception save at
+        // 0x8001528C. Name Cause/EPC/BadVAddr. Do not
+        // invent IAT fills.
+        public static void TryNoteBindImpException(uint code, uint epc, uint vaddr,
+            uint vector, uint[] regs)
+        {
+            if (!_ddiNopAwaitCallDll || !_ddiNopIatWatch || code == 0)
+                return;
+            if (_ddiNopIatStoreN < 7 && !_ddiNopIatStoreLogged)
+                return;
+            _bindImpExnCode = code;
+            _bindImpExnEpc = epc;
+            _bindImpExnVaddr = vaddr;
+            if (_bindImpExnLogged)
+                return;
+            _bindImpExnLogged = true;
+            uint a1 = regs != null && regs.Length > 5 ? regs[5] : 0;
+            uint v0 = regs != null && regs.Length > 2 ? regs[2] : 0;
+            uint v1 = regs != null && regs.Length > 3 ? regs[3] : 0;
+            BootLog.Write("[Hive] ExtraROM BindImp-exn cause=" +
+                code +
+                " epc=0x" + epc.ToString("X8") +
+                " badvaddr=0x" + vaddr.ToString("X8") +
+                " vec=0x" + vector.ToString("X8") +
+                " a1=0x" + a1.ToString("X8") +
+                " v0=0x" + v0.ToString("X8") +
+                " v1=0x" + v1.ToString("X8") +
+                " stores=" + _ddiNopIatStoreN);
+        }
+
+        private static void TryNoteBindImpExnSave(MipsBus bus, uint[] regs, uint pc)
+        {
+            if (!_ddiNopAwaitCallDll || !_ddiNopIatStoreLogged)
+                return;
+            if (pc < BindImpExnLo || pc > BindImpExnHi)
+                return;
+            if (_bindImpExnSaveLogged)
+                return;
+            _bindImpExnSaveLogged = true;
+            uint a1 = regs != null && regs.Length > 5 ? regs[5] : 0;
+            BootLog.Write("[Hive] ExtraROM BindImp-exn save pc=0x" +
+                pc.ToString("X8") +
+                " cause=" + _bindImpExnCode +
+                " epc=0x" + _bindImpExnEpc.ToString("X8") +
+                " badvaddr=0x" + _bindImpExnVaddr.ToString("X8") +
+                " a1=0x" + a1.ToString("X8") +
+                " stores=" + _ddiNopIatStoreN);
+        }
+
+        // During BindImp, dump-real IAT (o32.real) is the
+        // same bytes as VALLOC dest. MapDdiNopDestVa
+        // otherwise sends 0x01F57000 to ExtraRomDestKseg1.
+        // Do not invent dest.
+        public static uint MapBindImpIatRealVa(uint va)
+        {
+            if (!_ddiNopAwaitCallDll || !_ddiNopIatWatch)
+                return va;
+            if (_ddiNopIatReal == 0 || _ddiNopIatValloc == 0)
+                return va;
+            if (IsDdiNopDest10Page(_ddiNopIatValloc))
+                return va;
+            if (va < _ddiNopIatReal)
+                return va;
+            uint span = _ddiNopIatSpan != 0 ? _ddiNopIatSpan : 0x1000u;
+            if (va >= _ddiNopIatReal + span)
+                return va;
+            return _ddiNopIatValloc + (va - _ddiNopIatReal);
         }
 
         private static bool IsDdiNopDest10Page(uint dest)
@@ -8907,7 +8983,7 @@ namespace ProcessorEmulator.Core
                 : (mappedPage == (dest6 & ~0xFFFu) ? mappedVa : origVa);
             uint slot = (slotVa - baseVa) / 4;
             _ddiNopIatStoreLogged = true;
-            if (_ddiNopIatStoreN >= 8)
+            if (_ddiNopIatStoreN >= BindImpObserveMax)
                 return;
             _ddiNopIatStoreN++;
             BootLog.Write("[Hive] ExtraROM ddi_nop IAT-store va=0x" +
@@ -9184,6 +9260,11 @@ namespace ProcessorEmulator.Core
             _bindImpIatWinLast = 0;
             _bindImpIatNextLog = 0;
             _bindImpIatNextLast = 0;
+            _bindImpExnLogged = false;
+            _bindImpExnSaveLogged = false;
+            _bindImpExnCode = 0;
+            _bindImpExnEpc = 0;
+            _bindImpExnVaddr = 0;
             _ddiNopWalkSeedN = 0;
             _ddiNopNoModDiag = false;
             _ddiNopWalkDiag = false;
@@ -9980,6 +10061,9 @@ namespace ProcessorEmulator.Core
                 return true;
             if (pc == BindImpLoadLib || pc == BindImpLoadLibRet)
                 return true;
+            if (_ddiNopIatStoreLogged
+                && pc >= BindImpExnLo && pc <= BindImpExnHi)
+                return true;
             return false;
         }
 
@@ -10044,6 +10128,8 @@ namespace ProcessorEmulator.Core
                 why = " MapO32";
             else if (pc == BindImpOrdBaseLw)
                 why = " GetProc-ord";
+            else if (pc >= BindImpExnLo && pc <= BindImpExnHi)
+                why = " exception-save";
             uint dest = 0;
             if (regs != null && regs.Length > 4)
                 dest = regs[4];
@@ -14680,6 +14766,11 @@ namespace ProcessorEmulator.Core
         private static uint _bindImpIatWinLast;
         private static int _bindImpIatNextLog;
         private static uint _bindImpIatNextLast;
+        private static bool _bindImpExnLogged;
+        private static bool _bindImpExnSaveLogged;
+        private static uint _bindImpExnCode;
+        private static uint _bindImpExnEpc;
+        private static uint _bindImpExnVaddr;
         private static uint[] _ddiNopWalkSeeds;
         private static int _ddiNopWalkSeedN;
         private static bool _ddiNopNoModDiag;
