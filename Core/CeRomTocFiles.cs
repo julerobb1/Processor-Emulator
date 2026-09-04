@@ -921,6 +921,17 @@ namespace ProcessorEmulator.Core
         public const uint FilesysSlot4Fault = 0x08011BE8;
         public const uint FilesysSlotRelPage = 0x00011000;
         public const uint FilesysSlotMask = 0x01FFFFFFu;
+        // Live b14bf08: BindImp-exn cause=2 epc=0x8003A174
+        // badvaddr=0x0407FEC0 a1=0x080DEDA0 v0=0x0407FEC0
+        // stores=24. Slot 2 page 0x0407F000 (rel
+        // 0x0007F000), not FILESYS API +0x11000.
+        // wait95: same page 0x0407F6DC dest-unmapped
+        // while 0x86FAA6DC was pte-live. Firmware
+        // PTE only. Do not alias onto 0x80105000.
+        // Do not walk all slot-2 (wait77 OEMIdle).
+        // Do not invent dest. Do not map VA 0.
+        public const uint FilesysSlot27FPage = 0x0407F000;
+        public const uint FilesysSlot27FFault = 0x0407FEC0;
         // Live 017b67e: filesys-slot2 mapped. Next miss is
         // data-TLBL epc=0x0001E534 badvaddr=0x48D000F0.
         // Slot 0 is filesys (HostHardDisk). ROM =
@@ -9253,6 +9264,11 @@ namespace ProcessorEmulator.Core
             // the next real miss and left Hive quiet.
             if (code == 2 && IsGwesDataB9Page(vaddr))
                 return;
+            // Live b14bf08: this slot-2 page is now
+            // demand-mapped. Do not consume the
+            // one-shot on that refill.
+            if (code == 2 && IsFilesysSlot27FPage(vaddr))
+                return;
             // Live 98db5d5: null TLBS consumed the
             // one-shot and hid later real TLBL.
             // Observe the named store. Do not map VA 0.
@@ -9438,6 +9454,8 @@ namespace ProcessorEmulator.Core
             if (_bindImpExnSaveLogged)
                 return;
             if (IsGwesDataB9Page(_bindImpExnVaddr))
+                return;
+            if (IsFilesysSlot27FPage(_bindImpExnVaddr))
                 return;
             if (_bindImpExnCode == 3 && _bindImpExnVaddr == 0)
                 return;
@@ -10994,10 +11012,12 @@ namespace ProcessorEmulator.Core
         // invent dest or steal gwes ROM.
         public static uint MapDdiNopFilesysSlot2Va(MipsBus bus, uint va)
         {
-            if (_filesysSlot2Busy)
+            if (_filesysSlot2Busy || _filesysSlot27FBusy)
                 return va;
             if (!IsDdiNopFilesysSlot2Armed())
                 return va;
+            if (IsFilesysSlot27FPage(va))
+                return MapFilesysSlot27FVa(bus, va);
             if (!IsDdiNopFilesysSlotVa(va))
                 return va;
             if (_filesysSlot2Kseg != 0)
@@ -11025,11 +11045,21 @@ namespace ProcessorEmulator.Core
         // bit25 slot walk.
         private static bool IsDdiNopFilesysSlotVa(uint va)
         {
+            if (IsFilesysSlot27FPage(va))
+                return true;
             uint page = va & ~0xFFFu;
             if ((page & FilesysSlotMask) != FilesysSlotRelPage)
                 return false;
             uint slot = page >> 25;
             return slot == 2 || slot == 4;
+        }
+
+        // Slot 2 page 0x0407F000 only. Not slot-0
+        // 0x0007F000 (gwes image). Not a blanket
+        // slot-2 walk.
+        private static bool IsFilesysSlot27FPage(uint va)
+        {
+            return (va >> 25) == 2 && (va & ~0xFFFu) == FilesysSlot27FPage;
         }
 
         private static string FilesysSlotHiveTag(uint va)
@@ -11044,6 +11074,11 @@ namespace ProcessorEmulator.Core
             uint epc, uint vaddr, uint vector)
         {
             _filesysSlot2Demand = true;
+            if (IsFilesysSlot27FPage(vaddr))
+            {
+                TryNoteFilesysSlot27FTlbl(bus, regs, epc, vaddr, vector);
+                return;
+            }
             uint page = vaddr & ~0xFFFu;
             bool first = page == FilesysSlot4Page
                 ? !_filesysSlot4TlblLogged
@@ -11191,6 +11226,93 @@ namespace ProcessorEmulator.Core
                 " sec2=0x" + sec2.ToString("X8") +
                 " sec0=0x" + sec0.ToString("X8") +
                 " (FILESYS API page; do not invent dest or walk slot-2/4)");
+        }
+
+        // Live b14bf08: kernel 0x8003A174 data-TLBL
+        // 0x0407FEC0. One slot-2 page after DllMain.
+        // Firmware PTE only. Do not alias the
+        // FILESYS API dest 0x80105000. Do not walk
+        // all slot-2. Do not invent dest.
+        private static uint MapFilesysSlot27FVa(MipsBus bus, uint va)
+        {
+            if (_filesysSlot27FKseg != 0)
+                return _filesysSlot27FKseg | (va & 0xFFFu);
+            TryResolveFilesysSlot27F(bus, va);
+            if (_filesysSlot27FKseg != 0)
+                return _filesysSlot27FKseg | (va & 0xFFFu);
+            return va;
+        }
+
+        private static void TryNoteFilesysSlot27FTlbl(MipsBus bus, uint[] regs,
+            uint epc, uint vaddr, uint vector)
+        {
+            if (!_filesysSlot27FTlblLogged)
+            {
+                _filesysSlot27FTlblLogged = true;
+                uint a1 = regs != null && regs.Length > 5 ? regs[5] : 0;
+                uint v0 = regs != null && regs.Length > 2 ? regs[2] : 0;
+                uint insn = 0;
+                TryPeekWord(bus, epc, out insn);
+                string dis = insn != 0 ? FormatMipsOp(epc, insn) : "peek-miss";
+                BootLog.Write("[Hive] ExtraROM ddi_nop filesys-slot2 TLBL epc=0x" +
+                    epc.ToString("X8") +
+                    " badvaddr=0x" + vaddr.ToString("X8") +
+                    " vec=0x" + vector.ToString("X8") +
+                    " insn=0x" + insn.ToString("X8") +
+                    " " + dis +
+                    " a1=0x" + a1.ToString("X8") +
+                    " v0=0x" + v0.ToString("X8") +
+                    " (filesys 0x0007F000; do not invent dest)");
+            }
+            TryResolveFilesysSlot27F(bus, vaddr);
+        }
+
+        private static void TryResolveFilesysSlot27F(MipsBus bus, uint va)
+        {
+            if (_filesysSlot27FKseg != 0 || _filesysSlot27FBusy || bus == null)
+                return;
+            try
+            {
+                _filesysSlot27FBusy = true;
+                uint l1 = 0;
+                uint l2 = 0;
+                uint pfn = 0;
+                uint kseg = 0;
+                uint sec = PeekSection(bus, 2);
+                if (sec != 0
+                    && WalkFirmwarePte(bus, sec, FilesysSlot27FFault,
+                        out l1, out l2, out pfn, out kseg)
+                    && (kseg & 0x1FFFFFFFu) >= 0x00010000u)
+                {
+                    _filesysSlot27FKseg = kseg & ~0xFFFu;
+                    if (!_filesysSlot27FLogged)
+                    {
+                        _filesysSlot27FLogged = true;
+                        uint word = 0;
+                        TryPeekWord(bus, _filesysSlot27FKseg | (va & 0xFFFu),
+                            out word);
+                        BootLog.Write("[Hive] ExtraROM ddi_nop filesys-slot2 map va=0x" +
+                            FilesysSlot27FPage.ToString("X8") +
+                            " -> 0x" + _filesysSlot27FKseg.ToString("X8") +
+                            " l2=0x" + l2.ToString("X8") +
+                            " dest-word=0x" + word.ToString("X8") +
+                            " via=slot-2 (firmware PTE; filesys 0x0007F000; do not invent dest)");
+                    }
+                    return;
+                }
+                if (!_filesysSlot27FMissLogged)
+                {
+                    _filesysSlot27FMissLogged = true;
+                    BootLog.Write("[Hive] ExtraROM ddi_nop filesys-slot2 map va=0x" +
+                        FilesysSlot27FPage.ToString("X8") +
+                        " pte-miss sec=0x" + sec.ToString("X8") +
+                        " (filesys 0x0007F000; do not invent dest or walk slot-2)");
+                }
+            }
+            finally
+            {
+                _filesysSlot27FBusy = false;
+            }
         }
 
         // Live 82240a0: page0 mapped. Next miss is filesys
@@ -12277,6 +12399,11 @@ namespace ProcessorEmulator.Core
             _filesysSlot2TlblLogged = false;
             _filesysSlot4Logged = false;
             _filesysSlot4TlblLogged = false;
+            _filesysSlot27FKseg = 0;
+            _filesysSlot27FLogged = false;
+            _filesysSlot27FBusy = false;
+            _filesysSlot27FTlblLogged = false;
+            _filesysSlot27FMissLogged = false;
             _filesys48dLogged = false;
             _filesys48dBusy = false;
             if (_filesys48dKsegs != null)
@@ -18194,6 +18321,11 @@ namespace ProcessorEmulator.Core
         private static bool _filesysSlot2TlblLogged;
         private static bool _filesysSlot4Logged;
         private static bool _filesysSlot4TlblLogged;
+        private static uint _filesysSlot27FKseg;
+        private static bool _filesysSlot27FLogged;
+        private static bool _filesysSlot27FBusy;
+        private static bool _filesysSlot27FTlblLogged;
+        private static bool _filesysSlot27FMissLogged;
         private static bool _filesys48dLogged;
         private static uint[] _filesys48dKsegs;
         private static bool[] _filesys48dDone;
