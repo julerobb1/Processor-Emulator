@@ -569,6 +569,13 @@ namespace ProcessorEmulator.Core
                 LogCallDllAfterJalr(registers, bus);
                 return false;
             }
+            if (pc == CeRomTocFiles.XipCallDllUsegChk)
+            {
+                if (!_logged.Contains("hive:ddi:words")
+                    && CeRomTocFiles.TryForceDdiNopCallDll(bus, registers, ref programCounter))
+                    return false;
+                return false;
+            }
             if (pc == CeRomTocFiles.XipExeCallDllSkip)
             {
                 if (!_logged.Contains("hive:ddi:words")
