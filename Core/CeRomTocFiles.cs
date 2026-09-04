@@ -904,6 +904,15 @@ namespace ProcessorEmulator.Core
         // AdEL must not consume BindImp-exn.
         public const uint FfffFb2aEpc = 0xFFFFFB2A;
         public const uint FfffFb2aVaddr = 0xFFFFFB2A;
+        // Live 3ac5ed9: after 0x03FE1000 map,
+        // BindImp-exn cause=4 epc=badvaddr=0xC6FA7C9A
+        // (AdEL; 0x7C9A unaligned; not a module
+        // VA). Observe only. Do not map that VA.
+        // Do not invent dest. All AdEL /
+        // epc==badvaddr unaligned must not
+        // consume BindImp-exn.
+        public const uint AdelC6FaEpc = 0xC6FA7C9A;
+        public const uint AdelC6FaVaddr = 0xC6FA7C9A;
         public const int GwesImagePageCap = 32;
         // TOC[7] o32[0] dataptr. Same as HostHardDisk.
         // VA 0x00011000 → 0x80146000. Live d01f68a:
@@ -9315,13 +9324,19 @@ namespace ProcessorEmulator.Core
                     TryNoteNearNullTlblObserve(bus, regs, epc, vaddr);
                 return;
             }
-            // Live f3c2d62: FFFF* AdEL consumed the
-            // one-shot. Observe 0xFFFFFB2A. Do not
-            // map 0xFFFFF000. Do not invent dest.
-            if (IsFfffAdelVa(code, vaddr))
+            // Live f3c2d62 / 3ac5ed9: AdEL consumed
+            // the one-shot. Observe 0xFFFFFB2A and
+            // 0xC6FA7C9A. Do not map those VAs. Do
+            // not invent dest. All AdEL /
+            // epc==badvaddr unaligned skip the
+            // one-shot so a later TLBL can name
+            // itself.
+            if (IsAdelSkip(code, epc, vaddr))
             {
                 if (epc == FfffFb2aEpc && vaddr == FfffFb2aVaddr)
                     TryNoteFfffFb2aAdelObserve(bus, regs, epc, vaddr);
+                else if (epc == AdelC6FaEpc && vaddr == AdelC6FaVaddr)
+                    TryNoteAdelC6FaObserve(bus, regs, epc, vaddr);
                 return;
             }
             if (_bindImpExnLogged)
@@ -9539,9 +9554,16 @@ namespace ProcessorEmulator.Core
                 " (do not map page 0)");
         }
 
-        private static bool IsFfffAdelVa(uint code, uint va)
+        // Live f3c2d62 skipped only FFFF* AdEL.
+        // Live 3ac5ed9: cause=4 epc=badvaddr=
+        // 0xC6FA7C9A is also AdEL (unaligned
+        // corrupt PC). Skip all AdEL and
+        // epc==badvaddr unaligned. Do not map.
+        private static bool IsAdelSkip(uint code, uint epc, uint va)
         {
-            return code == 4 && (va & 0xFF000000u) == 0xFF000000u;
+            if (code == 4)
+                return true;
+            return epc == va && (epc & 3) != 0;
         }
 
         // Live f3c2d62: AdEL epc=badvaddr=0xFFFFFB2A.
@@ -9569,6 +9591,37 @@ namespace ProcessorEmulator.Core
                 " (AdEL; do not map 0xFFFFF000)");
         }
 
+        // Live 3ac5ed9: AdEL epc=badvaddr=0xC6FA7C9A.
+        // Peek insn if mapped. One Hive line. Do not
+        // map that VA. Do not invent dest.
+        private static void TryNoteAdelC6FaObserve(MipsBus bus, uint[] regs,
+            uint epc, uint vaddr)
+        {
+            if (_adelC6FaLogged)
+                return;
+            _adelC6FaLogged = true;
+            uint insn = 0;
+            bool peeked = TryPeekWord(bus, epc, out insn);
+            string dis = peeked ? FormatMipsOp(epc, insn) : "peek-miss";
+            string why;
+            if ((epc & 3) != 0)
+                why = "unaligned";
+            else if (epc == vaddr)
+                why = "corrupt-pc";
+            else
+                why = peeked ? "adel" : "unmapped";
+            BootLog.Write("[Hive] ExtraROM ddi_nop adel-pc epc=0x" +
+                epc.ToString("X8") +
+                " badvaddr=0x" + vaddr.ToString("X8") +
+                " insn=" + (peeked ? "0x" + insn.ToString("X8") : "peek-miss") +
+                (peeked ? " " + dis : "") +
+                " why=" + why +
+                " a1=" + GprHex(regs, 5) +
+                " v0=" + GprHex(regs, 2) +
+                " v1=" + GprHex(regs, 3) +
+                " (AdEL; do not map)");
+        }
+
         private static void TryNoteBindImpExnSave(MipsBus bus, uint[] regs, uint pc)
         {
             if (!_ddiNopAwaitCallDll || !_ddiNopIatStoreLogged)
@@ -9585,7 +9638,7 @@ namespace ProcessorEmulator.Core
                 return;
             if (IsNearNullVa(_bindImpExnVaddr))
                 return;
-            if (IsFfffAdelVa(_bindImpExnCode, _bindImpExnVaddr))
+            if (IsAdelSkip(_bindImpExnCode, _bindImpExnEpc, _bindImpExnVaddr))
                 return;
             _bindImpExnSaveLogged = true;
             uint a1 = regs != null && regs.Length > 5 ? regs[5] : 0;
@@ -12518,6 +12571,7 @@ namespace ProcessorEmulator.Core
             _gwesNullStoreLogged = false;
             _nearNullTlblLogged = false;
             _ffffFb2aAdelLogged = false;
+            _adelC6FaLogged = false;
             _ddiNopInfoObserved = false;
             _ddiNopInfoDemand = false;
             _ddiNopInfoBusy = false;
@@ -18462,6 +18516,7 @@ namespace ProcessorEmulator.Core
         private static bool _gwesNullStoreLogged;
         private static bool _nearNullTlblLogged;
         private static bool _ffffFb2aAdelLogged;
+        private static bool _adelC6FaLogged;
         private static bool _ddiNopInfoObserved;
         private static bool _ddiNopInfoDemand;
         private static bool _ddiNopInfoBusy;
