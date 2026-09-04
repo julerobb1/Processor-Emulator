@@ -3010,6 +3010,7 @@ namespace ProcessorEmulator.Core
             _ddiNopDestPteMeasured = false;
             _ddiNopLandedDest = 0;
             _ddiNopLandedWord = 0;
+            _ddiNopLandedBySig = false;
             _mscoreeDestOn = false;
             _mscoreeSlot0 = 0;
             _mscoreeVbase = 0;
@@ -7750,6 +7751,12 @@ namespace ProcessorEmulator.Core
         private const uint DdiNopDestKseg0Page = 0x81981000u;
         private const uint DdiNopDest6Live = 0x86F1C000u;
         private const uint DdiNopDest10Live = 0x806F1000u;
+        // ExtraROM extract ddi_nop.dll .text RVA 0x2000
+        // (file ptr 0x1200). Live 021a2eb dest+0x1000
+        // 0x86F1D000 word. TOC cache is compressed o32,
+        // not PE bytes. Do not invent this word.
+        private const uint DdiNopTextSigRva2000 = 0x8C481B78u;
+        private const uint DdiNopTextVsize = 0x1743Au;
 
         private static void ResetDdiNopDecompStores()
         {
@@ -7928,6 +7935,27 @@ namespace ProcessorEmulator.Core
             return (word & 0xFFFFu) == 0x5A4D;
         }
 
+        // TOC[33] ExtraROM extract ddi_nop.dll .text RVA 0x2000.
+        // Cached o32 Data[] is compressed; not PE bytes.
+        private static uint DdiNopTextSigExpected()
+        {
+            uint[] blob = null;
+            if (_ddiNopData != null && _ddiNopData.Length > 0)
+                blob = _ddiNopData[0];
+            if (blob == null)
+            {
+                ExtraRomTocMod slot = FindCachedExtraRomToc("ddi_nop.dll");
+                if (slot != null && slot.Data != null && slot.Data.Length > 0)
+                    blob = slot.Data[0];
+            }
+            // File ptr 0x1200 / 4 = word 0x480. Only if
+            // cached blob is an expanded PE (MZ).
+            if (blob != null && blob.Length > 0x480
+                && (blob[0] & 0xFFFFu) == 0x5A4D)
+                return blob[0x480];
+            return DdiNopTextSigRva2000;
+        }
+
         private static bool DdiNopDestStoresAllowServe()
         {
             return _ddiNopStoreN0 != 0
@@ -7962,6 +7990,10 @@ namespace ProcessorEmulator.Core
             uint vw10 = vbase10 != 0 ? PeekDestWordRaw(bus, vbase10, out tv10) : 0;
             uint dw6 = dest6 != 0 ? PeekDestWordRaw(bus, dest6, out ts6) : 0;
             uint dw10 = dest10 != 0 ? PeekDestWordRaw(bus, dest10, out ts10) : 0;
+            bool tsig = false;
+            uint sig = 0;
+            if (dest6 != 0)
+                sig = PeekDestWordRaw(bus, dest6 + 0x1000u, out tsig);
             bool tv0 = false;
             uint vw0 = PeekDestWordRaw(bus, vbase, out tv0);
             BootLog.Write("[Hive] ExtraROM ddi_nop dest vbase PTE vbase6=0x" +
@@ -7970,10 +8002,11 @@ namespace ProcessorEmulator.Core
                 " vw10=0x" + vw10.ToString("X8") +
                 " dest6=0x" + dest6.ToString("X8") +
                 " dw6=0x" + dw6.ToString("X8") +
+                " sig=0x" + sig.ToString("X8") +
                 " dw10=0x" + dw10.ToString("X8") +
                 " threw=" + (tv6 ? "V" : "") + (ts6 ? "6" : "") +
                 (tv10 ? "A" : "") + (ts10 ? "S" : "") +
-                (tv0 ? "0" : ""));
+                (tsig ? "G" : "") + (tv0 ? "0" : ""));
             uint span = expanded != 0 && expanded != 0xFFFFFFFFu
                 ? expanded : _ddiNopDecompVsize;
             uint end = vbase + 0x1000u + span;
@@ -8019,11 +8052,24 @@ namespace ProcessorEmulator.Core
                 " w=0x" + nzW.ToString("X8"));
             _ddiNopLandedDest = 0;
             _ddiNopLandedWord = 0;
-            // Live ccb9552: dest10 0x806F0000 is not MZ. Serve
-            // only MZ at module vbase after dest0/dest6/vbase
-            // stores. Do not invent dest.
+            _ddiNopLandedBySig = false;
+            // Live 021a2eb: dest-word 0 at dest6 is honest
+            // (.text starts 0). dest+0x1000 word 0x8C481B78
+            // matches extract .text RVA 0x2000. dest10
+            // 0x806F0000 is not MZ. Do not invent dest.
             if (!DdiNopDestStoresAllowServe())
                 return;
+            uint expect = DdiNopTextSigExpected();
+            bool sizeOk = expanded != 0 && expanded != 0xFFFFFFFFu
+                && (expanded == _ddiNopDecompVsize || expanded == DdiNopTextVsize);
+            if (sizeOk && dest6 != 0 && !tsig && sig == expect
+                && (dest6 & ~0xFFFu) != DdiNopDest10Live)
+            {
+                _ddiNopLandedDest = dest6;
+                _ddiNopLandedWord = sig;
+                _ddiNopLandedBySig = true;
+                return;
+            }
             if (vbase6 != 0 && IsMzWord(vw6))
             {
                 _ddiNopLandedDest = vbase6;
@@ -8033,11 +8079,6 @@ namespace ProcessorEmulator.Core
             {
                 _ddiNopLandedDest = vbase;
                 _ddiNopLandedWord = vw0;
-            }
-            else if (vbase10 != 0 && IsMzWord(vw10))
-            {
-                _ddiNopLandedDest = vbase10;
-                _ddiNopLandedWord = vw10;
             }
         }
 
@@ -8075,9 +8116,10 @@ namespace ProcessorEmulator.Core
                 TryMeasureDdiNopDestAfterDecomp(bus, hdr, _ddiNopDecompVsize);
             uint wordDump = PeekDestWordRaw(bus, destDump, out _);
             uint word0 = PeekDestWordRaw(bus, dest0, out _);
-            // Live ccb9552: dest10 0x806F0000 is not MZ.
-            // Serve only vbase MZ after dest0/dest6/vbase
-            // stores. Do not invent dest.
+            // Live 021a2eb: dest6+0x1000 sig 0x8C481B78 is
+            // dump .text RVA 0x2000. Serve dest6; vbase is
+            // VALLOC 0x01980000. Do not require MZ at vbase.
+            // Do not serve dest10. Do not invent dest.
             uint fwDest = 0;
             uint fwWord = 0;
             if (!DdiNopDestStoresAllowServe())
@@ -8085,20 +8127,35 @@ namespace ProcessorEmulator.Core
                 fwDest = 0;
                 fwWord = 0;
             }
-            else if (_ddiNopLandedDest != 0 && IsMzWord(_ddiNopLandedWord))
+            else if (_ddiNopLandedBySig && _ddiNopLandedDest != 0
+                && (_ddiNopLandedDest & ~0xFFFu) != DdiNopDest10Live)
             {
                 fwDest = _ddiNopLandedDest;
                 fwWord = _ddiNopLandedWord;
             }
-            uint vbase = fwDest != 0 ? fwDest : DumpTocVbase(slot);
+            else if (_ddiNopLandedDest != 0 && IsMzWord(_ddiNopLandedWord)
+                && (_ddiNopLandedDest & ~0xFFFu) != DdiNopDest10Live)
+            {
+                fwDest = _ddiNopLandedDest;
+                fwWord = _ddiNopLandedWord;
+            }
+            uint vbase;
+            if (_ddiNopLandedBySig && fwDest != 0)
+                vbase = DdiNopVbasePage;
+            else if (fwDest != 0)
+                vbase = fwDest;
+            else
+                vbase = DumpTocVbase(slot);
             string why;
             if (fwDest == 0)
             {
                 if (!DdiNopDestStoresAllowServe())
                     why = "dest0 dest6 vbase6 store-count=0; do not serve";
                 else
-                    why = "vbase-word not MZ; do not serve dest10 kseg";
+                    why = "dest6 .text sig miss; do not serve dest10";
             }
+            else if (_ddiNopLandedBySig)
+                why = "dest6 .text sig; serve dest6";
             else
                 why = "vbase MZ; serve vbase dest";
             BootLog.Write("[Hive] TOC[" + slot.Index + "] " + slot.Name +
@@ -13009,6 +13066,7 @@ namespace ProcessorEmulator.Core
         private static bool _ddiNopDestPteMeasured;
         private static uint _ddiNopLandedDest;
         private static uint _ddiNopLandedWord;
+        private static bool _ddiNopLandedBySig;
         private static bool _ddiNopDecompWatch;
         private static uint _ddiNopWatchDest6;
         private static uint _ddiNopWatchDest10;
@@ -13051,6 +13109,7 @@ namespace ProcessorEmulator.Core
             _ddiNopDestPteMeasured = false;
             _ddiNopLandedDest = 0;
             _ddiNopLandedWord = 0;
+            _ddiNopLandedBySig = false;
             _mscoreeDestOn = false;
             _mscoreeSlot0 = 0;
             _ole32DestOn = false;
