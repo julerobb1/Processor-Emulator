@@ -22,6 +22,11 @@ namespace ProcessorEmulator.Emulation
             _cp0 = cp0;
         }
 
+        public bool TryFindTlbPfn(uint vaddr, out uint pfn, out bool valid)
+        {
+            return _cp0.TryFindTlbPfn(vaddr, out pfn, out valid);
+        }
+
         /// <summary>
         /// Maps a device to a specific range of the address space.
         /// </summary>
@@ -112,6 +117,7 @@ namespace ProcessorEmulator.Emulation
             vaddr = CeRomTocFiles.MapExtraRomTocDestVa(vaddr);
             vaddr = CeRomTocFiles.MapExeXipVa(this, vaddr);
             vaddr = CeRomTocFiles.MapUserKDataVa(vaddr);
+            vaddr = CeRomTocFiles.MapFfffF000Va(this, vaddr);
             uint paddr = Translate(vaddr, isStore: false);
             IBusDevice device = _lookupTable[paddr >> 16];
 
@@ -149,6 +155,7 @@ namespace ProcessorEmulator.Emulation
             vaddr = CeRomTocFiles.MapExtraRomTocSrcVa(vaddr);
             vaddr = CeRomTocFiles.MapExtraRomTocDestVa(vaddr);
             vaddr = CeRomTocFiles.MapUserKDataVa(vaddr);
+            vaddr = CeRomTocFiles.MapFfffF000Va(this, vaddr);
             CeRomTocFiles.TryNoteDdiNopIatStore(origVa, vaddr, value);
             CeRomTocFiles.TryNoteBindImpIatSw(origVa, value);
             bool watch = CeRomTocFiles.TryNoteDdiNopDecompStore(vaddr, value);
@@ -198,6 +205,7 @@ namespace ProcessorEmulator.Emulation
             vaddr = CeRomTocFiles.MapExtraRomTocDestVa(vaddr);
             vaddr = CeRomTocFiles.MapExeXipVa(this, vaddr);
             vaddr = CeRomTocFiles.MapUserKDataVa(vaddr);
+            vaddr = CeRomTocFiles.MapFfffF000Va(this, vaddr);
             uint paddr = Translate(vaddr, isStore: false);
             IBusDevice device = _lookupTable[paddr >> 16];
 
@@ -235,6 +243,7 @@ namespace ProcessorEmulator.Emulation
             vaddr = CeRomTocFiles.MapExtraRomTocSrcVa(vaddr);
             vaddr = CeRomTocFiles.MapExtraRomTocDestVa(vaddr);
             vaddr = CeRomTocFiles.MapUserKDataVa(vaddr);
+            vaddr = CeRomTocFiles.MapFfffF000Va(this, vaddr);
             bool watch = CeRomTocFiles.TryNoteDdiNopDecompStore(vaddr, value);
             try
             {

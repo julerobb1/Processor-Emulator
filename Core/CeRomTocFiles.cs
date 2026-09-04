@@ -654,10 +654,12 @@ namespace ProcessorEmulator.Core
         // Live 258ef59: coredll slot-4 aliased. Next
         // data-TLBL epc=0x000593C8 badvaddr=0xFFFFFCE1
         // a1=1 v0=0x00013320 v1=0x78 stores=24.
-        // Page 0xFFFFF000 off=0xCE1 (odd). Not
+        // Live 674d704: lh t8,-800(s7) insn=0x86F8FCE0
+        // rs=23 base=1 formed=0xFFFFFCE1. Page
+        // 0xFFFFF000 is SharedUserData wrap, not
         // UserKPage 0xFFFF5800 / KData 0xFFFFD800.
-        // Observe insn+base only. Do not map
-        // 0xFFFFF000. Do not invent KData.
+        // Map only live firmware peek or TLB PFN.
+        // Do not invent KData / TickCount.
         public const uint FfffF000Page = 0xFFFFF000;
         public const uint FfffFce1Fault = 0xFFFFFCE1;
         public const uint FfffFce1Epc = 0x000593C8;
@@ -8736,6 +8738,109 @@ namespace ProcessorEmulator.Core
             return (KDataBase & ~0xFFFu) | (va & 0xFFFu);
         }
 
+        // Live 674d704: lh at 0xFFFFFCE1 (base=1 +
+        // sign_extend 0xFCE0). Same discipline as
+        // MapUserKDataVa: rewrite onto live firmware
+        // backing only. Peek 0xFFFFF000 or TLB PFN
+        // (kseg0). Do not alias KData. Do not
+        // zero-fill SharedUserData. Do not rewrite
+        // GPR23.
+        public static uint MapFfffF000Va(MipsBus bus, uint va)
+        {
+            if (_ffffF000Busy)
+                return va;
+            if (!IsFfffF000Armed())
+                return va;
+            if ((va & ~0xFFFu) != FfffF000Page)
+                return va;
+            if (_ffffF000Kseg != 0)
+                return _ffffF000Kseg | (va & 0xFFFu);
+            TryResolveFfffF000(bus, va);
+            if (_ffffF000Kseg != 0)
+                return _ffffF000Kseg | (va & 0xFFFu);
+            return va;
+        }
+
+        private static bool IsFfffF000Armed()
+        {
+            if (!_ddiNopAwaitCallDll)
+                return false;
+            return _ddiNopDllMainLogged || _ffffFce1Logged || _ffffF000Demand;
+        }
+
+        private static void TryResolveFfffF000(MipsBus bus, uint va)
+        {
+            if (bus == null || _ffffF000Busy || _ffffF000Done)
+                return;
+            if ((va & ~0xFFFu) != FfffF000Page)
+                return;
+            try
+            {
+                _ffffF000Busy = true;
+                _ffffF000Demand = true;
+                uint word = 0;
+                if (TryPeekWord(bus, FfffF000Page | (va & 0xFFFu), out word)
+                    || TryPeekWord(bus, FfffF000Page, out word))
+                {
+                    RememberFfffF000Kseg(bus, FfffF000Page, va, word, "live-peek");
+                    return;
+                }
+                uint pfn = 0;
+                bool valid = false;
+                bool tlbHit = bus.TryFindTlbPfn(FfffF000Page, out pfn, out valid);
+                if (tlbHit && valid)
+                {
+                    uint dest = 0x80000000u | ((pfn << 12) & 0x1FFFFFFFu);
+                    if ((dest & 0x1FFFFFFFu) >= 0x00010000u
+                        && (TryPeekWord(bus, dest | (va & 0xFFFu), out word)
+                            || TryPeekWord(bus, dest, out word)))
+                    {
+                        RememberFfffF000Kseg(bus, dest, va, word, "tlb-pfn");
+                        return;
+                    }
+                }
+                if (!_ffffF000Logged)
+                {
+                    _ffffF000Logged = true;
+                    _ffffF000Done = true;
+                    uint kd = 0;
+                    bool kdOk = TryPeekWord(bus, KDataBase, out kd);
+                    string tlbWhy = "none";
+                    if (tlbHit)
+                        tlbWhy = valid
+                            ? "pfn=0x" + pfn.ToString("X") + "-unmapped"
+                            : "inv-pfn=0x" + pfn.ToString("X");
+                    BootLog.Write("[Hive] ExtraROM ddi_nop ffff-f000 map va=0x" +
+                        FfffF000Page.ToString("X8") +
+                        " pte-miss tlb=" + tlbWhy +
+                        (kdOk ? " FFFFD800=0x" + kd.ToString("X8") : " FFFFD800-unmapped") +
+                        " (SharedUserData; no dump page; not UserK/KData alias; do not invent dest)");
+                }
+            }
+            finally
+            {
+                _ffffF000Busy = false;
+            }
+        }
+
+        private static void RememberFfffF000Kseg(MipsBus bus, uint kseg,
+            uint va, uint word, string via)
+        {
+            _ffffF000Kseg = kseg & ~0xFFFu;
+            if (_ffffF000Logged)
+                return;
+            _ffffF000Logged = true;
+            _ffffF000Done = true;
+            if (via == null)
+                via = "firmware";
+            BootLog.Write("[Hive] ExtraROM ddi_nop ffff-f000 map va=0x" +
+                FfffF000Page.ToString("X8") +
+                " -> 0x" + _ffffF000Kseg.ToString("X8") +
+                " dest-word=0x" + word.ToString("X8") +
+                " via=" + via +
+                " (SharedUserData; firmware backing; do not invent dest)");
+        }
+
         private static void TryArmUserKPageAlias(MipsBus bus)
         {
             if (_userKPageAliasNoted)
@@ -9207,6 +9312,7 @@ namespace ProcessorEmulator.Core
                 " (page 0xFFFFF000 off=0x" +
                 (vaddr & 0xFFFu).ToString("X") +
                 "; not UserKPage/KData; observe only; do not invent dest)");
+            TryResolveFfffF000(bus, vaddr);
         }
 
         private static void TryNoteBindImpExnSave(MipsBus bus, uint[] regs, uint pc)
@@ -11506,6 +11612,11 @@ namespace ProcessorEmulator.Core
             _userKPageAlias = false;
             _userKPageAliasNoted = false;
             _ffffFce1Logged = false;
+            _ffffF000Kseg = 0;
+            _ffffF000Logged = false;
+            _ffffF000Busy = false;
+            _ffffF000Demand = false;
+            _ffffF000Done = false;
             _bindImpIatSwExpect = false;
             _bindImpIatSwLogged = false;
             _bindImpIatSwLog = 0;
@@ -17354,6 +17465,11 @@ namespace ProcessorEmulator.Core
         private static bool _userKPageAlias;
         private static bool _userKPageAliasNoted;
         private static bool _ffffFce1Logged;
+        private static uint _ffffF000Kseg;
+        private static bool _ffffF000Logged;
+        private static bool _ffffF000Busy;
+        private static bool _ffffF000Demand;
+        private static bool _ffffF000Done;
         private static bool _bindImpIatSwExpect;
         private static bool _bindImpIatSwLogged;
         private static int _bindImpIatSwLog;
