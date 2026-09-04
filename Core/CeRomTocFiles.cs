@@ -871,8 +871,18 @@ namespace ProcessorEmulator.Core
         // host burned CPU. Do not consume BindImp-exn
         // on that dest0 refill. One spin-observe if PC
         // sticks after the map. Do not invent XIP.
-        public const int GwesDataB9SpinSame = 262144;
-        public const int GwesDataB9SpinVec = 16384;
+        // Live 98db5d5: 256K/16K never fired. Page
+        // changes reset the counter during the
+        // exception storm. Count total steps after
+        // the B9 map. Do not reset on page change.
+        public const int GwesDataB9SpinSame = 65536;
+        public const int GwesDataB9SpinVec = 4096;
+        // Live 98db5d5: after B9 dest0 + B9 skip,
+        // BindImp-exn cause=3 epc=0x00021ABC
+        // badvaddr=0 (TLBS store to null). Observe
+        // insn/rs/rt/base. Do not map VA 0. Do not
+        // invent SharedUserData / KData / dest.
+        public const uint GwesNullStoreEpc = 0x00021ABC;
         public const int GwesImagePageCap = 32;
         // TOC[7] o32[0] dataptr. Same as HostHardDisk.
         // VA 0x00011000 → 0x80146000. Live d01f68a:
@@ -9243,6 +9253,15 @@ namespace ProcessorEmulator.Core
             // the next real miss and left Hive quiet.
             if (code == 2 && IsGwesDataB9Page(vaddr))
                 return;
+            // Live 98db5d5: null TLBS consumed the
+            // one-shot and hid later real TLBL.
+            // Observe the named store. Do not map VA 0.
+            if (code == 3 && vaddr == 0)
+            {
+                if (epc == GwesNullStoreEpc)
+                    TryNoteGwesNullStoreObserve(bus, regs, epc);
+                return;
+            }
             if (_bindImpExnLogged)
                 return;
             _bindImpExnLogged = true;
@@ -9361,6 +9380,55 @@ namespace ProcessorEmulator.Core
             TryResolveFfffF000(bus, vaddr);
         }
 
+        // Live 98db5d5: gwes 0x00021ABC store miss on
+        // null. Peek insn / rs / rt / base. One Hive
+        // line. Do not map VA 0. Do not invent dest.
+        private static void TryNoteGwesNullStoreObserve(MipsBus bus, uint[] regs,
+            uint epc)
+        {
+            if (_gwesNullStoreLogged)
+                return;
+            _gwesNullStoreLogged = true;
+            uint insn = 0;
+            string via = "peek-miss";
+            if (TryPeekWord(bus, epc, out insn))
+                via = "gwes";
+            else
+            {
+                uint rom = GwesRomTextPage(epc);
+                if (rom != 0 && TryPeekWord(bus, rom | (epc & 0xFFFu), out insn))
+                    via = "rom";
+            }
+            string dis = via != "peek-miss" ? FormatMipsOp(epc, insn) : "peek-miss";
+            uint rs = (insn >> 21) & 31;
+            uint rt = (insn >> 16) & 31;
+            int simm = (short)(insn & 0xFFFFu);
+            uint bas = PeekGpr(regs, (int)rs);
+            uint formed = bas + (uint)simm;
+            string why;
+            if (rs == 0)
+                why = "rs0";
+            else if (bas == 0)
+                why = "base0";
+            else if (formed == 0)
+                why = "formed0";
+            else
+                why = "badv=0";
+            string extra = via == "gwes" ? "" : " via=" + via;
+            BootLog.Write("[Hive] ExtraROM ddi_nop null-store epc=0x" +
+                epc.ToString("X8") +
+                " insn=0x" + insn.ToString("X8") +
+                " " + dis +
+                " rs=" + rs +
+                " rt=" + rt +
+                " base=0x" + bas.ToString("X8") +
+                " formed=0x" + formed.ToString("X8") +
+                " why=" + why +
+                extra +
+                " v0=" + GprHex(regs, 2) +
+                " (do not map VA 0)");
+        }
+
         private static void TryNoteBindImpExnSave(MipsBus bus, uint[] regs, uint pc)
         {
             if (!_ddiNopAwaitCallDll || !_ddiNopIatStoreLogged)
@@ -9370,6 +9438,8 @@ namespace ProcessorEmulator.Core
             if (_bindImpExnSaveLogged)
                 return;
             if (IsGwesDataB9Page(_bindImpExnVaddr))
+                return;
+            if (_bindImpExnCode == 3 && _bindImpExnVaddr == 0)
                 return;
             _bindImpExnSaveLogged = true;
             uint a1 = regs != null && regs.Length > 5 ? regs[5] : 0;
@@ -12130,6 +12200,7 @@ namespace ProcessorEmulator.Core
             _gwesB9SpinLogged = false;
             _gwesB9SpinPage = 0;
             _gwesB9SpinN = 0;
+            _gwesNullStoreLogged = false;
             _ddiNopInfoObserved = false;
             _ddiNopInfoDemand = false;
             _ddiNopInfoBusy = false;
@@ -13196,6 +13267,8 @@ namespace ProcessorEmulator.Core
         // Live c0347e8: after B9 dest0 map, Hive froze
         // (~84KB) while the host burned CPU. Observe
         // the stuck PC. Do not invent dest. Do not hop.
+        // Live 98db5d5: same-page reset never reached
+        // 256K/16K. Count total steps after B9 map.
         private static void TryNoteGwesB9SpinObserve(MipsBus bus, uint[] regs,
             uint pc)
         {
@@ -13203,13 +13276,7 @@ namespace ProcessorEmulator.Core
                 return;
             if (LookupGwesImageKseg(GwesDataB9Page) == 0)
                 return;
-            uint page = pc & ~0xFFFu;
-            if (page != _gwesB9SpinPage)
-            {
-                _gwesB9SpinPage = page;
-                _gwesB9SpinN = 0;
-                return;
-            }
+            _gwesB9SpinPage = pc & ~0xFFFu;
             _gwesB9SpinN++;
             bool vec = (pc >= 0x80000000u && pc < 0x80000200u)
                 || (pc >= BindImpExnLo && pc <= BindImpExnHi);
@@ -18062,6 +18129,7 @@ namespace ProcessorEmulator.Core
         private static bool _gwesB9SpinLogged;
         private static uint _gwesB9SpinPage;
         private static int _gwesB9SpinN;
+        private static bool _gwesNullStoreLogged;
         private static bool _ddiNopInfoObserved;
         private static bool _ddiNopInfoDemand;
         private static bool _ddiNopInfoBusy;
