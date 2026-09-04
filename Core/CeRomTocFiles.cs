@@ -289,6 +289,10 @@ namespace ProcessorEmulator.Core
         public const uint BindImpIatAfter = 0x80019128;
         // Live 19656e2: lw $v1,0x1C($fp) then sw $v0,0($v1).
         public const uint BindImpIatSlotLw = 0x800190FC;
+        // Live 1c3b70a: after slot0, firmware +4 *(fp+0x1C)
+        // here then loops GetProc. Keep VALLOC dest+n*4.
+        public const uint BindImpIatNext = 0x800192EC;
+        public const uint BindImpIatNextAfter = 0x800192F0;
         public const uint BindImpFpIatOff = 0x1C;
         public const uint ModuleExpRva = 0x8C;
         public const uint ModuleExpEnd = 0x90;
@@ -2374,43 +2378,37 @@ namespace ProcessorEmulator.Core
                 {
                     _ddiNopOrdGoodV0 = v0;
                     _ddiNopOrdAfterN = 0;
-                    uint iat = 0;
-                    uint dest6 = 0;
-                    PeekDdiNopIatWord(bus, out iat, out dest6);
-                    BootLog.Write("[Hive] ExtraROM BindImp-ord ret v0=0x" +
-                        v0.ToString("X8") +
-                        " a1=0x" + a1.ToString("X8") +
-                        " iat=0x" + iat.ToString("X8") +
-                        " dest6=0x" + dest6.ToString("X8") +
-                        " va=0x" + (DdiNopVbasePage + DdiNopIatRva).ToString("X8") +
-                        (iat == 0 ? " (no-store-yet)" : " (iat-has)"));
-                    _ddiNopOrdRetLog++;
                     TryArmUserKPageAlias(bus);
                     TryFixBindImpIatSlot(bus, regs, pc);
-                    return;
                 }
-                if (_ddiNopOrdRetLog >= 5)
+                if (a1 == _ddiNopOrdRetLastA1 || _ddiNopOrdRetLog >= 8)
                     return;
-                _ddiNopOrdRetN++;
-                if (_ddiNopOrdRetN > 1 && (_ddiNopOrdRetN % 256) != 0)
-                    return;
+                _ddiNopOrdRetLastA1 = a1;
                 _ddiNopOrdRetLog++;
+                uint iat = 0;
+                uint dest6 = 0;
+                PeekDdiNopIatWord(bus, out iat, out dest6);
+                uint fp = regs.Length > 30 ? regs[30] : 0;
+                uint fp1c = 0;
+                TryPeekWord(bus, fp + BindImpFpIatOff, out fp1c);
                 BootLog.Write("[Hive] ExtraROM BindImp-ord ret v0=0x" +
                     v0.ToString("X8") +
                     " a1=0x" + a1.ToString("X8") +
+                    " iat=0x" + iat.ToString("X8") +
+                    " dest6=0x" + dest6.ToString("X8") +
+                    " fp1c=0x" + fp1c.ToString("X8") +
+                    " v1=0x" + regs[3].ToString("X8") +
                     (v0 == 0 ? " (unresolved)" : ""));
                 return;
             }
             if (pc != BindImpOrdBaseLw)
                 return;
-            _ddiNopOrdN++;
-            bool log = _ddiNopOrdLog == 0
-                || (_ddiNopOrdN % 256 == 0 && _ddiNopOrdLog < 5);
-            if (!log)
-                return;
-            _ddiNopOrdLog++;
             uint a0 = regs[4];
             uint a1o = regs[5];
+            if (a1o == _ddiNopOrdLastA1 || _ddiNopOrdLog >= 8)
+                return;
+            _ddiNopOrdLastA1 = a1o;
+            _ddiNopOrdLog++;
             uint ra = regs.Length > 31 ? regs[31] : 0;
             uint p50 = 0;
             uint exp = 0;
@@ -2418,6 +2416,11 @@ namespace ProcessorEmulator.Core
             bool p50ok = a0 != 0 && TryPeekWord(bus, a0 + ProcModule, out p50);
             bool expok = a0 != 0 && TryPeekWord(bus, a0 + ModuleExpRva, out exp);
             TryPeekWord(bus, a0 + ModuleExpEnd, out end);
+            uint fp0 = regs.Length > 30 ? regs[30] : 0;
+            uint fp1c0 = 0;
+            TryPeekWord(bus, fp0 + BindImpFpIatOff, out fp1c0);
+            uint kdata0 = 0;
+            bool kOk0 = TryPeekWord(bus, UserKPage, out kdata0);
             BootLog.Write("[Hive] ExtraROM BindImp-ord a0=0x" +
                 a0.ToString("X8") +
                 " a1=0x" + a1o.ToString("X8") +
@@ -2426,7 +2429,12 @@ namespace ProcessorEmulator.Core
                 " exp=0x" + exp.ToString("X") +
                 (expok ? "" : " unread") +
                 " +90=0x" + end.ToString("X") +
-                " ra=0x" + ra.ToString("X8"));
+                " fp1c=0x" + fp1c0.ToString("X8") +
+                (kOk0
+                    ? " FFFF5800=0x" + kdata0.ToString("X8")
+                    : " FFFF5800-unmapped") +
+                " ra=0x" + ra.ToString("X8") +
+                (_ddiNopIatStoreLogged ? " after-slot0" : ""));
             if (_ddiNopOrdExpLogged || !p50ok || !expok || p50 == 0 || exp == 0)
                 return;
             uint expVa = p50 + exp;
@@ -8665,6 +8673,7 @@ namespace ProcessorEmulator.Core
             if (bus == null || regs == null || regs.Length <= 3)
                 return;
             if (pc != BindImpOrdJalRet && pc != BindImpIatSlotLw
+                && pc != BindImpIatNext && pc != BindImpIatNextAfter
                 && (pc < BindImpIatKdata || pc > BindImpIatAfter))
                 return;
             uint real;
@@ -8677,10 +8686,12 @@ namespace ProcessorEmulator.Core
             bool fpOk = fp != 0 && TryPeekWord(bus, fp + BindImpFpIatOff, out fp1c);
             uint v1 = regs[3];
             uint want;
+            uint written = 0;
             uint was = 0;
             if (fpOk && TryMapDumpIatSlot(fp1c, real, dest, span, out want))
             {
                 was = fp1c;
+                written = want;
                 try
                 {
                     bus.Write32(fp + BindImpFpIatOff, want);
@@ -8690,24 +8701,48 @@ namespace ProcessorEmulator.Core
                     return;
                 }
                 if (TryMapDumpIatSlot(v1, real, dest, span, out want))
+                {
                     regs[3] = want;
+                    written = want;
+                }
             }
             else if (TryMapDumpIatSlot(v1, real, dest, span, out want))
             {
                 was = v1;
+                written = want;
                 regs[3] = want;
             }
             else
+            {
+                TryNoteBindImpIatNext(pc, fp1c, dest, span);
                 return;
-            uint off = want - dest;
-            if (_bindImpIatSlotLog > 0 && off == 0)
+            }
+            if (written == 0)
                 return;
-            if (_bindImpIatSlotLog >= 3)
+            if (_bindImpIatSlotLog < 8)
+            {
+                _bindImpIatSlotLog++;
+                BootLog.Write("[Hive] ExtraROM BindImp-iat slot was=0x" +
+                    was.ToString("X8") +
+                    " set-valloc=0x" + written.ToString("X8"));
+            }
+            TryNoteBindImpIatNext(pc, written, dest, span);
+        }
+
+        private static void TryNoteBindImpIatNext(uint pc, uint fp1c, uint dest,
+            uint span)
+        {
+            if (pc != BindImpIatNext && pc != BindImpIatNextAfter)
                 return;
-            _bindImpIatSlotLog++;
-            BootLog.Write("[Hive] ExtraROM BindImp-iat slot was=0x" +
-                was.ToString("X8") +
-                " set-valloc=0x" + want.ToString("X8"));
+            if (fp1c == _bindImpIatNextLast || _bindImpIatNextLog >= 8)
+                return;
+            _bindImpIatNextLast = fp1c;
+            _bindImpIatNextLog++;
+            bool valloc = dest != 0 && fp1c >= dest
+                && (span == 0 ? fp1c == dest : fp1c < dest + span);
+            BootLog.Write("[Hive] ExtraROM BindImp-iat next fp1c=0x" +
+                fp1c.ToString("X8") +
+                (valloc ? " (valloc)" : " (not-valloc)"));
         }
 
         private static void TryNoteBindImpIatWindow(MipsBus bus, uint[] regs, uint pc)
@@ -8751,10 +8786,13 @@ namespace ProcessorEmulator.Core
 
         public static void TryNoteBindImpIatSw(uint origVa, uint value)
         {
-            if (!_bindImpIatSwExpect || _bindImpIatSwLogged || _ddiNopDestPeekRaw)
+            if (!_bindImpIatSwExpect || _ddiNopDestPeekRaw)
                 return;
-            _bindImpIatSwLogged = true;
             _bindImpIatSwExpect = false;
+            _bindImpIatSwLogged = true;
+            if (_bindImpIatSwLog >= 8)
+                return;
+            _bindImpIatSwLog++;
             uint iat = DdiNopVbasePage + DdiNopIatRva;
             bool hit = (origVa & ~0xFFFu) == iat
                 || (_ddiNopIatDest6 != 0
@@ -8848,7 +8886,7 @@ namespace ProcessorEmulator.Core
         // invent the written word.
         public static void TryNoteDdiNopIatStore(uint origVa, uint mappedVa, uint value)
         {
-            if (!_ddiNopIatWatch || _ddiNopIatStoreLogged || _ddiNopDestPeekRaw)
+            if (!_ddiNopIatWatch || _ddiNopDestPeekRaw)
                 return;
             uint iat = DdiNopVbasePage + DdiNopIatRva;
             uint dest6 = _ddiNopIatDest6;
@@ -8861,7 +8899,6 @@ namespace ProcessorEmulator.Core
                         || mappedPage == (dest6 & ~0xFFFu)));
             if (!hit)
                 return;
-            _ddiNopIatStoreLogged = true;
             uint baseVa = page == iat ? iat
                 : mappedPage == iat ? iat
                 : (dest6 & ~0xFFFu);
@@ -8869,6 +8906,10 @@ namespace ProcessorEmulator.Core
                 : mappedPage == iat ? mappedVa
                 : (mappedPage == (dest6 & ~0xFFFu) ? mappedVa : origVa);
             uint slot = (slotVa - baseVa) / 4;
+            _ddiNopIatStoreLogged = true;
+            if (_ddiNopIatStoreN >= 8)
+                return;
+            _ddiNopIatStoreN++;
             BootLog.Write("[Hive] ExtraROM ddi_nop IAT-store va=0x" +
                 origVa.ToString("X8") +
                 " dest6=0x" + dest6.ToString("X8") +
@@ -9119,15 +9160,16 @@ namespace ProcessorEmulator.Core
             _ddiNopDataO32Logged = false;
             _ddiNopIatWatch = false;
             _ddiNopIatStoreLogged = false;
+            _ddiNopIatStoreN = 0;
             _ddiNopIatDest6 = 0;
             _ddiNopIatReal = 0;
             _ddiNopIatValloc = 0;
             _ddiNopIatSpan = 0;
             _bindImpIatSlotLog = 0;
-            _ddiNopOrdN = 0;
             _ddiNopOrdLog = 0;
-            _ddiNopOrdRetN = 0;
+            _ddiNopOrdLastA1 = 0;
             _ddiNopOrdRetLog = 0;
+            _ddiNopOrdRetLastA1 = 0;
             _ddiNopOrdExpLogged = false;
             _ddiNopOrdGoodV0 = 0;
             _ddiNopOrdAfterDone = false;
@@ -9137,8 +9179,11 @@ namespace ProcessorEmulator.Core
             _userKPageAliasNoted = false;
             _bindImpIatSwExpect = false;
             _bindImpIatSwLogged = false;
+            _bindImpIatSwLog = 0;
             _bindImpIatWinLog = 0;
             _bindImpIatWinLast = 0;
+            _bindImpIatNextLog = 0;
+            _bindImpIatNextLast = 0;
             _ddiNopWalkSeedN = 0;
             _ddiNopNoModDiag = false;
             _ddiNopWalkDiag = false;
@@ -9927,10 +9972,26 @@ namespace ProcessorEmulator.Core
             TryPollDdiNopCallDllMiss(bus, null, pc);
         }
 
+        private static bool IsBindImpIatWalkPc(uint pc)
+        {
+            if (pc >= BindImpHdr && pc <= BindImpIatNextAfter)
+                return true;
+            if (pc == BindImpOrdLookup || pc == BindImpOrdBaseLw)
+                return true;
+            if (pc == BindImpLoadLib || pc == BindImpLoadLibRet)
+                return true;
+            return false;
+        }
+
         public static void TryPollDdiNopCallDllMiss(MipsBus bus, uint[] regs, uint pc)
         {
             TryNoteDdiNopOrdGetProc(bus, regs, pc);
             if (!_ddiNopAwaitCallDll || _ddiNopCallDllMissLogged || _ddiNopSawCallDllPc)
+                return;
+            // Live 1c3b70a: slot0 IAT-store won, then
+            // CallDLL-miss fired while BindImp was still
+            // at GetProc-ord for the next ordinal.
+            if (IsBindImpIatWalkPc(pc))
                 return;
             _ddiNopCallDllMissPoll++;
             if (_ddiNopCallDllMissPoll < 4096)
@@ -14595,15 +14656,16 @@ namespace ProcessorEmulator.Core
         private static bool _ddiNopDataO32Logged;
         private static bool _ddiNopIatWatch;
         private static bool _ddiNopIatStoreLogged;
+        private static int _ddiNopIatStoreN;
         private static uint _ddiNopIatDest6;
         private static uint _ddiNopIatReal;
         private static uint _ddiNopIatValloc;
         private static uint _ddiNopIatSpan;
         private static int _bindImpIatSlotLog;
-        private static int _ddiNopOrdN;
         private static int _ddiNopOrdLog;
-        private static int _ddiNopOrdRetN;
+        private static uint _ddiNopOrdLastA1;
         private static int _ddiNopOrdRetLog;
+        private static uint _ddiNopOrdRetLastA1;
         private static bool _ddiNopOrdExpLogged;
         private static uint _ddiNopOrdGoodV0;
         private static bool _ddiNopOrdAfterDone;
@@ -14613,8 +14675,11 @@ namespace ProcessorEmulator.Core
         private static bool _userKPageAliasNoted;
         private static bool _bindImpIatSwExpect;
         private static bool _bindImpIatSwLogged;
+        private static int _bindImpIatSwLog;
         private static int _bindImpIatWinLog;
         private static uint _bindImpIatWinLast;
+        private static int _bindImpIatNextLog;
+        private static uint _bindImpIatNextLast;
         private static uint[] _ddiNopWalkSeeds;
         private static int _ddiNopWalkSeedN;
         private static bool _ddiNopNoModDiag;
