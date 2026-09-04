@@ -832,13 +832,26 @@ namespace ProcessorEmulator.Core
         // dest or steal tv2 PE 0x00014000.
         public const uint GwesText2Page = 0x00014000;
         public const uint GwesText2Fault = 0x00014B3C;
+        // Live 831a196: o32-rom .text live (0x00026000
+        // → 0x8015B000). Next data-TLBL epc=0x00026130
+        // badvaddr=0x00010004 v0=0x00010000
+        // a1=0x00011918 stores=24. TOC[7] ImageBase
+        // 0x00010000 is headers / pre-.text. .text
+        // realaddr starts 0x00011000 / dataptr
+        // 0x80146000. Slot 0 page is shared with
+        // filesys — TOC gwes dest only. Do not invent
+        // PE bytes. Do not invent SharedUserData.
+        public const uint GwesImageBasePage = 0x00010000;
+        public const uint GwesImageBaseFault = 0x00010004;
         // Live 187f5be: I-fetch TLBL 0x000B4B80 (page
         // 0x000B4000). Same page as jal 0x000B4D20
         // (IAT LocalAlloc thunk 0x000B60D0). Same miss
         // class as prior gwes text/data pages. Image
         // vbase 0x00010000 / vsize 0xBB000. Named pages
         // keep their Hive tags; new pages demand-map
-        // via firmware PTE only. Do not invent dest.
+        // via firmware PTE only. ImageBase headers
+        // are 0x00010000 (not this .text span).
+        // Do not invent dest.
         public const uint GwesImageLo = 0x00011000;
         public const uint GwesImageHi = 0x000CB000;
         public const int GwesImagePageCap = 32;
@@ -10027,8 +10040,10 @@ namespace ProcessorEmulator.Core
         // 0x00014000 / 0x0005D000 / 0x000B6000 / 0x000B7000
         // / 0x000BA000. Live d01f68a: 0x00059000 PTE
         // dest 0x86FA1000 dest-word=0 hid ROM 0x8018E000.
-        // Dest-word=0 .text uses o32 dataptr. Named
-        // pages keep their Hive tags.
+        // Dest-word=0 .text uses o32 dataptr. Live
+        // 831a196: ImageBase 0x00010000 / +4 is headers;
+        // TOC gwes o32/load, not slot-0 filesys PTE.
+        // Named pages keep their Hive tags.
         public static uint MapDdiNopGwesImageVa(MipsBus bus, uint va)
         {
             if (_gwesImageBusy)
@@ -10064,7 +10079,14 @@ namespace ProcessorEmulator.Core
             if ((va >> 25) != 0)
                 return false;
             uint page = va & ~0xFFFu;
+            if (page == GwesImageBasePage)
+                return true;
             return page >= GwesImageLo && page < GwesImageHi;
+        }
+
+        private static bool IsGwesImageBasePage(uint va)
+        {
+            return (va >> 25) == 0 && (va & ~0xFFFu) == GwesImageBasePage;
         }
 
         private static bool IsNamedDdiNopGwesPage(uint va)
@@ -10137,6 +10159,7 @@ namespace ProcessorEmulator.Core
 
         // TOC[7] o32[0] dataptr + (page - 0x00011000).
         // Only .text through GwesRomTextEnd. Not data.
+        // Not ImageBase 0x00010000 (headers).
         private static uint GwesRomTextPage(uint va)
         {
             uint page = va & ~0xFFFu;
@@ -10168,15 +10191,212 @@ namespace ProcessorEmulator.Core
             return false;
         }
 
+        // Live 831a196: 0x00010004 is TOC[7] ImageBase
+        // headers, not .text. Slot 0 PTE is filesys.
+        // Dest from gwes o32 rva0 / TOCentry load /
+        // peeked MZ immediately before o32[0] dataptr.
+        // Do not invent PE bytes.
+        private static bool TryGwesHeaderDest(MipsBus bus, uint va,
+            out uint rom, out uint romWord, out string via)
+        {
+            rom = 0;
+            romWord = 0;
+            via = null;
+            if (bus == null || !IsGwesImageBasePage(va))
+                return false;
+            uint dest = 0;
+            string how = null;
+            if (!TryFindGwesHeaderRom(bus, out dest, out how) || dest == 0)
+                return false;
+            uint off = va & 0xFFFu;
+            if (!TryPeekWord(bus, dest | off, out romWord)
+                && !TryPeekWord(bus, dest, out romWord))
+                return false;
+            rom = dest;
+            via = how;
+            return true;
+        }
+
+        private static bool TryFindGwesTocEntry(MipsBus bus, out uint tocEntry)
+        {
+            tocEntry = 0;
+            uint attr = 0;
+            if (bus == null)
+                return false;
+            try
+            {
+                if (TryFindTocModule(bus, 0, 80, "gwes.exe", out tocEntry, out attr)
+                    && tocEntry != 0)
+                    return true;
+                uint extra = ExtraRomToc(bus);
+                if (extra != 0
+                    && TryFindTocModule(bus, extra, 128, "gwes.exe", out tocEntry, out attr)
+                    && tocEntry != 0)
+                    return true;
+                if (TryFindGwesTocByTextO32(bus, 0, 80, out tocEntry))
+                    return true;
+                if (extra != 0
+                    && TryFindGwesTocByTextO32(bus, extra, 128, out tocEntry))
+                    return true;
+            }
+            catch
+            {
+            }
+            tocEntry = 0;
+            return false;
+        }
+
+        // nk TOC[7] identity: e32 vbase 0x00010000 and
+        // o32[0] dataptr 0x80146000. filesys/device share
+        // the EXE vbase.
+        private static bool TryFindGwesTocByTextO32(MipsBus bus, uint tocOrZero,
+            uint maxMods, out uint tocEntry)
+        {
+            tocEntry = 0;
+            if (bus == null)
+                return false;
+            try
+            {
+                uint toc = tocOrZero;
+                if (toc == 0)
+                    toc = bus.Read32(EcecTocPtr);
+                if (toc == 0)
+                    return false;
+                uint nmods = bus.Read32(toc + RomHdrNumMods);
+                if (nmods == 0 || nmods > maxMods)
+                    return false;
+                uint found = 0;
+                for (uint i = 0; i < nmods; i++)
+                {
+                    uint entry = toc + TocFirst + i * TocEntrySize;
+                    uint e32 = bus.Read32(entry + 0x14);
+                    uint o32 = bus.Read32(entry + 0x18);
+                    if (e32 == 0 || o32 == 0)
+                        continue;
+                    if (bus.Read32(e32 + 8) != ExeVbase)
+                        continue;
+                    uint dataptr = bus.Read32(o32 + 0xC);
+                    uint real = bus.Read32(o32 + 0x10);
+                    if (dataptr != GwesRomText)
+                        continue;
+                    if (real != 0 && (real & ~0xFFFu) != GwesImageLo)
+                        continue;
+                    if (found != 0)
+                        return false;
+                    found = entry;
+                }
+                if (found == 0)
+                    return false;
+                tocEntry = found;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool TryFindGwesHeaderRom(MipsBus bus, out uint dest,
+            out string via)
+        {
+            dest = 0;
+            via = null;
+            uint tocEntry = 0;
+            if (!TryFindGwesTocEntry(bus, out tocEntry))
+                return false;
+            try
+            {
+                uint e32 = bus.Read32(tocEntry + 0x14);
+                uint o32 = bus.Read32(tocEntry + 0x18);
+                uint load = bus.Read32(tocEntry + 0x1C);
+                if (e32 == 0 || o32 == 0)
+                    return false;
+                if (bus.Read32(e32 + 8) != ExeVbase)
+                    return false;
+                uint objcnt = bus.Read32(e32) & 0xFFFF;
+                if (objcnt == 0 || objcnt > 16)
+                    return false;
+                for (uint s = 0; s < objcnt; s++)
+                {
+                    uint src = o32 + s * O32RomSize;
+                    uint vsize = bus.Read32(src);
+                    uint rva = bus.Read32(src + 4);
+                    uint dataptr = bus.Read32(src + 0xC);
+                    uint real = bus.Read32(src + 0x10);
+                    if (vsize == 0)
+                        continue;
+                    if (dataptr < 0x80000000u || dataptr >= 0xA0000000u)
+                        continue;
+                    uint page = dataptr & ~0xFFFu;
+                    if (page == 0 || page == GwesRomText)
+                        continue;
+                    bool covers = false;
+                    if (real != 0
+                        && real <= GwesImageBasePage
+                        && GwesImageBasePage < real + vsize)
+                        covers = true;
+                    if ((ExeVbase + rva) <= GwesImageBasePage
+                        && GwesImageBasePage < (ExeVbase + rva + vsize))
+                        covers = true;
+                    if (rva == 0)
+                        covers = true;
+                    if (!covers)
+                        continue;
+                    dest = page;
+                    via = "o32-hdr";
+                    return true;
+                }
+                uint loadPage = load & ~0xFFFu;
+                if (load >= 0x80000000u && load < 0xA0000000u
+                    && loadPage != 0 && loadPage != GwesRomText)
+                {
+                    dest = loadPage;
+                    via = "toc-load";
+                    return true;
+                }
+                uint o0ptr = bus.Read32(o32 + 0xC);
+                uint o0real = bus.Read32(o32 + 0x10);
+                if (o0ptr == GwesRomText
+                    && (o0real == 0 || (o0real & ~0xFFFu) == GwesImageLo))
+                {
+                    uint hdr = GwesRomText - (GwesImageLo - GwesImageBasePage);
+                    uint word = 0;
+                    if (hdr < GwesRomText && hdr >= 0x80000000u
+                        && (TryPeekWord(bus, hdr | (GwesImageBaseFault & 0xFFFu), out word)
+                            || TryPeekWord(bus, hdr, out word))
+                        && (word & 0xFFFFu) == 0x5A4Du)
+                    {
+                        dest = hdr;
+                        via = "o32-pre";
+                        return true;
+                    }
+                }
+            }
+            catch
+            {
+            }
+            return false;
+        }
+
         private static void TryReplaceGwesDest0WithRom(MipsBus bus, uint va,
             uint kseg)
         {
-            uint word = 0;
-            TryPeekWord(bus, (kseg & ~0xFFFu) | (va & 0xFFFu), out word);
             uint rom = 0;
             uint romWord = 0;
-            if (!TryGwesRomTextDest(bus, va, word, out rom, out romWord))
-                return;
+            string via = null;
+            if (IsGwesImageBasePage(va))
+            {
+                if (!TryGwesHeaderDest(bus, va, out rom, out romWord, out via))
+                    return;
+            }
+            else
+            {
+                uint word = 0;
+                TryPeekWord(bus, (kseg & ~0xFFFu) | (va & 0xFFFu), out word);
+                if (!TryGwesRomTextDest(bus, va, word, out rom, out romWord))
+                    return;
+                via = "o32-rom";
+            }
             if ((kseg & ~0xFFFu) == rom)
                 return;
             int i = FindGwesImageSlot(va & ~0xFFFu);
@@ -10184,12 +10404,16 @@ namespace ProcessorEmulator.Core
                 return;
             _gwesImageKseg[i] = rom;
             _gwesImageDone[i] = true;
+            string why = IsGwesImageBasePage(va)
+                ? " (ImageBase headers; TOC[7] gwes; do not invent dest)"
+                : " (dest-word=0 .text; TOC[7] o32; do not invent dest)";
             BootLog.Write("[Hive] ExtraROM ddi_nop gwes-page map va=0x" +
                 (va & ~0xFFFu).ToString("X8") +
                 " -> 0x" + rom.ToString("X8") +
                 " dest-word=0x" + romWord.ToString("X8") +
-                " via=o32-rom was=0x" + (kseg & ~0xFFFu).ToString("X8") +
-                " (dest-word=0 .text; TOC[7] o32; do not invent dest)");
+                " via=" + via +
+                " was=0x" + (kseg & ~0xFFFu).ToString("X8") +
+                why);
         }
 
         private static void TryNoteDdiNopGwesImageTlbl(MipsBus bus, uint[] regs,
@@ -10239,6 +10463,34 @@ namespace ProcessorEmulator.Core
                 uint word = 0;
                 uint rom = 0;
                 uint romWord = 0;
+                string via = null;
+                if (TryGwesHeaderDest(bus, va, out rom, out romWord, out via))
+                {
+                    _gwesImageKseg[slot] = rom;
+                    if (!_gwesImageDone[slot])
+                    {
+                        _gwesImageDone[slot] = true;
+                        BootLog.Write("[Hive] ExtraROM ddi_nop gwes-page map va=0x" +
+                            page.ToString("X8") +
+                            " -> 0x" + rom.ToString("X8") +
+                            " dest-word=0x" + romWord.ToString("X8") +
+                            " via=" + via +
+                            " (ImageBase headers; TOC[7] gwes; do not invent dest)");
+                    }
+                    return;
+                }
+                if (IsGwesImageBasePage(va))
+                {
+                    if (!_gwesImageDone[slot])
+                    {
+                        _gwesImageDone[slot] = true;
+                        BootLog.Write("[Hive] ExtraROM ddi_nop gwes-page map va=0x" +
+                            page.ToString("X8") +
+                            " pte-miss sec=0x" + sec.ToString("X8") +
+                            " (ImageBase headers; TOC gwes miss; do not invent dest)");
+                    }
+                    return;
+                }
                 if (sec != 0
                     && WalkFirmwarePte(bus, sec, va, out l1, out l2, out pfn, out kseg)
                     && (kseg & 0x1FFFFFFFu) >= 0x00010000u)
@@ -15491,7 +15743,21 @@ namespace ProcessorEmulator.Core
                     {
                         uint rom = 0;
                         uint romWord = 0;
-                        if (TryGwesRomTextDest(bus, va, word, out rom, out romWord))
+                        string via = null;
+                        if (IsGwesImageBasePage(va))
+                        {
+                            if (TryGwesHeaderDest(bus, va, out rom, out romWord, out via))
+                            {
+                                RememberGwesImageKseg(va, rom);
+                                BootLog.Write("[Hive] ExtraROM ddi_nop gwes-page PTE 0x" +
+                                    va.ToString("X8") + " -> 0x" + rom.ToString("X8") +
+                                    " dest-word=0x" + romWord.ToString("X8") +
+                                    " via=" + via +
+                                    " was=0x" + dest.ToString("X8") +
+                                    " (ImageBase headers; TOC[7] gwes; do not invent dest)");
+                            }
+                        }
+                        else if (TryGwesRomTextDest(bus, va, word, out rom, out romWord))
                         {
                             RememberGwesImageKseg(va, rom);
                             BootLog.Write("[Hive] ExtraROM ddi_nop gwes-page PTE 0x" +
