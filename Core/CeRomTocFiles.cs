@@ -8723,6 +8723,7 @@ namespace ProcessorEmulator.Core
             _ddiNopIatReal = real;
             _ddiNopIatValloc = dest;
             _ddiNopIatSpan = span;
+            _ddiNopIatPsize = psize;
             return true;
         }
 
@@ -10211,7 +10212,8 @@ namespace ProcessorEmulator.Core
                     && WalkFirmwarePte(bus, sec, use, out l1, out l2, out pfn, out kseg)
                     && (kseg & 0x1FFFFFFFu) >= 0x00010000u)
                 {
-                    RememberDdiDataMap(bus, slot, page, kseg, l2, use, false);
+                    RememberDdiDataMap(bus, slot, page, kseg, l2, use,
+                        "firmware PTE; VALLOC .data");
                     return;
                 }
                 uint dest6 = 0;
@@ -10224,17 +10226,41 @@ namespace ProcessorEmulator.Core
                     uint word = 0;
                     if (TryPeekWord(bus, dest6, out word))
                     {
-                        RememberDdiDataMap(bus, slot, page, dest6, l2, use, true);
+                        RememberDdiDataMap(bus, slot, page, dest6, l2, use,
+                            "firmware dest6; VALLOC .data");
                         return;
                     }
+                }
+                // Live 778120c: 0x0199B000 pte-miss dest6=0
+                // while neighbors mapped. VALLOC commit ended
+                // before this page. Offset 0x2050 < psize
+                // 0x297A: file-backed. Alias to dest6-adj /
+                // o32.real if those dests already peek. Do
+                // not invent dest bytes.
+                uint alias = 0;
+                uint aliasL2 = 0;
+                string why;
+                if (TryAliasDdiDataFilePage(bus, page, use, out alias,
+                    out aliasL2, out why))
+                {
+                    RememberDdiDataMap(bus, slot, page, alias, aliasL2, use, why);
+                    return;
                 }
                 if (!_ddiDataDone[slot])
                 {
                     _ddiDataDone[slot] = true;
+                    uint off = 0;
+                    uint dataDest = _ddiNopIatValloc != 0
+                        ? _ddiNopIatValloc : (DdiNopVbasePage + DdiNopIatRva);
+                    if (page >= dataDest)
+                        off = page - dataDest;
                     BootLog.Write("[Hive] ExtraROM ddi_nop ddi-data map va=0x" +
                         page.ToString("X8") +
                         " pte-miss sec=0x" + sec.ToString("X8") +
                         " dest6=0x" + dest6.ToString("X8") +
+                        " off=0x" + off.ToString("X") +
+                        " psize=0x" + _ddiNopIatPsize.ToString("X") +
+                        " real=0x" + _ddiNopIatReal.ToString("X8") +
                         " (VALLOC .data TLBL; do not invent dest)");
                 }
             }
@@ -10245,7 +10271,7 @@ namespace ProcessorEmulator.Core
         }
 
         private static void RememberDdiDataMap(MipsBus bus, int slot, uint page,
-            uint dest, uint l2, uint va, bool dest6Walk)
+            uint dest, uint l2, uint va, string why)
         {
             _ddiDataKseg[slot] = dest & ~0xFFFu;
             if (_ddiDataDone[slot])
@@ -10253,14 +10279,94 @@ namespace ProcessorEmulator.Core
             _ddiDataDone[slot] = true;
             uint word = 0;
             TryPeekWord(bus, (dest & ~0xFFFu) | (va & 0xFFFu), out word);
+            if (why == null)
+                why = "firmware PTE; VALLOC .data";
             BootLog.Write("[Hive] ExtraROM ddi_nop ddi-data map va=0x" +
                 page.ToString("X8") +
                 " -> 0x" + _ddiDataKseg[slot].ToString("X8") +
                 " l2=0x" + l2.ToString("X8") +
                 " dest-word=0x" + word.ToString("X8") +
-                (dest6Walk
-                    ? " (firmware dest6; VALLOC .data; do not invent dest)"
-                    : " (firmware PTE; VALLOC .data; do not invent dest)"));
+                " (" + why + "; do not invent dest)");
+        }
+
+        // Live 778120c: 0x0199B000 has no slot-0 PTE (VALLOC
+        // ended at 0x0199B000). File-backed: dest+psize =
+        // 0x0199B97A. Map from dest6-adjacent or o32.real
+        // only when that dest already peeks.
+        private static bool TryAliasDdiDataFilePage(MipsBus bus, uint page,
+            uint use, out uint dest, out uint l2, out string why)
+        {
+            dest = 0;
+            l2 = 0;
+            why = null;
+            int sec;
+            uint vsize;
+            uint rva;
+            uint psize;
+            uint dataptr;
+            uint real;
+            uint flags;
+            uint[] blob;
+            TryFindDdiNopDataO32(out sec, out vsize, out rva, out psize,
+                out dataptr, out real, out flags, out blob);
+            if (psize == 0)
+                psize = _ddiNopIatPsize;
+            if (vsize == 0)
+                vsize = _ddiNopIatSpan;
+            if (real == 0)
+                real = _ddiNopIatReal;
+            uint dataDest = _ddiNopIatValloc != 0
+                ? _ddiNopIatValloc : (DdiNopVbasePage + DdiNopIatRva);
+            if (page < dataDest)
+                return false;
+            uint off = page - dataDest;
+            bool fileBacked = psize == 0 || off < psize;
+            uint dest6 = _ddiNopIatDest6;
+            uint dest10 = 0;
+            if (dest6 == 0)
+                WalkDdiNopPteDests(bus, dataDest, out l2, out dest6, out dest10);
+            if (dest6 != 0 && !IsDdiNopDest10Page(dest6)
+                && (dest6 & 0x1FFFFFFFu) >= 0x00010000u)
+            {
+                uint cand = (dest6 & ~0xFFFu) + off;
+                uint word = 0;
+                if (TryPeekWord(bus, cand | (use & 0xFFFu), out word))
+                {
+                    dest = cand;
+                    why = "dest6-adj; file-backed o32[.data]";
+                    return true;
+                }
+            }
+            if (page >= 0x1000u)
+            {
+                uint prevK = LookupDdiDataKseg(page - 0x1000u);
+                if (prevK != 0)
+                {
+                    uint cand = prevK + 0x1000u;
+                    uint word = 0;
+                    if (TryPeekWord(bus, cand | (use & 0xFFFu), out word))
+                    {
+                        dest = cand;
+                        why = "neighbor-dest; file-backed o32[.data]";
+                        return true;
+                    }
+                }
+            }
+            if (fileBacked && real != 0)
+            {
+                uint realVa = (real & ~0xFFFu) + off;
+                uint mapped = realVa;
+                if (realVa >= 0x01F57000u && realVa < 0x01F67000u)
+                    mapped = ExtraRomDestKseg1 + (realVa - 0x01F57000u);
+                uint word = 0;
+                if (TryPeekWord(bus, mapped | (use & 0xFFFu), out word))
+                {
+                    dest = mapped;
+                    why = "o32.real; file-backed o32[.data]";
+                    return true;
+                }
+            }
+            return false;
         }
 
         // During BindImp, dump-real IAT (o32.real) is the
@@ -10594,6 +10700,7 @@ namespace ProcessorEmulator.Core
                 _ddiNopIatReal = real;
                 _ddiNopIatValloc = dest;
                 _ddiNopIatSpan = vsize;
+                _ddiNopIatPsize = psize;
             }
             BootLog.Write("[Hive] ExtraROM o32[.data] s=" + sec +
                 " rva=0x" + rva.ToString("X") +
@@ -10634,6 +10741,7 @@ namespace ProcessorEmulator.Core
             _ddiNopIatReal = 0;
             _ddiNopIatValloc = 0;
             _ddiNopIatSpan = 0;
+            _ddiNopIatPsize = 0;
             _bindImpIatSlotLog = 0;
             _ddiNopOrdLog = 0;
             _ddiNopOrdLastA1 = 0;
@@ -16460,6 +16568,7 @@ namespace ProcessorEmulator.Core
         private static uint _ddiNopIatReal;
         private static uint _ddiNopIatValloc;
         private static uint _ddiNopIatSpan;
+        private static uint _ddiNopIatPsize;
         private static int _bindImpIatSlotLog;
         private static int _ddiNopOrdLog;
         private static uint _ddiNopOrdLastA1;
