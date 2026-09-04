@@ -639,12 +639,16 @@ namespace ProcessorEmulator.Core
         // Live 1bba9df: filesys-slot4 mapped. Next
         // data-TLBL epc=0x0001E4DC badvaddr=0x09F574F8.
         // Slot 4 view of IB page 0x03F57000→0x8007B000.
-        // Relative [0x01F50000, 0x01FE0000). Slot 0 is
+        // Relative [0x01F50000, 0x01FF0000). Slot 0 is
         // IAT real 0x01F57000 — exclude. Do not rewrite
-        // ImageBase. Do not lift 0x03FA0000 cap.
+        // ImageBase. Do not lift MapCoredllSharedVa
+        // 0x03FA0000 cap. Live bb6cdc7: BindImp-exn
+        // cause=2 epc=0x800467E4 badvaddr=0x03FE135C
+        // (page 0x03FE1000, rel 0x01FE1000) sat one
+        // page past the old 0x01FE0000 hi.
         public const int CoredllImagePageCap = 32;
         public const uint CoredllImageRelLo = 0x01F50000;
-        public const uint CoredllImageRelHi = 0x01FE0000;
+        public const uint CoredllImageRelHi = 0x01FF0000;
         public const uint BindImpNameWalk = 0x80018580;
         // KDataNest 0xFFFFD885 is cNest at KData+0x85.
         // UserKData 0x5800 addiu sign-extends to this page.
@@ -9293,6 +9297,11 @@ namespace ProcessorEmulator.Core
             // one-shot on that refill.
             if (code == 2 && IsFilesysSlot2ExtraPage(vaddr))
                 return;
+            // Live bb6cdc7: this COREDLL page is now
+            // demand-mapped. Do not consume the
+            // one-shot on that refill.
+            if (code == 2 && IsDdiNopCoredllImageVa(vaddr))
+                return;
             // Live 98db5d5 / 73486bc: page-0 TLBS/TLBL
             // consumed the one-shot and hid later
             // real misses. Observe the named sites.
@@ -9571,6 +9580,8 @@ namespace ProcessorEmulator.Core
             if (IsGwesDataB9Page(_bindImpExnVaddr))
                 return;
             if (IsFilesysSlot2ExtraPage(_bindImpExnVaddr))
+                return;
+            if (IsDdiNopCoredllImageVa(_bindImpExnVaddr))
                 return;
             if (IsNearNullVa(_bindImpExnVaddr))
                 return;
@@ -10941,7 +10952,7 @@ namespace ProcessorEmulator.Core
         }
 
         // Slot-relative COREDLL ImageBase pages.
-        // Rel in [0x01F50000, 0x01FE0000). Slot 1 is
+        // Rel in [0x01F50000, 0x01FF0000). Slot 1 is
         // 0x03F5xxxx (keep ImageBase). Slot 4 is
         // 0x09F5xxxx (live 1bba9df). Slot 0 is IAT
         // real 0x01F57000 — exclude. Not a blanket
