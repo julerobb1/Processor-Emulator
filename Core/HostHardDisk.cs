@@ -514,10 +514,15 @@ namespace ProcessorEmulator.Core
                 LogCprocThreadCtx(registers, bus);
                 return false;
             }
-            if (pc == CeRomTocFiles.ThreadCtxRestore
+            if (pc == CeRomTocFiles.C2SpFirstPc
+                || pc == CeRomTocFiles.ThreadCtxRestore
                 || pc == CeRomTocFiles.ThreadCtxRestore2)
             {
-                CeRomTocFiles.TryNoteTv2ThreadRestore(bus, registers, pc);
+                if (pc == CeRomTocFiles.ThreadCtxRestore
+                    || pc == CeRomTocFiles.ThreadCtxRestore2)
+                    CeRomTocFiles.TryNoteTv2ThreadRestore(bus, registers, pc);
+                if (CeRomTocFiles.TryRefuseC2SpResume(registers, ref programCounter))
+                    return true;
                 if (pc == CeRomTocFiles.ThreadCtxRestore2
                     && CeRomTocFiles.TryForceTv2EretSlowPath(bus, registers, ref programCounter))
                     return true;

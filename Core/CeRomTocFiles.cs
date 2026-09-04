@@ -936,6 +936,16 @@ namespace ProcessorEmulator.Core
         public const uint C2VaPrefix = 0xC2000000;
         public const uint C2TlbsFunc = 0x80031D34;
         public const uint NkImageEnd = 0x8031B3BC;
+        // Live 155d918: first C2 $sp at 0x80015664.
+        // Dump: 0x80015660 lw $sp,212($s0) (thread
+        // +0xD4). 0x8001563C lw $ra,220($s0) is
+        // 0x80030264. 0x8001566C lw $k0,236($s0)
+        // then ERET. After adel-pc that $sp is
+        // slot97+0x1FE88 (image). Refuse ERET.
+        // Do not map. Do not leftover/ERET2 hop.
+        public const uint C2SpLoadPc = 0x80015660;
+        public const uint C2SpFirstPc = 0x80015664;
+        public const uint C2SlotImageHi = 0x00100000;
         public const int GwesImagePageCap = 32;
         // TOC[7] o32[0] dataptr. Same as HostHardDisk.
         // VA 0x00011000 → 0x80146000. Live d01f68a:
@@ -9694,6 +9704,42 @@ namespace ProcessorEmulator.Core
                 " (NK slot97; not a stack; do not invent dest)");
         }
 
+        private static bool IsC2ImageSp(uint sp)
+        {
+            return IsC2Sp(sp) && (sp & 0x01FFFFFFu) < C2SlotImageHi;
+        }
+
+        // Live 155d918: adel-pc then 0x80015664
+        // $sp=0xC201FE88 from thread+0xD4, then
+        // 0x80031D34 sw ra,60(sp). Refuse ERET
+        // on that C2 image $sp. Spin here. Do
+        // not hop. Do not invent dest.
+        public static bool TryRefuseC2SpResume(uint[] regs, ref uint programCounter)
+        {
+            if (programCounter != C2SpFirstPc
+                && programCounter != ThreadCtxRestore2)
+                return false;
+            if (!_ddiNopAwaitCallDll)
+                return false;
+            if (!_ddiNopDllMainLogged && _ddiNopIatStoreN < BindImpObserveMax)
+                return false;
+            if (!_adelC6FaLogged && !_nearNullTlblLogged && !_c2SpLogged)
+                return false;
+            uint sp = PeekGpr(regs, 29);
+            if (!IsC2ImageSp(sp))
+                return false;
+            if (!_c2EretHaltLogged)
+            {
+                _c2EretHaltLogged = true;
+                BootLog.Write("[Hive] ExtraROM ddi_nop eret-c2-halt pc=0x" +
+                    programCounter.ToString("X8") +
+                    " sp=0x" + sp.ToString("X8") +
+                    " ra=" + GprHex(regs, 31) +
+                    " (refuse ERET after adel-pc; do not invent dest)");
+            }
+            return true;
+        }
+
         // Live 3275fe9: kernel 0x80031D38 TLBS
         // 0xC201FE84. Peek insn / rs / rt / base.
         // a1 is nk ROM evidence, not a hop. One
@@ -12684,6 +12730,7 @@ namespace ProcessorEmulator.Core
             _adelC6FaLogged = false;
             _c2TlbsLogged = false;
             _c2SpLogged = false;
+            _c2EretHaltLogged = false;
             _ddiNopInfoObserved = false;
             _ddiNopInfoDemand = false;
             _ddiNopInfoBusy = false;
@@ -18632,6 +18679,7 @@ namespace ProcessorEmulator.Core
         private static bool _adelC6FaLogged;
         private static bool _c2TlbsLogged;
         private static bool _c2SpLogged;
+        private static bool _c2EretHaltLogged;
         private static bool _ddiNopInfoObserved;
         private static bool _ddiNopInfoDemand;
         private static bool _ddiNopInfoBusy;
