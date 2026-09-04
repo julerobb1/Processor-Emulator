@@ -89,6 +89,12 @@ namespace ProcessorEmulator.Emulation
         {
             for (int i = 0; i < count; i++)
             {
+                // Live b4b6454: poll sat after this continue,
+                // so an interrupt/TLB storm after BindImp
+                // skipped CallDLL-miss forever. Count here
+                // too. Keep the post-BinBlk poll.
+                CeRomTocFiles.TryPollDdiNopCallDllMiss(_bus);
+
                 // Check for and handle pending hardware interrupts before executing an instruction.
                 if (_cp0.ShouldTriggerInterrupt())
                 {

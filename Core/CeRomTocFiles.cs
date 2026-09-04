@@ -2300,7 +2300,17 @@ namespace ProcessorEmulator.Core
                 if (_ddiNopModule == 0)
                     LogDdiNopBindWalkOnce(bus);
                 else if (_ddiNopLandedBySig)
+                {
                     _ddiNopAwaitCallDll = true;
+                    // Live b4b6454: BindImp vbase is VALLOC
+                    // 0x01980000; IAT FT is .data RVA 0x19000.
+                    // Only .text was CEDecompress'd. Observe
+                    // the IAT page and serve the TOC .data
+                    // o32 dest if it was never mapped. Do
+                    // not force CallDLL here.
+                    TryServeDdiNopDataO32(bus);
+                    TryLogDdiNopIatPage(bus);
+                }
                 return false;
             }
             return false;
@@ -7810,6 +7820,9 @@ namespace ProcessorEmulator.Core
         // ExtraROM extract ddi_nop.dll AddressOfEntryPoint.
         // Prefer slot e32[1] (e32_entryrva). Do not invent e32.
         private const uint DdiNopEntryRvaExtract = 0x18014u;
+        // Extract IAT FirstThunk / .data VA. VALLOC IAT is
+        // vbase+this. Do not invent dest10.
+        private const uint DdiNopIatRva = 0x19000u;
 
         private static void ResetDdiNopDecompStores()
         {
@@ -8276,6 +8289,286 @@ namespace ProcessorEmulator.Core
                 " set-valloc=0x" + DdiNopVbasePage.ToString("X8"));
         }
 
+        private static bool IsDdiNopDest10Page(uint dest)
+        {
+            if (dest == 0)
+                return false;
+            return (dest & ~0xFFFu) == (DdiNopDest10Live & ~0xFFFu);
+        }
+
+        // Live b4b6454: BindImp IAT stores at vbase+0x19000.
+        // One observe. Do not invent PTE.
+        private static void TryLogDdiNopIatPage(MipsBus bus)
+        {
+            if (_ddiNopIatLogged)
+                return;
+            _ddiNopIatLogged = true;
+            uint va = DdiNopVbasePage + DdiNopIatRva;
+            uint l2 = 0;
+            uint dest6 = 0;
+            uint dest10 = 0;
+            WalkDdiNopPteDests(bus, va, out l2, out dest6, out dest10);
+            bool threw;
+            uint word = 0;
+            bool mapped = false;
+            if (dest6 != 0 && !IsDdiNopDest10Page(dest6))
+            {
+                word = PeekDestWordRaw(bus, dest6, out threw);
+                mapped = !threw;
+            }
+            if (!mapped)
+            {
+                word = PeekDestWordRaw(bus, va, out threw);
+                mapped = !threw;
+            }
+            bool writable = false;
+            if (mapped)
+            {
+                uint poke = dest6 != 0 && !IsDdiNopDest10Page(dest6) ? dest6 : va;
+                try
+                {
+                    bool raw = dest6 != 0 && !IsDdiNopDest10Page(dest6);
+                    if (raw)
+                        _ddiNopDestPeekRaw = true;
+                    try
+                    {
+                        bus.Write32(poke, word);
+                        writable = true;
+                    }
+                    finally
+                    {
+                        if (raw)
+                            _ddiNopDestPeekRaw = false;
+                    }
+                }
+                catch
+                {
+                }
+            }
+            BootLog.Write("[Hive] ExtraROM ddi_nop IAT va=0x" +
+                va.ToString("X8") +
+                " dest6=0x" + dest6.ToString("X8") +
+                " l2=0x" + l2.ToString("X8") +
+                " word=0x" + word.ToString("X8") +
+                (mapped ? " mapped" : " unmapped") +
+                (writable ? " writable" : " not-writable"));
+        }
+
+        private static bool TryFindDdiNopDataO32(out int sec, out uint vsize,
+            out uint rva, out uint psize, out uint dataptr, out uint real,
+            out uint flags, out uint[] blob)
+        {
+            sec = -1;
+            vsize = 0;
+            rva = 0;
+            psize = 0;
+            dataptr = 0;
+            real = 0;
+            flags = 0;
+            blob = null;
+            uint[] words = _ddiNopO32Words;
+            uint[][] data = _ddiNopData;
+            if (words == null || words.Length < 6)
+            {
+                ExtraRomTocMod slot = FindCachedExtraRomToc("ddi_nop.dll");
+                if (slot != null)
+                {
+                    words = slot.O32Words;
+                    data = slot.Data;
+                }
+            }
+            if (words == null || words.Length < 6)
+                return false;
+            int nsec = words.Length / 6;
+            uint iatVa = DdiNopVbasePage + DdiNopIatRva;
+            uint iatDump = DdiNopVbase + DdiNopIatRva;
+            for (int s = 0; s < nsec; s++)
+            {
+                uint vs = words[s * 6];
+                uint rv = words[s * 6 + 1];
+                uint rl = words.Length > s * 6 + 4 ? words[s * 6 + 4] : 0;
+                uint span = vs == 0 ? 0 : vs;
+                bool covers = span != 0
+                    && rv <= DdiNopIatRva
+                    && DdiNopIatRva < rv + span;
+                if (!covers && rl != 0)
+                {
+                    uint slotReal = rl & SlotMask;
+                    covers = (rl & ~0xFFFu) == (iatDump & ~0xFFFu)
+                        || (slotReal & ~0xFFFu) == (iatVa & ~0xFFFu);
+                }
+                if (!covers)
+                    continue;
+                sec = s;
+                vsize = vs;
+                rva = rv != 0 ? rv : DdiNopIatRva;
+                psize = words[s * 6 + 2];
+                dataptr = words[s * 6 + 3];
+                real = rl;
+                flags = words.Length > s * 6 + 5 ? words[s * 6 + 5] : 0;
+                if (data != null && s < data.Length)
+                    blob = data[s];
+                return true;
+            }
+            return false;
+        }
+
+        private static bool DdiNopO32LooksCompressed(uint vsize, uint psize,
+            uint flags, uint[] blob)
+        {
+            if (psize == 0)
+                return false;
+            if ((flags & O32Compressed) != 0)
+                return true;
+            if (psize < vsize)
+                return true;
+            if (blob == null || blob.Length == 0)
+                return false;
+            uint first = blob[0];
+            uint declared = first & 0x00FFFFFFu;
+            uint sig = first >> 24;
+            return declared == vsize
+                || sig == 0xB5 || sig == 0xB4
+                || sig == 0x11 || sig == 0x0C;
+        }
+
+        private static bool TryWriteDdiNopVallocWord(MipsBus bus, uint va, uint word)
+        {
+            if (bus == null || va == 0 || IsDdiNopDest10Page(va))
+                return false;
+            uint l2;
+            uint dest6;
+            uint dest10;
+            WalkDdiNopPteDests(bus, va, out l2, out dest6, out dest10);
+            if (IsDdiNopDest10Page(dest6))
+                return false;
+            try
+            {
+                if (dest6 != 0)
+                {
+                    _ddiNopDestPeekRaw = true;
+                    try
+                    {
+                        bus.Write32(dest6, word);
+                    }
+                    finally
+                    {
+                        _ddiNopDestPeekRaw = false;
+                    }
+                    return true;
+                }
+                bus.Write32(va, word);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        // Live b4b6454: .text CEDecompress only. IAT lives in
+        // .data RVA 0x19000. Serve that o32's VALLOC dest the
+        // same way (.text CopyO32 / dest6). Do not invent
+        // dest10 or a new image. Honest skip-no-o32.
+        private static void TryServeDdiNopDataO32(MipsBus bus)
+        {
+            if (_ddiNopDataO32Logged)
+                return;
+            _ddiNopDataO32Logged = true;
+            int sec;
+            uint vsize;
+            uint rva;
+            uint psize;
+            uint dataptr;
+            uint real;
+            uint flags;
+            uint[] blob;
+            if (!TryFindDdiNopDataO32(out sec, out vsize, out rva, out psize,
+                out dataptr, out real, out flags, out blob))
+            {
+                BootLog.Write("[Hive] ExtraROM o32[.data] skip-no-o32" +
+                    " rva=0x" + DdiNopIatRva.ToString("X") +
+                    " (TOC has no .data o32; do not invent)");
+                return;
+            }
+            uint dest = DdiNopVbasePage + rva;
+            if (IsDdiNopDest10Page(dest))
+            {
+                BootLog.Write("[Hive] ExtraROM o32[.data] s=" + sec +
+                    " rva=0x" + rva.ToString("X") +
+                    " dest=0x" + dest.ToString("X8") +
+                    " skip-dest10");
+                return;
+            }
+            uint l2;
+            uint dest6;
+            uint dest10;
+            WalkDdiNopPteDests(bus, dest, out l2, out dest6, out dest10);
+            if (IsDdiNopDest10Page(dest6))
+                dest6 = 0;
+            bool compressed = DdiNopO32LooksCompressed(vsize, psize, flags, blob);
+            string why;
+            uint filled = 0;
+            if (dest6 == 0)
+                TryHostBackValloc(dest, dest, 0x1000u, 0x1000u, false);
+            if (psize > 0 && !compressed)
+            {
+                uint n = psize;
+                if (n > 0x20000u)
+                    n = 0x20000u;
+                uint[] src = blob;
+                for (uint i = 0; i < n; i += 4)
+                {
+                    uint word = 0;
+                    uint w = i / 4;
+                    if (src != null && w < (uint)src.Length)
+                        word = src[w];
+                    if (TryWriteDdiNopVallocWord(bus, dest + i, word))
+                        filled += 4;
+                }
+                why = dest6 != 0 ? "set-copyo32" : "set-copyo32-host";
+                if (filled == 0)
+                    why = dest6 == 0 ? "skip-unmapped" : "skip-write";
+            }
+            else if (psize == 0)
+            {
+                // BSS CopyO32: zero the IAT page only.
+                for (uint i = 0; i < 0x1000u; i += 4)
+                {
+                    if (TryWriteDdiNopVallocWord(bus, dest + i, 0))
+                        filled += 4;
+                }
+                why = dest6 != 0 ? "set-bss-zero" : "set-bss-host";
+                if (filled == 0)
+                    why = dest6 == 0 ? "skip-unmapped" : "skip-write";
+            }
+            else if (dest6 != 0)
+            {
+                // Compressed TOC blob. Do not host-CEDecompress
+                // ExtraROM (no host LZX; do not invent dest
+                // bytes). dest6 is the firmware dest; BindImp
+                // can store IAT. Dest10 never.
+                why = "set-dest6";
+            }
+            else if (TryWriteDdiNopVallocWord(bus, dest, 0))
+            {
+                filled = 4;
+                why = "set-valloc-commit";
+            }
+            else
+                why = "skip-unmapped";
+            BootLog.Write("[Hive] ExtraROM o32[.data] s=" + sec +
+                " rva=0x" + rva.ToString("X") +
+                " vsz=0x" + vsize.ToString("X") +
+                " psize=0x" + psize.ToString("X") +
+                " dest=0x" + dest.ToString("X8") +
+                " dest6=0x" + dest6.ToString("X8") +
+                " " + why +
+                " n=0x" + filled.ToString("X") +
+                (dataptr != 0 ? " dp=0x" + dataptr.ToString("X8") : "") +
+                (real != 0 ? " real=0x" + real.ToString("X8") : ""));
+        }
+
         private const uint ModuleLpSelf = 0;
         private const uint ModulePmodNext = 4;
         private const int DdiNopWalkCap = 32;
@@ -8290,6 +8583,8 @@ namespace ProcessorEmulator.Core
             _ddiNopSawCallDllPc = false;
             _ddiNopCallDllMissLogged = false;
             _ddiNopCallDllMissPoll = 0;
+            _ddiNopIatLogged = false;
+            _ddiNopDataO32Logged = false;
             _ddiNopWalkSeedN = 0;
             _ddiNopNoModDiag = false;
             _ddiNopWalkDiag = false;
@@ -13660,6 +13955,8 @@ namespace ProcessorEmulator.Core
         private static bool _ddiNopSawCallDllPc;
         private static bool _ddiNopCallDllMissLogged;
         private static int _ddiNopCallDllMissPoll;
+        private static bool _ddiNopIatLogged;
+        private static bool _ddiNopDataO32Logged;
         private static uint[] _ddiNopWalkSeeds;
         private static int _ddiNopWalkSeedN;
         private static bool _ddiNopNoModDiag;
