@@ -104,6 +104,8 @@ namespace ProcessorEmulator.Emulation
                     continue;
                 }
 
+                CeRomTocFiles.TryPollDdiNopCallDllMiss(_bus);
+
                 _currentPc = programCounter;
                 try
                 {

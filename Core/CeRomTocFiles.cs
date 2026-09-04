@@ -2229,6 +2229,11 @@ namespace ProcessorEmulator.Core
                     " nameRVA=0x" + nameRva.ToString("X") +
                     (dll.Length > 0 ? " \"" + dll + "\"" : " (name unread)") +
                     " (do not invent 0x81360000)");
+                BootLog.Write("[Hive] ExtraROM BindImp vbase=0x" +
+                    vbase.ToString("X8") +
+                    " hdr=0x" + hdr.ToString("X8") +
+                    " e32=0x" + e32.ToString("X8") +
+                    (dll.Length > 0 ? " \"" + dll + "\"" : " (name unread)"));
                 NoteDdiNopWalkSeeds(regs);
                 if (_ddiNopLandedBySig)
                     TrySetDdiNopRamStartip(bus, 0, regs);
@@ -8232,6 +8237,7 @@ namespace ProcessorEmulator.Core
                         why = "keep";
                     else
                         why = "skip-have";
+                    TrySetDdiNopVallocBasePtr(bus, module);
                 }
             }
             catch
@@ -8248,6 +8254,28 @@ namespace ProcessorEmulator.Core
                 " entry-word=0x" + entryWord.ToString("X8"));
         }
 
+        // Live e8489d0: module+0x50 stayed dump XIP
+        // 0x03980000 while serve/startip used VALLOC
+        // 0x01980000. BindImp then walked dump IAT.
+        // Only this field, only ddi_nop, only dump XIP.
+        private static void TrySetDdiNopVallocBasePtr(MipsBus bus, uint module)
+        {
+            if (!_ddiNopLandedBySig || bus == null || module == 0)
+                return;
+            if (!IsDdiNopModule(bus, module))
+                return;
+            uint p50;
+            if (!TryPeekWord(bus, module + ProcModule, out p50))
+                return;
+            if (p50 != DdiNopVbase)
+                return;
+            bus.Write32(module + ProcModule, DdiNopVbasePage);
+            BootLog.Write("[Hive] ExtraROM ddi_nop baseptr module=0x" +
+                module.ToString("X8") +
+                " was=0x" + p50.ToString("X8") +
+                " set-valloc=0x" + DdiNopVbasePage.ToString("X8"));
+        }
+
         private const uint ModuleLpSelf = 0;
         private const uint ModulePmodNext = 4;
         private const int DdiNopWalkCap = 32;
@@ -8261,6 +8289,7 @@ namespace ProcessorEmulator.Core
             _ddiNopAwaitCallDll = false;
             _ddiNopSawCallDllPc = false;
             _ddiNopCallDllMissLogged = false;
+            _ddiNopCallDllMissPoll = 0;
             _ddiNopWalkSeedN = 0;
             _ddiNopNoModDiag = false;
             _ddiNopWalkDiag = false;
@@ -9028,6 +9057,16 @@ namespace ProcessorEmulator.Core
         // Observe only. After BindImp, startip is set but
         // firmware may never reach 0x8001DD6C. Do not
         // invent a CallDLL site.
+        public static void TryPollDdiNopCallDllMiss(MipsBus bus)
+        {
+            if (!_ddiNopAwaitCallDll || _ddiNopCallDllMissLogged || _ddiNopSawCallDllPc)
+                return;
+            _ddiNopCallDllMissPoll++;
+            if (_ddiNopCallDllMissPoll < 4096)
+                return;
+            TryLogDdiNopCallDllMiss(bus);
+        }
+
         public static void TryLogDdiNopCallDllMiss(MipsBus bus)
         {
             if (_ddiNopCallDllMissLogged || !_ddiNopAwaitCallDll || _ddiNopSawCallDllPc)
@@ -13620,6 +13659,7 @@ namespace ProcessorEmulator.Core
         private static bool _ddiNopAwaitCallDll;
         private static bool _ddiNopSawCallDllPc;
         private static bool _ddiNopCallDllMissLogged;
+        private static int _ddiNopCallDllMissPoll;
         private static uint[] _ddiNopWalkSeeds;
         private static int _ddiNopWalkSeedN;
         private static bool _ddiNopNoModDiag;
