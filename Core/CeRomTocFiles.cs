@@ -842,6 +842,15 @@ namespace ProcessorEmulator.Core
         public const uint GwesImageLo = 0x00011000;
         public const uint GwesImageHi = 0x000CB000;
         public const int GwesImagePageCap = 32;
+        // TOC[7] o32[0] dataptr. Same as HostHardDisk.
+        // VA 0x00011000 → 0x80146000. Live d01f68a:
+        // 0x00059000 → 0x86FA1000 dest-word=0 (RAM).
+        // ROM page = 0x80146000+(0x59000-0x11000)
+        // = 0x8018E000. Dump insn at 0x000593C8 is
+        // 0x15400002, not 0x86F8FCE0. Dest-word=0
+        // .text falls back to this o32 page.
+        public const uint GwesRomText = 0x80146000;
+        public const uint GwesRomTextEnd = 0x801EADE0;
         // Live a633b83: after ddi-data dest6-adj, NK
         // 0x8003D254 data-TLBL 0x040110FC (a1=1,
         // v0=0x86FA7800 next MODULE*). CE 32MB slot 2:
@@ -10016,8 +10025,10 @@ namespace ProcessorEmulator.Core
         // Live 187f5be: fetch-TLBL 0x000B4B80 after text2.
         // Same firmware-PTE demand-map as 0x00011000 /
         // 0x00014000 / 0x0005D000 / 0x000B6000 / 0x000B7000
-        // / 0x000BA000. Any remaining gwes image page after
-        // DllMain. Named pages keep their Hive tags.
+        // / 0x000BA000. Live d01f68a: 0x00059000 PTE
+        // dest 0x86FA1000 dest-word=0 hid ROM 0x8018E000.
+        // Dest-word=0 .text uses o32 dataptr. Named
+        // pages keep their Hive tags.
         public static uint MapDdiNopGwesImageVa(MipsBus bus, uint va)
         {
             if (_gwesImageBusy)
@@ -10028,7 +10039,12 @@ namespace ProcessorEmulator.Core
                 return va;
             uint kseg = LookupGwesImageKseg(va);
             if (kseg != 0)
-                return kseg | (va & 0xFFFu);
+            {
+                TryReplaceGwesDest0WithRom(bus, va, kseg);
+                kseg = LookupGwesImageKseg(va);
+                if (kseg != 0)
+                    return kseg | (va & 0xFFFu);
+            }
             TryResolveDdiNopGwesImage(bus, va);
             kseg = LookupGwesImageKseg(va);
             if (kseg != 0)
@@ -10119,6 +10135,63 @@ namespace ProcessorEmulator.Core
             }
         }
 
+        // TOC[7] o32[0] dataptr + (page - 0x00011000).
+        // Only .text through GwesRomTextEnd. Not data.
+        private static uint GwesRomTextPage(uint va)
+        {
+            uint page = va & ~0xFFFu;
+            if (page < GwesImageLo)
+                return 0;
+            uint rom = GwesRomText + (page - GwesImageLo);
+            if (rom < GwesRomText || rom >= GwesRomTextEnd)
+                return 0;
+            return rom;
+        }
+
+        // Live d01f68a: dest-word=0 at 0x86FA1000.
+        // Prefer o32 ROM when that dest peeks.
+        private static bool TryGwesRomTextDest(MipsBus bus, uint va,
+            uint destWord, out uint rom, out uint romWord)
+        {
+            rom = 0;
+            romWord = 0;
+            if (destWord != 0)
+                return false;
+            rom = GwesRomTextPage(va);
+            if (rom == 0 || bus == null)
+                return false;
+            uint off = va & 0xFFFu;
+            if (TryPeekWord(bus, rom | off, out romWord)
+                || TryPeekWord(bus, rom, out romWord))
+                return true;
+            rom = 0;
+            return false;
+        }
+
+        private static void TryReplaceGwesDest0WithRom(MipsBus bus, uint va,
+            uint kseg)
+        {
+            uint word = 0;
+            TryPeekWord(bus, (kseg & ~0xFFFu) | (va & 0xFFFu), out word);
+            uint rom = 0;
+            uint romWord = 0;
+            if (!TryGwesRomTextDest(bus, va, word, out rom, out romWord))
+                return;
+            if ((kseg & ~0xFFFu) == rom)
+                return;
+            int i = FindGwesImageSlot(va & ~0xFFFu);
+            if (i < 0)
+                return;
+            _gwesImageKseg[i] = rom;
+            _gwesImageDone[i] = true;
+            BootLog.Write("[Hive] ExtraROM ddi_nop gwes-page map va=0x" +
+                (va & ~0xFFFu).ToString("X8") +
+                " -> 0x" + rom.ToString("X8") +
+                " dest-word=0x" + romWord.ToString("X8") +
+                " via=o32-rom was=0x" + (kseg & ~0xFFFu).ToString("X8") +
+                " (dest-word=0 .text; TOC[7] o32; do not invent dest)");
+        }
+
         private static void TryNoteDdiNopGwesImageTlbl(MipsBus bus, uint[] regs,
             uint epc, uint vaddr, uint vector)
         {
@@ -10163,22 +10236,54 @@ namespace ProcessorEmulator.Core
                 slot = ClaimGwesImageSlot(page);
                 if (slot < 0)
                     return;
+                uint word = 0;
+                uint rom = 0;
+                uint romWord = 0;
                 if (sec != 0
                     && WalkFirmwarePte(bus, sec, va, out l1, out l2, out pfn, out kseg)
                     && (kseg & 0x1FFFFFFFu) >= 0x00010000u)
                 {
+                    TryPeekWord(bus, (kseg & ~0xFFFu) | (va & 0xFFFu), out word);
+                    if (TryGwesRomTextDest(bus, va, word, out rom, out romWord))
+                    {
+                        _gwesImageKseg[slot] = rom;
+                        if (!_gwesImageDone[slot])
+                        {
+                            _gwesImageDone[slot] = true;
+                            BootLog.Write("[Hive] ExtraROM ddi_nop gwes-page map va=0x" +
+                                page.ToString("X8") +
+                                " -> 0x" + rom.ToString("X8") +
+                                " l2=0x" + l2.ToString("X8") +
+                                " dest-word=0x" + romWord.ToString("X8") +
+                                " via=o32-rom was=0x" + (kseg & ~0xFFFu).ToString("X8") +
+                                " (dest-word=0 .text; TOC[7] o32; do not invent dest)");
+                        }
+                        return;
+                    }
                     _gwesImageKseg[slot] = kseg & ~0xFFFu;
                     if (!_gwesImageDone[slot])
                     {
                         _gwesImageDone[slot] = true;
-                        uint word = 0;
-                        TryPeekWord(bus, _gwesImageKseg[slot] | (va & 0xFFFu), out word);
                         BootLog.Write("[Hive] ExtraROM ddi_nop gwes-page map va=0x" +
                             page.ToString("X8") +
                             " -> 0x" + _gwesImageKseg[slot].ToString("X8") +
                             " l2=0x" + l2.ToString("X8") +
                             " dest-word=0x" + word.ToString("X8") +
                             " (firmware PTE; gwes image; do not invent dest)");
+                    }
+                    return;
+                }
+                if (TryGwesRomTextDest(bus, va, 0, out rom, out romWord))
+                {
+                    _gwesImageKseg[slot] = rom;
+                    if (!_gwesImageDone[slot])
+                    {
+                        _gwesImageDone[slot] = true;
+                        BootLog.Write("[Hive] ExtraROM ddi_nop gwes-page map va=0x" +
+                            page.ToString("X8") +
+                            " -> 0x" + rom.ToString("X8") +
+                            " dest-word=0x" + romWord.ToString("X8") +
+                            " via=o32-rom (pte-miss .text; TOC[7] o32; do not invent dest)");
                     }
                     return;
                 }
@@ -15384,11 +15489,25 @@ namespace ProcessorEmulator.Core
                     _pteMapLogged = true;
                     if (ddiGwes && !_tv2LeftoverCae8Logged)
                     {
-                        RememberGwesImageKseg(va, dest);
-                        BootLog.Write("[Hive] ExtraROM ddi_nop gwes-page PTE 0x" +
-                            va.ToString("X8") + " -> 0x" + dest.ToString("X8") +
-                            " dest-word=0x" + word.ToString("X8") +
-                            " (firmware 0x80040278; gwes image; do not invent dest)");
+                        uint rom = 0;
+                        uint romWord = 0;
+                        if (TryGwesRomTextDest(bus, va, word, out rom, out romWord))
+                        {
+                            RememberGwesImageKseg(va, rom);
+                            BootLog.Write("[Hive] ExtraROM ddi_nop gwes-page PTE 0x" +
+                                va.ToString("X8") + " -> 0x" + rom.ToString("X8") +
+                                " dest-word=0x" + romWord.ToString("X8") +
+                                " via=o32-rom was=0x" + dest.ToString("X8") +
+                                " (dest-word=0 .text; TOC[7] o32; do not invent dest)");
+                        }
+                        else
+                        {
+                            RememberGwesImageKseg(va, dest);
+                            BootLog.Write("[Hive] ExtraROM ddi_nop gwes-page PTE 0x" +
+                                va.ToString("X8") + " -> 0x" + dest.ToString("X8") +
+                                " dest-word=0x" + word.ToString("X8") +
+                                " (firmware 0x80040278; gwes image; do not invent dest)");
+                        }
                     }
                     else if (ddiText2 && !_tv2LeftoverCae8Logged)
                     {
