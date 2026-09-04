@@ -96,6 +96,7 @@ namespace ProcessorEmulator.Emulation
             vaddr = CeRomTocFiles.MapDdiNopGwesTextBaseVa(this, vaddr);
             vaddr = CeRomTocFiles.MapDdiNopGwesDispData2Va(this, vaddr);
             vaddr = CeRomTocFiles.MapDdiNopGwesDispData3Va(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopGwesText2Va(this, vaddr);
             vaddr = CeRomTocFiles.MapDdiNopDestVa(vaddr);
             vaddr = CeRomTocFiles.MapProcessHeapSlotVa(this, vaddr);
             vaddr = CeRomTocFiles.MapCoredllSharedVa(this, vaddr);
@@ -128,6 +129,7 @@ namespace ProcessorEmulator.Emulation
             vaddr = CeRomTocFiles.MapDdiNopGwesTextBaseVa(this, vaddr);
             vaddr = CeRomTocFiles.MapDdiNopGwesDispData2Va(this, vaddr);
             vaddr = CeRomTocFiles.MapDdiNopGwesDispData3Va(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopGwesText2Va(this, vaddr);
             vaddr = CeRomTocFiles.MapDdiNopDestVa(vaddr);
             vaddr = CeRomTocFiles.MapProcessHeapSlotVa(this, vaddr);
             vaddr = CeRomTocFiles.MapCoredllSharedVa(this, vaddr);
@@ -170,6 +172,7 @@ namespace ProcessorEmulator.Emulation
             vaddr = CeRomTocFiles.MapDdiNopGwesTextBaseVa(this, vaddr);
             vaddr = CeRomTocFiles.MapDdiNopGwesDispData2Va(this, vaddr);
             vaddr = CeRomTocFiles.MapDdiNopGwesDispData3Va(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopGwesText2Va(this, vaddr);
             vaddr = CeRomTocFiles.MapDdiNopDestVa(vaddr);
             vaddr = CeRomTocFiles.MapProcessHeapSlotVa(this, vaddr);
             vaddr = CeRomTocFiles.MapCoredllSharedVa(this, vaddr);
@@ -202,6 +205,7 @@ namespace ProcessorEmulator.Emulation
             vaddr = CeRomTocFiles.MapDdiNopGwesTextBaseVa(this, vaddr);
             vaddr = CeRomTocFiles.MapDdiNopGwesDispData2Va(this, vaddr);
             vaddr = CeRomTocFiles.MapDdiNopGwesDispData3Va(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopGwesText2Va(this, vaddr);
             vaddr = CeRomTocFiles.MapDdiNopDestVa(vaddr);
             vaddr = CeRomTocFiles.MapProcessHeapSlotVa(this, vaddr);
             vaddr = CeRomTocFiles.MapCoredllSharedVa(this, vaddr);
