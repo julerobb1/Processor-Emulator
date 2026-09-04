@@ -287,6 +287,8 @@ namespace ProcessorEmulator.Core
         public const uint BindImpIatKdata = 0x8001910C;
         public const uint BindImpIatSw = 0x80019124;
         public const uint BindImpIatAfter = 0x80019128;
+        // Live 19656e2: lw $v1,0x1C($fp) then sw $v0,0($v1).
+        public const uint BindImpIatSlotLw = 0x800190FC;
         public const uint BindImpFpIatOff = 0x1C;
         public const uint ModuleExpRva = 0x8C;
         public const uint ModuleExpEnd = 0x90;
@@ -2361,6 +2363,7 @@ namespace ProcessorEmulator.Core
                 return;
             if (pc == BindImpOrdBaseLw && regs.Length > 4)
                 TryKeepCoredllImageBasePtr(bus, regs[4]);
+            TryFixBindImpIatSlot(bus, regs, pc);
             TryNoteBindImpAfterGoodV0(bus, pc);
             TryNoteBindImpIatWindow(bus, regs, pc);
             if (pc == BindImpOrdJalRet)
@@ -2383,6 +2386,7 @@ namespace ProcessorEmulator.Core
                         (iat == 0 ? " (no-store-yet)" : " (iat-has)"));
                     _ddiNopOrdRetLog++;
                     TryArmUserKPageAlias(bus);
+                    TryFixBindImpIatSlot(bus, regs, pc);
                     return;
                 }
                 if (_ddiNopOrdRetLog >= 5)
@@ -8590,6 +8594,122 @@ namespace ProcessorEmulator.Core
                 " (KData live; do not invent contents)");
         }
 
+        // Live 19656e2: *(fp+0x1C) / v1 was o32[.data].real
+        // 0x01F57000. sw 0x80019124 wrote the resolve there,
+        // not VALLOC IAT 0x01999000. Same class as ddi_nop
+        // set-valloc. Rewrite dump-real slot to the served
+        // o32 dest. Do not invent dest or IAT fills.
+        private static bool TryGetDdiNopIatBases(out uint real, out uint dest,
+            out uint span)
+        {
+            real = _ddiNopIatReal;
+            dest = _ddiNopIatValloc;
+            span = _ddiNopIatSpan;
+            if (real != 0 && dest != 0 && !IsDdiNopDest10Page(dest))
+                return true;
+            int sec;
+            uint vsize;
+            uint rva;
+            uint psize;
+            uint dataptr;
+            uint flags;
+            uint[] blob;
+            if (!TryFindDdiNopDataO32(out sec, out vsize, out rva, out psize,
+                out dataptr, out real, out flags, out blob))
+            {
+                dest = 0;
+                span = 0;
+                return false;
+            }
+            dest = DdiNopVbasePage + (rva != 0 ? rva : DdiNopIatRva);
+            span = vsize;
+            if (real == 0 || dest == 0 || IsDdiNopDest10Page(dest))
+                return false;
+            _ddiNopIatReal = real;
+            _ddiNopIatValloc = dest;
+            _ddiNopIatSpan = span;
+            return true;
+        }
+
+        private static bool TryMapDumpIatSlot(uint ptr, uint real, uint dest,
+            uint span, out uint want)
+        {
+            want = 0;
+            if (ptr == 0 || real == 0 || dest == 0)
+                return false;
+            if (IsDdiNopDest10Page(ptr) || IsDdiNopDest10Page(dest))
+                return false;
+            uint off;
+            if (span == 0)
+            {
+                if (ptr != real)
+                    return false;
+                off = 0;
+            }
+            else
+            {
+                if (ptr < real || ptr >= real + span)
+                    return false;
+                off = ptr - real;
+                if ((off & 3u) != 0)
+                    return false;
+            }
+            want = dest + off;
+            return want != 0 && want != ptr;
+        }
+
+        private static void TryFixBindImpIatSlot(MipsBus bus, uint[] regs, uint pc)
+        {
+            if (!_ddiNopAwaitCallDll || !_ddiNopLandedBySig || !_ddiNopIatWatch)
+                return;
+            if (bus == null || regs == null || regs.Length <= 3)
+                return;
+            if (pc != BindImpOrdJalRet && pc != BindImpIatSlotLw
+                && (pc < BindImpIatKdata || pc > BindImpIatAfter))
+                return;
+            uint real;
+            uint dest;
+            uint span;
+            if (!TryGetDdiNopIatBases(out real, out dest, out span))
+                return;
+            uint fp = regs.Length > 30 ? regs[30] : 0;
+            uint fp1c = 0;
+            bool fpOk = fp != 0 && TryPeekWord(bus, fp + BindImpFpIatOff, out fp1c);
+            uint v1 = regs[3];
+            uint want;
+            uint was = 0;
+            if (fpOk && TryMapDumpIatSlot(fp1c, real, dest, span, out want))
+            {
+                was = fp1c;
+                try
+                {
+                    bus.Write32(fp + BindImpFpIatOff, want);
+                }
+                catch
+                {
+                    return;
+                }
+                if (TryMapDumpIatSlot(v1, real, dest, span, out want))
+                    regs[3] = want;
+            }
+            else if (TryMapDumpIatSlot(v1, real, dest, span, out want))
+            {
+                was = v1;
+                regs[3] = want;
+            }
+            else
+                return;
+            uint off = want - dest;
+            if (_bindImpIatSlotLog > 0 && off == 0)
+                return;
+            if (_bindImpIatSlotLog >= 3)
+                return;
+            _bindImpIatSlotLog++;
+            BootLog.Write("[Hive] ExtraROM BindImp-iat slot was=0x" +
+                was.ToString("X8") +
+                " set-valloc=0x" + want.ToString("X8"));
+        }
+
         private static void TryNoteBindImpIatWindow(MipsBus bus, uint[] regs, uint pc)
         {
             if (!_ddiNopAwaitCallDll || regs == null || regs.Length <= 3)
@@ -8959,6 +9079,12 @@ namespace ProcessorEmulator.Core
             }
             else
                 why = "skip-unmapped";
+            if (real != 0 && dest != 0 && !IsDdiNopDest10Page(dest))
+            {
+                _ddiNopIatReal = real;
+                _ddiNopIatValloc = dest;
+                _ddiNopIatSpan = vsize;
+            }
             BootLog.Write("[Hive] ExtraROM o32[.data] s=" + sec +
                 " rva=0x" + rva.ToString("X") +
                 " vsz=0x" + vsize.ToString("X") +
@@ -8994,6 +9120,10 @@ namespace ProcessorEmulator.Core
             _ddiNopIatWatch = false;
             _ddiNopIatStoreLogged = false;
             _ddiNopIatDest6 = 0;
+            _ddiNopIatReal = 0;
+            _ddiNopIatValloc = 0;
+            _ddiNopIatSpan = 0;
+            _bindImpIatSlotLog = 0;
             _ddiNopOrdN = 0;
             _ddiNopOrdLog = 0;
             _ddiNopOrdRetN = 0;
@@ -14466,6 +14596,10 @@ namespace ProcessorEmulator.Core
         private static bool _ddiNopIatWatch;
         private static bool _ddiNopIatStoreLogged;
         private static uint _ddiNopIatDest6;
+        private static uint _ddiNopIatReal;
+        private static uint _ddiNopIatValloc;
+        private static uint _ddiNopIatSpan;
+        private static int _bindImpIatSlotLog;
         private static int _ddiNopOrdN;
         private static int _ddiNopOrdLog;
         private static int _ddiNopOrdRetN;
