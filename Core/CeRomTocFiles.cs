@@ -996,6 +996,21 @@ namespace ProcessorEmulator.Core
         // burn. Latch adel-pc EPC. Refuse ERET
         // while that latch is set. Do not
         // leftover hop. Do not invent dest.
+        // Live aa0b26c: epc-halt fired. This
+        // Boot +D4=0x040DFE60 (not C2). Poison
+        // is live EPC and +DC=0xC6FA7C9A.
+        // Dump leftover: 0x800159A8 jal
+        // 0x800397B0; 0x800159B4 or $ra,$v0;
+        // 0x800159CC or $t4,$ra; 0x80015A08
+        // mtc0 $t4,$14 (wait99). Exception
+        // 0x800152CC sw $ra,220($s0) saves
+        // that $ra to +DC. +EC this Boot is
+        // 0x80015B9C (ExnAfterFetch2; aligned
+        // NK). Replay +EC into COP0 EPC / +DC
+        // / $ra when that is a sane aligned
+        // NK/useg PC. Clear latch only then.
+        // Do not leftover hop. Do not invent
+        // dest.
         public const uint C2SpLoadPc = 0x80015660;
         public const uint C2SpFirstPc = 0x80015664;
         public const uint ThreadCtxEret = 0x8001568C;
@@ -9785,6 +9800,22 @@ namespace ProcessorEmulator.Core
             return (pc & 3) == 0 && pc >= 0x80010000u && pc < NkImageEnd;
         }
 
+        // Live aa0b26c: +EC=0x80015B9C is aligned NK
+        // (ExnAfterFetch2). leftover dest / adel-pc
+        // / near-null are not a resume. Do not
+        // invent dest.
+        private static bool IsSaneAdelResumePc(uint pc)
+        {
+            if ((pc & 3) != 0 || IsAdelPoisonEpc(pc) || IsPoisonPlant(pc)
+                || IsNearNullVa(pc) || IsLeftoverDestVa(pc))
+                return false;
+            if (IsSaneNkResumePc(pc))
+                return true;
+            if (IsC2ImageSp(pc))
+                return false;
+            return pc >= 0x00010000u && pc < 0x80000000u;
+        }
+
         private static bool IsSaneReplaySp(uint sp)
         {
             if (sp == 0 || (sp & 3) != 0)
@@ -9817,6 +9848,13 @@ namespace ProcessorEmulator.Core
         // ERET while the adel-pc latch is set,
         // even when live EPC is not C6FA. Observe
         // latch/live/+EC/pc. Do not leftover hop.
+        // Live aa0b26c: +D4 is slot-2 (not C2);
+        // leftover mtc0 / 0x800152CC left
+        // EPC and +DC as adel-pc. 0x8001563C
+        // already lw $ra,220($s0). Replay +EC
+        // into EPC / +DC / $ra when +EC is a
+        // sane aligned NK/useg PC, then clear
+        // the latch. Do not invent dest.
         public static bool TryRefuseC2SpResume(MipsBus bus, uint[] regs,
             ref uint programCounter)
         {
@@ -9915,6 +9953,41 @@ namespace ProcessorEmulator.Core
                 uint live = 0;
                 if (bus != null)
                     live = bus.PeekEpc();
+                if (IsSaneAdelResumePc(ec))
+                {
+                    bool cleared = true;
+                    if (bus != null)
+                        bus.PokeEpc(ec);
+                    if (thr != 0 && bus != null && IsAdelPoisonEpc(dc))
+                    {
+                        try
+                        {
+                            bus.Write32(thr + ThreadCtxRa, ec);
+                        }
+                        catch
+                        {
+                            cleared = false;
+                        }
+                    }
+                    if (cleared && regs != null && regs.Length > 31
+                        && IsAdelPoisonEpc(regs[31]))
+                        regs[31] = ec;
+                    if (cleared)
+                    {
+                        if (!_adelPlantClrLogged)
+                        {
+                            _adelPlantClrLogged = true;
+                            BootLog.Write("[Hive] ExtraROM ddi_nop plant-clr latch=0x" +
+                                _adelPcEpc.ToString("X8") +
+                                " live=0x" + live.ToString("X8") +
+                                " +DC=0x" + dc.ToString("X8") +
+                                " +EC=0x" + ec.ToString("X8") +
+                                " (replay +EC; do not invent dest)");
+                        }
+                        _adelPcEpc = 0;
+                        return false;
+                    }
+                }
                 if (!_epcHaltLogged)
                 {
                     _epcHaltLogged = true;
@@ -13081,6 +13154,7 @@ namespace ProcessorEmulator.Core
             _adelC6FaLogged = false;
             _adelPcEpc = 0;
             _adelPcSp = 0;
+            _adelPlantClrLogged = false;
             _exnContinueWord = 0;
             _thrSpLogged = false;
             _spFixLogged = false;
@@ -19077,6 +19151,7 @@ namespace ProcessorEmulator.Core
         private static bool _adelC6FaLogged;
         private static uint _adelPcEpc;
         private static uint _adelPcSp;
+        private static bool _adelPlantClrLogged;
         private static uint _exnContinueWord;
         private static bool _thrSpLogged;
         private static bool _spFixLogged;

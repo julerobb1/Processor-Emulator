@@ -27,6 +27,12 @@ namespace ProcessorEmulator.Emulation
             return _cp0 != null ? _cp0.EPC : 0;
         }
 
+        public void PokeEpc(uint epc)
+        {
+            if (_cp0 != null)
+                _cp0.EPC = epc;
+        }
+
         public bool TryFindTlbPfn(uint vaddr, out uint pfn, out bool valid)
         {
             return _cp0.TryFindTlbPfn(vaddr, out pfn, out valid);
