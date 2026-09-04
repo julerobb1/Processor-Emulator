@@ -651,6 +651,16 @@ namespace ProcessorEmulator.Core
         public const uint KDataBase = 0xFFFFD800;
         public const uint UserKPage = 0xFFFF5800;
         public const uint KDataSection = 0xFFFFD8C0;
+        // Live 258ef59: coredll slot-4 aliased. Next
+        // data-TLBL epc=0x000593C8 badvaddr=0xFFFFFCE1
+        // a1=1 v0=0x00013320 v1=0x78 stores=24.
+        // Page 0xFFFFF000 off=0xCE1 (odd). Not
+        // UserKPage 0xFFFF5800 / KData 0xFFFFD800.
+        // Observe insn+base only. Do not map
+        // 0xFFFFF000. Do not invent KData.
+        public const uint FfffF000Page = 0xFFFFF000;
+        public const uint FfffFce1Fault = 0xFFFFFCE1;
+        public const uint FfffFce1Epc = 0x000593C8;
         // 0x8001521C ori k1, epc, 0xFFFC / addiu 2 / beq
         // syscall. 0xFFFFF3DA is coredll 0x80095A98
         // addiu $v0, $0, -3110 / jalr $v0. Same class as
@@ -9076,6 +9086,12 @@ namespace ProcessorEmulator.Core
             {
                 TryNoteDdiNopVallocDataTlbl(bus, regs, epc, vaddr, vector);
             }
+            if (code == 2
+                && IsFfffFce1ObserveVa(epc, vaddr)
+                && (_ddiNopDllMainLogged || _ddiNopIatStoreN >= BindImpObserveMax))
+            {
+                TryNoteFfffFce1Observe(bus, regs, epc, vaddr, vector);
+            }
             if (_bindImpExnLogged)
                 return;
             _bindImpExnLogged = true;
@@ -9091,6 +9107,106 @@ namespace ProcessorEmulator.Core
                 " v0=0x" + v0.ToString("X8") +
                 " v1=0x" + v1.ToString("X8") +
                 " stores=" + _ddiNopIatStoreN);
+        }
+
+        // Live 258ef59: page 0xFFFFF000 / 0xFFFFFCE1
+        // or gwes epc 0x000593C8 chasing FFFF*.
+        // One Hive line. Do not map. Do not invent.
+        private static bool IsFfffFce1ObserveVa(uint epc, uint vaddr)
+        {
+            if ((vaddr & ~0xFFFu) == FfffF000Page)
+                return true;
+            return epc == FfffFce1Epc
+                && (vaddr & 0xFF000000u) == 0xFF000000u;
+        }
+
+        private static uint PeekGpr(uint[] regs, int i)
+        {
+            if (regs == null || i < 0 || i >= regs.Length)
+                return 0;
+            return regs[i];
+        }
+
+        private static string GprHex(uint[] regs, int i)
+        {
+            return "0x" + PeekGpr(regs, i).ToString("X8");
+        }
+
+        private static void TryNoteFfffFce1Observe(MipsBus bus, uint[] regs,
+            uint epc, uint vaddr, uint vector)
+        {
+            if (_ffffFce1Logged)
+                return;
+            _ffffFce1Logged = true;
+            uint insn = 0;
+            TryPeekWord(bus, epc, out insn);
+            string dis = insn != 0 ? FormatMipsOp(epc, insn) : "peek-miss";
+            uint op = insn >> 26;
+            uint rs = (insn >> 21) & 31;
+            uint rt = (insn >> 16) & 31;
+            uint uimm = insn & 0xFFFFu;
+            int simm = (short)uimm;
+            uint bas = PeekGpr(regs, (int)rs);
+            uint formed = bas + (uint)simm;
+            uint uk = 0;
+            uint kd = 0;
+            uint pg = 0;
+            bool ukOk = TryPeekWord(bus, UserKPage, out uk);
+            bool kdOk = TryPeekWord(bus, KDataBase, out kd);
+            bool pgOk = TryPeekWord(bus, FfffF000Page, out pg);
+            uint mapped = MapUserKDataVa(vaddr);
+            BootLog.Write("[Hive] ExtraROM ddi_nop ffff-fce1 observe epc=0x" +
+                epc.ToString("X8") +
+                " badvaddr=0x" + vaddr.ToString("X8") +
+                " vec=0x" + vector.ToString("X8") +
+                " insn=0x" + insn.ToString("X8") +
+                " " + dis +
+                " op=0x" + op.ToString("X") +
+                " rs=" + rs +
+                " rt=" + rt +
+                " imm=0x" + uimm.ToString("X4") +
+                " base=0x" + bas.ToString("X8") +
+                " formed=0x" + formed.ToString("X8") +
+                " a0=" + GprHex(regs, 4) +
+                " a1=" + GprHex(regs, 5) +
+                " a2=" + GprHex(regs, 6) +
+                " a3=" + GprHex(regs, 7) +
+                " v0=" + GprHex(regs, 2) +
+                " v1=" + GprHex(regs, 3) +
+                " t0=" + GprHex(regs, 8) +
+                " t1=" + GprHex(regs, 9) +
+                " t2=" + GprHex(regs, 10) +
+                " t3=" + GprHex(regs, 11) +
+                " t4=" + GprHex(regs, 12) +
+                " t5=" + GprHex(regs, 13) +
+                " t6=" + GprHex(regs, 14) +
+                " t7=" + GprHex(regs, 15) +
+                " t8=" + GprHex(regs, 24) +
+                " t9=" + GprHex(regs, 25) +
+                " s0=" + GprHex(regs, 16) +
+                " s1=" + GprHex(regs, 17) +
+                " s2=" + GprHex(regs, 18) +
+                " s3=" + GprHex(regs, 19) +
+                " s4=" + GprHex(regs, 20) +
+                " s5=" + GprHex(regs, 21) +
+                " s6=" + GprHex(regs, 22) +
+                " s7=" + GprHex(regs, 23) +
+                " s8=" + GprHex(regs, 30) +
+                " gp=" + GprHex(regs, 28) +
+                " sp=" + GprHex(regs, 29) +
+                " ra=" + GprHex(regs, 31) +
+                (_userKPageAlias
+                    ? " FFFF5800-alias=on->FFFFD800"
+                    : " FFFF5800-alias=off") +
+                (ukOk ? " FFFF5800=0x" + uk.ToString("X8") : " FFFF5800-unmapped") +
+                (kdOk ? " FFFFD800=0x" + kd.ToString("X8") : " FFFFD800-unmapped") +
+                (pgOk ? " FFFFF000=0x" + pg.ToString("X8") : " FFFFF000-unmapped") +
+                (mapped != vaddr
+                    ? " map-hit=0x" + mapped.ToString("X8")
+                    : " no-FFFFF000-alias") +
+                " (page 0xFFFFF000 off=0x" +
+                (vaddr & 0xFFFu).ToString("X") +
+                "; not UserKPage/KData; observe only; do not invent dest)");
         }
 
         private static void TryNoteBindImpExnSave(MipsBus bus, uint[] regs, uint pc)
@@ -11389,6 +11505,7 @@ namespace ProcessorEmulator.Core
             _ddiNopOrdAfterLast = 0;
             _userKPageAlias = false;
             _userKPageAliasNoted = false;
+            _ffffFce1Logged = false;
             _bindImpIatSwExpect = false;
             _bindImpIatSwLogged = false;
             _bindImpIatSwLog = 0;
@@ -17236,6 +17353,7 @@ namespace ProcessorEmulator.Core
         private static uint _ddiNopOrdAfterLast;
         private static bool _userKPageAlias;
         private static bool _userKPageAliasNoted;
+        private static bool _ffffFce1Logged;
         private static bool _bindImpIatSwExpect;
         private static bool _bindImpIatSwLogged;
         private static int _bindImpIatSwLog;
