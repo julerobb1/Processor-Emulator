@@ -913,6 +913,18 @@ namespace ProcessorEmulator.Core
         // consume BindImp-exn.
         public const uint AdelC6FaEpc = 0xC6FA7C9A;
         public const uint AdelC6FaVaddr = 0xC6FA7C9A;
+        // Live 3275fe9: after adel-pc, BindImp-exn
+        // cause=3 epc=0x80031D38 badvaddr=0xC201FE84
+        // a1=0x8033FE1C (nk ROM). Observe insn /
+        // rs / rt / base / formed. Do not invent
+        // dest for 0xC2xxxxxx. WalkFirmwarePte
+        // L1 ((va>>16)&0x1FF) aliases 0xC201xxxx
+        // to 0x0001xxxx — not a C2 PTE. Do not
+        // map. C2* TLBS does not consume
+        // BindImp-exn.
+        public const uint C2TlbsEpc = 0x80031D38;
+        public const uint C2TlbsVaddr = 0xC201FE84;
+        public const uint C2VaPrefix = 0xC2000000;
         public const int GwesImagePageCap = 32;
         // TOC[7] o32[0] dataptr. Same as HostHardDisk.
         // VA 0x00011000 → 0x80146000. Live d01f68a:
@@ -9339,6 +9351,17 @@ namespace ProcessorEmulator.Core
                     TryNoteAdelC6FaObserve(bus, regs, epc, vaddr);
                 return;
             }
+            // Live 3275fe9: C2* TLBS consumed the
+            // one-shot. Observe 0xC201FE84. Do not
+            // invent dest. Do not walk C2 as useg
+            // (L1 alias). Skip so a later TLBL can
+            // name itself.
+            if (IsC2TlbsVa(code, vaddr))
+            {
+                if (epc == C2TlbsEpc && vaddr == C2TlbsVaddr)
+                    TryNoteC2TlbsObserve(bus, regs, epc, vaddr);
+                return;
+            }
             if (_bindImpExnLogged)
                 return;
             _bindImpExnLogged = true;
@@ -9622,6 +9645,47 @@ namespace ProcessorEmulator.Core
                 " (AdEL; do not map)");
         }
 
+        private static bool IsC2TlbsVa(uint code, uint va)
+        {
+            return code == 3 && (va & 0xFF000000u) == C2VaPrefix;
+        }
+
+        // Live 3275fe9: kernel 0x80031D38 TLBS
+        // 0xC201FE84. Peek insn / rs / rt / base.
+        // a1 is nk ROM evidence, not a hop. One
+        // Hive line. Do not invent dest. Do not
+        // map 0xC2xxxxxx.
+        private static void TryNoteC2TlbsObserve(MipsBus bus, uint[] regs,
+            uint epc, uint vaddr)
+        {
+            if (_c2TlbsLogged)
+                return;
+            _c2TlbsLogged = true;
+            uint insn = 0;
+            string via = "peek-miss";
+            if (TryPeekWord(bus, epc, out insn))
+                via = "kseg";
+            string dis = via != "peek-miss" ? FormatMipsOp(epc, insn) : "peek-miss";
+            uint rs = (insn >> 21) & 31;
+            uint rt = (insn >> 16) & 31;
+            int simm = (short)(insn & 0xFFFFu);
+            uint bas = PeekGpr(regs, (int)rs);
+            uint formed = bas + (uint)simm;
+            string extra = via == "kseg" ? "" : " via=" + via;
+            BootLog.Write("[Hive] ExtraROM ddi_nop c2-tlbs epc=0x" +
+                epc.ToString("X8") +
+                " va=0x" + vaddr.ToString("X8") +
+                " insn=" + (via != "peek-miss" ? "0x" + insn.ToString("X8") : "peek-miss") +
+                (via != "peek-miss" ? " " + dis : "") +
+                " rs=" + rs +
+                " rt=" + rt +
+                " base=0x" + bas.ToString("X8") +
+                " formed=0x" + formed.ToString("X8") +
+                extra +
+                " a1=" + GprHex(regs, 5) +
+                " (TLBS; do not invent dest)");
+        }
+
         private static void TryNoteBindImpExnSave(MipsBus bus, uint[] regs, uint pc)
         {
             if (!_ddiNopAwaitCallDll || !_ddiNopIatStoreLogged)
@@ -9639,6 +9703,8 @@ namespace ProcessorEmulator.Core
             if (IsNearNullVa(_bindImpExnVaddr))
                 return;
             if (IsAdelSkip(_bindImpExnCode, _bindImpExnEpc, _bindImpExnVaddr))
+                return;
+            if (IsC2TlbsVa(_bindImpExnCode, _bindImpExnVaddr))
                 return;
             _bindImpExnSaveLogged = true;
             uint a1 = regs != null && regs.Length > 5 ? regs[5] : 0;
@@ -12572,6 +12638,7 @@ namespace ProcessorEmulator.Core
             _nearNullTlblLogged = false;
             _ffffFb2aAdelLogged = false;
             _adelC6FaLogged = false;
+            _c2TlbsLogged = false;
             _ddiNopInfoObserved = false;
             _ddiNopInfoDemand = false;
             _ddiNopInfoBusy = false;
@@ -18517,6 +18584,7 @@ namespace ProcessorEmulator.Core
         private static bool _nearNullTlblLogged;
         private static bool _ffffFb2aAdelLogged;
         private static bool _adelC6FaLogged;
+        private static bool _c2TlbsLogged;
         private static bool _ddiNopInfoObserved;
         private static bool _ddiNopInfoDemand;
         private static bool _ddiNopInfoBusy;
