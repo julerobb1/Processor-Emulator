@@ -10236,8 +10236,25 @@ namespace ProcessorEmulator.Core
         // leftover-skip does not fire (not leftover
         // dest). ERET to dest wrapper mid: nop then
         // lw $a2,0($fp) with leftover $fp. Poison.
-        // leftover-halt that dest stub resume. Do
-        // not leftover hop. Do not invent dest.
+        // leftover-halt that dest stub resume.
+        // Live 8ac997b leftover-halt dest jalr+8
+        // +EC=0x800382F8. Dump leftover wait99
+        // 0x8001597C sw $ra,40($sp); ObjectCall
+        // 0x800391C4 lw $t3,16($fp) is leftover
+        // wait99 $ra (leftover dest leftover-
+        // syscall site). leftover dest leftover-
+        // syscall $ra live 0x03F71740 dest
+        // 0x80089740 mid-hash addu, not leftover
+        // dest leftover-syscall jalr+8 0x03F7D73C
+        // of dest wrapper 0x800956F0. +EC is
+        // handle-lookup mid jal 0x80038294.
+        // leftover dest leftover-syscall return
+        // is leftover dest leftover-syscall $ra.
+        // leftover hop forbidden. leftover-halt
+        // dest stub stays. Name leftover wait99
+        // $ra / dest / leftover dest leftover-
+        // syscall jalr+8. Do not leftover hop.
+        // Do not invent dest.
         private static bool IsLeftoverSyscallStubRet(MipsBus bus, uint pc)
         {
             if (bus == null || (pc & 3) != 0)
@@ -10439,13 +10456,25 @@ namespace ProcessorEmulator.Core
                     uint mid = leftoverMid && !destPlant
                         ? (was == LeftoverJalRet ? was : regs[12])
                         : was;
+                    uint waitRa = PeekGpr(regs, 31);
+                    uint destOfRa = 0;
+                    if (IsLeftoverDestVa(waitRa))
+                        destOfRa = LeftoverDestKseg + (waitRa - LeftoverDestLo);
+                    uint leftoverJalr8 = 0;
+                    if (destStub
+                        && mid >= LeftoverDestKseg
+                        && mid < LeftoverDestKseg + (LeftoverDestHi - LeftoverDestLo))
+                        leftoverJalr8 = LeftoverDestLo + (mid - LeftoverDestKseg);
                     BootLog.Write("[Hive] ExtraROM ddi_nop leftover-halt was=0x" +
                         mid.ToString("X8") +
                         " +EC=0x" + ec.ToString("X8") +
                         " +DC=0x" + dc.ToString("X8") +
                         " plant=0x" + plant.ToString("X8") +
                         (destStub
-                            ? " (refuse leftover dest leftover-syscall jalr+8; do not leftover dest)"
+                            ? " ra=0x" + waitRa.ToString("X8") +
+                              " dest=0x" + destOfRa.ToString("X8") +
+                              " leftover-jalr8=0x" + leftoverJalr8.ToString("X8") +
+                              " (refuse leftover dest leftover-syscall jalr+8; leftover dest $ra mid-hash not leftover dest leftover-syscall stub; do not leftover dest)"
                             : leftoverMid && !destPlant
                             ? " (refuse leftover mid $ra; do not invent dest)"
                             : " (refuse leftover ERET dest; do not invent dest)"));
