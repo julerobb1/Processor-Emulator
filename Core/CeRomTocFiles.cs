@@ -404,6 +404,16 @@ namespace ProcessorEmulator.Core
         // $ra there loops. leftover-halt that mid.
         // Do not leftover hop. Do not invent dest.
         public const uint LeftoverJalRet = 0x800159B0;
+        // Dump 0x800397F8 lw $s3,4($a0) with $a0
+        // = thread+0x18 syscall frame. 0x800399E8
+        // or $v0,$s3 returns that. Live b757425
+        // leftover-skip $v0 leftover dest. FD50
+        // load at 0x800399A4 is skipped (was !=
+        // plant). Sole FD50 store 0x800370F8 is
+        // GetProc. leftover-frame +18=0 after
+        // 0x80039860 unlinks the frame. Observe
+        // live frame+4 here. Do not leftover hop.
+        public const uint LeftoverLoadS3 = 0x800397F8;
         public const uint LeftoverMtc0Epc = 0x80015A08;
         public const uint LeftoverJrRa = 0x80015A28;
         public const uint LeftoverEret = 0x80015A24;
@@ -10379,6 +10389,44 @@ namespace ProcessorEmulator.Core
                 " (do not invent dest)");
         }
 
+        // Live b757425 leftover-skip $v0 leftover
+        // dest. Dump 0x800397F8 lw $s3,4(frame)
+        // before 0x80039860 unlinks thread+0x18.
+        // leftover dest in $v0 is that frame+4
+        // leftover-syscall PC, not FD50 GetProc.
+        // One Hive line. Do not leftover hop.
+        // Do not invent dest.
+        public static void TryNoteLeftoverRetObserve(MipsBus bus, uint[] regs,
+            uint pc)
+        {
+            if (_leftoverRetLogged)
+                return;
+            if (pc != LeftoverLoadS3)
+                return;
+            if (regs == null || regs.Length <= 4)
+                return;
+            uint frame = PeekGpr(regs, 4);
+            uint frame4 = 0;
+            uint fd50 = 0;
+            uint plus18 = 0;
+            uint thr = 0;
+            if (frame != 0 && frame != 0xFFFFFFFFu)
+                TryPeekWord(bus, frame + 4, out frame4);
+            if (!IsLeftoverDestVa(frame4))
+                return;
+            _leftoverRetLogged = true;
+            TryPeekWord(bus, ExnContinueWord, out fd50);
+            if (TryPeekWord(bus, ThreadPtr, out thr) && thr != 0
+                && thr != 0xFFFFFFFFu)
+                TryPeekWord(bus, thr + ThreadSyscallFrame, out plus18);
+            BootLog.Write("[Hive] ExtraROM ddi_nop leftover-ret a0=0x" +
+                frame.ToString("X8") +
+                " +4=0x" + frame4.ToString("X8") +
+                " FD50=0x" + fd50.ToString("X8") +
+                " +18=0x" + plus18.ToString("X8") +
+                " (dump frame+4 leftover dest)");
+        }
+
         // Live 3275fe9: kernel 0x80031D38 TLBS
         // 0xC201FE84. Peek insn / rs / rt / base.
         // a1 is nk ROM evidence, not a hop. One
@@ -13378,6 +13426,7 @@ namespace ProcessorEmulator.Core
             _plantHaltLogged = false;
             _leftoverHaltLogged = false;
             _leftoverSkipLogged = false;
+            _leftoverRetLogged = false;
             _leftoverFrameLogged = false;
             _epcHaltLogged = false;
             _c2TlbsLogged = false;
@@ -19379,6 +19428,7 @@ namespace ProcessorEmulator.Core
         private static bool _plantHaltLogged;
         private static bool _leftoverHaltLogged;
         private static bool _leftoverSkipLogged;
+        private static bool _leftoverRetLogged;
         private static bool _leftoverFrameLogged;
         private static bool _epcHaltLogged;
         private static bool _c2TlbsLogged;
