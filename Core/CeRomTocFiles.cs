@@ -438,6 +438,16 @@ namespace ProcessorEmulator.Core
         // dest jalr+8. Do not leftover hop.
         public const uint LeftoverApi1630 = 0xFFFFFF68;
         public const uint LeftoverApi1630Ret = 0x8009573C;
+        // Live 8741ab2 plant-fix +EC=0x800397B8
+        // then silent freeze. Dump leftover
+        // 0x800397B0 addiu $sp,-48; 0x800397B8
+        // sw $fp,16($sp) is prologue mid, not a
+        // LoadO32 continue. Function jr $ra at
+        // 0x80039A0C; next is 0x80039A14. Refuse
+        // plant-fix in that range. Do not leftover
+        // hop. Do not invent dest.
+        public const uint LeftoverResumePlant = 0x800397B0;
+        public const uint LeftoverResumePlantEnd = 0x80039A14;
         public const uint LeftoverMtc0Epc = 0x80015A08;
         public const uint LeftoverJrRa = 0x80015A28;
         public const uint LeftoverEret = 0x80015A24;
@@ -10167,7 +10177,8 @@ namespace ProcessorEmulator.Core
                 || pc == LeftoverJalRet
                 || pc == ExnAfterFetch || pc == ExnAfterFetch2
                 || pc == ThreadCtxRestore || pc == ThreadCtxRestore2
-                || pc == C2SpFirstPc || pc == 0x800397B0u)
+                || pc == C2SpFirstPc
+                || (pc >= LeftoverResumePlant && pc < LeftoverResumePlantEnd))
                 return false;
             if (pc >= 0x80010000u && pc < NkImageEnd)
                 return true;
@@ -10456,14 +10467,17 @@ namespace ProcessorEmulator.Core
         // -1630 jalr+8 is 0x8009573C, not that
         // $ra. Rewrite $t3 before the sw so
         // frame+4 is the dest wrapper return.
-        // leftover-cstk / leftover-ret /
+        // Live 8741ab2: first-win leftover-cstk-
+        // fix then a second ObjectCall frame
+        // 0x86FA7800 still leftover dest +4
+        // (one-shot missed it). Apply every
+        // leftover dest -1630 store. One Hive
+        // line. leftover-cstk / leftover-ret /
         // leftover-skip / leftover-halt stay.
         // Do not leftover hop. Do not invent dest.
         public static void TryFixLeftoverCstkRa(MipsBus bus, uint[] regs,
             uint pc)
         {
-            if (_leftoverCstkFixLogged)
-                return;
             if (pc != LeftoverCstkSw)
                 return;
             if (regs == null || regs.Length <= 30)
@@ -10480,6 +10494,8 @@ namespace ProcessorEmulator.Core
             if (!IsSanePlantResumePc(LeftoverApi1630Ret))
                 return;
             regs[11] = LeftoverApi1630Ret;
+            if (_leftoverCstkFixLogged)
+                return;
             _leftoverCstkFixLogged = true;
             BootLog.Write("[Hive] ExtraROM ddi_nop leftover-cstk-fix was=0x" +
                 t3.ToString("X8") +
