@@ -1037,6 +1037,15 @@ namespace ProcessorEmulator.Core
         public const uint C2SpFirstPc = 0x80015664;
         public const uint ThreadCtxEret = 0x8001568C;
         public const uint NkIdleJal = 0x800373C0;
+        // Live ac46757 leftover-frame +5C=
+        // 0x800356FC. Dump: addiu $sp,-32 then
+        // jal 0x80031D34 (same idle poll as
+        // 0x800373CC). Thread startip, not a
+        // leftover resume. leftover-frame
+        // +18/v016=0; FD50/ra40 leftover dest.
+        // leftover-halt stays. Do not leftover
+        // hop. Do not invent dest.
+        public const uint NkIdleStart = 0x800356FC;
         public const uint C2SlotImageHi = 0x00100000;
         public const int GwesImagePageCap = 32;
         // TOC[7] o32[0] dataptr. Same as HostHardDisk.
@@ -9823,11 +9832,15 @@ namespace ProcessorEmulator.Core
         }
 
         // Live 3b847b7 / 695e734: 0x800373C0 is
-        // mid NK idle (jal 0x80031D34). Not a
-        // resume. Do not leftover hop.
+        // mid NK idle (jal 0x80031D34). Live
+        // ac46757: +5C=0x800356FC is that
+        // thread's start (dump jal 0x80031D34).
+        // Not a leftover resume. Do not leftover
+        // hop.
         private static bool IsNkIdleResumePc(uint pc)
         {
-            return pc == NkIdleJal || pc == C2TlbsFunc;
+            return pc == NkIdleJal || pc == C2TlbsFunc
+                || pc == NkIdleStart;
         }
 
         // Live e3cc519: +EC=0x80015B9C is leftover
@@ -10195,8 +10208,13 @@ namespace ProcessorEmulator.Core
         // then jal 0x800397B0; 0x800397F8 lw
         // $s3,4(thread+0x18); 0x800399A4 may
         // skip FD50; 0x8001597C sw $ra,40($sp).
-        // Observe those slots. Do not leftover
-        // hop. Do not invent dest.
+        // Observe those slots. Live ac46757:
+        // leftover-frame +5C=0x800356FC is NK
+        // idle start (jal 0x80031D34), not a
+        // LoadO32 continue. +18/v016=0;
+        // FD50/ra40 leftover dest. leftover-halt
+        // stays. Do not leftover hop. Do not
+        // invent dest.
         public static bool TryRefuseMinusOnePlant(MipsBus bus, uint[] regs,
             ref uint programCounter)
         {
