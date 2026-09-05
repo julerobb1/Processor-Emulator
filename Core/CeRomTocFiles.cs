@@ -10147,6 +10147,17 @@ namespace ProcessorEmulator.Core
         // thread+0xEC when that is a sane aligned PC.
         // Else refuse leftover ERET. Do not leftover
         // dest hop. Do not invent dest.
+        // Live 77ba8c0: adel-pc then epc-halt; +EC
+        // leftover mid is not a resume. Dump wait99:
+        // 0x800159B4 or $ra,$v0; 0x80015A08 mtc0
+        // $t4,$14; user ERET / kernel jr $ra plants
+        // that return. This Boot plant=0x03F74844
+        // (leftover dest). ERET there then unaligned
+        // I-fetch 0xC6FA7C9A (0x86FA7C9A|0x40000000).
+        // +EC leftover mid / idle are not a resume.
+        // Refuse leftover ERET when $v0/$t4/$ra is
+        // leftover dest. Do not leftover hop. Do
+        // not invent dest.
         public static bool TryRefuseMinusOnePlant(MipsBus bus, uint[] regs,
             ref uint programCounter)
         {
@@ -10160,7 +10171,8 @@ namespace ProcessorEmulator.Core
                 ? regs[2]
                 : (pc == LeftoverMtc0Epc ? regs[12] : regs[31]);
             bool adel = IsAdelPoisonEpc(was);
-            if (!adel && !(IsDdiNopDestLive() && IsPoisonPlant(was)))
+            bool destPlant = IsLeftoverDestVa(was);
+            if (!adel && !destPlant && !(IsDdiNopDestLive() && IsPoisonPlant(was)))
                 return false;
             uint thr;
             uint ec;
@@ -10177,6 +10189,19 @@ namespace ProcessorEmulator.Core
                         " +EC=0x" + ec.ToString("X8") +
                         " plant=0x" + plant.ToString("X8") +
                         " (refuse leftover ERET adel-pc; do not invent dest)");
+                }
+                return true;
+            }
+            if (destPlant)
+            {
+                if (!_leftoverHaltLogged)
+                {
+                    _leftoverHaltLogged = true;
+                    BootLog.Write("[Hive] ExtraROM ddi_nop leftover-halt was=0x" +
+                        was.ToString("X8") +
+                        " +EC=0x" + ec.ToString("X8") +
+                        " plant=0x" + plant.ToString("X8") +
+                        " (refuse leftover ERET dest; do not invent dest)");
                 }
                 return true;
             }
@@ -13205,6 +13230,7 @@ namespace ProcessorEmulator.Core
             _spFixLogged = false;
             _plantFixLogged = false;
             _plantHaltLogged = false;
+            _leftoverHaltLogged = false;
             _epcHaltLogged = false;
             _c2TlbsLogged = false;
             _c2SpLogged = false;
@@ -19203,6 +19229,7 @@ namespace ProcessorEmulator.Core
         private static bool _spFixLogged;
         private static bool _plantFixLogged;
         private static bool _plantHaltLogged;
+        private static bool _leftoverHaltLogged;
         private static bool _epcHaltLogged;
         private static bool _c2TlbsLogged;
         private static bool _c2SpLogged;
