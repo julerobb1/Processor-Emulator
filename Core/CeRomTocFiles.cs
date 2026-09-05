@@ -10082,7 +10082,7 @@ namespace ProcessorEmulator.Core
         {
             if ((pc & 3) != 0 || IsPoisonPlant(pc) || IsNearNullVa(pc))
                 return false;
-            if (IsLeftoverDestVa(pc))
+            if (IsLeftoverDestVa(pc) || IsNkIdleResumePc(pc))
                 return false;
             if (pc == LeftoverOrRa || pc == LeftoverMtc0Epc
                 || pc == LeftoverJrRa || pc == LeftoverEret
@@ -10156,8 +10156,16 @@ namespace ProcessorEmulator.Core
         // I-fetch 0xC6FA7C9A (0x86FA7C9A|0x40000000).
         // +EC leftover mid / idle are not a resume.
         // Refuse leftover ERET when $v0/$t4/$ra is
-        // leftover dest. Do not leftover hop. Do
-        // not invent dest.
+        // leftover dest unless thread+0xEC is a
+        // sane aligned NK/useg PC. Live 0332c87:
+        // leftover-halt was=0x03F71740 +EC=
+        // 0x800382F8 during NK coredll LoadO32
+        // (dump: beq $t5,$0 mid handle lookup).
+        // That +EC is the real resume, not leftover
+        // dest / leftover mid / idle. Replay +EC
+        // into $v0/$t4/$ra so leftover never aims
+        // ERET at leftover dest. Do not leftover
+        // hop. Do not invent dest.
         public static bool TryRefuseMinusOnePlant(MipsBus bus, uint[] regs,
             ref uint programCounter)
         {
@@ -10192,7 +10200,7 @@ namespace ProcessorEmulator.Core
                 }
                 return true;
             }
-            if (destPlant)
+            if (destPlant && !IsSanePlantResumePc(ec))
             {
                 if (!_leftoverHaltLogged)
                 {
