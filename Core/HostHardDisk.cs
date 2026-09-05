@@ -691,6 +691,7 @@ namespace ProcessorEmulator.Core
             CeRomTocFiles.TryNoteTv2LeftoverPastCaf0(bus, pc);
             CeRomTocFiles.TryNoteLeftoverCstkObserve(bus, registers, pc);
             CeRomTocFiles.TryFixLeftoverCstkRa(bus, registers, pc);
+            CeRomTocFiles.TryNoteLeftoverCstkSpin(bus, registers, pc);
             CeRomTocFiles.TryNoteLeftoverRetObserve(bus, registers, pc);
             CeRomTocFiles.TryFixLeftoverRetRa(bus, registers, pc);
             if (CeRomTocFiles.TryRefuseMinusOnePlant(bus, registers, ref programCounter))

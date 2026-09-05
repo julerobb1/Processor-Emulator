@@ -10230,6 +10230,43 @@ namespace ProcessorEmulator.Core
             return ec != t;
         }
 
+        // Live f919479 leftover-cstk-fix stores dest
+        // leftover-syscall jalr+8 0x8009573C. leftover
+        // 0x800397B0 returns that as $v0; or $ra,$v0;
+        // leftover-skip does not fire (not leftover
+        // dest). ERET to dest wrapper mid: nop then
+        // lw $a2,0($fp) with leftover $fp. Poison.
+        // leftover-halt that dest stub resume. Do
+        // not leftover hop. Do not invent dest.
+        private static bool IsLeftoverSyscallStubRet(MipsBus bus, uint pc)
+        {
+            if (bus == null || (pc & 3) != 0)
+                return false;
+            if (pc < LeftoverDestKseg
+                || pc >= LeftoverDestKseg + (LeftoverDestHi - LeftoverDestLo)
+                || pc >= NkImageEnd)
+                return false;
+            uint jalrPc = 0;
+            uint w = 0;
+            uint rs;
+            if (TryPeekWord(bus, pc - 4, out w) && IsJalrInsn(w, out rs))
+                jalrPc = pc - 4;
+            else if (TryPeekWord(bus, pc - 8, out w) && IsJalrInsn(w, out rs))
+                jalrPc = pc - 8;
+            else
+                return false;
+            for (uint off = 4; off <= 32; off += 4)
+            {
+                uint aw = 0;
+                uint rt;
+                if (!TryPeekWord(bus, jalrPc - off, out aw))
+                    break;
+                if (IsAddiuZeroNeg(aw, out rt) && rt == rs)
+                    return true;
+            }
+            return false;
+        }
+
         private static bool IsSanePlantResumePc(uint pc)
         {
             if ((pc & 3) != 0 || IsPoisonPlant(pc) || IsNearNullVa(pc))
@@ -10354,9 +10391,10 @@ namespace ProcessorEmulator.Core
                 : (pc == LeftoverMtc0Epc ? regs[12] : regs[31]);
             bool adel = IsAdelPoisonEpc(was);
             bool destPlant = IsLeftoverDestVa(was);
+            bool destStub = IsLeftoverSyscallStubRet(bus, was);
             bool leftoverMid = was == LeftoverJalRet
                 || (pc == LeftoverEret && regs[12] == LeftoverJalRet);
-            if (!adel && !destPlant && !leftoverMid
+            if (!adel && !destPlant && !leftoverMid && !destStub
                 && !(IsDdiNopDestLive() && IsPoisonPlant(was)))
                 return false;
             uint thr;
@@ -10390,8 +10428,9 @@ namespace ProcessorEmulator.Core
                 }
                 return true;
             }
-            if ((destPlant || leftoverMid)
-                && (IsJalCalleeMid(bus, ec, dc) || !IsSanePlantResumePc(ec)))
+            if (destStub
+                || ((destPlant || leftoverMid)
+                    && (IsJalCalleeMid(bus, ec, dc) || !IsSanePlantResumePc(ec))))
             {
                 TryNoteLeftoverFrameObserve(bus, regs, plant);
                 if (!_leftoverHaltLogged)
@@ -10405,7 +10444,9 @@ namespace ProcessorEmulator.Core
                         " +EC=0x" + ec.ToString("X8") +
                         " +DC=0x" + dc.ToString("X8") +
                         " plant=0x" + plant.ToString("X8") +
-                        (leftoverMid && !destPlant
+                        (destStub
+                            ? " (refuse leftover dest leftover-syscall jalr+8; do not leftover dest)"
+                            : leftoverMid && !destPlant
                             ? " (refuse leftover mid $ra; do not invent dest)"
                             : " (refuse leftover ERET dest; do not invent dest)"));
                 }
@@ -10574,6 +10615,37 @@ namespace ProcessorEmulator.Core
                 " now=0x" + dest.ToString("X8") +
                 " api=0x" + api.ToString("X8") +
                 " (dump jalr+8 of leftover-syscall; do not leftover dest)");
+        }
+
+        // Live f919479 leftover-cstk-fix then silent
+        // freeze; leftover-ret / leftover-skip /
+        // leftover-halt did not fire. Name the
+        // stuck PC after leftover-cstk-fix if
+        // leftover-halt has not. Do not leftover
+        // hop. Do not invent dest.
+        public static void TryNoteLeftoverCstkSpin(MipsBus bus, uint[] regs,
+            uint pc)
+        {
+            if (!_leftoverCstkFixLogged || _leftoverCstkSpinLogged
+                || _leftoverHaltLogged)
+                return;
+            if (pc == 0 || pc == LeftoverCstkSw)
+                return;
+            _leftoverCstkSpinN++;
+            if (_leftoverCstkSpinN < 4096)
+                return;
+            _leftoverCstkSpinLogged = true;
+            uint v0 = PeekGpr(regs, 2);
+            uint a0 = PeekGpr(regs, 4);
+            uint ra = PeekGpr(regs, 31);
+            uint fp = PeekGpr(regs, 30);
+            BootLog.Write("[Hive] ExtraROM ddi_nop leftover-cstk-spin pc=0x" +
+                pc.ToString("X8") +
+                " v0=0x" + v0.ToString("X8") +
+                " a0=0x" + a0.ToString("X8") +
+                " fp=0x" + fp.ToString("X8") +
+                " ra=0x" + ra.ToString("X8") +
+                " (after leftover-cstk-fix; do not leftover dest)");
         }
 
         private static bool IsLeftoverApi938Ra(uint ra)
@@ -10770,7 +10842,8 @@ namespace ProcessorEmulator.Core
             uint thr = 0;
             if (frame != 0 && frame != 0xFFFFFFFFu)
                 TryPeekWord(bus, frame + 4, out frame4);
-            if (!IsLeftoverDestVa(frame4))
+            bool destStub = IsLeftoverSyscallStubRet(bus, frame4);
+            if (!IsLeftoverDestVa(frame4) && !destStub)
                 return;
             _leftoverRetLogged = true;
             TryPeekWord(bus, ExnContinueWord, out fd50);
@@ -10782,7 +10855,9 @@ namespace ProcessorEmulator.Core
                 " +4=0x" + frame4.ToString("X8") +
                 " FD50=0x" + fd50.ToString("X8") +
                 " +18=0x" + plus18.ToString("X8") +
-                " (dump frame+4 leftover dest)");
+                (destStub
+                    ? " (dump frame+4 dest leftover-syscall jalr+8)"
+                    : " (dump frame+4 leftover dest)"));
         }
 
         // Live 1f83cb1 leftover-ret leftover dest
@@ -13830,6 +13905,8 @@ namespace ProcessorEmulator.Core
             _leftoverCstkLogged = false;
             _leftoverCstkFixLogged = false;
             _leftoverRetFixLogged = false;
+            _leftoverCstkSpinLogged = false;
+            _leftoverCstkSpinN = 0;
             _leftoverFrameLogged = false;
             _epcHaltLogged = false;
             _c2TlbsLogged = false;
@@ -19835,6 +19912,8 @@ namespace ProcessorEmulator.Core
         private static bool _leftoverCstkLogged;
         private static bool _leftoverCstkFixLogged;
         private static bool _leftoverRetFixLogged;
+        private static bool _leftoverCstkSpinLogged;
+        private static int _leftoverCstkSpinN;
         private static Dictionary<int, uint> _leftoverStubJalr8;
         private static bool _leftoverFrameLogged;
         private static bool _epcHaltLogged;
