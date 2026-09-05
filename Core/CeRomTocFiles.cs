@@ -776,9 +776,10 @@ namespace ProcessorEmulator.Core
         // kseg. Live 0x03F70830 → 0x80088830 jr-delay
         // of leftover-syscall -938; 0x03F71EBC →
         // 0x80089EBC jalr-delay of dest thunk
-        // (jalr+8 0x80089EC0); 0x03F71740 →
-        // 0x80089740 mid-hash; 0x03F74844 →
-        // 0x8008C844 GetProc. Do not leftover hop.
+        // (jalr+8 0x80089EC0); 0x03F71618 /
+        // 0x03F71740 → dest mid-hash (and/addu),
+        // not jalr+8; 0x03F74844 → 0x8008C844
+        // GetProc. Do not leftover hop.
         public const uint LeftoverDestKseg = 0x80084000;
         // Live 8d10132: plant-fix +EC=0x800382F8
         // +DC=0x8003B05C hung LoadO32. Dump:
@@ -10199,6 +10200,36 @@ namespace ProcessorEmulator.Core
             return pc >= MemsetJal && pc < MemsetEnd;
         }
 
+        private static bool IsJalInsn(uint word, uint pc, out uint target)
+        {
+            uint op = (word >> 26) & 63;
+            target = (pc & 0xF0000000u) | ((word & 0x3FFFFFFu) << 2);
+            return op == 2 || op == 3;
+        }
+
+        // Live 78866b8 plant-fix +EC=0x80038D7C +DC=
+        // 0x800399E8 hung. Dump +DC-8 is jal
+        // 0x80038CCC; +EC is that callee jr $ra,
+        // not entry. Live 1f83cb1 / 8d10132:
+        // +DC-8 jal T, +EC mid T. Refuse when
+        // +EC != T or +EC is jr $ra. Do not
+        // leftover hop. Do not invent dest.
+        private static bool IsJalCalleeMid(MipsBus bus, uint ec, uint dc)
+        {
+            if (bus == null || (dc & 3) != 0 || dc < 8)
+                return false;
+            uint jr = 0;
+            if (TryPeekWord(bus, ec, out jr) && IsFirmwareJrRa(jr))
+                return true;
+            uint w = 0;
+            if (!TryPeekWord(bus, dc - 8, out w))
+                return false;
+            uint t;
+            if (!IsJalInsn(w, dc - 8, out t))
+                return false;
+            return ec != t;
+        }
+
         private static bool IsSanePlantResumePc(uint pc)
         {
             if ((pc & 3) != 0 || IsPoisonPlant(pc) || IsNearNullVa(pc))
@@ -10359,7 +10390,8 @@ namespace ProcessorEmulator.Core
                 }
                 return true;
             }
-            if ((destPlant || leftoverMid) && !IsSanePlantResumePc(ec))
+            if ((destPlant || leftoverMid)
+                && (IsJalCalleeMid(bus, ec, dc) || !IsSanePlantResumePc(ec)))
             {
                 TryNoteLeftoverFrameObserve(bus, regs, plant);
                 if (!_leftoverHaltLogged)
@@ -10379,7 +10411,7 @@ namespace ProcessorEmulator.Core
                 }
                 return true;
             }
-            if (IsSanePlantResumePc(ec))
+            if (IsSanePlantResumePc(ec) && !IsJalCalleeMid(bus, ec, dc))
             {
                 ApplyPlantResume(regs, pc, ec);
                 if (!_plantFixLogged)
@@ -10553,11 +10585,13 @@ namespace ProcessorEmulator.Core
             uint leftoverRa, out uint dest)
         {
             dest = 0;
-            // leftover dest $ra identity first. Live 84e6a7f
-            // leftover dest 0x03F70830 is leftover-syscall
-            // -938, even if $fp+0 still shows api -1630.
-            // Same dest-wrapper class: dest ROM jalr+8.
-            // Do not invent dest. Do not leftover hop.
+            // leftover dest $ra wrapper/thunk first.
+            // Mid-hash leftover dest (live 0x03F71618
+            // dest 0x80089618 and) has no jalr+8 at
+            // that PC. Invert leftover-syscall api:
+            // imm = (int16)((api<<2)-0x3FE), dest ROM
+            // addiu $0,imm; jalr → jalr+8. Do not
+            // leftover hop. Do not invent dest.
             if (IsLeftoverApi938Ra(leftoverRa))
                 dest = LeftoverApi938Ret;
             else if (TryResolveLeftoverCstkFromDestWrapper(bus, leftoverRa,
@@ -10565,11 +10599,81 @@ namespace ProcessorEmulator.Core
                 return true;
             else if (api == LeftoverApi1630)
                 dest = LeftoverApi1630Ret;
+            else if (TryResolveLeftoverCstkFromApi(bus, api, out dest))
+                return true;
             else if (api == LeftoverApi938)
                 dest = LeftoverApi938Ret;
             else
                 return false;
             return IsSanePlantResumePc(dest);
+        }
+
+        private static bool IsAddiuZeroNeg(uint word, out uint rt)
+        {
+            rt = (word >> 16) & 31;
+            int simm = (short)(word & 0xFFFFu);
+            return ((word >> 26) & 63) == 9
+                && ((word >> 21) & 31) == 0
+                && simm < 0;
+        }
+
+        // Dump leftover-syscall index api =
+        // (EPC+0x3FE)>>2. EPC low 16 is the dest
+        // stub addiu imm. Scan dest window once.
+        // api 0 / -1 is not a stub. Do not leftover
+        // hop. Do not invent dest.
+        private static bool TryResolveLeftoverCstkFromApi(MipsBus bus, uint api,
+            out uint dest)
+        {
+            dest = 0;
+            if (bus == null || api == 0 || api == 0xFFFFFFFFu)
+                return false;
+            int imm = (short)(((api << 2) - 0x3FEu) & 0xFFFFu);
+            if (imm >= 0)
+                return false;
+            EnsureLeftoverStubJalr8(bus);
+            if (_leftoverStubJalr8 == null
+                || !_leftoverStubJalr8.TryGetValue(imm, out dest)
+                || dest == 0)
+                return false;
+            return IsSanePlantResumePc(dest);
+        }
+
+        private static void EnsureLeftoverStubJalr8(MipsBus bus)
+        {
+            if (_leftoverStubJalr8 != null)
+                return;
+            var map = new Dictionary<int, uint>();
+            uint lo = LeftoverDestKseg;
+            uint hi = LeftoverDestKseg + (LeftoverDestHi - LeftoverDestLo);
+            if (hi > NkImageEnd)
+                hi = NkImageEnd;
+            for (uint va = lo; va + 36 < hi; va += 4)
+            {
+                uint w = 0;
+                uint rt;
+                if (!TryPeekWord(bus, va, out w) || !IsAddiuZeroNeg(w, out rt))
+                    continue;
+                int imm = (short)(w & 0xFFFFu);
+                if (map.ContainsKey(imm))
+                    continue;
+                for (uint k = 1; k <= 8; k++)
+                {
+                    uint w2 = 0;
+                    uint rs;
+                    if (!TryPeekWord(bus, va + k * 4, out w2))
+                        break;
+                    if (!IsJalrInsn(w2, out rs) || rs != rt)
+                        continue;
+                    uint jalr8 = va + k * 4 + 8;
+                    if (IsSanePlantResumePc(jalr8))
+                        map[imm] = jalr8;
+                    break;
+                }
+            }
+            if (map.Count == 0)
+                return;
+            _leftoverStubJalr8 = map;
         }
 
         private static bool IsJalrInsn(uint word, out uint rs)
@@ -15521,7 +15625,7 @@ namespace ProcessorEmulator.Core
                 uint dc;
                 uint plant;
                 TryPeekThreadCtxPc(bus, out thr, out ec, out dc, out plant);
-                if (!IsSanePlantResumePc(ec))
+                if (!IsSanePlantResumePc(ec) || IsJalCalleeMid(bus, ec, dc))
                     return false;
                 target = ec;
                 if (regs != null && regs.Length > 31)
@@ -19731,6 +19835,7 @@ namespace ProcessorEmulator.Core
         private static bool _leftoverCstkLogged;
         private static bool _leftoverCstkFixLogged;
         private static bool _leftoverRetFixLogged;
+        private static Dictionary<int, uint> _leftoverStubJalr8;
         private static bool _leftoverFrameLogged;
         private static bool _epcHaltLogged;
         private static bool _c2TlbsLogged;
