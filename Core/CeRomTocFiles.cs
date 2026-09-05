@@ -10587,7 +10587,7 @@ namespace ProcessorEmulator.Core
             dest = 0;
             // leftover dest $ra wrapper/thunk first.
             // Mid-hash leftover dest (live 0x03F71618
-            // dest 0x80089618 and) has no jalr+8 at
+            // dest 0x80089618) has no jalr+8 at
             // that PC. Invert leftover-syscall api:
             // imm = (int16)((api<<2)-0x3FE), dest ROM
             // addiu $0,imm; jalr → jalr+8. Do not
