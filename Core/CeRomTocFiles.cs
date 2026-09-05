@@ -397,6 +397,13 @@ namespace ProcessorEmulator.Core
         // returned -1 so EPC became 0xFFFFFFFF.
         // 0x80015A08 mtc0 $t4,EPC; 0x80015A24 ERET.
         public const uint LeftoverOrRa = 0x800159B4;
+        // Live 7607343 leftover-skip ra=0x800159B0
+        // then silent freeze. Dump: jal 0x800397B0
+        // return; 0x800159B0 lw $t0,32($sp). leftover
+        // mid, not a LoadO32 continue. leftover jr
+        // $ra there loops. leftover-halt that mid.
+        // Do not leftover hop. Do not invent dest.
+        public const uint LeftoverJalRet = 0x800159B0;
         public const uint LeftoverMtc0Epc = 0x80015A08;
         public const uint LeftoverJrRa = 0x80015A28;
         public const uint LeftoverEret = 0x80015A24;
@@ -10123,6 +10130,7 @@ namespace ProcessorEmulator.Core
                 return false;
             if (pc == LeftoverOrRa || pc == LeftoverMtc0Epc
                 || pc == LeftoverJrRa || pc == LeftoverEret
+                || pc == LeftoverJalRet
                 || pc == ExnAfterFetch || pc == ExnAfterFetch2
                 || pc == ThreadCtxRestore || pc == ThreadCtxRestore2
                 || pc == C2SpFirstPc || pc == 0x800397B0u)
@@ -10217,9 +10225,11 @@ namespace ProcessorEmulator.Core
         // $v0 at wait99 or $ra,$v0 plants
         // coredll mid-hash (0x03F71740). Dump
         // 0x800397B0 returns $s3 from frame+4.
-        // Skip that or; leave $ra. leftover-halt
-        // if dest later $t4/$ra. Do not leftover
-        // hop. Do not invent dest.
+        // Skip that or; leave $ra. Live 7607343:
+        // leftover-skip then jr $ra to leftover
+        // mid 0x800159B0 hung. leftover-halt that
+        // mid. Do not leftover hop. Do not invent
+        // dest.
         public static bool TryRefuseMinusOnePlant(MipsBus bus, uint[] regs,
             ref uint programCounter)
         {
@@ -10234,7 +10244,10 @@ namespace ProcessorEmulator.Core
                 : (pc == LeftoverMtc0Epc ? regs[12] : regs[31]);
             bool adel = IsAdelPoisonEpc(was);
             bool destPlant = IsLeftoverDestVa(was);
-            if (!adel && !destPlant && !(IsDdiNopDestLive() && IsPoisonPlant(was)))
+            bool leftoverMid = was == LeftoverJalRet
+                || (pc == LeftoverEret && regs[12] == LeftoverJalRet);
+            if (!adel && !destPlant && !leftoverMid
+                && !(IsDdiNopDestLive() && IsPoisonPlant(was)))
                 return false;
             uint thr;
             uint ec;
@@ -10267,18 +10280,23 @@ namespace ProcessorEmulator.Core
                 }
                 return true;
             }
-            if (destPlant && !IsSanePlantResumePc(ec))
+            if ((destPlant || leftoverMid) && !IsSanePlantResumePc(ec))
             {
                 TryNoteLeftoverFrameObserve(bus, regs, plant);
                 if (!_leftoverHaltLogged)
                 {
                     _leftoverHaltLogged = true;
+                    uint mid = leftoverMid && !destPlant
+                        ? (was == LeftoverJalRet ? was : regs[12])
+                        : was;
                     BootLog.Write("[Hive] ExtraROM ddi_nop leftover-halt was=0x" +
-                        was.ToString("X8") +
+                        mid.ToString("X8") +
                         " +EC=0x" + ec.ToString("X8") +
                         " +DC=0x" + dc.ToString("X8") +
                         " plant=0x" + plant.ToString("X8") +
-                        " (refuse leftover ERET dest; do not invent dest)");
+                        (leftoverMid && !destPlant
+                            ? " (refuse leftover mid $ra; do not invent dest)"
+                            : " (refuse leftover ERET dest; do not invent dest)"));
                 }
                 return true;
             }
