@@ -3358,7 +3358,7 @@ namespace ProcessorEmulator.Core
             _cprocThread = 0;
         }
 
-        private static void LogCprocThreadCtx(uint[] registers, MipsBus bus)
+        private static void LogCprocThreadCtx(uint[]? registers, MipsBus? bus)
         {
             if (registers == null || registers.Length <= 4 || bus == null)
                 return;

@@ -223,8 +223,8 @@ namespace ProcessorEmulator.Core
             Write(sb.ToString());
         }
 
-        public static void Rom(string result, string source, string kind, int index,
-            string name, int type, uint dest, uint real, uint comp, string why)
+        public static void Rom(string? result, string? source, string? kind, int index,
+            string? name, int type, uint dest, uint real, uint comp, string? why)
         {
             var sb = new StringBuilder();
             sb.Append("[Rom] ").Append(string.IsNullOrEmpty(result) ? "?" : result);
