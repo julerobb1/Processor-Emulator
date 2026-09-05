@@ -772,9 +772,11 @@ namespace ProcessorEmulator.Core
         public const uint ExnContinueWord = 0x8033FD50;
         public const uint LeftoverDestLo = 0x03F6C000;
         public const uint LeftoverDestHi = 0x03F80000;
-        // leftover dest VA − LeftoverDestLo + this = dest
+        // leftover dest VA - LeftoverDestLo + this = dest
         // kseg. Live 0x03F70830 → 0x80088830 jr-delay
-        // of leftover-syscall -938; 0x03F71740 →
+        // of leftover-syscall -938; 0x03F71EBC →
+        // 0x80089EBC jalr-delay of dest thunk
+        // (jalr+8 0x80089EC0); 0x03F71740 →
         // 0x80089740 mid-hash; 0x03F74844 →
         // 0x8008C844 GetProc. Do not leftover hop.
         public const uint LeftoverDestKseg = 0x80084000;
@@ -790,6 +792,16 @@ namespace ProcessorEmulator.Core
         public const uint HandleLookupEnd = 0x80038340;
         public const uint HandleLookupRet = 0x8003B04C;
         public const uint HandleLookupRetEnd = 0x8003B080;
+        // Live 1f83cb1 plant-fix +EC=0x80059420
+        // +DC=0x800301E0 then silent freeze.
+        // Dump 0x800301D8 jal 0x800593F0
+        // (memset); +EC is mid that callee
+        // (blez $t1); +DC is the jal return
+        // (lw $v0,36($fp)). Replay +EC then
+        // jr $ra loops. Poison mid. Refuse
+        // plant-fix. Do not leftover hop.
+        public const uint MemsetJal = 0x800593F0;
+        public const uint MemsetEnd = 0x80059588;
         public const uint O32Compressed = 0x4000;
         // ExtraROM o32[0] 0x60002020: 0x2000 lets CopyO32 accept
         // unaligned dataptr 0x80764CE0. MapO32 still VirtualCopys
@@ -10182,7 +10194,9 @@ namespace ProcessorEmulator.Core
         {
             if (pc >= HandleLookupJal && pc < HandleLookupEnd)
                 return true;
-            return pc >= HandleLookupRet && pc < HandleLookupRetEnd;
+            if (pc >= HandleLookupRet && pc < HandleLookupRetEnd)
+                return true;
+            return pc >= MemsetJal && pc < MemsetEnd;
         }
 
         private static bool IsSanePlantResumePc(uint pc)
@@ -10571,20 +10585,16 @@ namespace ProcessorEmulator.Core
                 && ((word >> 21) & 31) == 29;
         }
 
-        private static bool IsAddiuZeroNeg(uint word, out uint rt)
-        {
-            rt = (word >> 16) & 31;
-            int simm = (short)(word & 0xFFFFu);
-            return ((word >> 26) & 63) == 9
-                && ((word >> 21) & 31) == 0
-                && simm < 0;
-        }
-
-        // Dump dest wrapper: addiu $0,-N; jalr; delay;
-        // lw $ra,N($sp); jr $ra; [addiu $sp]. leftover
-        // dest $ra at jalr+8 / jr / jr-delay. Store dest
-        // jalr+8. Mid-hash 0x80089740 and GetProc
-        // 0x8008C844 do not match. Do not leftover hop.
+        // Dump dest wrapper / KData thunk: jalr;
+        // delay; lw $ra,N($sp); jr $ra. Live
+        // 1f83cb1 leftover dest 0x03F71EBC is
+        // dest 0x80089EBC jalr delay nop, not
+        // leftover-syscall -N. jalr+8 is
+        // 0x80089EC0. leftover dest $ra at jalr
+        // delay / jalr+8 / jr / jr-delay. Store
+        // dest jalr+8. Mid-hash 0x80089740 and
+        // GetProc 0x8008C844 do not match. Do
+        // not leftover hop. Do not invent dest.
         private static bool TryResolveLeftoverCstkFromDestWrapper(MipsBus bus,
             uint leftoverRa, out uint dest)
         {
@@ -10603,6 +10613,7 @@ namespace ProcessorEmulator.Core
             uint wm12 = 0;
             uint wm16 = 0;
             uint wp4 = 0;
+            uint wp8 = 0;
             if (!TryPeekWord(bus, destPc, out w0))
                 return false;
             if (TryPeekWord(bus, destPc - 4, out wm4) && IsFirmwareJrRa(wm4)
@@ -10620,27 +10631,13 @@ namespace ProcessorEmulator.Core
                 && TryPeekWord(bus, destPc - 8, out wm8)
                 && IsJalrInsn(wm8, out _))
                 jalrPc = destPc - 8;
+            else if (TryPeekWord(bus, destPc - 4, out wm4)
+                && IsJalrInsn(wm4, out _)
+                && TryPeekWord(bus, destPc + 4, out wp4) && IsLwRaSp(wp4)
+                && TryPeekWord(bus, destPc + 8, out wp8)
+                && IsFirmwareJrRa(wp8))
+                jalrPc = destPc - 4;
             else
-                return false;
-            uint jalrW = 0;
-            uint jalrRs;
-            if (!TryPeekWord(bus, jalrPc, out jalrW)
-                || !IsJalrInsn(jalrW, out jalrRs))
-                return false;
-            bool sawAddiu = false;
-            for (uint off = 4; off <= 32; off += 4)
-            {
-                uint aw = 0;
-                uint rt;
-                if (!TryPeekWord(bus, jalrPc - off, out aw))
-                    break;
-                if (IsAddiuZeroNeg(aw, out rt) && rt == jalrRs)
-                {
-                    sawAddiu = true;
-                    break;
-                }
-            }
-            if (!sawAddiu)
                 return false;
             dest = jalrPc + 8;
             return IsSanePlantResumePc(dest);
@@ -10684,13 +10681,11 @@ namespace ProcessorEmulator.Core
                 " (dump frame+4 leftover dest)");
         }
 
-        // Live 84e6a7f leftover-ret leftover dest
-        // +4=0x03F70830 after leftover-cstk-fix
-        // of leftover-syscall -1630. Dump dest
-        // jalr+8 of leftover-syscall -938 is
-        // 0x80088828. Write that before
-        // 0x800397F8 lw $s3. One Hive line.
-        // leftover-skip / leftover-halt stay.
+        // Live 1f83cb1 leftover-ret leftover dest
+        // +4=0x03F71EBC (dest thunk jalr delay,
+        // jalr+8 0x80089EC0). Write dest jalr+8
+        // before 0x800397F8 lw $s3. One Hive
+        // line. leftover-skip / leftover-halt stay.
         // Do not leftover hop. Do not invent dest.
         public static void TryFixLeftoverRetRa(MipsBus bus, uint[] regs,
             uint pc)
