@@ -89,6 +89,12 @@ namespace ProcessorEmulator.Emulation
         {
             for (int i = 0; i < count; i++)
             {
+                // Live b4b6454: poll sat after this continue,
+                // so an interrupt/TLB storm after BindImp
+                // skipped CallDLL-miss forever. Count here
+                // too. Keep the post-BinBlk poll.
+                CeRomTocFiles.TryPollDdiNopCallDllMiss(_bus, registers, programCounter);
+
                 // Check for and handle pending hardware interrupts before executing an instruction.
                 if (_cp0.ShouldTriggerInterrupt())
                 {
@@ -103,6 +109,8 @@ namespace ProcessorEmulator.Emulation
                     _bus.Tick(1);
                     continue;
                 }
+
+                CeRomTocFiles.TryPollDdiNopCallDllMiss(_bus, registers, programCounter);
 
                 _currentPc = programCounter;
                 try
@@ -124,22 +132,84 @@ namespace ProcessorEmulator.Emulation
                     continue;
                 }
 
+                if (programCounter == CeRomTocFiles.CreateFileWin32Chk)
+                    CeRomTocFiles.TryRejectMscoreeFileHandle(_bus, registers);
+
                 if (programCounter == CeRomTocFiles.CreateFileFail)
                 {
-                    uint path = registers[23];
-                    if (CeRomTocFiles.TryContinueRomModule(_bus, path, out uint attr, out uint tocEntry))
+                    try
                     {
-                        // Same object layout as 0x80016AFC: +0 = TOC entry,
-                        // +4 = 7. 0x800196E4 then uses e32 at TOC+0x14
-                        // instead of CreateFileMapping(INVALID_HANDLE).
-                        // 40($sp) still needs FILE_ATTRIBUTE_ROMMODULE so
-                        // 0x8001D4B8 takes the existing 0x2000 return.
-                        uint obj = registers[30];
-                        _bus.Write32(obj, tocEntry);
-                        _bus.Write8(obj + 4, CeRomTocFiles.TocAttachType);
-                        _bus.Write32(registers[29] + 40, attr);
-                        registers[3] = attr;
-                        programCounter = CeRomTocFiles.NameCopyContinue;
+                        uint path = registers[23];
+                        if (!CeRomTocFiles.TryContinueRomModule(_bus, path, out uint attr, out uint tocEntry, out byte attachType))
+                            CeRomTocFiles.TryContinueRomModule(_bus, registers[4], out attr, out tocEntry, out attachType);
+                        if (tocEntry != 0)
+                        {
+                            // Type 7: TOC module, e32 at entry+0x14.
+                            // Type 8: ExtraROM FILE (wait55). object+5=1
+                            // skips name copy (s7 may be unmapped).
+                            // Do not set ROMMODULE. Do not invent e32.
+                            uint obj = registers[30];
+                            _bus.Write32(obj, tocEntry);
+                            _bus.Write8(obj + 4, attachType);
+                            if (attachType == CeRomTocFiles.FileAttachType)
+                                _bus.Write8(obj + 5, 1);
+                            if (attachType == CeRomTocFiles.TocAttachType)
+                                CeRomTocFiles.TryPrepareExtraRomBuiltInLikeDdiNop(_bus, obj);
+                            _bus.Write32(registers[29] + 40, attr);
+                            registers[3] = attr;
+                            if (attachType == CeRomTocFiles.FileAttachType
+                                && CeRomTocFiles.TryStartTv2FileDecompress(
+                                    _bus, registers, ref programCounter))
+                            {
+                                _cp0.UpdateTimer(1);
+                                _bus.Tick(1);
+                                continue;
+                            }
+                            if (attachType == CeRomTocFiles.TocAttachType
+                                && CeRomTocFiles.TryStartExtraRomTocDecompress(
+                                    _bus, registers, ref programCounter))
+                            {
+                                _cp0.UpdateTimer(1);
+                                _bus.Tick(1);
+                                continue;
+                            }
+                            // Type 7: NameCopyContinue CreateFileMappings
+                            // the TOCentry (wait61 126). Return v0=0 with
+                            // object+0=entry +4=7 so 0x800196E4 LoadE32s.
+                            programCounter = attachType == CeRomTocFiles.TocAttachType
+                                ? CeRomTocFiles.CreateFileOk
+                                : CeRomTocFiles.NameCopyContinue;
+                            _cp0.UpdateTimer(1);
+                            _bus.Tick(1);
+                            continue;
+                        }
+                    }
+                    catch (TlbMissException ex)
+                    {
+                        // wait52: hook Read32(s7=0x040851E8) aborted
+                        // the probe. That VA is filesys slot-2, not a
+                        // dump ExtraROM/gwes/coredll/BINFS/tv2 page.
+                        // Do not invent a map. Firmware refill owns it.
+                        TriggerTlbException(ex);
+                        _cp0.UpdateTimer(1);
+                        _bus.Tick(1);
+                        continue;
+                    }
+                }
+
+                // 0x80016AFC miss (v0=2). s3=UTF16 name, s4=object.
+                // ExtraROM TOC modules are not on *(0x80342B10)
+                // unless OEM published them on *(0x803429C8) for
+                // linker 0x8001728C. Do not invent a ROMChain_t.
+                // Attach any ExtraROM TOC type-7 name already in
+                // the dump ROMHDR (ddi_nop/mscoree/ole32 plus
+                // bcmuart/ndis/sipcfg and the rest).
+                if (programCounter == CeRomTocFiles.TocWalkMiss)
+                {
+                    if (CeRomTocFiles.TryAttachExtraRomTocWalk(_bus, registers[19], registers[20]))
+                    {
+                        registers[2] = 0;
+                        programCounter = CeRomTocFiles.TocWalkMissContinue;
                         _cp0.UpdateTimer(1);
                         _bus.Tick(1);
                         continue;
@@ -147,14 +217,82 @@ namespace ProcessorEmulator.Emulation
                 }
 
                 if (programCounter == CeRomTocFiles.CallDllStartip)
-                    CeRomTocFiles.TryFillTocStartip(_bus, registers[23]);
+                {
+                    CeRomTocFiles.NoteDdiNopCallDllPc(_bus, registers, programCounter);
+                    CeRomTocFiles.TryFillTocStartip(_bus, registers[23], true);
+                }
+
+                // Live f13b33e: startip 0x01998014 on MODULE
+                // 0x86FACC50; mod+0x50=0x03980000 is useg.
+                // 0x8001DD6C skips CallDLL. Force the DLL jal
+                // (a1=1) here, same continue as EXE skip.
+                if (programCounter == CeRomTocFiles.XipCallDllUsegChk)
+                {
+                    CeRomTocFiles.NoteDdiNopCallDllPc(_bus, registers, programCounter);
+                    if (CeRomTocFiles.TryForceDdiNopCallDll(_bus, registers, ref programCounter))
+                    {
+                        _cp0.UpdateTimer(1);
+                        _bus.Tick(1);
+                        continue;
+                    }
+                }
+
+                if (programCounter == CeRomTocFiles.XipExeCallDllSkip)
+                {
+                    CeRomTocFiles.NoteDdiNopCallDllPc(_bus, registers, programCounter);
+                    if (CeRomTocFiles.TryForceDdiNopCallDll(_bus, registers, ref programCounter))
+                    {
+                        _cp0.UpdateTimer(1);
+                        _bus.Tick(1);
+                        continue;
+                    }
+                    if (CeRomTocFiles.TryForceXipExeCallDll(_bus, registers, ref programCounter))
+                    {
+                        _cp0.UpdateTimer(1);
+                        _bus.Tick(1);
+                        continue;
+                    }
+                }
+
+                if (programCounter == CeRomTocFiles.ThreadStartTrampoline
+                    || programCounter == CeRomTocFiles.LoadExeE32Ret
+                    || programCounter == CeRomTocFiles.LoadExeStartipRet)
+                    CeRomTocFiles.TryFillProcExeStartip(_bus);
+
+                if (programCounter == CeRomTocFiles.ThreadCtxRestore
+                    || programCounter == CeRomTocFiles.ThreadCtxRestore2)
+                {
+                    CeRomTocFiles.TryNoteTv2ThreadRestore(_bus, registers, programCounter);
+                    if (programCounter == CeRomTocFiles.ThreadCtxRestore2
+                        && CeRomTocFiles.TryForceTv2EretSlowPath(_bus, registers, ref programCounter))
+                    {
+                        _cp0.UpdateTimer(1);
+                        _bus.Tick(1);
+                        continue;
+                    }
+                }
+
+                if (programCounter == CeRomTocFiles.ThreadSwitchProcChk)
+                {
+                    CeRomTocFiles.TryKeepTv2ThreadOwner(_bus, "switcher");
+                    if (CeRomTocFiles.TryForceTv2ProcSwitch(_bus, registers, ref programCounter))
+                    {
+                        _cp0.UpdateTimer(1);
+                        _bus.Tick(1);
+                        continue;
+                    }
+                }
+
+                if (programCounter == CeRomTocFiles.ThreadSwitchProcStore)
+                    CeRomTocFiles.TryNoteTv2ProcSwitchStore(_bus, registers, programCounter);
 
                 if (programCounter == CeRomTocFiles.ProcessAttachGate)
                     CeRomTocFiles.TryEnableFilterProcessAttach(_bus, registers);
 
                 if (programCounter == CeRomTocFiles.Win32CreateFile)
                 {
-                    if (CeRomTocFiles.TryMissMissingDevice(_bus, registers[4], registers, ref programCounter))
+                    if (CeRomTocFiles.TryMissMissingDevice(_bus, registers[4], registers, ref programCounter)
+                        || CeRomTocFiles.TryMissMscoreeWin32(_bus, registers[4], registers, ref programCounter))
                     {
                         _cp0.UpdateTimer(1);
                         _bus.Tick(1);
@@ -197,11 +335,39 @@ namespace ProcessorEmulator.Emulation
                     }
                 }
 
+                CeRomTocFiles.TryResumeTv2LeftoverFetch(_bus, registers, ref programCounter);
+                CeRomTocFiles.TryRestoreTv2LeftoverEret(_bus, registers, programCounter);
+                CeRomTocFiles.TryRestoreTv2LeftoverDestLiveEret(_bus, registers, programCounter);
+                CeRomTocFiles.TryResumeTv2LeftoverAfterCaf0(_bus, registers, ref programCounter);
+                CeRomTocFiles.TryKeepTv2LeftoverS6(_bus, registers, programCounter);
+                CeRomTocFiles.TryResumeTv2LeftoverAfterCb10(_bus, registers, ref programCounter);
+                CeRomTocFiles.TryResumeTv2LeftoverAfterCb14(_bus, registers, ref programCounter);
+                CeRomTocFiles.TryResumeTv2LeftoverAfterCb34(_bus, registers, ref programCounter);
+                CeRomTocFiles.TryResumeTv2LeftoverAfterCb38(_bus, registers, ref programCounter);
+                CeRomTocFiles.TryResumeTv2LeftoverAfterCb3c(_bus, registers, ref programCounter);
+                CeRomTocFiles.TryResumeTv2LeftoverAfterCb40(_bus, registers, ref programCounter);
+                CeRomTocFiles.TryResumeTv2LeftoverAfterCb44(_bus, registers, ref programCounter);
+                CeRomTocFiles.TryResumeTv2LeftoverAfterCb48(_bus, registers, ref programCounter);
+                CeRomTocFiles.TryResumeTv2LeftoverAfterCb4c(_bus, registers, ref programCounter);
+                CeRomTocFiles.TryResumeTv2LeftoverAfterJrRa(_bus, registers, ref programCounter);
+                CeRomTocFiles.TryResumeTv2LeftoverAfterBPlus2(_bus, registers, ref programCounter);
+                CeRomTocFiles.TryResumeTv2LeftoverAfterBPlus2Taken(_bus, registers, ref programCounter);
+                CeRomTocFiles.TryResumeTv2LeftoverAfterFp(_bus, registers, ref programCounter);
+                CeRomTocFiles.TryResumeTv2LeftoverAfterS7(_bus, registers, ref programCounter);
+                CeRomTocFiles.TryResumeTv2LeftoverAfterS6(_bus, registers, ref programCounter);
+                CeRomTocFiles.TryResumeTv2LeftoverAfterS5(_bus, registers, ref programCounter);
+                CeRomTocFiles.TryResumeTv2LeftoverAfterS4(_bus, registers, ref programCounter);
+                CeRomTocFiles.TryNoteTv2LeftoverDrop(_bus, registers, programCounter);
+                CeRomTocFiles.TryResumeTv2LeftoverDestLiveContinue(_bus, registers, ref programCounter);
                 _currentPc = programCounter;
                 try
                 {
                     uint instruction = FetchInstruction();
+                    CeRomTocFiles.TryKeepLeftoverDestLiveDispatch(_bus, _currentPc);
+                    CeRomTocFiles.TryResumeTv2LeftoverDestLiveContinue(_bus, registers, ref programCounter);
                     DecodeAndExecute(instruction);
+                    CeRomTocFiles.TryKeepLeftoverDestLiveDispatch(_bus, _currentPc);
+                    CeRomTocFiles.TryResumeTv2LeftoverDestLiveContinue(_bus, registers, ref programCounter);
                 }
                 catch (TlbMissException ex)
                 {
@@ -244,6 +410,17 @@ namespace ProcessorEmulator.Emulation
             {
                 programCounter = 0x80000180;
             }
+            HostHardDisk.NoteCpuException(exceptionCode, _cp0.EPC, 0, programCounter, registers, _bus);
+            // wait127: leftover dest-live I-fetch of dest-live
+            // next / PC+4 after dest-live delay+4 walk takes
+            // leftover interrupt. leftover exception handler
+            // I-fetches leftover mid / ERET2. leftover dest-live
+            // continue hops leftover exception / leftover mid /
+            // ERET2 to dest-live next / PC+4 before leftover
+            // I-fetches leftover mid / ERET2. leftover after
+            // dest-live delay+4 walk stays dest-live next /
+            // PC+4, not leftover mid / ERET2.
+            CeRomTocFiles.TryResumeTv2LeftoverDestLiveContinue(_bus, registers, ref programCounter);
         }
 
         private void TriggerTlbException(TlbMissException ex)
@@ -270,6 +447,7 @@ namespace ProcessorEmulator.Emulation
                 programCounter = bev ? 0xBFC00200u : 0x80000000u;
             else
                 programCounter = bev ? 0xBFC00380u : 0x80000180u;
+            HostHardDisk.NoteCpuException(code, _cp0.EPC, ex.FaultingAddress, programCounter, registers, _bus);
         }
 
         private void TriggerAddressError(uint vaddr)
@@ -281,13 +459,25 @@ namespace ProcessorEmulator.Emulation
             cause &= 0x7FFFFFFF;
             _cp0.Cause = cause;
             _cp0.Status |= (1 << 1);
+            CeRomTocFiles.TryClearImplicitApiK1(registers, vaddr);
             bool bev = (_cp0.Status & (1 << 22)) != 0;
             programCounter = bev ? 0xBFC00380u : 0x80000180u;
+            HostHardDisk.NoteCpuException(4, _cp0.EPC, vaddr, programCounter, registers, _bus);
         }
 
 
         private uint FetchInstruction()
         {
+            // wait128: leftover dest-live keep hops leftover
+            // I-fetch of leftover mid / ERET2 after dest-live
+            // delay+4 to dest-live next / PC+4 before leftover
+            // FetchInstruction. leftover dest-live continue
+            // after leftover interrupt is too late: leftover
+            // I-fetch of leftover mid / ERET2 is already
+            // logged. leftover after dest-live delay+4 stays
+            // dest-live next / PC+4, not leftover mid / ERET2.
+            CeRomTocFiles.TryResumeTv2LeftoverDestLiveContinue(_bus, registers, ref programCounter);
+            CeRomTocFiles.TryKeepLeftoverDestLiveDispatch(_bus, programCounter);
             if ((programCounter & 3) != 0)
                 throw new CpuAlignmentException($"Unaligned fetch PC=0x{programCounter:X8}");
             uint instruction = ReadMemory32(programCounter);
@@ -542,8 +732,14 @@ namespace ProcessorEmulator.Emulation
             _inDelaySlot = true;
             try
             {
+                CeRomTocFiles.TryRestoreTv2LeftoverEret(_bus, registers, programCounter);
+                CeRomTocFiles.TryRestoreTv2LeftoverDestLiveEret(_bus, registers, programCounter);
                 uint delayInstr = FetchInstruction();
+                CeRomTocFiles.TryKeepLeftoverDestLiveDispatch(_bus, programCounter);
+                CeRomTocFiles.TryResumeTv2LeftoverDestLiveContinue(_bus, registers, ref programCounter);
                 DecodeAndExecute(delayInstr);
+                CeRomTocFiles.TryKeepLeftoverDestLiveDispatch(_bus, programCounter);
+                CeRomTocFiles.TryResumeTv2LeftoverDestLiveContinue(_bus, registers, ref programCounter);
                 programCounter = target;
             }
             catch (TlbMissException ex)
@@ -598,7 +794,11 @@ namespace ProcessorEmulator.Emulation
                             // 1. Clear Status.EXL bit
                             _cp0.Status &= ~(1u << 1); 
                             // 2. Jump back to where the exception occurred
-                            programCounter = _cp0.EPC;
+                            uint eretPc = _cp0.EPC;
+                            if (_currentPc == CeRomTocFiles.LeftoverEret
+                                && CeRomTocFiles.TryFixTv2LeftoverJump(_bus, registers, ref eretPc))
+                                _cp0.EPC = eretPc;
+                            programCounter = eretPc;
                             break;
                         default:
                             System.Diagnostics.Debug.WriteLine($"[MIPS] Unhandled COP0 funct: 0x{funct:X}");
@@ -1115,6 +1315,8 @@ namespace ProcessorEmulator.Emulation
             uint oldPc = programCounter;
             uint rs = (instruction >> 21) & 0x1F;
             uint target = registers[rs];
+            if (CeRomTocFiles.TryFixTv2LeftoverJump(_bus, registers, ref target) && rs != 0)
+                registers[rs] = target;
             ExecuteDelaySlotThenJump(target);
             LogBranch(oldPc, programCounter, "JR");
         }
@@ -1127,6 +1329,38 @@ namespace ProcessorEmulator.Emulation
             uint target = registers[rs];
             if (rd != 0)
                 registers[rd] = programCounter + 4;
+            if (target == CeRomTocFiles.Win32SetFilePointer
+                && (CeRomTocFiles.IsTv2FileHandle(registers[4])
+                    || CeRomTocFiles.IsExtraRomOpenFileHandle(registers[4])))
+            {
+                if (_inDelaySlot)
+                {
+                    programCounter = target;
+                    return;
+                }
+                _inDelaySlot = true;
+                try
+                {
+                    uint delayInstr = FetchInstruction();
+                    DecodeAndExecute(delayInstr);
+                    if (CeRomTocFiles.TryServeTv2SetFilePointer(registers, target, ref target))
+                    {
+                        programCounter = target;
+                        return;
+                    }
+                    programCounter = target;
+                }
+                catch (TlbMissException ex)
+                {
+                    TriggerTlbException(ex);
+                }
+                finally
+                {
+                    _inDelaySlot = false;
+                }
+                LogBranch(oldPc, programCounter, "JALR");
+                return;
+            }
             ExecuteDelaySlotThenJump(target);
             LogBranch(oldPc, programCounter, "JALR");
         }

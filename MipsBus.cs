@@ -22,6 +22,22 @@ namespace ProcessorEmulator.Emulation
             _cp0 = cp0;
         }
 
+        public uint PeekEpc()
+        {
+            return _cp0 != null ? _cp0.EPC : 0;
+        }
+
+        public void PokeEpc(uint epc)
+        {
+            if (_cp0 != null)
+                _cp0.EPC = epc;
+        }
+
+        public bool TryFindTlbPfn(uint vaddr, out uint pfn, out bool valid)
+        {
+            return _cp0.TryFindTlbPfn(vaddr, out pfn, out valid);
+        }
+
         /// <summary>
         /// Maps a device to a specific range of the address space.
         /// </summary>
@@ -89,6 +105,30 @@ namespace ProcessorEmulator.Emulation
 
         public uint Read32(uint vaddr)
         {
+            vaddr = CeRomTocFiles.MapBindImpIatRealVa(vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopProcessInfoVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopGwesDispFetchVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopGwesDispDataVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopGwesTextBaseVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopGwesDispData2Va(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopGwesDispData3Va(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopGwesText2Va(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopGwesImageVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopCoredllImageVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopFilesysSlot2Va(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopFilesys48dVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopVallocDataVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopDestVa(vaddr);
+            vaddr = CeRomTocFiles.MapProcessHeapSlotVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapCoredllSharedVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapFirmwareSlotVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapVallocHostVa(vaddr);
+            vaddr = CeRomTocFiles.MapExtraRomE32HostVa(vaddr);
+            vaddr = CeRomTocFiles.MapExtraRomTocSrcVa(vaddr);
+            vaddr = CeRomTocFiles.MapExtraRomTocDestVa(vaddr);
+            vaddr = CeRomTocFiles.MapExeXipVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapUserKDataVa(vaddr);
+            vaddr = CeRomTocFiles.MapFfffF000Va(this, vaddr);
             uint paddr = Translate(vaddr, isStore: false);
             IBusDevice device = _lookupTable[paddr >> 16];
 
@@ -102,20 +142,81 @@ namespace ProcessorEmulator.Emulation
 
         public void Write32(uint vaddr, uint value)
         {
-            uint paddr = Translate(vaddr, isStore: true);
-            IBusDevice device = _lookupTable[paddr >> 16];
-
-            if (device != null)
+            HostHardDisk.NoteDispC8Write(vaddr, value, this);
+            uint origVa = vaddr;
+            vaddr = CeRomTocFiles.MapBindImpIatRealVa(vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopProcessInfoVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopGwesDispFetchVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopGwesDispDataVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopGwesTextBaseVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopGwesDispData2Va(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopGwesDispData3Va(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopGwesText2Va(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopGwesImageVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopCoredllImageVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopFilesysSlot2Va(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopFilesys48dVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopVallocDataVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopDestVa(vaddr);
+            vaddr = CeRomTocFiles.MapProcessHeapSlotVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapCoredllSharedVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapFirmwareSlotVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapVallocHostVa(vaddr);
+            vaddr = CeRomTocFiles.MapExtraRomE32HostVa(vaddr);
+            vaddr = CeRomTocFiles.MapExtraRomTocSrcVa(vaddr);
+            vaddr = CeRomTocFiles.MapExtraRomTocDestVa(vaddr);
+            vaddr = CeRomTocFiles.MapUserKDataVa(vaddr);
+            vaddr = CeRomTocFiles.MapFfffF000Va(this, vaddr);
+            CeRomTocFiles.TryNoteDdiNopIatStore(origVa, vaddr, value);
+            CeRomTocFiles.TryNoteBindImpIatSw(origVa, value);
+            bool watch = CeRomTocFiles.TryNoteDdiNopDecompStore(vaddr, value);
+            try
             {
-                uint valueToStore = IsBigEndian ? Swap(value) : value;
-                device.Write32(paddr - device.StartAddress, valueToStore);
-                return;
+                uint paddr = Translate(vaddr, isStore: true);
+                IBusDevice device = _lookupTable[paddr >> 16];
+
+                if (device != null)
+                {
+                    uint valueToStore = IsBigEndian ? Swap(value) : value;
+                    device.Write32(paddr - device.StartAddress, valueToStore);
+                    return;
+                }
+                throw new AddressErrorException($"Write to unmapped physical address 0x{paddr:X8}");
             }
-            throw new AddressErrorException($"Write to unmapped physical address 0x{paddr:X8}");
+            catch
+            {
+                if (watch)
+                    CeRomTocFiles.TryNoteDdiNopDecompStoreThrow(vaddr);
+                throw;
+            }
         }
         
         public byte Read8(uint vaddr)
         {
+            vaddr = CeRomTocFiles.MapBindImpIatRealVa(vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopProcessInfoVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopGwesDispFetchVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopGwesDispDataVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopGwesTextBaseVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopGwesDispData2Va(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopGwesDispData3Va(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopGwesText2Va(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopGwesImageVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopCoredllImageVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopFilesysSlot2Va(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopFilesys48dVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopVallocDataVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopDestVa(vaddr);
+            vaddr = CeRomTocFiles.MapProcessHeapSlotVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapCoredllSharedVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapFirmwareSlotVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapVallocHostVa(vaddr);
+            vaddr = CeRomTocFiles.MapExtraRomE32HostVa(vaddr);
+            vaddr = CeRomTocFiles.MapExtraRomTocSrcVa(vaddr);
+            vaddr = CeRomTocFiles.MapExtraRomTocDestVa(vaddr);
+            vaddr = CeRomTocFiles.MapExeXipVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapUserKDataVa(vaddr);
+            vaddr = CeRomTocFiles.MapFfffF000Va(this, vaddr);
             uint paddr = Translate(vaddr, isStore: false);
             IBusDevice device = _lookupTable[paddr >> 16];
 
@@ -130,15 +231,49 @@ namespace ProcessorEmulator.Emulation
 
         public void Write8(uint vaddr, byte value)
         {
-            uint paddr = Translate(vaddr, isStore: true);
-            IBusDevice device = _lookupTable[paddr >> 16];
-
-            if (device != null)
+            HostHardDisk.NoteDispC8Write(vaddr, value, this);
+            vaddr = CeRomTocFiles.MapBindImpIatRealVa(vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopProcessInfoVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopGwesDispFetchVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopGwesDispDataVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopGwesTextBaseVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopGwesDispData2Va(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopGwesDispData3Va(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopGwesText2Va(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopGwesImageVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopCoredllImageVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopFilesysSlot2Va(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopFilesys48dVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopVallocDataVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapDdiNopDestVa(vaddr);
+            vaddr = CeRomTocFiles.MapProcessHeapSlotVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapCoredllSharedVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapFirmwareSlotVa(this, vaddr);
+            vaddr = CeRomTocFiles.MapVallocHostVa(vaddr);
+            vaddr = CeRomTocFiles.MapExtraRomE32HostVa(vaddr);
+            vaddr = CeRomTocFiles.MapExtraRomTocSrcVa(vaddr);
+            vaddr = CeRomTocFiles.MapExtraRomTocDestVa(vaddr);
+            vaddr = CeRomTocFiles.MapUserKDataVa(vaddr);
+            vaddr = CeRomTocFiles.MapFfffF000Va(this, vaddr);
+            bool watch = CeRomTocFiles.TryNoteDdiNopDecompStore(vaddr, value);
+            try
             {
-                device.Write8(paddr - device.StartAddress, value);
-                return;
+                uint paddr = Translate(vaddr, isStore: true);
+                IBusDevice device = _lookupTable[paddr >> 16];
+
+                if (device != null)
+                {
+                    device.Write8(paddr - device.StartAddress, value);
+                    return;
+                }
+                throw new AddressErrorException($"Write to unmapped physical address 0x{paddr:X8}");
             }
-            throw new AddressErrorException($"Write to unmapped physical address 0x{paddr:X8}");
+            catch
+            {
+                if (watch)
+                    CeRomTocFiles.TryNoteDdiNopDecompStoreThrow(vaddr);
+                throw;
+            }
         }
 
         public void WriteBytes(uint vaddr, byte[] data)

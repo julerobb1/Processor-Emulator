@@ -22,31 +22,12 @@
     <PackageReference Include="System.Management" Version="8.0.0" />
   </ItemGroup>
 
-  <!-- Exclude duplicate emulator display class file to avoid duplicate type compile errors -->
+  <!-- Unused trees live under archive/ with original paths. Do not compile them. -->
   <ItemGroup>
-    <Compile Remove="Emulation\EmulatorDisplay.cs" />
-  </ItemGroup>
-
-  <!-- Exclude duplicate/demo files to reduce duplicate-type compile errors quickly. These are non-destructive exclusions and can be reverted. -->
-  <!-- Exclusions were previously added to silence duplicate-type errors during refactoring.
-       MainWindow.cs must be included for the WPF UI to appear.  Retain other removals only
-       if duplicates still exist, but leave MainWindow enabled. -->
-  <ItemGroup>
-    <Compile Remove="StandaloneBoltDemo.cs" />
-    <Compile Remove="BoltDemo_Standalone\**\*.cs" />
-    <Compile Remove="Emulation\HomebrewEmulatorClean.cs" />
-    <Compile Remove="Emulation\*Clean.cs" />
-    <Page Remove="FolderAnalysisWindow.xaml" />
-    <Compile Remove="FolderAnalysisWindow.xaml.cs" />
-    <Page Remove="MainWindow.xaml" />
-    <Compile Remove="MainWindow.xaml.cs" />
-    <Compile Remove="MainWindow.Themes.cs" />
-    <Page Remove="HypervisorWindow.xaml" />
-    <Compile Remove="HypervisorWindow.xaml.cs" />
-    <Compile Remove="HypervisorWindow.cs" />
-    <Page Remove="Emulation\EmulatorWindow.xaml" />
-    <Compile Remove="Emulation\EmulatorWindow.xaml.cs" />
-    <Page Remove="CarlMode.xaml" />
+    <Compile Remove="archive\**" />
+    <Page Remove="archive\**" />
+    <EmbeddedResource Remove="archive\**" />
+    <None Remove="archive\**" />
   </ItemGroup>
 
 </Project>

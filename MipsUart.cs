@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using ProcessorEmulator.Core;
 
 namespace ProcessorEmulator.Emulation
 {
@@ -49,8 +50,9 @@ namespace ProcessorEmulator.Emulation
             switch (offset)
             {
                 case UART_DR:
-                    // Write to data register, treat as console output
-                    Console.Write((char)value);
+                    // WinExe hides Console.Write. Same boot.log as
+                    // ExtraROM OpenFile. Do not invent a second UART.
+                    BootLog.UartTx((byte)value);
                     break;
                 default:
                     Debug.WriteLine($"[MipsUart] Write to unknown register offset 0x{offset:X} at 0x{StartAddress + offset:X8} with value 0x{value:X}");

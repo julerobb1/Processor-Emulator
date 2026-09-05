@@ -5,7 +5,6 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
-using ProcessorEmulator.Tools;
 
 namespace ProcessorEmulator.Emulation
 {

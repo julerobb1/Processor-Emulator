@@ -1,9 +1,8 @@
+# Publish a zip on push/merge to main (release) or dev (prerelease).
+# Does not run on pull_request — open PRs must not create a Release or tag.
+# Dump bins (nk.bin, etc.bin, UverseDriveE) are never attached.
 name: Auto Release
 
-# Restores the old ci.yml "Build & Auto Release" path (last working
-# cut was v1.0.7). PRs do not publish a release. Merging a PR is a
-# push to main (release) or dev (prerelease), and that is what cuts
-# the GitHub Release. Leave the empty/no-jobs ci.yml alone.
 on:
   push:
     branches: [main, dev]
@@ -13,8 +12,8 @@ permissions:
   contents: write
 
 jobs:
-  build-and-release:
-    name: Build and release
+  release:
+    name: Build and publish zip
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -25,68 +24,77 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: '8.0.x'
 
       - name: Restore
         run: dotnet restore ProcessorEmulator.csproj
 
       - name: Build
-        run: dotnet build ProcessorEmulator.csproj --configuration Release --no-restore
+        run: dotnet build ProcessorEmulator.csproj -c Release --no-restore
 
-      - name: Tag next version
-        id: tag
+      - name: Publish
+        run: dotnet publish ProcessorEmulator.csproj -c Release -f net8.0-windows -o publish
+
+      - name: Next version
+        id: version
         shell: pwsh
         run: |
-          $latestTag = git describe --tags --abbrev=0 2>$null
-          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($latestTag)) {
-            if ("${{ github.ref }}" -eq "refs/heads/dev") {
-              $newTag = "v1.0.0-dev.$(Get-Date -Format 'yyyyMMddHHmm')"
-            } else {
-              $newTag = "v1.0.0"
+          git fetch --tags --force
+          $tags = git tag -l "v*" | Where-Object { $_ -match '^v\d+\.\d+\.\d+$' }
+          $latest = $null
+          $maxMajor = -1; $maxMinor = -1; $maxPatch = -1
+          foreach ($t in $tags) {
+            $p = $t.TrimStart('v').Split('.')
+            $maj = [int]$p[0]; $min = [int]$p[1]; $pat = [int]$p[2]
+            if ($maj -gt $maxMajor -or ($maj -eq $maxMajor -and $min -gt $maxMinor) -or ($maj -eq $maxMajor -and $min -eq $maxMinor -and $pat -gt $maxPatch)) {
+              $maxMajor = $maj; $maxMinor = $min; $maxPatch = $pat
+              $latest = $t
             }
+          }
+          if (-not $latest) {
+            $next = "v1.0.0"
           } else {
-            $version = $latestTag -replace '^v', '' -replace '-.*$', ''
-            $parts = $version.Split('.')
-            $major = [int]$parts[0]
-            $minor = [int]$parts[1]
-            $patch = [int]$parts[2]
-            if ("${{ github.ref }}" -eq "refs/heads/dev") {
-              $newTag = "v$major.$minor.$($patch + 1)-dev.$(Get-Date -Format 'yyyyMMddHHmm')"
-            } else {
-              $newTag = "v$major.$minor.$($patch + 1)"
-            }
+            $next = "v$maxMajor.$maxMinor.$($maxPatch + 1)"
           }
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag $newTag
-          git push origin $newTag
-          "NEW_TAG=$newTag" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "new_tag=$newTag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          Write-Host "Tagged $newTag"
+          $isDev = '${{ github.ref }}' -eq 'refs/heads/dev'
+          if ($isDev) {
+            $stamp = Get-Date -Format "yyyyMMddHHmmss"
+            $tag = "$next-dev.$stamp"
+            $prerelease = "true"
+          } else {
+            $tag = $next
+            $prerelease = "false"
+          }
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "prerelease=$prerelease" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Latest release tag: $latest"
+          Write-Host "Publishing: $tag (prerelease=$prerelease)"
 
-      - name: Package
+      - name: Zip Windows build
         shell: pwsh
         run: |
-          $out = "bin\Release\net8.0-windows"
-          if (-not (Test-Path $out)) {
-            Write-Host "Build output missing at $out"
-            Get-ChildItem bin -Recurse -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_.FullName }
-            exit 1
-          }
-          New-Item -ItemType Directory -Path release-package -Force | Out-Null
-          Copy-Item -Path "$out\*" -Destination release-package\ -Recurse -Force
-          if (Test-Path README.md) { Copy-Item README.md release-package\ }
-          Compress-Archive -Path "release-package\*" -DestinationPath "ProcessorEmulator-$env:NEW_TAG.zip" -Force
+          $src = "publish"
+          $stage = "release-stage"
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          New-Item -ItemType Directory -Path $stage | Out-Null
+          Copy-Item "$src\*" $stage -Recurse -Force
+          $dumpNames = @('nk.bin','etc.bin','sec.bin','raven_fw.bin','UverseDriveE')
+          Get-ChildItem $stage -Recurse -Force | Where-Object {
+            $dumpNames -contains $_.Name
+          } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+          $zip = "ProcessorEmulator-${{ steps.version.outputs.tag }}.zip"
+          Compress-Archive -Path "$stage\*" -DestinationPath $zip -Force
+          "zip=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+        id: pack
 
-      - name: Create GitHub Release
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: ProcessorEmulator-*.zip
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
           generate_release_notes: true
-          prerelease: ${{ github.ref == 'refs/heads/dev' }}
-          tag_name: ${{ env.NEW_TAG }}
-          name: Processor Emulator ${{ env.NEW_TAG }}
-          body: |
-            Automated release from `${{ github.ref_name }}` (`${{ github.sha }}`).
+          prerelease: ${{ steps.version.outputs.prerelease == 'true' }}
+          files: ${{ steps.pack.outputs.zip }}
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
