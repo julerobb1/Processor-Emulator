@@ -10189,8 +10189,14 @@ namespace ProcessorEmulator.Core
         // jal 0x80038294; +DC=0x8003B05C is the
         // jal return. Neither is a leftover
         // resume. leftover-halt when +EC is that
-        // poison mid. Do not leftover hop. Do
-        // not invent dest.
+        // poison mid. Live 3d6387d: leftover-halt
+        // again; plant=0x03F74844 leftover dest.
+        // Dump leftover 0x800159A4 sw $v0,16($sp)
+        // then jal 0x800397B0; 0x800397F8 lw
+        // $s3,4(thread+0x18); 0x800399A4 may
+        // skip FD50; 0x8001597C sw $ra,40($sp).
+        // Observe those slots. Do not leftover
+        // hop. Do not invent dest.
         public static bool TryRefuseMinusOnePlant(MipsBus bus, uint[] regs,
             ref uint programCounter)
         {
@@ -10227,6 +10233,7 @@ namespace ProcessorEmulator.Core
             }
             if (destPlant && !IsSanePlantResumePc(ec))
             {
+                TryNoteLeftoverFrameObserve(bus, regs, plant);
                 if (!_leftoverHaltLogged)
                 {
                     _leftoverHaltLogged = true;
@@ -10265,6 +10272,57 @@ namespace ProcessorEmulator.Core
                     " (refuse leftover ERET; do not invent dest)");
             }
             return true;
+        }
+
+        // Live 3d6387d leftover-halt during NK
+        // coredll LoadO32. Dump leftover:
+        // 0x800158D4 lw thread+0x18; 0x800397F8
+        // lw $s3,4($a0); 0x800399A4 lw FD50;
+        // 0x800159A4 sw $v0,16($sp); 0x8001597C
+        // sw $ra,40($sp). +5C startip. +F0 is
+        // 3 kernel / 0x13 user. One Hive line.
+        // Do not leftover hop. Do not invent dest.
+        private static void TryNoteLeftoverFrameObserve(MipsBus bus, uint[] regs,
+            uint plant)
+        {
+            if (_leftoverFrameLogged)
+                return;
+            _leftoverFrameLogged = true;
+            uint frame = 0;
+            uint frame4 = 0;
+            uint fd50 = plant;
+            uint ra40 = 0;
+            uint v016 = 0;
+            uint startip = 0;
+            uint sr = 0;
+            uint thr = 0;
+            if (TryPeekWord(bus, ThreadPtr, out thr) && thr != 0
+                && thr != 0xFFFFFFFFu)
+            {
+                TryPeekWord(bus, thr + ThreadSyscallFrame, out frame);
+                TryPeekWord(bus, thr + ThreadStartip, out startip);
+                TryPeekWord(bus, thr + ThreadCtxSr, out sr);
+                if (frame != 0 && frame != 0xFFFFFFFFu)
+                    TryPeekWord(bus, frame + 4, out frame4);
+            }
+            uint word;
+            if (TryPeekWord(bus, ExnContinueWord, out word))
+                fd50 = word;
+            uint sp = PeekGpr(regs, 29);
+            if (sp != 0 && sp != 0xFFFFFFFFu)
+            {
+                TryPeekWord(bus, sp + 16, out v016);
+                TryPeekWord(bus, sp + 40, out ra40);
+            }
+            BootLog.Write("[Hive] ExtraROM ddi_nop leftover-frame +18=0x" +
+                frame.ToString("X8") +
+                " +4=0x" + frame4.ToString("X8") +
+                " FD50=0x" + fd50.ToString("X8") +
+                " ra40=0x" + ra40.ToString("X8") +
+                " v016=0x" + v016.ToString("X8") +
+                " +5C=0x" + startip.ToString("X8") +
+                " +F0=0x" + sr.ToString("X8") +
+                " (do not invent dest)");
         }
 
         // Live 3275fe9: kernel 0x80031D38 TLBS
@@ -13265,6 +13323,7 @@ namespace ProcessorEmulator.Core
             _plantFixLogged = false;
             _plantHaltLogged = false;
             _leftoverHaltLogged = false;
+            _leftoverFrameLogged = false;
             _epcHaltLogged = false;
             _c2TlbsLogged = false;
             _c2SpLogged = false;
@@ -19264,6 +19323,7 @@ namespace ProcessorEmulator.Core
         private static bool _plantFixLogged;
         private static bool _plantHaltLogged;
         private static bool _leftoverHaltLogged;
+        private static bool _leftoverFrameLogged;
         private static bool _epcHaltLogged;
         private static bool _c2TlbsLogged;
         private static bool _c2SpLogged;
