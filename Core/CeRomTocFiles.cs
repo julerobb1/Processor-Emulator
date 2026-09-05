@@ -10213,8 +10213,13 @@ namespace ProcessorEmulator.Core
         // idle start (jal 0x80031D34), not a
         // LoadO32 continue. +18/v016=0;
         // FD50/ra40 leftover dest. leftover-halt
-        // stays. Do not leftover hop. Do not
-        // invent dest.
+        // stays. Live ee3e1af: leftover dest
+        // $v0 at wait99 or $ra,$v0 plants
+        // coredll mid-hash (0x03F71740). Dump
+        // 0x800397B0 returns $s3 from frame+4.
+        // Skip that or; leave $ra. leftover-halt
+        // if dest later $t4/$ra. Do not leftover
+        // hop. Do not invent dest.
         public static bool TryRefuseMinusOnePlant(MipsBus bus, uint[] regs,
             ref uint programCounter)
         {
@@ -10246,6 +10251,19 @@ namespace ProcessorEmulator.Core
                         " +EC=0x" + ec.ToString("X8") +
                         " plant=0x" + plant.ToString("X8") +
                         " (refuse leftover ERET adel-pc; do not invent dest)");
+                }
+                return true;
+            }
+            if (pc == LeftoverOrRa && destPlant)
+            {
+                programCounter = pc + 4;
+                if (!_leftoverSkipLogged)
+                {
+                    _leftoverSkipLogged = true;
+                    BootLog.Write("[Hive] ExtraROM ddi_nop leftover-skip was=0x" +
+                        was.ToString("X8") +
+                        " ra=0x" + regs[31].ToString("X8") +
+                        " (leave $ra; refuse leftover dest)");
                 }
                 return true;
             }
@@ -13341,6 +13359,7 @@ namespace ProcessorEmulator.Core
             _plantFixLogged = false;
             _plantHaltLogged = false;
             _leftoverHaltLogged = false;
+            _leftoverSkipLogged = false;
             _leftoverFrameLogged = false;
             _epcHaltLogged = false;
             _c2TlbsLogged = false;
@@ -19341,6 +19360,7 @@ namespace ProcessorEmulator.Core
         private static bool _plantFixLogged;
         private static bool _plantHaltLogged;
         private static bool _leftoverHaltLogged;
+        private static bool _leftoverSkipLogged;
         private static bool _leftoverFrameLogged;
         private static bool _epcHaltLogged;
         private static bool _c2TlbsLogged;
