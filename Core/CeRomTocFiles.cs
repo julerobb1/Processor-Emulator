@@ -772,6 +772,12 @@ namespace ProcessorEmulator.Core
         public const uint ExnContinueWord = 0x8033FD50;
         public const uint LeftoverDestLo = 0x03F6C000;
         public const uint LeftoverDestHi = 0x03F80000;
+        // leftover dest VA − LeftoverDestLo + this = dest
+        // kseg. Live 0x03F70830 → 0x80088830 jr-delay
+        // of leftover-syscall -938; 0x03F71740 →
+        // 0x80089740 mid-hash; 0x03F74844 →
+        // 0x8008C844 GetProc. Do not leftover hop.
+        public const uint LeftoverDestKseg = 0x80084000;
         // Live 8d10132: plant-fix +EC=0x800382F8
         // +DC=0x8003B05C hung LoadO32. Dump:
         // 0x8003B054 jal 0x80038294 (handle
@@ -10489,6 +10495,10 @@ namespace ProcessorEmulator.Core
         // Live 84e6a7f leftover dest +4 0x03F70830
         // is leftover-syscall -938 dest wrapper
         // (jalr+8 0x80088828), not mid-hash.
+        // Dump has more dest wrappers of that
+        // class (addiu $0,-N; jalr; lw $ra;
+        // jr $ra). leftover dest $ra at jalr+8 /
+        // jr / jr-delay stores dest jalr+8.
         // leftover-cstk / leftover-ret /
         // leftover-skip / leftover-halt stay.
         // Do not leftover hop. Do not invent dest.
@@ -10507,7 +10517,7 @@ namespace ProcessorEmulator.Core
             if (fp != 0 && fp != 0xFFFFFFFFu)
                 TryPeekWord(bus, fp, out api);
             uint dest;
-            if (!TryResolveLeftoverCstkDest(api, t3, out dest))
+            if (!TryResolveLeftoverCstkDest(bus, api, t3, out dest))
                 return;
             regs[11] = dest;
             if (_leftoverCstkFixLogged)
@@ -10525,22 +10535,114 @@ namespace ProcessorEmulator.Core
             return ra >= LeftoverApi938RaLo && ra < LeftoverApi938RaHi;
         }
 
-        private static bool TryResolveLeftoverCstkDest(uint api, uint leftoverRa,
-            out uint dest)
+        private static bool TryResolveLeftoverCstkDest(MipsBus bus, uint api,
+            uint leftoverRa, out uint dest)
         {
             dest = 0;
             // leftover dest $ra identity first. Live 84e6a7f
             // leftover dest 0x03F70830 is leftover-syscall
             // -938, even if $fp+0 still shows api -1630.
+            // Same dest-wrapper class: dest ROM jalr+8.
             // Do not invent dest. Do not leftover hop.
             if (IsLeftoverApi938Ra(leftoverRa))
                 dest = LeftoverApi938Ret;
+            else if (TryResolveLeftoverCstkFromDestWrapper(bus, leftoverRa,
+                out dest))
+                return true;
             else if (api == LeftoverApi1630)
                 dest = LeftoverApi1630Ret;
             else if (api == LeftoverApi938)
                 dest = LeftoverApi938Ret;
             else
                 return false;
+            return IsSanePlantResumePc(dest);
+        }
+
+        private static bool IsJalrInsn(uint word, out uint rs)
+        {
+            rs = (word >> 21) & 31;
+            return ((word >> 26) & 63) == 0 && (word & 63) == 9;
+        }
+
+        private static bool IsLwRaSp(uint word)
+        {
+            return ((word >> 26) & 63) == 35
+                && ((word >> 16) & 31) == 31
+                && ((word >> 21) & 31) == 29;
+        }
+
+        private static bool IsAddiuZeroNeg(uint word, out uint rt)
+        {
+            rt = (word >> 16) & 31;
+            int simm = (short)(word & 0xFFFFu);
+            return ((word >> 26) & 63) == 9
+                && ((word >> 21) & 31) == 0
+                && simm < 0;
+        }
+
+        // Dump dest wrapper: addiu $0,-N; jalr; delay;
+        // lw $ra,N($sp); jr $ra; [addiu $sp]. leftover
+        // dest $ra at jalr+8 / jr / jr-delay. Store dest
+        // jalr+8. Mid-hash 0x80089740 and GetProc
+        // 0x8008C844 do not match. Do not leftover hop.
+        private static bool TryResolveLeftoverCstkFromDestWrapper(MipsBus bus,
+            uint leftoverRa, out uint dest)
+        {
+            dest = 0;
+            if (bus == null || !IsLeftoverDestVa(leftoverRa))
+                return false;
+            uint destPc = leftoverRa - LeftoverDestLo + LeftoverDestKseg;
+            if ((destPc & 3) != 0 || destPc < LeftoverDestKseg
+                || destPc >= LeftoverDestKseg + (LeftoverDestHi - LeftoverDestLo)
+                || destPc < 0x80010000u || destPc >= NkImageEnd)
+                return false;
+            uint jalrPc = 0;
+            uint w0 = 0;
+            uint wm4 = 0;
+            uint wm8 = 0;
+            uint wm12 = 0;
+            uint wm16 = 0;
+            uint wp4 = 0;
+            if (!TryPeekWord(bus, destPc, out w0))
+                return false;
+            if (TryPeekWord(bus, destPc - 4, out wm4) && IsFirmwareJrRa(wm4)
+                && TryPeekWord(bus, destPc - 8, out wm8) && IsLwRaSp(wm8)
+                && TryPeekWord(bus, destPc - 16, out wm16)
+                && IsJalrInsn(wm16, out _))
+                jalrPc = destPc - 16;
+            else if (IsFirmwareJrRa(w0)
+                && TryPeekWord(bus, destPc - 4, out wm4) && IsLwRaSp(wm4)
+                && TryPeekWord(bus, destPc - 12, out wm12)
+                && IsJalrInsn(wm12, out _))
+                jalrPc = destPc - 12;
+            else if (IsLwRaSp(w0)
+                && TryPeekWord(bus, destPc + 4, out wp4) && IsFirmwareJrRa(wp4)
+                && TryPeekWord(bus, destPc - 8, out wm8)
+                && IsJalrInsn(wm8, out _))
+                jalrPc = destPc - 8;
+            else
+                return false;
+            uint jalrW = 0;
+            uint jalrRs;
+            if (!TryPeekWord(bus, jalrPc, out jalrW)
+                || !IsJalrInsn(jalrW, out jalrRs))
+                return false;
+            bool sawAddiu = false;
+            for (uint off = 4; off <= 32; off += 4)
+            {
+                uint aw = 0;
+                uint rt;
+                if (!TryPeekWord(bus, jalrPc - off, out aw))
+                    break;
+                if (IsAddiuZeroNeg(aw, out rt) && rt == jalrRs)
+                {
+                    sawAddiu = true;
+                    break;
+                }
+            }
+            if (!sawAddiu)
+                return false;
+            dest = jalrPc + 8;
             return IsSanePlantResumePc(dest);
         }
 
@@ -10606,7 +10708,7 @@ namespace ProcessorEmulator.Core
             if (!IsLeftoverDestVa(frame4))
                 return;
             uint dest;
-            if (!TryResolveLeftoverCstkDest(0, frame4, out dest))
+            if (!TryResolveLeftoverCstkDest(bus, 0, frame4, out dest))
                 return;
             try
             {
