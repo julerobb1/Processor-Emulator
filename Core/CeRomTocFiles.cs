@@ -707,6 +707,18 @@ namespace ProcessorEmulator.Core
         public const uint ExnContinueWord = 0x8033FD50;
         public const uint LeftoverDestLo = 0x03F6C000;
         public const uint LeftoverDestHi = 0x03F80000;
+        // Live 8d10132: plant-fix +EC=0x800382F8
+        // +DC=0x8003B05C hung LoadO32. Dump:
+        // 0x8003B054 jal 0x80038294 (handle
+        // lookup); +EC is mid that callee
+        // (beq $t5,$0); +DC is the jal return
+        // (bne $v0,$0). Replay +EC with $ra=
+        // +EC then jr $ra loops. Poison mid.
+        // Do not leftover hop. Do not invent dest.
+        public const uint HandleLookupJal = 0x80038294;
+        public const uint HandleLookupEnd = 0x80038340;
+        public const uint HandleLookupRet = 0x8003B04C;
+        public const uint HandleLookupRetEnd = 0x8003B080;
         public const uint O32Compressed = 0x4000;
         // ExtraROM o32[0] 0x60002020: 0x2000 lets CopyO32 accept
         // unaligned dataptr 0x80764CE0. MapO32 still VirtualCopys
@@ -10078,11 +10090,23 @@ namespace ProcessorEmulator.Core
             return pc >= LeftoverDestLo && pc < LeftoverDestHi;
         }
 
+        // Live 8d10132: +EC mid 0x80038294 / +DC
+        // mid 0x8003B04C. plant-fix $ra to that
+        // PC then jr $ra spins. Not a leftover
+        // resume. Do not invent dest.
+        private static bool IsPoisonMidPlantResume(uint pc)
+        {
+            if (pc >= HandleLookupJal && pc < HandleLookupEnd)
+                return true;
+            return pc >= HandleLookupRet && pc < HandleLookupRetEnd;
+        }
+
         private static bool IsSanePlantResumePc(uint pc)
         {
             if ((pc & 3) != 0 || IsPoisonPlant(pc) || IsNearNullVa(pc))
                 return false;
-            if (IsLeftoverDestVa(pc) || IsNkIdleResumePc(pc))
+            if (IsLeftoverDestVa(pc) || IsNkIdleResumePc(pc)
+                || IsPoisonMidPlantResume(pc))
                 return false;
             if (pc == LeftoverOrRa || pc == LeftoverMtc0Epc
                 || pc == LeftoverJrRa || pc == LeftoverEret
@@ -10159,13 +10183,14 @@ namespace ProcessorEmulator.Core
         // leftover dest unless thread+0xEC is a
         // sane aligned NK/useg PC. Live 0332c87:
         // leftover-halt was=0x03F71740 +EC=
-        // 0x800382F8 during NK coredll LoadO32
-        // (dump: beq $t5,$0 mid handle lookup).
-        // That +EC is the real resume, not leftover
-        // dest / leftover mid / idle. Replay +EC
-        // into $v0/$t4/$ra so leftover never aims
-        // ERET at leftover dest. Do not leftover
-        // hop. Do not invent dest.
+        // 0x800382F8 during NK coredll LoadO32.
+        // Live 8d10132: plant-fix to that +EC
+        // hung (jr $ra loop). Dump: +EC is mid
+        // jal 0x80038294; +DC=0x8003B05C is the
+        // jal return. Neither is a leftover
+        // resume. leftover-halt when +EC is that
+        // poison mid. Do not leftover hop. Do
+        // not invent dest.
         public static bool TryRefuseMinusOnePlant(MipsBus bus, uint[] regs,
             ref uint programCounter)
         {
@@ -10208,6 +10233,7 @@ namespace ProcessorEmulator.Core
                     BootLog.Write("[Hive] ExtraROM ddi_nop leftover-halt was=0x" +
                         was.ToString("X8") +
                         " +EC=0x" + ec.ToString("X8") +
+                        " +DC=0x" + dc.ToString("X8") +
                         " plant=0x" + plant.ToString("X8") +
                         " (refuse leftover ERET dest; do not invent dest)");
                 }
