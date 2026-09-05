@@ -414,6 +414,18 @@ namespace ProcessorEmulator.Core
         // 0x80039860 unlinks the frame. Observe
         // live frame+4 here. Do not leftover hop.
         public const uint LeftoverLoadS3 = 0x800397F8;
+        // Live 05a9778 leftover-ret +4 leftover
+        // dest before this lw. Dump leftover
+        // ObjectCall 0x80039148 (sole jal
+        // 0x80015980): 0x800391C4 lw $t3,16($fp)
+        // is leftover 0x8001597C $ra; 0x800391CC
+        // sw $t3,4($s7) writes frame+4; 0x80039218
+        // sw $s7,24(thread) links it. dest of
+        // leftover dest 0x03F71740 is mid-hash
+        // (0x80089740 addu), not jalr+8. Name
+        // that store. Do not leftover hop. Do
+        // not invent dest.
+        public const uint LeftoverCstkSw = 0x800391CC;
         public const uint LeftoverMtc0Epc = 0x80015A08;
         public const uint LeftoverJrRa = 0x80015A28;
         public const uint LeftoverEret = 0x80015A24;
@@ -10389,6 +10401,44 @@ namespace ProcessorEmulator.Core
                 " (do not invent dest)");
         }
 
+        // Live 05a9778 leftover-ret frame+4
+        // leftover dest already. Dump who wrote
+        // it: 0x800391CC sw leftover $ra during
+        // leftover-syscall ObjectCall. api is
+        // 0($fp) leftover-syscall index. One
+        // Hive line. leftover-ret / leftover-
+        // skip / leftover-halt stay. Do not
+        // leftover hop. Do not invent dest.
+        public static void TryNoteLeftoverCstkObserve(MipsBus bus, uint[] regs,
+            uint pc)
+        {
+            if (_leftoverCstkLogged)
+                return;
+            if (pc != LeftoverCstkSw)
+                return;
+            uint t3 = PeekGpr(regs, 11);
+            if (!IsLeftoverDestVa(t3))
+                return;
+            _leftoverCstkLogged = true;
+            uint frame = PeekGpr(regs, 23);
+            uint fp = PeekGpr(regs, 30);
+            uint api = 0;
+            uint plus18 = 0;
+            uint thr = 0;
+            if (fp != 0 && fp != 0xFFFFFFFFu)
+                TryPeekWord(bus, fp, out api);
+            if (TryPeekWord(bus, ThreadPtr, out thr) && thr != 0
+                && thr != 0xFFFFFFFFu)
+                TryPeekWord(bus, thr + ThreadSyscallFrame, out plus18);
+            BootLog.Write("[Hive] ExtraROM ddi_nop leftover-cstk sw=0x" +
+                LeftoverCstkSw.ToString("X8") +
+                " frame=0x" + frame.ToString("X8") +
+                " +4=0x" + t3.ToString("X8") +
+                " api=0x" + api.ToString("X8") +
+                " +18=0x" + plus18.ToString("X8") +
+                " (dump ObjectCall stores leftover $ra)");
+        }
+
         // Live b757425 leftover-skip $v0 leftover
         // dest. Dump 0x800397F8 lw $s3,4(frame)
         // before 0x80039860 unlinks thread+0x18.
@@ -13427,6 +13477,7 @@ namespace ProcessorEmulator.Core
             _leftoverHaltLogged = false;
             _leftoverSkipLogged = false;
             _leftoverRetLogged = false;
+            _leftoverCstkLogged = false;
             _leftoverFrameLogged = false;
             _epcHaltLogged = false;
             _c2TlbsLogged = false;
@@ -19429,6 +19480,7 @@ namespace ProcessorEmulator.Core
         private static bool _leftoverHaltLogged;
         private static bool _leftoverSkipLogged;
         private static bool _leftoverRetLogged;
+        private static bool _leftoverCstkLogged;
         private static bool _leftoverFrameLogged;
         private static bool _epcHaltLogged;
         private static bool _c2TlbsLogged;
