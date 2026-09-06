@@ -453,6 +453,22 @@ namespace ProcessorEmulator.Core
         // wait99. leftover-wait99-tick-halt that PC.
         // Do not leftover hop. Do not invent dest.
         public const uint LeftoverWait99Tick = 0x800558A0;
+        // Live 98463a8 leftover-wait99-wrap-cont at
+        // GetProc-wrapper $ra then leftover-wait99-
+        // halt was=0x8001597C ra=0x03F70B94 dest=
+        // 0x80088B94 dest-word=0x01495825 (or $t3,
+        // $t2,$t1 mid-hash) leftover-wait99-spin
+        // pc=0x80055814 v0=0x044B2C8D a0=0 ra=
+        // 0x80055808 dest=0. leftover dest leftover-
+        // syscall $ra dest mid-hash is not a
+        // LoadO32 continue. leftover-wait99-halt
+        // stays at plant root; timer tick escapes
+        // to dump OEM tick mid 0x80055814 (+0x20
+        // of 0x800557F4). leftover-wait99-tick-
+        // halt that PC and stay. leftover dest
+        // GetProc dest leftover hop forbidden. Do
+        // not leftover hop. Do not invent dest.
+        public const uint LeftoverWait99TickMid = 0x80055814;
         public const uint LeftoverWait99TickRa = 0x80055808;
         public const uint LeftoverWait99TickA0 = 0x80338F68;
         public const uint LeftoverWait99TickWord = 0x80338F70;
@@ -10938,8 +10954,18 @@ namespace ProcessorEmulator.Core
         // is not a LoadO32 resume. No dest-live
         // LoadO32 continue in PE/hive/dest-word.
         // leftover-wait99-need names that missing
-        // dest-live LoadO32 resume. Do not leftover
-        // hop. Do not invent dest.
+        // dest-live LoadO32 resume. Live 98463a8
+        // leftover-wait99-wrap-cont then leftover-
+        // wait99-halt ra=0x03F70B94 dest=0x80088B94
+        // dest-word=0x01495825 (or $t3,$t2,$t1 mid-
+        // hash) leftover-wait99-spin pc=0x80055814.
+        // leftover dest leftover-syscall $ra dest
+        // mid-hash is not a LoadO32 continue.
+        // leftover-wait99-tick-halt dump OEM tick
+        // mid after leftover-wait99-halt stays.
+        // leftover dest GetProc dest leftover hop
+        // forbidden. Do not leftover hop. Do not
+        // invent dest.
         public static bool TryFixWait99PlantRa(MipsBus bus, uint[] regs,
             ref uint programCounter)
         {
@@ -12815,10 +12841,33 @@ namespace ProcessorEmulator.Core
         public static bool TryNoteLeftoverWait99Spin(MipsBus bus, uint[] regs,
             uint pc)
         {
-            if (!_wait99PlantFixLogged || _leftoverWait99SpinLogged
-                || _leftoverHaltLogged)
+            if (!_wait99PlantFixLogged || _leftoverHaltLogged)
                 return false;
             if (pc == 0 || pc == LeftoverWait99RaSw)
+                return false;
+            if (IsLeftoverWait99OemTick(pc))
+            {
+                uint v0Tick = PeekGpr(regs, 2);
+                uint a0Tick = PeekGpr(regs, 4);
+                uint raTick = PeekGpr(regs, 31);
+                if (!_leftoverWait99SpinLogged)
+                {
+                    _leftoverWait99SpinLogged = true;
+                    uint word = 0;
+                    TryPeekWord(bus, pc, out word);
+                    BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-tick-halt pc=0x" +
+                        pc.ToString("X8") +
+                        " v0=0x" + v0Tick.ToString("X8") +
+                        " a0=0x" + a0Tick.ToString("X8") +
+                        " ra=0x" + raTick.ToString("X8") +
+                        " word=0x" + word.ToString("X8") +
+                        " (dump 0x" + OemTickDelta.ToString("X8") +
+                        " tick vs 0x" + LeftoverWait99TickWord.ToString("X8") +
+                        "; leftover dest leftover-syscall $ra dest mid-hash not LoadO32; leftover-wait99-halt stays; do not leftover dest)");
+                }
+                return true;
+            }
+            if (_leftoverWait99SpinLogged)
                 return false;
             _leftoverWait99SpinN++;
             if (_leftoverWait99SpinN < 4096)
@@ -12830,21 +12879,6 @@ namespace ProcessorEmulator.Core
             uint dest = LeftoverWait99DestOf(pc);
             if (dest == 0 && IsLeftoverDestVa(ra) && (ra & 3) == 0)
                 dest = LeftoverDestKseg + (ra - LeftoverDestLo);
-            if (IsLeftoverWait99OemTick(pc))
-            {
-                uint word = 0;
-                TryPeekWord(bus, pc, out word);
-                BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-tick-halt pc=0x" +
-                    pc.ToString("X8") +
-                    " v0=0x" + v0.ToString("X8") +
-                    " a0=0x" + a0.ToString("X8") +
-                    " ra=0x" + ra.ToString("X8") +
-                    " word=0x" + word.ToString("X8") +
-                    " (dump 0x" + OemTickDelta.ToString("X8") +
-                    " tick vs 0x" + LeftoverWait99TickWord.ToString("X8") +
-                    "; v0=0 tick leftover; not LoadO32 continue; do not leftover dest)");
-                return true;
-            }
             BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-spin pc=0x" +
                 pc.ToString("X8") +
                 " v0=0x" + v0.ToString("X8") +
@@ -12875,11 +12909,17 @@ namespace ProcessorEmulator.Core
         }
 
         // Live a2375d3 leftover-wait99-spin pc=0x800558A0
-        // ra=0x80055808. Dump 0x800557F4 tick vs
-        // 0x80338F70. Mid OEM tick, not leftover dest.
+        // ra=0x80055808. Live 98463a8 leftover-wait99-
+        // spin pc=0x80055814 after leftover-wait99-halt
+        // dest=0x80088B94 dest-word=0x01495825. Dump
+        // 0x800557F4 tick vs 0x80338F70. OEM tick mid,
+        // not leftover dest / not a LoadO32 continue.
         private static bool IsLeftoverWait99OemTick(uint pc)
         {
-            return pc == LeftoverWait99Tick;
+            if (pc == LeftoverWait99Tick || pc == LeftoverWait99TickMid
+                || pc == LeftoverWait99TickRa)
+                return true;
+            return pc >= OemTickDelta && pc <= LeftoverWait99Tick;
         }
 
         private static uint LeftoverWait99DestOf(uint pc)
