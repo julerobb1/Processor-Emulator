@@ -625,6 +625,20 @@ namespace ProcessorEmulator.Core
         public const uint LeftoverApi938Ret = 0x80088828;
         public const uint LeftoverApi938RaLo = 0x03F70820;
         public const uint LeftoverApi938RaHi = 0x03F70834;
+        // Live f99af0d GetProc plant win then leftover-cstk
+        // api=0xFFFFFFB2 (-78) +4 leftover dest 0x03F70830.
+        // IsLeftoverApi938Ra planted LeftoverApi938Ret
+        // 0x80088828 (dump leftover-syscall -938 jalr+8),
+        // then leftover-halt dest stub dest=0. api -78 is
+        // not -938: dump index api=(EPC+0x3FE)>>2 so
+        // imm=(api<<2)-0x3FE = -1334; methods[78] is
+        // ppfnMethods+0x138. Do not leftover hop to
+        // 0x80088828 for api -78. leftover dest GetProc
+        // dest leftover hop forbidden. Do not leftover
+        // hop. Do not invent dest.
+        public const uint LeftoverApi78 = 0xFFFFFFB2;
+        public const int LeftoverApi78Imm = -1334;
+        public const uint LeftoverApi78Meth = 78;
         // Live 8741ab2 plant-fix +EC=0x800397B8
         // then silent freeze. Dump leftover
         // 0x800397B0 addiu $sp,-48; 0x800397B8
@@ -10618,7 +10632,10 @@ namespace ProcessorEmulator.Core
                 }
                 return true;
             }
-            if (destStub
+            bool api78 = _leftoverCstkApi == LeftoverApi78;
+            bool api78Cont = api78 && IsSanePlantResumePc(ec)
+                && !IsJalCalleeMid(bus, ec, dc);
+            if ((destStub && !api78Cont)
                 || ((destPlant || leftoverMid)
                     && (IsJalCalleeMid(bus, ec, dc) || !IsSanePlantResumePc(ec))))
             {
@@ -10638,19 +10655,36 @@ namespace ProcessorEmulator.Core
                         && mid >= LeftoverDestKseg
                         && mid < LeftoverDestKseg + (LeftoverDestHi - LeftoverDestLo))
                         leftoverJalr8 = LeftoverDestLo + (mid - LeftoverDestKseg);
-                    BootLog.Write("[Hive] ExtraROM ddi_nop leftover-halt was=0x" +
-                        mid.ToString("X8") +
-                        " +EC=0x" + ec.ToString("X8") +
-                        " +DC=0x" + dc.ToString("X8") +
-                        " plant=0x" + plant.ToString("X8") +
-                        (destStub
-                            ? " ra=0x" + waitRa.ToString("X8") +
-                              " dest=0x" + destOfRa.ToString("X8") +
-                              " leftover-jalr8=0x" + leftoverJalr8.ToString("X8") +
-                              " (refuse leftover dest leftover-syscall jalr+8; leftover dest $ra mid-hash not leftover dest leftover-syscall stub; do not leftover dest)"
-                            : leftoverMid && !destPlant
-                            ? " (refuse leftover mid $ra; do not invent dest)"
-                            : " (refuse leftover ERET dest; do not invent dest)"));
+                    if (api78)
+                    {
+                        uint m78 = 0;
+                        uint jalr8 = 0;
+                        TryPeekLeftoverWait99Method(bus, LeftoverApi78Meth, out m78);
+                        TryResolveLeftoverCstkFromApi(bus, LeftoverApi78, out jalr8);
+                        BootLog.Write("[Hive] ExtraROM ddi_nop leftover-api-78-halt api=0x" +
+                            LeftoverApi78.ToString("X8") +
+                            " imm=" + LeftoverApi78Imm +
+                            " jalr8=0x" + jalr8.ToString("X8") +
+                            " m78=0x" + m78.ToString("X8") +
+                            " was=0x" + mid.ToString("X8") +
+                            " +EC=0x" + ec.ToString("X8"));
+                    }
+                    else
+                    {
+                        BootLog.Write("[Hive] ExtraROM ddi_nop leftover-halt was=0x" +
+                            mid.ToString("X8") +
+                            " +EC=0x" + ec.ToString("X8") +
+                            " +DC=0x" + dc.ToString("X8") +
+                            " plant=0x" + plant.ToString("X8") +
+                            (destStub
+                                ? " ra=0x" + waitRa.ToString("X8") +
+                                  " dest=0x" + destOfRa.ToString("X8") +
+                                  " leftover-jalr8=0x" + leftoverJalr8.ToString("X8") +
+                                  " (refuse leftover dest leftover-syscall jalr+8; leftover dest $ra mid-hash not leftover dest leftover-syscall stub; do not leftover dest)"
+                                : leftoverMid && !destPlant
+                                ? " (refuse leftover mid $ra; do not invent dest)"
+                                : " (refuse leftover ERET dest; do not invent dest)"));
+                    }
                 }
                 return true;
             }
@@ -10660,12 +10694,25 @@ namespace ProcessorEmulator.Core
                 if (!_plantFixLogged)
                 {
                     _plantFixLogged = true;
-                    BootLog.Write("[Hive] ExtraROM ddi_nop plant-fix was=0x" +
-                        was.ToString("X8") +
-                        " +EC=0x" + ec.ToString("X8") +
-                        " +DC=0x" + dc.ToString("X8") +
-                        " plant=0x" + plant.ToString("X8") +
-                        " (replay thread+0xEC; do not leftover dest)");
+                    if (api78)
+                    {
+                        uint m78 = 0;
+                        TryPeekLeftoverWait99Method(bus, LeftoverApi78Meth, out m78);
+                        BootLog.Write("[Hive] ExtraROM ddi_nop leftover-api-78-cont api=0x" +
+                            LeftoverApi78.ToString("X8") +
+                            " +EC=0x" + ec.ToString("X8") +
+                            " was=0x" + was.ToString("X8") +
+                            " m78=0x" + m78.ToString("X8"));
+                    }
+                    else
+                    {
+                        BootLog.Write("[Hive] ExtraROM ddi_nop plant-fix was=0x" +
+                            was.ToString("X8") +
+                            " +EC=0x" + ec.ToString("X8") +
+                            " +DC=0x" + dc.ToString("X8") +
+                            " plant=0x" + plant.ToString("X8") +
+                            " (replay thread+0xEC; do not leftover dest)");
+                    }
                 }
                 return false;
             }
@@ -11863,6 +11910,56 @@ namespace ProcessorEmulator.Core
             return IsDumpWait99GetProcDest(getproc);
         }
 
+        // Live f99af0d leftover-wait99-wrap-plant
+        // via=ptr now=0x8005D400. methods[78] is
+        // *(ppfnMethods+0x138). Peek only; do not
+        // invent dest from an empty slot.
+        private static bool TryPeekLeftoverWait99Method(MipsBus bus, uint index,
+            out uint fn)
+        {
+            fn = 0;
+            if (bus == null || index > 255)
+                return false;
+            uint table = 0;
+            uint slot = 0;
+            uint kdata = 0;
+            uint gp;
+            TryPeekWord(bus, ProcessInfoFaultVa, out slot);
+            TryPeekWord(bus, LeftoverWait99CacheKdata, out kdata);
+            if (TryAcceptLeftoverWait99GetProcTable(bus, slot, out gp))
+                table = slot;
+            else if (TryAcceptLeftoverWait99GetProcTable(bus, kdata, out gp))
+                table = kdata;
+            else if (slot != 0 && slot != 0xFFFFFFFFu)
+                table = slot;
+            else
+                return false;
+            if (!TryPeekWord(bus, table + index * 4, out fn))
+            {
+                fn = 0;
+                return false;
+            }
+            if (fn == 0 || fn == 0xFFFFFFFFu)
+                return false;
+            return true;
+        }
+
+        private static void TryNoteLeftoverApi78Need(MipsBus bus, uint leftoverRa,
+            uint refuse)
+        {
+            if (_leftoverApi78NeedLogged)
+                return;
+            _leftoverApi78NeedLogged = true;
+            uint m78 = 0;
+            TryPeekLeftoverWait99Method(bus, LeftoverApi78Meth, out m78);
+            BootLog.Write("[Hive] ExtraROM ddi_nop leftover-api-78-need api=0x" +
+                LeftoverApi78.ToString("X8") +
+                " imm=" + LeftoverApi78Imm +
+                " ra=0x" + leftoverRa.ToString("X8") +
+                " refuse=0x" + refuse.ToString("X8") +
+                " m78=0x" + m78.ToString("X8"));
+        }
+
         private static void TryNoteLeftoverWait99WrapNeed(MipsBus bus, uint[] regs,
             uint methods, uint getproc, string via, uint wn32, uint hop)
         {
@@ -11992,6 +12089,7 @@ namespace ProcessorEmulator.Core
             uint thr = 0;
             if (fp != 0 && fp != 0xFFFFFFFFu)
                 TryPeekWord(bus, fp, out api);
+            _leftoverCstkApi = api;
             if (TryPeekWord(bus, ThreadPtr, out thr) && thr != 0
                 && thr != 0xFFFFFFFFu)
                 TryPeekWord(bus, thr + ThreadSyscallFrame, out plus18);
@@ -12017,13 +12115,18 @@ namespace ProcessorEmulator.Core
         // Live 84e6a7f leftover dest +4 0x03F70830
         // is leftover-syscall -938 dest wrapper
         // (jalr+8 0x80088828), not mid-hash.
-        // Dump has more dest wrappers of that
-        // class (addiu $0,-N; jalr; lw $ra;
-        // jr $ra). leftover dest $ra at jalr+8 /
-        // jr / jr-delay stores dest jalr+8.
-        // leftover-cstk / leftover-ret /
-        // leftover-skip / leftover-halt stay.
-        // Do not leftover hop. Do not invent dest.
+        // Live f99af0d leftover-cstk api=0xFFFFFFB2
+        // (-78) +4 leftover dest 0x03F70830. The
+        // 938 RA range planted LeftoverApi938Ret
+        // 0x80088828 then leftover-halt dest stub.
+        // api -78 is leftover-syscall -1334 /
+        // methods[78], not -938. Do not leftover
+        // hop to 0x80088828. leftover dest GetProc
+        // dest leftover hop forbidden. leftover-
+        // api-78-need refuses leftover-syscall
+        // jalr+8; leftover-api-78-cont replays
+        // dump-true thread+0xEC. Do not leftover
+        // hop. Do not invent dest.
         public static void TryFixLeftoverCstkRa(MipsBus bus, uint[] regs,
             uint pc)
         {
@@ -12038,9 +12141,19 @@ namespace ProcessorEmulator.Core
             uint api = 0;
             if (fp != 0 && fp != 0xFFFFFFFFu)
                 TryPeekWord(bus, fp, out api);
+            _leftoverCstkApi = api;
             uint dest;
             if (!TryResolveLeftoverCstkDest(bus, api, t3, out dest))
+            {
+                if (api == LeftoverApi78)
+                    TryNoteLeftoverApi78Need(bus, t3, 0);
                 return;
+            }
+            if (api == LeftoverApi78 && IsLeftoverSyscallStubRet(bus, dest))
+            {
+                TryNoteLeftoverApi78Need(bus, t3, dest);
+                return;
+            }
             regs[11] = dest;
             if (_leftoverCstkFixLogged)
                 return;
@@ -12225,18 +12338,24 @@ namespace ProcessorEmulator.Core
             // dest 0x80089618) has no jalr+8 at
             // that PC. Invert leftover-syscall api:
             // imm = (int16)((api<<2)-0x3FE), dest ROM
-            // addiu $0,imm; jalr → jalr+8. Do not
-            // leftover hop. Do not invent dest.
-            if (IsLeftoverApi938Ra(leftoverRa))
+            // addiu $0,imm; jalr → jalr+8. Live
+            // f99af0d leftover dest 0x03F70830 is
+            // also leftover-syscall -938 jalr delay;
+            // api -78 must not plant 0x80088828.
+            // Named api / dest-ROM scan first. 938
+            // RA range only when api is 0 or 938.
+            // Do not leftover hop. Do not invent dest.
+            if (api == LeftoverApi1630)
+                dest = LeftoverApi1630Ret;
+            else if (api == LeftoverApi938)
                 dest = LeftoverApi938Ret;
+            else if (TryResolveLeftoverCstkFromApi(bus, api, out dest))
+                return true;
             else if (TryResolveLeftoverCstkFromDestWrapper(bus, leftoverRa,
                 out dest))
                 return true;
-            else if (api == LeftoverApi1630)
-                dest = LeftoverApi1630Ret;
-            else if (TryResolveLeftoverCstkFromApi(bus, api, out dest))
-                return true;
-            else if (api == LeftoverApi938)
+            else if ((api == 0 || api == LeftoverApi938)
+                && IsLeftoverApi938Ra(leftoverRa))
                 dest = LeftoverApi938Ret;
             else
                 return false;
@@ -12426,9 +12545,14 @@ namespace ProcessorEmulator.Core
         // Live 1f83cb1 leftover-ret leftover dest
         // +4=0x03F71EBC (dest thunk jalr delay,
         // jalr+8 0x80089EC0). Write dest jalr+8
-        // before 0x800397F8 lw $s3. One Hive
-        // line. leftover-skip / leftover-halt stay.
-        // Do not leftover hop. Do not invent dest.
+        // before 0x800397F8 lw $s3. Live f99af0d
+        // leftover-ret +4 leftover dest 0x03F70830
+        // after leftover-cstk api -78. Do not
+        // leftover hop to 0x80088828. Pass the
+        // leftover-cstk api; refuse leftover-
+        // syscall jalr+8 for api -78. leftover-
+        // skip / leftover-halt stay. Do not
+        // leftover hop. Do not invent dest.
         public static void TryFixLeftoverRetRa(MipsBus bus, uint[] regs,
             uint pc)
         {
@@ -12445,8 +12569,14 @@ namespace ProcessorEmulator.Core
             if (!IsLeftoverDestVa(frame4))
                 return;
             uint dest;
-            if (!TryResolveLeftoverCstkDest(bus, 0, frame4, out dest))
+            uint api = _leftoverCstkApi;
+            if (!TryResolveLeftoverCstkDest(bus, api, frame4, out dest))
                 return;
+            if (api == LeftoverApi78 && IsLeftoverSyscallStubRet(bus, dest))
+            {
+                TryNoteLeftoverApi78Need(bus, frame4, dest);
+                return;
+            }
             try
             {
                 bus.Write32(frame + 4, dest);
@@ -15467,6 +15597,8 @@ namespace ProcessorEmulator.Core
             _leftoverRetLogged = false;
             _leftoverCstkLogged = false;
             _leftoverCstkFixLogged = false;
+            _leftoverCstkApi = 0;
+            _leftoverApi78NeedLogged = false;
             _wait99PlantFixLogged = false;
             _leftoverWait99WrapLogged = false;
             _leftoverWait99WrapContLogged = false;
@@ -21486,6 +21618,8 @@ namespace ProcessorEmulator.Core
         private static bool _leftoverRetLogged;
         private static bool _leftoverCstkLogged;
         private static bool _leftoverCstkFixLogged;
+        private static uint _leftoverCstkApi;
+        private static bool _leftoverApi78NeedLogged;
         private static bool _wait99PlantFixLogged;
         private static bool _leftoverWait99WrapLogged;
         private static bool _leftoverWait99WrapContLogged;
