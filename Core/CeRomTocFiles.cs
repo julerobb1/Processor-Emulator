@@ -456,6 +456,27 @@ namespace ProcessorEmulator.Core
         public const uint LeftoverWait99TickRa = 0x80055808;
         public const uint LeftoverWait99TickA0 = 0x80338F68;
         public const uint LeftoverWait99TickWord = 0x80338F70;
+        // Live a77cd06 leftover-wait99-need ra-word=
+        // 0x8FC60000 dest-word=0x01873821 +EC=
+        // 0x03F71720 plant=0x03F74844. ra-word is
+        // dump dest wrapper mid lw $a2,0($fp). dest-
+        // word is mid-hash addu $a3,$t4,$a3. +EC is
+        // leftover dest dest-wrapper. plant leftover
+        // dest GetProc dest 0x8008C844. leftover dest
+        // GetProc leftover dest dest-wrapper jalr
+        // leftover-syscall -1630 / wait99. leftover
+        // dest dest-wrapper mid leftover $fp is
+        // poison, not LoadO32. leftover dest GetProc
+        // dest leftover hop forbidden. leftover-
+        // wait99-wrap-halt leftover dest dest-wrapper
+        // so leftover-syscall -1630 is never entered.
+        // Do not leftover hop. Do not invent dest.
+        public const uint LeftoverWait99Wrap = 0x03F71720;
+        public const uint LeftoverWait99WrapRa = 0x03F71740;
+        public const uint LeftoverWait99WrapRaWord = 0x8FC60000;
+        public const uint LeftoverWait99HashWord = 0x01873821;
+        public const uint LeftoverWait99GetProc = 0x03F74844;
+        public const uint LeftoverWait99GetProcDest = 0x8008C844;
         // Dump 0x800397F8 lw $s3,4($a0) with $a0
         // = thread+0x18 syscall frame. 0x800399E8
         // or $v0,$s3 returns that. Live b757425
@@ -10729,6 +10750,86 @@ namespace ProcessorEmulator.Core
                 " entered=" + _nkLoadO32Entered +
                 " dest0=0x" + _nkLoadO32Toc.ToString("X8") +
                 " (dump dest mid-hash; leftover dest leftover-syscall $ra != leftover dest leftover-syscall -1630 jalr+8; no dest-live LoadO32 resume; do not leftover dest)");
+            TryNoteLeftoverWait99Why(bus, plant, ra, destWord, raWord);
+        }
+
+        // Live a77cd06 leftover dest leftover-syscall $ra
+        // dest wrapper mid lw $a2,0($fp); plant leftover
+        // dest GetProc. leftover dest GetProc leftover
+        // dest dest-wrapper jalr leftover-syscall -1630
+        // is why wait99 is entered. leftover dest dest-
+        // wrapper mid leftover $fp is poison. leftover
+        // dest GetProc dest leftover hop forbidden.
+        // leftover-wait99-wrap-halt leftover dest dest-
+        // wrapper so leftover-syscall -1630 is never
+        // entered. Do not leftover hop. Do not invent dest.
+        public static bool TryRefuseLeftoverWait99Wrap(MipsBus bus, uint[] regs,
+            uint pc)
+        {
+            if (pc < LeftoverWait99Wrap || pc > LeftoverWait99WrapRa
+                || (pc & 3) != 0)
+                return false;
+            uint word = 0;
+            TryPeekWord(bus, pc, out word);
+            uint rs;
+            uint rt;
+            bool jalr = IsJalrInsn(word, out rs);
+            bool addiu1630 = IsAddiuZeroNeg(word, out rt)
+                && (short)(word & 0xFFFF) == -1630;
+            bool wrapMid = pc == LeftoverWait99WrapRa
+                && word == LeftoverWait99WrapRaWord;
+            if (!jalr && !addiu1630 && !wrapMid && pc != LeftoverWait99Wrap)
+                return false;
+            if (!_leftoverWait99WrapLogged)
+            {
+                _leftoverWait99WrapLogged = true;
+                uint destWord = 0;
+                uint raWord = 0;
+                TryPeekWord(bus, LeftoverWait99GetProcDest, out destWord);
+                TryPeekWord(bus, LeftoverWait99WrapRa, out raWord);
+                uint plant = 0;
+                TryPeekWord(bus, ExnContinueWord, out plant);
+                TryNoteLeftoverWait99Why(bus, plant, LeftoverWait99WrapRa,
+                    destWord, raWord);
+                BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-wrap-halt pc=0x" +
+                    pc.ToString("X8") +
+                    " word=0x" + word.ToString("X8") +
+                    " plant=0x" + plant.ToString("X8") +
+                    " (refuse leftover dest GetProc leftover dest dest-wrapper leftover-syscall -1630; dump dest wrapper mid lw $a2,0($fp); do not leftover dest)");
+            }
+            return true;
+        }
+
+        private static void TryNoteLeftoverWait99Why(MipsBus bus, uint plant,
+            uint ra, uint destWord, uint raWord)
+        {
+            if (_leftoverWait99WhyLogged)
+                return;
+            _leftoverWait99WhyLogged = true;
+            uint w0 = 0;
+            uint w1 = 0;
+            uint w2 = 0;
+            uint w3 = 0;
+            TryPeekWord(bus, LeftoverWait99Wrap, out w0);
+            TryPeekWord(bus, LeftoverWait99Wrap + 4, out w1);
+            TryPeekWord(bus, LeftoverWait99Wrap + 8, out w2);
+            TryPeekWord(bus, LeftoverWait99Wrap + 12, out w3);
+            uint gpWord = 0;
+            TryPeekWord(bus, LeftoverWait99GetProc, out gpWord);
+            BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-why plant=0x" +
+                plant.ToString("X8") +
+                " getproc=0x" + LeftoverWait99GetProcDest.ToString("X8") +
+                " wrap=0x" + LeftoverWait99Wrap.ToString("X8") +
+                " ra=0x" + ra.ToString("X8") +
+                " ra-word=0x" + raWord.ToString("X8") +
+                " dest-word=0x" + destWord.ToString("X8") +
+                " hash=0x" + LeftoverWait99HashWord.ToString("X8") +
+                " gp-word=0x" + gpWord.ToString("X8") +
+                " w0=0x" + w0.ToString("X8") +
+                " w1=0x" + w1.ToString("X8") +
+                " w2=0x" + w2.ToString("X8") +
+                " w3=0x" + w3.ToString("X8") +
+                " (dump leftover dest GetProc leftover dest dest-wrapper mid lw $a2,0($fp); leftover dest dest-wrapper jalr leftover-syscall; not LoadO32; do not leftover dest)");
         }
 
         // Live 05a9778 leftover-ret frame+4
@@ -14233,6 +14334,8 @@ namespace ProcessorEmulator.Core
             _leftoverCstkLogged = false;
             _leftoverCstkFixLogged = false;
             _wait99PlantFixLogged = false;
+            _leftoverWait99WrapLogged = false;
+            _leftoverWait99WhyLogged = false;
             _leftoverRetFixLogged = false;
             _leftoverCstkSpinLogged = false;
             _leftoverCstkSpinN = 0;
@@ -20243,6 +20346,8 @@ namespace ProcessorEmulator.Core
         private static bool _leftoverCstkLogged;
         private static bool _leftoverCstkFixLogged;
         private static bool _wait99PlantFixLogged;
+        private static bool _leftoverWait99WrapLogged;
+        private static bool _leftoverWait99WhyLogged;
         private static bool _leftoverRetFixLogged;
         private static bool _leftoverCstkSpinLogged;
         private static int _leftoverCstkSpinN;
