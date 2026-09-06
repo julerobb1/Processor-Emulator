@@ -425,8 +425,18 @@ namespace ProcessorEmulator.Core
         // syscall $ra I-fetches leftover dest
         // mid-hash; exception ERET storm. leftover
         // dest leftover-syscall $ra mid-hash is
-        // not a LoadO32 resume. Firmware sw $ra /
-        // jal ObjectCall. Do not leftover hop.
+        // not a LoadO32 resume. Live 2239756
+        // leftover-wait99-halt then leftover-cstk
+        // +4 leftover dest api=0xFFFFFF68
+        // leftover-cstk-fix jalr+8 leftover-halt
+        // dest stub +EC=0x800382F8. leftover-wait99-
+        // halt returned false so firmware sw $ra /
+        // jal ObjectCall 0x80015980 still ran.
+        // Dump 0x80015980 jal 0x80039148. dest
+        // leftover-syscall jalr+8 is not a LoadO32
+        // continue past wait99/-1630. Halt at
+        // wait99 plant root; do not execute sw $ra
+        // / jal ObjectCall. Do not leftover hop.
         // Do not invent dest.
         public const uint LeftoverWait99RaSw = 0x8001597C;
         public const uint LeftoverWait99JalrRa = 0x80015360;
@@ -10603,11 +10613,23 @@ namespace ProcessorEmulator.Core
         // I-fetches leftover dest mid-hash;
         // exception ERET storm. leftover dest
         // leftover-syscall $ra mid-hash is not a
-        // LoadO32 resume. Refuse dest-live
-        // continue; firmware sw $ra / jal
-        // ObjectCall. dest leftover-syscall stub /
-        // dest wrapper jalr+8 stay leftover-halt.
-        // Do not leftover hop. Do not invent dest.
+        // LoadO32 resume. Live 2239756 leftover-
+        // wait99-halt then leftover-cstk +4
+        // leftover dest api=0xFFFFFF68 leftover-
+        // cstk-fix jalr+8 leftover-halt dest stub
+        // +EC=0x800382F8. leftover-wait99-halt
+        // logged and returned false so firmware
+        // sw $ra / jal ObjectCall 0x80015980
+        // still ran. Dump 0x80015980 jal
+        // 0x80039148. dest leftover-syscall
+        // jalr+8 / leftover dest leftover-syscall
+        // $ra are not a LoadO32 continue past
+        // wait99/-1630. Halt at wait99 plant
+        // root (leave PC; do not execute sw $ra
+        // / jal ObjectCall). dest leftover-
+        // syscall stub / dest wrapper jalr+8 stay
+        // leftover-halt. Do not leftover hop.
+        // Do not invent dest.
         public static bool TryFixWait99PlantRa(MipsBus bus, uint[] regs,
             ref uint programCounter)
         {
@@ -10631,9 +10653,9 @@ namespace ProcessorEmulator.Core
                     LeftoverWait99RaSw.ToString("X8") +
                     " ra=0x" + ra.ToString("X8") +
                     " dest=0x" + destOfRa.ToString("X8") +
-                    " (refuse leftover dest leftover-syscall $ra dest-live continue; dump 0x80015368 xori IE v0=0 ERET; firmware sw $ra; do not leftover dest)");
+                    " (refuse leftover dest leftover-syscall $ra dest-live continue; refuse leftover-cstk leftover-halt dest stub after leftover-wait99-halt; dump 0x80015980 jal ObjectCall; do not leftover dest)");
             }
-            return false;
+            return true;
         }
 
         // Live 05a9778 leftover-ret frame+4
@@ -10760,10 +10782,15 @@ namespace ProcessorEmulator.Core
         // 0x80015368 is xori IE (jalr+8 0x80015360);
         // 0x80015380 beq $v0,$0, restore/ERET.
         // dest-live continue leftover dest leftover-
-        // syscall $ra is leftover-wait99-halt. Name
-        // leftover dest leftover-syscall $ra /
-        // dest mid-hash if leftover-halt has not.
-        // Do not leftover hop. Do not invent dest.
+        // syscall $ra is leftover-wait99-halt. Live
+        // 2239756 leftover-wait99-halt then leftover-
+        // cstk leftover-halt dest stub; leftover-
+        // wait99-halt now stays at wait99 plant
+        // root so leftover-cstk / leftover-halt dest
+        // stub should not fire. Name leftover dest
+        // leftover-syscall $ra / dest mid-hash if
+        // leftover-halt has not. Do not leftover
+        // hop. Do not invent dest.
         public static bool TryNoteLeftoverWait99Spin(MipsBus bus, uint[] regs,
             uint pc)
         {
