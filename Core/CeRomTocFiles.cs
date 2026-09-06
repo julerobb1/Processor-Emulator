@@ -413,18 +413,24 @@ namespace ProcessorEmulator.Core
         // syscall return is leftover dest leftover-
         // syscall $ra (live 0x03F71740 dest
         // 0x80089740 mid-hash), not jalr+8. Plant
-        // root 0x8001597C sw $ra,40($sp): dest-live
-        // continue leftover dest leftover-syscall $ra
-        // when dest is mid-hash. Live 0381f60
-        // leftover-wait99-fix dest-live continue
-        // leftover dest leftover-syscall $ra then
-        // silent freeze; leftover-cstk / leftover-
-        // halt / plant-fix / adel-pc did not fire.
-        // leftover-wait99-spin names the live PC.
-        // leftover dest leftover-syscall $ra / dest
-        // mid-hash leftover-halt. Do not leftover hop.
+        // root 0x8001597C sw $ra,40($sp). Live
+        // a6102f2 leftover-wait99-fix dest-live
+        // continue leftover dest leftover-syscall
+        // $ra then leftover-wait99-spin pc=
+        // 0x80015368 v0=0 a0=1 ra=0x80015360.
+        // Dump 0x80015358 jalr $a1; 0x80015360
+        // mfc0 Status; 0x80015368 xori IE;
+        // 0x80015380 beq $v0,$0, restore/ERET.
+        // dest-live continue leftover dest leftover-
+        // syscall $ra I-fetches leftover dest
+        // mid-hash; exception ERET storm. leftover
+        // dest leftover-syscall $ra mid-hash is
+        // not a LoadO32 resume. Firmware sw $ra /
+        // jal ObjectCall. Do not leftover hop.
         // Do not invent dest.
         public const uint LeftoverWait99RaSw = 0x8001597C;
+        public const uint LeftoverWait99JalrRa = 0x80015360;
+        public const uint LeftoverWait99IeClr = 0x80015368;
         // Dump 0x800397F8 lw $s3,4($a0) with $a0
         // = thread+0x18 syscall frame. 0x800399E8
         // or $v0,$s3 returns that. Live b757425
@@ -10585,19 +10591,23 @@ namespace ProcessorEmulator.Core
         // syscall jalr+8. leftover dest leftover-
         // syscall return is leftover dest leftover-
         // syscall $ra, not dest leftover-syscall
-        // jalr+8 / poison +EC. dest-live continue
-        // leftover dest leftover-syscall $ra at
-        // wait99 plant root when dest is mid-hash.
-        // Live 0381f60 leftover-wait99-fix dest-
+        // jalr+8 / poison +EC. Live a6102f2 dest-
         // live continue leftover dest leftover-
         // syscall $ra dest=0x80089740 mid-hash
-        // then silent freeze. leftover-wait99-spin
-        // names the live PC after leftover-wait99-
-        // fix. leftover dest leftover-syscall $ra
-        // / dest mid-hash leftover-halt. dest
-        // leftover-syscall stub / dest wrapper
-        // jalr+8 stay leftover-halt. Do not leftover
-        // hop. Do not invent dest.
+        // then leftover-wait99-spin pc=0x80015368
+        // v0=0 a0=1 ra=0x80015360. Dump 0x80015358
+        // jalr $a1; 0x80015360 mfc0 Status;
+        // 0x80015368 xori IE; 0x80015380 beq
+        // $v0,$0, restore/ERET. dest-live continue
+        // leftover dest leftover-syscall $ra
+        // I-fetches leftover dest mid-hash;
+        // exception ERET storm. leftover dest
+        // leftover-syscall $ra mid-hash is not a
+        // LoadO32 resume. Refuse dest-live
+        // continue; firmware sw $ra / jal
+        // ObjectCall. dest leftover-syscall stub /
+        // dest wrapper jalr+8 stay leftover-halt.
+        // Do not leftover hop. Do not invent dest.
         public static bool TryFixWait99PlantRa(MipsBus bus, uint[] regs,
             ref uint programCounter)
         {
@@ -10614,17 +10624,16 @@ namespace ProcessorEmulator.Core
             uint wrapperDest;
             if (TryResolveLeftoverCstkFromDestWrapper(bus, ra, out wrapperDest))
                 return false;
-            programCounter = ra;
             if (!_wait99PlantFixLogged)
             {
                 _wait99PlantFixLogged = true;
-                BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-fix was=0x" +
+                BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-halt was=0x" +
                     LeftoverWait99RaSw.ToString("X8") +
                     " ra=0x" + ra.ToString("X8") +
                     " dest=0x" + destOfRa.ToString("X8") +
-                    " (leftover dest leftover-syscall return is leftover dest leftover-syscall $ra; refuse leftover dest leftover-syscall jalr+8; do not leftover dest)");
+                    " (refuse leftover dest leftover-syscall $ra dest-live continue; dump 0x80015368 xori IE v0=0 ERET; firmware sw $ra; do not leftover dest)");
             }
-            return true;
+            return false;
         }
 
         // Live 05a9778 leftover-ret frame+4
@@ -10744,16 +10753,17 @@ namespace ProcessorEmulator.Core
                 " (after leftover-cstk-fix; do not leftover dest)");
         }
 
-        // Live 0381f60 leftover-wait99-fix dest-live
+        // Live a6102f2 leftover-wait99-fix dest-live
         // continue leftover dest leftover-syscall $ra
-        // dest=0x80089740 mid-hash then silent freeze;
-        // leftover-cstk / leftover-halt / plant-fix /
-        // adel-pc did not fire. Name the stuck PC
-        // after leftover-wait99-fix if leftover-halt
-        // has not. leftover dest leftover-syscall $ra
-        // / dest mid-hash leftover-halt (poison
-        // resume). Do not leftover hop. Do not invent
-        // dest.
+        // then leftover-wait99-spin pc=0x80015368
+        // v0=0 a0=1 ra=0x80015360 dest=0. Dump
+        // 0x80015368 is xori IE (jalr+8 0x80015360);
+        // 0x80015380 beq $v0,$0, restore/ERET.
+        // dest-live continue leftover dest leftover-
+        // syscall $ra is leftover-wait99-halt. Name
+        // leftover dest leftover-syscall $ra /
+        // dest mid-hash if leftover-halt has not.
+        // Do not leftover hop. Do not invent dest.
         public static bool TryNoteLeftoverWait99Spin(MipsBus bus, uint[] regs,
             uint pc)
         {
