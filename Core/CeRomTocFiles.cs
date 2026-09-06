@@ -10643,8 +10643,19 @@ namespace ProcessorEmulator.Core
         // root (leave PC; do not execute sw $ra
         // / jal ObjectCall). dest leftover-
         // syscall stub / dest wrapper jalr+8 stay
-        // leftover-halt. Do not leftover hop.
-        // Do not invent dest.
+        // leftover-halt. Live 0161c2e leftover-
+        // wait99-tick-halt word=0x1300000A is
+        // OEM tick beq $t8,$0,+10, not LoadO32.
+        // Dump leftover dest leftover-syscall $ra
+        // dest 0x80089740 mid-hash addu. leftover
+        // dest leftover-syscall -1630 jalr+8
+        // leftover dest is 0x03F7D73C, not live
+        // $ra 0x03F71740. leftover-frame +5C idle
+        // is not a LoadO32 resume. No dest-live
+        // LoadO32 continue in PE/hive/dest-word.
+        // leftover-wait99-need names that missing
+        // dest-live LoadO32 resume. Do not leftover
+        // hop. Do not invent dest.
         public static bool TryFixWait99PlantRa(MipsBus bus, uint[] regs,
             ref uint programCounter)
         {
@@ -10669,8 +10680,55 @@ namespace ProcessorEmulator.Core
                     " ra=0x" + ra.ToString("X8") +
                     " dest=0x" + destOfRa.ToString("X8") +
                     " (refuse leftover dest leftover-syscall $ra dest-live continue; refuse leftover-cstk leftover-halt dest stub after leftover-wait99-halt; dump 0x80015980 jal ObjectCall; do not leftover dest)");
+                TryNoteLeftoverWait99Need(bus, ra, destOfRa);
             }
             return true;
+        }
+
+        // Live 0161c2e leftover-wait99-halt then leftover-
+        // wait99-tick-halt. Dump shows no dest-live
+        // LoadO32 continue past wait99/-1630: leftover
+        // dest leftover-syscall $ra dest 0x80089740 is
+        // mid-hash addu; leftover dest leftover-syscall
+        // -1630 jalr+8 leftover dest is 0x03F7D73C;
+        // leftover-frame +5C idle / plant-fix +EC hung.
+        // Name dest-word / leftover dest word / +5C /
+        // +EC / LoadO32-watch vs leftover dest leftover-
+        // syscall -1630 jalr+8. Missing prerequisite is
+        // dest-live LoadO32 resume at leftover dest
+        // leftover-syscall $ra. Do not leftover hop.
+        // Do not invent dest.
+        private static void TryNoteLeftoverWait99Need(MipsBus bus, uint ra,
+            uint destOfRa)
+        {
+            uint destWord = 0;
+            uint raWord = 0;
+            TryPeekWord(bus, destOfRa, out destWord);
+            TryPeekWord(bus, ra, out raWord);
+            uint thr;
+            uint ec;
+            uint dc;
+            uint plant;
+            TryPeekThreadCtxPc(bus, out thr, out ec, out dc, out plant);
+            uint startip = 0;
+            if (thr != 0 && thr != 0xFFFFFFFFu)
+                TryPeekWord(bus, thr + ThreadStartip, out startip);
+            uint jalr8Ra = LeftoverDestLo + (LeftoverApi1630Ret - LeftoverDestKseg);
+            string lo32 = string.IsNullOrEmpty(_nkLoadO32Name) ? "-" : _nkLoadO32Name;
+            BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-need ra=0x" +
+                ra.ToString("X8") +
+                " dest=0x" + destOfRa.ToString("X8") +
+                " dest-word=0x" + destWord.ToString("X8") +
+                " ra-word=0x" + raWord.ToString("X8") +
+                " +5C=0x" + startip.ToString("X8") +
+                " +EC=0x" + ec.ToString("X8") +
+                " +DC=0x" + dc.ToString("X8") +
+                " plant=0x" + plant.ToString("X8") +
+                " jalr8=0x" + jalr8Ra.ToString("X8") +
+                " lo32=" + lo32 +
+                " entered=" + _nkLoadO32Entered +
+                " dest0=0x" + _nkLoadO32Toc.ToString("X8") +
+                " (dump dest mid-hash; leftover dest leftover-syscall $ra != leftover dest leftover-syscall -1630 jalr+8; no dest-live LoadO32 resume; do not leftover dest)");
         }
 
         // Live 05a9778 leftover-ret frame+4
