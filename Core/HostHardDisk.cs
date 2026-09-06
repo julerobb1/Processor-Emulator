@@ -689,7 +689,7 @@ namespace ProcessorEmulator.Core
             CeRomTocFiles.TryNoteTv2LeftoverPast(bus, pc);
             CeRomTocFiles.TryNoteTv2LeftoverPastCae8(bus, registers, pc);
             CeRomTocFiles.TryNoteTv2LeftoverPastCaf0(bus, pc);
-            if (CeRomTocFiles.TryRefuseLeftoverWait99Wrap(bus, registers, programCounter))
+            if (CeRomTocFiles.TryRefuseLeftoverWait99Wrap(bus, registers, ref programCounter))
                 return true;
             if (CeRomTocFiles.TryFixWait99PlantRa(bus, registers, ref programCounter))
                 return true;
