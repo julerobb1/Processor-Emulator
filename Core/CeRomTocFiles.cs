@@ -526,6 +526,23 @@ namespace ProcessorEmulator.Core
         public const uint LeftoverWait99GetProc = 0x03F74844;
         public const uint LeftoverWait99GetProcDest = 0x8008C844;
         public const uint LeftoverWait99GetProcOff = 0x260;
+        // Live 394f3fd leftover-wait99-wrap-cont s6=
+        // 0x01FFFCA4 cache=0x02000000 (lui 0x200
+        // before the lw) getproc=0 then leftover-
+        // wait99-wrap-halt pc=0x03F71734. *0x01FFFCA4
+        // is 0 so dump beq $v0,$0 → leftover-syscall
+        // -1630. Dump dest-wrapper: cache is Win32
+        // ppfnMethods; lw $v0,608($v0) is methods[152]
+        // (api -152 / leftover-syscall -1630). KData
+        // cNest at +0x85 ⇒ ahSys[32] at +4; SH_WIN32
+        // ahSys[0] CINFO+8 is ppfnMethods. Slot
+        // 0x01FFFCA4 aliases KData 0xFFFFDCA4. Fill
+        // dest-live methods table so dest-wrapper
+        // success runs. leftover dest GetProc dest
+        // 0x8008C844 leftover hop forbidden. Do not
+        // leftover hop. Do not invent dest.
+        public const uint LeftoverWait99CacheKdata = 0xFFFFDCA4;
+        public const uint LeftoverWait99CinfoPfn = 8;
         // Dump 0x800397F8 lw $s3,4($a0) with $a0
         // = thread+0x18 syscall frame. 0x800399E8
         // or $v0,$s3 returns that. Live b757425
@@ -10838,6 +10855,8 @@ namespace ProcessorEmulator.Core
             bool wrapJalr = pc == LeftoverWait99WrapJalr
                 && word == LeftoverWait99WrapJalrWord;
             uint v0 = PeekGpr(regs, 2);
+            if (wrapLoad)
+                TryPlantLeftoverWait99GetProc(bus, regs);
             if (wrapLoad || wrapBeq || wrapSkip || wrapGetProcLw
                 || (wrapJalr && IsDumpWait99GetProcDest(v0)))
             {
@@ -10935,16 +10954,181 @@ namespace ProcessorEmulator.Core
                 return false;
             if (va == ProcessInfoFaultVa)
                 return false;
+            if (IsLeftoverDestVa(va))
+                return false;
             if (va >= LeftoverDestKseg
                 && va < LeftoverDestKseg + (LeftoverDestHi - LeftoverDestLo))
                 return false;
-            return IsFirmwareUserOrCoredllVa(va);
+            if (IsFirmwareUserOrCoredllVa(va))
+                return true;
+            return va >= 0x80010000u && va < NkImageEnd;
+        }
+
+        private static bool IsDumpWait99GetProcTable(uint va)
+        {
+            if ((va & 3) != 0 || va == 0 || va == 0xFFFFFFFFu)
+                return false;
+            if (IsLeftoverDestVa(va))
+                return false;
+            if (va >= LeftoverDestKseg
+                && va < LeftoverDestKseg + (LeftoverDestHi - LeftoverDestLo))
+                return false;
+            if (va == ProcessInfoFaultVa || va == LeftoverWait99GetProcDest)
+                return false;
+            return true;
+        }
+
+        // Live 394f3fd *0x01FFFCA4=0 during NK coredll
+        // LoadO32 so dest-wrapper beq takes leftover-
+        // syscall -1630. Peek dest-live cache (slot /
+        // KData 0xFFFFDCA4 / firmware PTE) or dump
+        // Win32 ahSys[0] CINFO+8 ppfnMethods. Plant
+        // dest-live methods table at the slot the lw
+        // reads. leftover dest GetProc dest leftover
+        // hop forbidden. Do not leftover hop. Do not
+        // invent dest.
+        private static void TryPlantLeftoverWait99GetProc(MipsBus bus, uint[] regs)
+        {
+            uint methods;
+            uint getproc;
+            string via;
+            if (!TryResolveLeftoverWait99GetProcTable(bus, out methods,
+                out getproc, out via))
+            {
+                TryNoteLeftoverWait99WrapNeed(bus, regs, 0, 0, "empty");
+                return;
+            }
+            uint slot = 0;
+            TryPeekWord(bus, ProcessInfoFaultVa, out slot);
+            if (slot == methods)
+                return;
+            try
+            {
+                bus.Write32(ProcessInfoFaultVa, methods);
+            }
+            catch
+            {
+                TryNoteLeftoverWait99WrapNeed(bus, regs, methods, getproc,
+                    "write-" + via);
+                return;
+            }
+            uint kdata = 0;
+            if (TryPeekWord(bus, LeftoverWait99CacheKdata, out kdata)
+                && kdata == 0)
+            {
+                try { bus.Write32(LeftoverWait99CacheKdata, methods); }
+                catch { }
+            }
+            if (!_leftoverWait99WrapPlantLogged)
+            {
+                _leftoverWait99WrapPlantLogged = true;
+                uint plant = 0;
+                TryPeekWord(bus, ExnContinueWord, out plant);
+                BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-wrap-plant slot=0x" +
+                    slot.ToString("X8") +
+                    " now=0x" + methods.ToString("X8") +
+                    " getproc=0x" + getproc.ToString("X8") +
+                    " via=" + via +
+                    " plant=0x" + plant.ToString("X8") +
+                    " (dump dest-wrapper Win32 ppfnMethods[152] real GetProc; leftover dest leftover-syscall -1630 wrap-halt stays if miss; leftover dest GetProc dest leftover hop forbidden; do not leftover dest)");
+            }
+        }
+
+        private static bool TryResolveLeftoverWait99GetProcTable(MipsBus bus,
+            out uint methods, out uint getproc, out string via)
+        {
+            methods = 0;
+            getproc = 0;
+            via = "empty";
+            uint slot = 0;
+            uint kdata = 0;
+            uint ahSys = 0;
+            uint pfn = 0;
+            TryPeekWord(bus, ProcessInfoFaultVa, out slot);
+            TryPeekWord(bus, LeftoverWait99CacheKdata, out kdata);
+            if (TryAcceptLeftoverWait99GetProcTable(bus, slot, out getproc))
+            {
+                methods = slot;
+                via = "slot";
+                return true;
+            }
+            if (TryAcceptLeftoverWait99GetProcTable(bus, kdata, out getproc))
+            {
+                methods = kdata;
+                via = "kdata";
+                return true;
+            }
+            uint sec = PeekSection(bus, 0);
+            uint l1 = 0;
+            uint l2 = 0;
+            uint pfnWord = 0;
+            uint kseg = 0;
+            uint pte = 0;
+            if (sec != 0
+                && WalkFirmwarePte(bus, sec, ProcessInfoFaultVa,
+                    out l1, out l2, out pfnWord, out kseg)
+                && TryPeekWord(bus, kseg | (ProcessInfoFaultVa & 0xFFFu),
+                    out pte)
+                && TryAcceptLeftoverWait99GetProcTable(bus, pte, out getproc))
+            {
+                methods = pte;
+                via = "pte";
+                return true;
+            }
+            if (TryPeekWord(bus, KDataBase + 4, out ahSys)
+                && ahSys >= 0x80010000u && ahSys < NkImageEnd
+                && (ahSys & 3) == 0
+                && TryPeekWord(bus, ahSys + LeftoverWait99CinfoPfn, out pfn)
+                && TryAcceptLeftoverWait99GetProcTable(bus, pfn, out getproc))
+            {
+                methods = pfn;
+                via = "ahsys";
+                return true;
+            }
+            return false;
+        }
+
+        private static bool TryAcceptLeftoverWait99GetProcTable(MipsBus bus,
+            uint table, out uint getproc)
+        {
+            getproc = 0;
+            if (!IsDumpWait99GetProcTable(table))
+                return false;
+            if (!TryPeekWord(bus, table + LeftoverWait99GetProcOff, out getproc))
+                return false;
+            return IsDumpWait99GetProcDest(getproc);
+        }
+
+        private static void TryNoteLeftoverWait99WrapNeed(MipsBus bus, uint[] regs,
+            uint methods, uint getproc, string via)
+        {
+            if (_leftoverWait99WrapNeedLogged)
+                return;
+            _leftoverWait99WrapNeedLogged = true;
+            uint slot = 0;
+            uint kdata = 0;
+            uint ahSys = 0;
+            TryPeekWord(bus, ProcessInfoFaultVa, out slot);
+            TryPeekWord(bus, LeftoverWait99CacheKdata, out kdata);
+            TryPeekWord(bus, KDataBase + 4, out ahSys);
+            uint s6 = PeekGpr(regs, 22);
+            BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-wrap-need s6=0x" +
+                s6.ToString("X8") +
+                " slot=0x" + slot.ToString("X8") +
+                " kdata=0x" + kdata.ToString("X8") +
+                " ahsys=0x" + ahSys.ToString("X8") +
+                " methods=0x" + methods.ToString("X8") +
+                " getproc=0x" + getproc.ToString("X8") +
+                " via=" + via +
+                " (GetProc cache *0x01FFFCA4=0 during NK coredll LoadO32; no dest-live Win32 ppfnMethods[152]; leftover dest leftover-syscall wrap-halt stays; leftover dest GetProc dest leftover hop forbidden; do not leftover dest)");
         }
 
         private static void TryNoteLeftoverWait99WrapCont(MipsBus bus,
             uint[] regs, uint pc, uint word)
         {
             uint cache = PeekGpr(regs, 2);
+            if (pc == LeftoverWait99Wrap)
+                TryPeekWord(bus, ProcessInfoFaultVa, out cache);
             uint getproc = 0;
             if (cache != 0 && cache != 0xFFFFFFFFu)
                 TryPeekWord(bus, cache + LeftoverWait99GetProcOff, out getproc);
@@ -14525,6 +14709,8 @@ namespace ProcessorEmulator.Core
             _leftoverWait99WrapLogged = false;
             _leftoverWait99WrapContLogged = false;
             _leftoverWait99WrapGetProcLogged = false;
+            _leftoverWait99WrapPlantLogged = false;
+            _leftoverWait99WrapNeedLogged = false;
             _leftoverWait99WhyLogged = false;
             _leftoverRetFixLogged = false;
             _leftoverCstkSpinLogged = false;
@@ -20539,6 +20725,8 @@ namespace ProcessorEmulator.Core
         private static bool _leftoverWait99WrapLogged;
         private static bool _leftoverWait99WrapContLogged;
         private static bool _leftoverWait99WrapGetProcLogged;
+        private static bool _leftoverWait99WrapPlantLogged;
+        private static bool _leftoverWait99WrapNeedLogged;
         private static bool _leftoverWait99WhyLogged;
         private static bool _leftoverRetFixLogged;
         private static bool _leftoverCstkSpinLogged;
