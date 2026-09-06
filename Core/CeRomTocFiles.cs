@@ -543,6 +543,23 @@ namespace ProcessorEmulator.Core
         // leftover hop. Do not invent dest.
         public const uint LeftoverWait99CacheKdata = 0xFFFFDCA4;
         public const uint LeftoverWait99CinfoPfn = 8;
+        // Live 41b58dc leftover-wait99-wrap-need slot=
+        // kdata=ahsys=methods=getproc=0 via=empty then
+        // wrap-halt -1630; LoadO32-ret v0=0. ahSys[0]
+        // unset / not the live Win32 CINFO at wrap.
+        // Dump NK CINFO acName "WN32" (0x32334E57);
+        // +8 is ppfnMethods. methods[152]=+0x260 is
+        // GetProc; methods[151]=+0x25C is the dump
+        // wrapper's second jalr. Scan dump-named NK
+        // copy dest / dump image, not leftover dest
+        // kseg. leftover dest GetProc dest 0x8008C844
+        // leftover hop forbidden. BindImp ordinal
+        // GetProc 0x8001F7BC is LoadO32 GetProc, not
+        // a methods table. Do not leftover hop. Do
+        // not invent dest.
+        public const uint LeftoverWait99Wn32Name = 0x32334E57;
+        public const uint LeftoverWait99GetProcOffAlt = 0x25C;
+        public const uint LeftoverWait99NkDataLo = 0x80200000;
         // Dump 0x800397F8 lw $s3,4($a0) with $a0
         // = thread+0x18 syscall frame. 0x800399E8
         // or $v0,$s3 returns that. Live b757425
@@ -10995,7 +11012,7 @@ namespace ProcessorEmulator.Core
             if (!TryResolveLeftoverWait99GetProcTable(bus, out methods,
                 out getproc, out via))
             {
-                TryNoteLeftoverWait99WrapNeed(bus, regs, 0, 0, "empty");
+                TryNoteLeftoverWait99WrapNeed(bus, regs, methods, getproc, via);
                 return;
             }
             uint slot = 0;
@@ -11085,6 +11102,122 @@ namespace ProcessorEmulator.Core
                 via = "ahsys";
                 return true;
             }
+            uint wn32 = 0;
+            uint hop = 0;
+            if (TryScanDumpWn32Methods(bus, out methods, out getproc, out wn32,
+                out hop))
+            {
+                via = "wn32";
+                return true;
+            }
+            if (hop != 0)
+                via = "wn32-hop";
+            else if (wn32 != 0)
+                via = "wn32-miss";
+            else
+            {
+                uint kd0 = 0;
+                if (!TryPeekWord(bus, KDataBase, out kd0))
+                    via = "kdata-miss";
+                else if (ahSys == 0)
+                    via = "ahsys-zero";
+                else
+                    via = "wn32-miss";
+            }
+            return false;
+        }
+
+        // Dump-static Win32 CINFO in NK image / copy dest.
+        // Live 41b58dc ahSys[0]=0 at wrap (not initialized
+        // or not at KData+4). acName "WN32" then +8
+        // ppfnMethods is dump/CE CINFO. Do not scan
+        // leftover dest kseg. leftover dest GetProc dest
+        // leftover hop forbidden. Do not invent dest.
+        private static bool TryScanDumpWn32Methods(MipsBus bus, out uint methods,
+            out uint getproc, out uint wn32, out uint hop)
+        {
+            methods = 0;
+            getproc = 0;
+            wn32 = 0;
+            hop = 0;
+            if (bus == null)
+                return false;
+            uint nkDataHi = NkCopy0Dst + NkCopy0DestLen;
+            uint w = 0;
+            uint h = 0;
+            if (TryScanDumpWn32Range(bus, NkCopy0Dst, nkDataHi, out methods,
+                out getproc, out w, out h))
+            {
+                wn32 = w;
+                hop = h;
+                return true;
+            }
+            if (w != 0)
+            {
+                wn32 = w;
+                hop = h;
+            }
+            if (TryScanDumpWn32Range(bus, LeftoverWait99NkDataLo, NkImageEnd,
+                out methods, out getproc, out w, out h))
+            {
+                wn32 = w;
+                hop = h;
+                return true;
+            }
+            if (w != 0 && wn32 == 0)
+            {
+                wn32 = w;
+                hop = h;
+            }
+            return false;
+        }
+
+        private static bool TryScanDumpWn32Range(MipsBus bus, uint lo, uint hi,
+            out uint methods, out uint getproc, out uint wn32, out uint hop)
+        {
+            methods = 0;
+            getproc = 0;
+            wn32 = 0;
+            hop = 0;
+            if (bus == null || lo >= hi || (lo & 3) != 0)
+                return false;
+            uint destLo = LeftoverDestKseg;
+            uint destHi = LeftoverDestKseg + (LeftoverDestHi - LeftoverDestLo);
+            for (uint va = lo; va + 12 < hi; va += 4)
+            {
+                if (va >= destLo && va < destHi)
+                {
+                    va = destHi - 4;
+                    continue;
+                }
+                uint name = 0;
+                if (!TryPeekWord(bus, va, out name)
+                    || name != LeftoverWait99Wn32Name)
+                    continue;
+                uint pfn = 0;
+                if (!TryPeekWord(bus, va + LeftoverWait99CinfoPfn, out pfn))
+                    continue;
+                uint gp = 0;
+                uint alt = 0;
+                TryPeekWord(bus, pfn + LeftoverWait99GetProcOff, out gp);
+                TryPeekWord(bus, pfn + LeftoverWait99GetProcOffAlt, out alt);
+                if (gp == LeftoverWait99GetProcDest
+                    || alt == LeftoverWait99GetProcDest)
+                {
+                    if (wn32 == 0)
+                        wn32 = va;
+                    hop = gp != 0 ? gp : alt;
+                    continue;
+                }
+                if (!TryAcceptLeftoverWait99GetProcTable(bus, pfn, out gp))
+                    continue;
+                if (alt != 0 && !IsDumpWait99GetProcDest(alt))
+                    continue;
+                wn32 = va;
+                methods = pfn;
+                getproc = gp;
+                return true;
+            }
             return false;
         }
 
@@ -11108,19 +11241,33 @@ namespace ProcessorEmulator.Core
             uint slot = 0;
             uint kdata = 0;
             uint ahSys = 0;
+            uint kd0 = 0;
+            uint cur = 0;
+            uint uk = 0;
+            bool kdOk = TryPeekWord(bus, KDataBase, out kd0);
+            bool ahOk = TryPeekWord(bus, KDataBase + 4, out ahSys);
             TryPeekWord(bus, ProcessInfoFaultVa, out slot);
             TryPeekWord(bus, LeftoverWait99CacheKdata, out kdata);
-            TryPeekWord(bus, KDataBase + 4, out ahSys);
+            TryPeekWord(bus, CurProc, out cur);
+            TryPeekWord(bus, UserKData, out uk);
             uint s6 = PeekGpr(regs, 22);
+            string lo32 = string.IsNullOrEmpty(_nkLoadO32Name) ? "-" : _nkLoadO32Name;
             BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-wrap-need s6=0x" +
                 s6.ToString("X8") +
                 " slot=0x" + slot.ToString("X8") +
                 " kdata=0x" + kdata.ToString("X8") +
+                " kd0=0x" + kd0.ToString("X8") +
+                " kd-ok=" + kdOk +
                 " ahsys=0x" + ahSys.ToString("X8") +
+                " ah-ok=" + ahOk +
+                " curproc=0x" + cur.ToString("X8") +
+                " uk=0x" + uk.ToString("X8") +
                 " methods=0x" + methods.ToString("X8") +
                 " getproc=0x" + getproc.ToString("X8") +
+                " bindimp=0x" + BindImpOrdLookup.ToString("X8") +
                 " via=" + via +
-                " (GetProc cache *0x01FFFCA4=0 during NK coredll LoadO32; no dest-live Win32 ppfnMethods[152]; leftover dest leftover-syscall wrap-halt stays; leftover dest GetProc dest leftover hop forbidden; do not leftover dest)");
+                " lo32=" + lo32 +
+                " (named miss: dump WN32 CINFO ppfnMethods[152] unset at NK coredll LoadO32 wrap; ahSys[0] not live Win32 CINFO; BindImp 0x8001F7BC is LoadO32 GetProc not a methods table; leftover dest GetProc dest leftover hop forbidden; leftover dest leftover-syscall wrap-halt stays; do not leftover dest)");
         }
 
         private static void TryNoteLeftoverWait99WrapCont(MipsBus bus,
