@@ -441,6 +441,21 @@ namespace ProcessorEmulator.Core
         public const uint LeftoverWait99RaSw = 0x8001597C;
         public const uint LeftoverWait99JalrRa = 0x80015360;
         public const uint LeftoverWait99IeClr = 0x80015368;
+        // Live a2375d3 leftover-wait99-halt then leftover-
+        // wait99-spin pc=0x800558A0 v0=0 a0=0x80338F68
+        // ra=0x80055808 dest=0. leftover-cstk / leftover-
+        // halt dest stub gone. Dump 0x800557F4 tick vs
+        // 0x80338F70; MMIO 0xB04007D4. 0x800558A0 is mid
+        // OEM tick (ra 0x80055808 is +0x14 of TickDelta).
+        // a0=0x80338F68 is tick word-8. v0=0 is tick
+        // leftover, not LoadO32 / LoadE32 fail. Not
+        // leftover dest. Not a LoadO32 continue past
+        // wait99. leftover-wait99-tick-halt that PC.
+        // Do not leftover hop. Do not invent dest.
+        public const uint LeftoverWait99Tick = 0x800558A0;
+        public const uint LeftoverWait99TickRa = 0x80055808;
+        public const uint LeftoverWait99TickA0 = 0x80338F68;
+        public const uint LeftoverWait99TickWord = 0x80338F70;
         // Dump 0x800397F8 lw $s3,4($a0) with $a0
         // = thread+0x18 syscall frame. 0x800399E8
         // or $v0,$s3 returns that. Live b757425
@@ -10787,10 +10802,16 @@ namespace ProcessorEmulator.Core
         // cstk leftover-halt dest stub; leftover-
         // wait99-halt now stays at wait99 plant
         // root so leftover-cstk / leftover-halt dest
-        // stub should not fire. Name leftover dest
-        // leftover-syscall $ra / dest mid-hash if
-        // leftover-halt has not. Do not leftover
-        // hop. Do not invent dest.
+        // stub should not fire. Live a2375d3 leftover-
+        // wait99-halt then leftover-wait99-spin
+        // pc=0x800558A0 v0=0 a0=0x80338F68 ra=
+        // 0x80055808 dest=0. Dump 0x800557F4 tick vs
+        // 0x80338F70. 0x800558A0 is mid OEM tick, not
+        // leftover dest / not a LoadO32 continue.
+        // leftover-wait99-tick-halt that PC. Name
+        // leftover dest leftover-syscall $ra / dest
+        // mid-hash if leftover-halt has not. Do not
+        // leftover hop. Do not invent dest.
         public static bool TryNoteLeftoverWait99Spin(MipsBus bus, uint[] regs,
             uint pc)
         {
@@ -10809,6 +10830,21 @@ namespace ProcessorEmulator.Core
             uint dest = LeftoverWait99DestOf(pc);
             if (dest == 0 && IsLeftoverDestVa(ra) && (ra & 3) == 0)
                 dest = LeftoverDestKseg + (ra - LeftoverDestLo);
+            if (IsLeftoverWait99OemTick(pc))
+            {
+                uint word = 0;
+                TryPeekWord(bus, pc, out word);
+                BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-tick-halt pc=0x" +
+                    pc.ToString("X8") +
+                    " v0=0x" + v0.ToString("X8") +
+                    " a0=0x" + a0.ToString("X8") +
+                    " ra=0x" + ra.ToString("X8") +
+                    " word=0x" + word.ToString("X8") +
+                    " (dump 0x" + OemTickDelta.ToString("X8") +
+                    " tick vs 0x" + LeftoverWait99TickWord.ToString("X8") +
+                    "; v0=0 tick leftover; not LoadO32 continue; do not leftover dest)");
+                return true;
+            }
             BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-spin pc=0x" +
                 pc.ToString("X8") +
                 " v0=0x" + v0.ToString("X8") +
@@ -10836,6 +10872,14 @@ namespace ProcessorEmulator.Core
                     " (refuse leftover dest leftover-syscall $ra mid-hash after leftover-wait99-fix; do not leftover dest)");
             }
             return true;
+        }
+
+        // Live a2375d3 leftover-wait99-spin pc=0x800558A0
+        // ra=0x80055808. Dump 0x800557F4 tick vs
+        // 0x80338F70. Mid OEM tick, not leftover dest.
+        private static bool IsLeftoverWait99OemTick(uint pc)
+        {
+            return pc == LeftoverWait99Tick;
         }
 
         private static uint LeftoverWait99DestOf(uint pc)
