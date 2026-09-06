@@ -550,16 +550,24 @@ namespace ProcessorEmulator.Core
         // Dump NK CINFO acName "WN32" (0x32334E57);
         // +8 is ppfnMethods. methods[152]=+0x260 is
         // GetProc; methods[151]=+0x25C is the dump
-        // wrapper's second jalr. Scan dump-named NK
-        // copy dest / dump image, not leftover dest
-        // kseg. leftover dest GetProc dest 0x8008C844
-        // leftover hop forbidden. BindImp ordinal
-        // GetProc 0x8001F7BC is LoadO32 GetProc, not
-        // a methods table. Do not leftover hop. Do
-        // not invent dest.
+        // wrapper's second jalr. leftover dest
+        // GetProc dest 0x8008C844 leftover hop
+        // forbidden. BindImp 0x8001F7BC is LoadO32
+        // GetProc, not a methods table.
+        // Live f316d35: kd-ok kd0=0xC202FF00 ahsys=0
+        // ah-ok curproc=ProcTable 0x80340040; no
+        // wrap-plant; wrap-need truncated before via=
+        // (HiveLineMax 180). Scan started at
+        // 0x80200000 and missed dump nk.exe ImageBase
+        // 0x80010000 (Win32CreateFile 0x8003D700).
+        // Widen to ImageBase / ahSys[32] / PE data;
+        // skip leftover dest kseg and unmapped pages.
+        // Do not leftover hop. Do not invent dest.
         public const uint LeftoverWait99Wn32Name = 0x32334E57;
         public const uint LeftoverWait99GetProcOffAlt = 0x25C;
         public const uint LeftoverWait99NkDataLo = 0x80200000;
+        public const uint LeftoverWait99NkImage = 0x80010000;
+        public const int LeftoverWait99AhCount = 32;
         // Dump 0x800397F8 lw $s3,4($a0) with $a0
         // = thread+0x18 syscall frame. 0x800399E8
         // or $v0,$s3 returns that. Live b757425
@@ -11008,11 +11016,14 @@ namespace ProcessorEmulator.Core
         {
             uint methods;
             uint getproc;
+            uint wn32;
+            uint hop;
             string via;
             if (!TryResolveLeftoverWait99GetProcTable(bus, out methods,
-                out getproc, out via))
+                out getproc, out via, out wn32, out hop))
             {
-                TryNoteLeftoverWait99WrapNeed(bus, regs, methods, getproc, via);
+                TryNoteLeftoverWait99WrapNeed(bus, regs, methods, getproc, via,
+                    wn32, hop);
                 return;
             }
             uint slot = 0;
@@ -11026,7 +11037,7 @@ namespace ProcessorEmulator.Core
             catch
             {
                 TryNoteLeftoverWait99WrapNeed(bus, regs, methods, getproc,
-                    "write-" + via);
+                    "write-" + via, wn32, hop);
                 return;
             }
             uint kdata = 0;
@@ -11039,28 +11050,26 @@ namespace ProcessorEmulator.Core
             if (!_leftoverWait99WrapPlantLogged)
             {
                 _leftoverWait99WrapPlantLogged = true;
-                uint plant = 0;
-                TryPeekWord(bus, ExnContinueWord, out plant);
-                BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-wrap-plant slot=0x" +
-                    slot.ToString("X8") +
+                BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-wrap-plant via=" +
+                    via +
                     " now=0x" + methods.ToString("X8") +
-                    " getproc=0x" + getproc.ToString("X8") +
-                    " via=" + via +
-                    " plant=0x" + plant.ToString("X8") +
-                    " (dump dest-wrapper Win32 ppfnMethods[152] real GetProc; leftover dest leftover-syscall -1630 wrap-halt stays if miss; leftover dest GetProc dest leftover hop forbidden; do not leftover dest)");
+                    " gp=0x" + getproc.ToString("X8") +
+                    " wn32=0x" + wn32.ToString("X8") +
+                    " slot=0x" + slot.ToString("X8"));
             }
         }
 
         private static bool TryResolveLeftoverWait99GetProcTable(MipsBus bus,
-            out uint methods, out uint getproc, out string via)
+            out uint methods, out uint getproc, out string via, out uint wn32,
+            out uint hop)
         {
             methods = 0;
             getproc = 0;
             via = "empty";
+            wn32 = 0;
+            hop = 0;
             uint slot = 0;
             uint kdata = 0;
-            uint ahSys = 0;
-            uint pfn = 0;
             TryPeekWord(bus, ProcessInfoFaultVa, out slot);
             TryPeekWord(bus, LeftoverWait99CacheKdata, out kdata);
             if (TryAcceptLeftoverWait99GetProcTable(bus, slot, out getproc))
@@ -11092,47 +11101,51 @@ namespace ProcessorEmulator.Core
                 via = "pte";
                 return true;
             }
-            if (TryPeekWord(bus, KDataBase + 4, out ahSys)
-                && ahSys >= 0x80010000u && ahSys < NkImageEnd
-                && (ahSys & 3) == 0
-                && TryPeekWord(bus, ahSys + LeftoverWait99CinfoPfn, out pfn)
-                && TryAcceptLeftoverWait99GetProcTable(bus, pfn, out getproc))
+            uint ahM = 0;
+            uint ahG = 0;
+            uint ahW = 0;
+            uint ahH = 0;
+            if (TryWalkAhSysWn32(bus, out ahM, out ahG, out ahW, out ahH))
             {
-                methods = pfn;
+                methods = ahM;
+                getproc = ahG;
+                wn32 = ahW;
+                hop = ahH;
                 via = "ahsys";
                 return true;
             }
-            uint wn32 = 0;
-            uint hop = 0;
             if (TryScanDumpWn32Methods(bus, out methods, out getproc, out wn32,
                 out hop))
             {
                 via = "wn32";
                 return true;
             }
+            NoteWait99Wn32Hit(ahW, ahH, ahM, ahG, ref wn32, ref hop,
+                ref methods, ref getproc);
             if (hop != 0)
                 via = "wn32-hop";
             else if (wn32 != 0)
                 via = "wn32-miss";
             else
             {
-                uint kd0 = 0;
-                if (!TryPeekWord(bus, KDataBase, out kd0))
-                    via = "kdata-miss";
-                else if (ahSys == 0)
-                    via = "ahsys-zero";
+                uint ib = 0;
+                uint c0 = 0;
+                bool ibOk = TryPeekWord(bus, LeftoverWait99NkImage, out ib);
+                bool c0Ok = TryPeekWord(bus, NkCopy0Dst, out c0);
+                if (!ibOk && !c0Ok)
+                    via = "wn32-unmapped";
                 else
                     via = "wn32-miss";
             }
             return false;
         }
 
-        // Dump-static Win32 CINFO in NK image / copy dest.
-        // Live 41b58dc ahSys[0]=0 at wrap (not initialized
-        // or not at KData+4). acName "WN32" then +8
-        // ppfnMethods is dump/CE CINFO. Do not scan
-        // leftover dest kseg. leftover dest GetProc dest
-        // leftover hop forbidden. Do not invent dest.
+        // Live f316d35 ahSys[0]=0; scan missed dump nk.exe
+        // ImageBase 0x80010000. Walk ahSys[32], PE data,
+        // then ImageBase..copy dest. acName "WN32" +8
+        // ppfnMethods. Do not scan leftover dest kseg.
+        // leftover dest GetProc dest leftover hop
+        // forbidden. Do not invent dest.
         private static bool TryScanDumpWn32Methods(MipsBus bus, out uint methods,
             out uint getproc, out uint wn32, out uint hop)
         {
@@ -11142,32 +11155,144 @@ namespace ProcessorEmulator.Core
             hop = 0;
             if (bus == null)
                 return false;
-            uint nkDataHi = NkCopy0Dst + NkCopy0DestLen;
-            uint w = 0;
-            uint h = 0;
-            if (TryScanDumpWn32Range(bus, NkCopy0Dst, nkDataHi, out methods,
-                out getproc, out w, out h))
+            uint peM = 0;
+            uint peG = 0;
+            uint peW = 0;
+            uint peH = 0;
+            if (TryScanDumpNkPeWn32(bus, out peM, out peG, out peW, out peH))
             {
-                wn32 = w;
-                hop = h;
+                methods = peM;
+                getproc = peG;
+                wn32 = peW;
+                hop = peH;
                 return true;
             }
-            if (w != 0)
+            NoteWait99Wn32Hit(peW, peH, peM, peG, ref wn32, ref hop,
+                ref methods, ref getproc);
+            uint nkHi = NkCopy0Dst + NkCopy0DestLen;
+            uint linM = 0;
+            uint linG = 0;
+            uint linW = 0;
+            uint linH = 0;
+            if (TryScanDumpWn32Range(bus, LeftoverWait99NkImage, nkHi,
+                out linM, out linG, out linW, out linH))
             {
-                wn32 = w;
-                hop = h;
-            }
-            if (TryScanDumpWn32Range(bus, LeftoverWait99NkDataLo, NkImageEnd,
-                out methods, out getproc, out w, out h))
-            {
-                wn32 = w;
-                hop = h;
+                methods = linM;
+                getproc = linG;
+                wn32 = linW;
+                hop = linH;
                 return true;
             }
-            if (w != 0 && wn32 == 0)
+            NoteWait99Wn32Hit(linW, linH, linM, linG, ref wn32, ref hop,
+                ref methods, ref getproc);
+            return false;
+        }
+
+        private static bool TryWalkAhSysWn32(MipsBus bus, out uint methods,
+            out uint getproc, out uint wn32, out uint hop)
+        {
+            methods = 0;
+            getproc = 0;
+            wn32 = 0;
+            hop = 0;
+            if (bus == null)
+                return false;
+            for (int i = 0; i < LeftoverWait99AhCount; i++)
             {
-                wn32 = w;
-                hop = h;
+                uint cinfo = 0;
+                if (!TryPeekWord(bus, KDataBase + 4 + (uint)(i * 4), out cinfo))
+                    continue;
+                if (!IsDumpWait99CinfoVa(cinfo))
+                    continue;
+                uint name = 0;
+                if (!TryPeekWord(bus, cinfo, out name)
+                    || name != LeftoverWait99Wn32Name)
+                    continue;
+                uint m = 0;
+                uint g = 0;
+                uint h = 0;
+                if (TryReadDumpWn32Cinfo(bus, cinfo, out m, out g, out h))
+                {
+                    wn32 = cinfo;
+                    methods = m;
+                    getproc = g;
+                    return true;
+                }
+                NoteWait99Wn32Hit(cinfo, h, m, g, ref wn32, ref hop,
+                    ref methods, ref getproc);
+            }
+            return false;
+        }
+
+        private static bool TryScanDumpNkPeWn32(MipsBus bus, out uint methods,
+            out uint getproc, out uint wn32, out uint hop)
+        {
+            methods = 0;
+            getproc = 0;
+            wn32 = 0;
+            hop = 0;
+            uint mz = 0;
+            if (!TryPeekWord(bus, LeftoverWait99NkImage, out mz)
+                || (mz & 0xFFFF) != 0x5A4D)
+                return false;
+            uint lfanew = 0;
+            if (!TryPeekWord(bus, LeftoverWait99NkImage + 0x3C, out lfanew)
+                || lfanew < 0x40 || lfanew > 0x400)
+                return false;
+            uint pe = LeftoverWait99NkImage + lfanew;
+            uint sig = 0;
+            if (!TryPeekWord(bus, pe, out sig) || sig != 0x00004550)
+                return false;
+            uint coff = 0;
+            uint opt = 0;
+            if (!TryPeekWord(bus, pe + 4, out coff)
+                || !TryPeekWord(bus, pe + 20, out opt))
+                return false;
+            uint nsec = (coff >> 16) & 0xFFFF;
+            uint optSize = opt & 0xFFFF;
+            if (nsec == 0 || nsec > 16 || optSize > 0x200)
+                return false;
+            uint secOff = pe + 24 + optSize;
+            for (uint i = 0; i < nsec; i++)
+            {
+                uint ch = 0;
+                uint vs = 0;
+                uint rva = 0;
+                if (!TryPeekWord(bus, secOff + 36, out ch)
+                    || !TryPeekWord(bus, secOff + 8, out vs)
+                    || !TryPeekWord(bus, secOff + 12, out rva))
+                {
+                    secOff += 40;
+                    continue;
+                }
+                secOff += 40;
+                if ((ch & 0x40) == 0)
+                    continue;
+                if (vs == 0)
+                    TryPeekWord(bus, secOff - 40 + 16, out vs);
+                if (vs < 12 || vs > 0x400000)
+                    continue;
+                uint lo = rva >= LeftoverWait99NkImage
+                    ? rva
+                    : LeftoverWait99NkImage + rva;
+                if ((lo & 3) != 0)
+                    continue;
+                uint hi = lo + vs;
+                uint m = 0;
+                uint g = 0;
+                uint w = 0;
+                uint h = 0;
+                if (TryScanDumpWn32Range(bus, lo, hi, out m, out g, out w,
+                    out h))
+                {
+                    methods = m;
+                    getproc = g;
+                    wn32 = w;
+                    hop = h;
+                    return true;
+                }
+                NoteWait99Wn32Hit(w, h, m, g, ref wn32, ref hop, ref methods,
+                    ref getproc);
             }
             return false;
         }
@@ -11183,6 +11308,9 @@ namespace ProcessorEmulator.Core
                 return false;
             uint destLo = LeftoverDestKseg;
             uint destHi = LeftoverDestKseg + (LeftoverDestHi - LeftoverDestLo);
+            uint nkHi = NkCopy0Dst + NkCopy0DestLen;
+            if (hi > nkHi)
+                hi = nkHi;
             for (uint va = lo; va + 12 < hi; va += 4)
             {
                 if (va >= destLo && va < destHi)
@@ -11191,34 +11319,93 @@ namespace ProcessorEmulator.Core
                     continue;
                 }
                 uint name = 0;
-                if (!TryPeekWord(bus, va, out name)
-                    || name != LeftoverWait99Wn32Name)
-                    continue;
-                uint pfn = 0;
-                if (!TryPeekWord(bus, va + LeftoverWait99CinfoPfn, out pfn))
-                    continue;
-                uint gp = 0;
-                uint alt = 0;
-                TryPeekWord(bus, pfn + LeftoverWait99GetProcOff, out gp);
-                TryPeekWord(bus, pfn + LeftoverWait99GetProcOffAlt, out alt);
-                if (gp == LeftoverWait99GetProcDest
-                    || alt == LeftoverWait99GetProcDest)
+                if (!TryPeekWord(bus, va, out name))
                 {
-                    if (wn32 == 0)
-                        wn32 = va;
-                    hop = gp != 0 ? gp : alt;
+                    uint next = (va & ~0xFFFu) + 0x1000;
+                    if (next <= va)
+                        break;
+                    va = next - 4;
                     continue;
                 }
-                if (!TryAcceptLeftoverWait99GetProcTable(bus, pfn, out gp))
+                if (name != LeftoverWait99Wn32Name)
                     continue;
-                if (alt != 0 && !IsDumpWait99GetProcDest(alt))
-                    continue;
-                wn32 = va;
-                methods = pfn;
-                getproc = gp;
-                return true;
+                uint m = 0;
+                uint g = 0;
+                uint h = 0;
+                if (TryReadDumpWn32Cinfo(bus, va, out m, out g, out h))
+                {
+                    wn32 = va;
+                    methods = m;
+                    getproc = g;
+                    return true;
+                }
+                NoteWait99Wn32Hit(va, h, m, g, ref wn32, ref hop, ref methods,
+                    ref getproc);
             }
             return false;
+        }
+
+        private static bool TryReadDumpWn32Cinfo(MipsBus bus, uint cinfo,
+            out uint methods, out uint getproc, out uint hop)
+        {
+            methods = 0;
+            getproc = 0;
+            hop = 0;
+            uint name = 0;
+            if (!TryPeekWord(bus, cinfo, out name)
+                || name != LeftoverWait99Wn32Name)
+                return false;
+            uint pfn = 0;
+            if (!TryPeekWord(bus, cinfo + LeftoverWait99CinfoPfn, out pfn))
+                return false;
+            uint gp = 0;
+            uint alt = 0;
+            TryPeekWord(bus, pfn + LeftoverWait99GetProcOff, out gp);
+            TryPeekWord(bus, pfn + LeftoverWait99GetProcOffAlt, out alt);
+            methods = pfn;
+            getproc = gp;
+            if (gp == LeftoverWait99GetProcDest
+                || alt == LeftoverWait99GetProcDest)
+            {
+                hop = gp != 0 ? gp : alt;
+                return false;
+            }
+            if (!TryAcceptLeftoverWait99GetProcTable(bus, pfn, out gp))
+                return false;
+            if (alt != 0 && !IsDumpWait99GetProcDest(alt))
+                return false;
+            getproc = gp;
+            return true;
+        }
+
+        private static void NoteWait99Wn32Hit(uint wn32Hit, uint hopHit,
+            uint methodsHit, uint getprocHit, ref uint wn32, ref uint hop,
+            ref uint methods, ref uint getproc)
+        {
+            if (wn32Hit == 0)
+                return;
+            if (wn32 == 0)
+                wn32 = wn32Hit;
+            if (hop == 0)
+                hop = hopHit;
+            if (methods == 0)
+                methods = methodsHit;
+            if (getproc == 0)
+                getproc = getprocHit;
+        }
+
+        private static bool IsDumpWait99CinfoVa(uint va)
+        {
+            if ((va & 3) != 0 || va == 0 || va == 0xFFFFFFFFu)
+                return false;
+            if (IsLeftoverDestVa(va))
+                return false;
+            uint destLo = LeftoverDestKseg;
+            uint destHi = LeftoverDestKseg + (LeftoverDestHi - LeftoverDestLo);
+            if (va >= destLo && va < destHi)
+                return false;
+            return va >= LeftoverWait99NkImage
+                && va < NkCopy0Dst + NkCopy0DestLen;
         }
 
         private static bool TryAcceptLeftoverWait99GetProcTable(MipsBus bus,
@@ -11233,41 +11420,23 @@ namespace ProcessorEmulator.Core
         }
 
         private static void TryNoteLeftoverWait99WrapNeed(MipsBus bus, uint[] regs,
-            uint methods, uint getproc, string via)
+            uint methods, uint getproc, string via, uint wn32, uint hop)
         {
             if (_leftoverWait99WrapNeedLogged)
                 return;
             _leftoverWait99WrapNeedLogged = true;
-            uint slot = 0;
-            uint kdata = 0;
-            uint ahSys = 0;
-            uint kd0 = 0;
-            uint cur = 0;
-            uint uk = 0;
-            bool kdOk = TryPeekWord(bus, KDataBase, out kd0);
-            bool ahOk = TryPeekWord(bus, KDataBase + 4, out ahSys);
-            TryPeekWord(bus, ProcessInfoFaultVa, out slot);
-            TryPeekWord(bus, LeftoverWait99CacheKdata, out kdata);
-            TryPeekWord(bus, CurProc, out cur);
-            TryPeekWord(bus, UserKData, out uk);
-            uint s6 = PeekGpr(regs, 22);
-            string lo32 = string.IsNullOrEmpty(_nkLoadO32Name) ? "-" : _nkLoadO32Name;
-            BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-wrap-need s6=0x" +
-                s6.ToString("X8") +
-                " slot=0x" + slot.ToString("X8") +
-                " kdata=0x" + kdata.ToString("X8") +
-                " kd0=0x" + kd0.ToString("X8") +
-                " kd-ok=" + kdOk +
-                " ahsys=0x" + ahSys.ToString("X8") +
-                " ah-ok=" + ahOk +
-                " curproc=0x" + cur.ToString("X8") +
-                " uk=0x" + uk.ToString("X8") +
-                " methods=0x" + methods.ToString("X8") +
-                " getproc=0x" + getproc.ToString("X8") +
-                " bindimp=0x" + BindImpOrdLookup.ToString("X8") +
-                " via=" + via +
-                " lo32=" + lo32 +
-                " (named miss: dump WN32 CINFO ppfnMethods[152] unset at NK coredll LoadO32 wrap; ahSys[0] not live Win32 CINFO; BindImp 0x8001F7BC is LoadO32 GetProc not a methods table; leftover dest GetProc dest leftover hop forbidden; leftover dest leftover-syscall wrap-halt stays; do not leftover dest)");
+            uint ib = 0;
+            uint c0 = 0;
+            bool ibOk = TryPeekWord(bus, LeftoverWait99NkImage, out ib);
+            bool c0Ok = TryPeekWord(bus, NkCopy0Dst, out c0);
+            BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-wrap-need via=" +
+                (via ?? "empty") +
+                " wn32=0x" + wn32.ToString("X8") +
+                " hop=0x" + hop.ToString("X8") +
+                " meth=0x" + methods.ToString("X8") +
+                " gp=0x" + getproc.ToString("X8") +
+                " ib=" + (ibOk ? "y" : "n") +
+                " c0=" + (c0Ok ? "y" : "n"));
         }
 
         private static void TryNoteLeftoverWait99WrapCont(MipsBus bus,
