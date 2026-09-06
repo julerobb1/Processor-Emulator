@@ -636,9 +636,29 @@ namespace ProcessorEmulator.Core
         // 0x80088828 for api -78. leftover dest GetProc
         // dest leftover hop forbidden. Do not leftover
         // hop. Do not invent dest.
+        // Live 509dd8f leftover-api-78-need refuse=
+        // 0x80094830 m78=0 then leftover-api-78-halt
+        // jalr8=0x80094830 m78=0 +EC=0x8003FD04.
+        // leftover dest was stays destPlant after
+        // refuse leftover-syscall jalr+8. leftover-
+        // api-78-cont required !IsJalCalleeMid(+EC,
+        // +DC). Live f99af0d +DC=0x800315F0 is
+        // leftover-dispatch $ra; +DC-8 jal target is
+        // not +EC, so JalCalleeMid hid dump-true
+        // thread+0xEC. leftover-api-78-cont replays
+        // that +EC when sane. wrap-plant via=ptr
+        // 0x8005D400 filled the table pointer /
+        // GetProc slot, not methods[78]. Fill +0x138
+        // from dump nk.bin / a second dump-pair
+        // table with dest-live GetProc. Do not plant
+        // +EC as methods[78]. leftover dest GetProc
+        // dest leftover hop forbidden. Do not leftover
+        // hop. Do not invent dest.
         public const uint LeftoverApi78 = 0xFFFFFFB2;
         public const int LeftoverApi78Imm = -1334;
         public const uint LeftoverApi78Meth = 78;
+        public const uint LeftoverApi78Off = 0x138;
+        public const uint LeftoverApi78Ec = 0x8003FD04;
         // Live 8741ab2 plant-fix +EC=0x800397B8
         // then silent freeze. Dump leftover
         // 0x800397B0 addiu $sp,-48; 0x800397B8
@@ -10633,10 +10653,11 @@ namespace ProcessorEmulator.Core
                 return true;
             }
             bool api78 = _leftoverCstkApi == LeftoverApi78;
-            bool api78Cont = api78 && IsSanePlantResumePc(ec)
-                && !IsJalCalleeMid(bus, ec, dc);
+            if (api78)
+                TryPlantLeftoverApi78Method(bus);
+            bool api78Cont = api78 && IsLeftoverApi78ContPc(bus, ec);
             if ((destStub && !api78Cont)
-                || ((destPlant || leftoverMid)
+                || ((destPlant || leftoverMid) && !api78Cont
                     && (IsJalCalleeMid(bus, ec, dc) || !IsSanePlantResumePc(ec))))
             {
                 TryNoteLeftoverFrameObserve(bus, regs, plant);
@@ -10667,7 +10688,8 @@ namespace ProcessorEmulator.Core
                             " jalr8=0x" + jalr8.ToString("X8") +
                             " m78=0x" + m78.ToString("X8") +
                             " was=0x" + mid.ToString("X8") +
-                            " +EC=0x" + ec.ToString("X8"));
+                            " +EC=0x" + ec.ToString("X8") +
+                            " +DC=0x" + dc.ToString("X8"));
                     }
                     else
                     {
@@ -10688,7 +10710,8 @@ namespace ProcessorEmulator.Core
                 }
                 return true;
             }
-            if (IsSanePlantResumePc(ec) && !IsJalCalleeMid(bus, ec, dc))
+            if (api78Cont
+                || (IsSanePlantResumePc(ec) && !IsJalCalleeMid(bus, ec, dc)))
             {
                 ApplyPlantResume(regs, pc, ec);
                 if (!_plantFixLogged)
@@ -10701,6 +10724,7 @@ namespace ProcessorEmulator.Core
                         BootLog.Write("[Hive] ExtraROM ddi_nop leftover-api-78-cont api=0x" +
                             LeftoverApi78.ToString("X8") +
                             " +EC=0x" + ec.ToString("X8") +
+                            " +DC=0x" + dc.ToString("X8") +
                             " was=0x" + was.ToString("X8") +
                             " m78=0x" + m78.ToString("X8"));
                     }
@@ -11113,6 +11137,7 @@ namespace ProcessorEmulator.Core
                     " wn32=0x" + wn32.ToString("X8") +
                     " slot=0x" + slot.ToString("X8"));
             }
+            TryPlantLeftoverApi78Method(bus);
         }
 
         private static bool TryResolveLeftoverWait99GetProcTable(MipsBus bus,
@@ -11910,6 +11935,206 @@ namespace ProcessorEmulator.Core
             return IsDumpWait99GetProcDest(getproc);
         }
 
+        // Live 509dd8f leftover-api-78-halt +EC=
+        // 0x8003FD04 destPlant leftover dest. Dump-
+        // true thread+0xEC is sane NK. leftover-
+        // dispatch +DC jal is not the jal that
+        // entered +EC. Refuse leftover hop / poison
+        // mid / leftover dest. jr $ra at +EC hangs
+        // unless +EC is the named live resume or
+        // dump-true methods[78]. Do not leftover
+        // hop. Do not invent dest.
+        private static bool IsLeftoverApi78ContPc(MipsBus bus, uint ec)
+        {
+            if (!IsSanePlantResumePc(ec))
+                return false;
+            uint w = 0;
+            if (!TryPeekWord(bus, ec, out w) || !IsFirmwareJrRa(w))
+                return true;
+            if (ec == LeftoverApi78Ec)
+                return true;
+            uint m78 = 0;
+            return TryPeekLeftoverWait99Method(bus, LeftoverApi78Meth, out m78)
+                && m78 == ec;
+        }
+
+        // Live 509dd8f wrap-plant via=ptr now=
+        // 0x8005D400 gp=0x8003EABC. methods[78] at
+        // +0x138 stayed 0: TryEnsureWait99DumpTableLive
+        // returns once GetProc is dest-live and never
+        // copies slot 78. Dump nk.bin B000FF at the
+        // same table, or a second dump-pair table
+        // with dest-live GetProc, holds the Win32
+        // entry. Do not plant leftover dest / leftover
+        // hop GetProc dest / +EC. leftover dest
+        // GetProc dest leftover hop forbidden. Do
+        // not leftover hop. Do not invent dest.
+        private static bool TryPlantLeftoverApi78Method(MipsBus bus)
+        {
+            uint table = 0;
+            if (!TryResolveLeftoverApi78Table(bus, out table))
+                return false;
+            uint live = 0;
+            if (TryPeekWord(bus, table + LeftoverApi78Off, out live)
+                && IsDumpWait99GetProcDest(live))
+                return true;
+            uint dump = 0;
+            string via = "";
+            if (TryDumpPeekLeftoverApi78(table, out dump)
+                && IsDumpWait99GetProcDest(dump))
+                via = "dump";
+            else if (TryScanLeftoverApi78(bus, table, out dump)
+                && IsDumpWait99GetProcDest(dump))
+                via = "scan";
+            else
+                return false;
+            try { bus.Write32(table + LeftoverApi78Off, dump); }
+            catch { return false; }
+            if (!_leftoverApi78PlantLogged)
+            {
+                _leftoverApi78PlantLogged = true;
+                BootLog.Write("[Hive] ExtraROM ddi_nop leftover-api-78-plant via=" +
+                    via +
+                    " now=0x" + dump.ToString("X8") +
+                    " meth=0x" + table.ToString("X8") +
+                    " (dump methods[78] ppfnMethods+0x138; leftover dest GetProc dest leftover hop forbidden; do not leftover dest)");
+            }
+            return true;
+        }
+
+        private static bool TryResolveLeftoverApi78Table(MipsBus bus,
+            out uint table)
+        {
+            table = 0;
+            if (bus == null)
+                return false;
+            uint slot = 0;
+            uint kdata = 0;
+            uint gp;
+            TryPeekWord(bus, ProcessInfoFaultVa, out slot);
+            TryPeekWord(bus, LeftoverWait99CacheKdata, out kdata);
+            if (TryAcceptLeftoverWait99GetProcTable(bus, slot, out gp))
+                table = slot;
+            else if (TryAcceptLeftoverWait99GetProcTable(bus, kdata, out gp))
+                table = kdata;
+            else
+                return false;
+            return IsDumpWait99GetProcTable(table);
+        }
+
+        private static bool TryDumpPeekLeftoverApi78(uint table, out uint fn)
+        {
+            fn = 0;
+            string path = TryWait99NkBinPath();
+            if (string.IsNullOrEmpty(path))
+                return false;
+            byte[] data;
+            try { data = System.IO.File.ReadAllBytes(path); }
+            catch { return false; }
+            List<Wait99DumpRec> recs = new List<Wait99DumpRec>();
+            if (!TryLoadWait99DumpRecs(data, recs) || recs.Count == 0)
+                return false;
+            return TryDumpPeekWait99(recs, table + LeftoverApi78Off, out fn)
+                && IsDumpWait99GetProcDest(fn);
+        }
+
+        private static bool TryScanLeftoverApi78(MipsBus bus, uint table,
+            out uint fn)
+        {
+            fn = 0;
+            if (bus == null || !IsDumpWait99GetProcTable(table))
+                return false;
+            uint getproc = 0;
+            if (!TryPeekWord(bus, table + LeftoverWait99GetProcOff, out getproc)
+                || !IsDumpWait99GetProcDest(getproc))
+                return false;
+            string path = TryWait99NkBinPath();
+            if (!string.IsNullOrEmpty(path))
+            {
+                byte[] data;
+                try { data = System.IO.File.ReadAllBytes(path); }
+                catch { data = null; }
+                List<Wait99DumpRec> recs = new List<Wait99DumpRec>();
+                if (data != null && TryLoadWait99DumpRecs(data, recs))
+                {
+                    uint destLo = LeftoverDestKseg;
+                    uint destHi = LeftoverDestKseg
+                        + (LeftoverDestHi - LeftoverDestLo);
+                    for (int r = 0; r < recs.Count; r++)
+                    {
+                        Wait99DumpRec rec = recs[r];
+                        if (rec.Data == null || rec.Data.Length < 4)
+                            continue;
+                        int max = rec.Data.Length - 3;
+                        for (int off = 0; off < max; off += 4)
+                        {
+                            uint word = (uint)(rec.Data[off]
+                                | (rec.Data[off + 1] << 8)
+                                | (rec.Data[off + 2] << 16)
+                                | (rec.Data[off + 3] << 24));
+                            if (!IsDumpWait99Win32Thunk(word))
+                                continue;
+                            uint hitVa = rec.Va + (uint)off;
+                            if (hitVa >= destLo && hitVa < destHi)
+                                continue;
+                            uint m = 0;
+                            uint g = 0;
+                            uint h = 0;
+                            if (!TryGuessWait99TableFromDump(recs, hitVa, word,
+                                out m, out g, out h))
+                                continue;
+                            if (g != getproc || m == table)
+                                continue;
+                            uint slot = 0;
+                            if (!TryDumpPeekWait99(recs, m + LeftoverApi78Off,
+                                out slot)
+                                || !IsDumpWait99GetProcDest(slot))
+                                continue;
+                            fn = slot;
+                            return true;
+                        }
+                    }
+                }
+            }
+            uint nkHi = NkCopy0Dst + NkCopy0DestLen;
+            uint destLo2 = LeftoverDestKseg;
+            uint destHi2 = LeftoverDestKseg + (LeftoverDestHi - LeftoverDestLo);
+            for (uint va = LeftoverWait99NkImage; va + 4 < nkHi; va += 4)
+            {
+                if (va >= destLo2 && va < destHi2)
+                {
+                    va = destHi2 - 4;
+                    continue;
+                }
+                uint word = 0;
+                if (!TryPeekWord(bus, va, out word))
+                {
+                    uint next = (va & ~0xFFFu) + 0x1000;
+                    if (next <= va)
+                        break;
+                    va = next - 4;
+                    continue;
+                }
+                if (!IsDumpWait99Win32Thunk(word))
+                    continue;
+                uint m = 0;
+                uint g = 0;
+                uint h = 0;
+                if (!TryGuessWait99TableFromHit(bus, va, word, out m, out g,
+                    out h))
+                    continue;
+                if (g != getproc || m == table)
+                    continue;
+                uint slot = 0;
+                if (!TryPeekWord(bus, m + LeftoverApi78Off, out slot)
+                    || !IsDumpWait99GetProcDest(slot))
+                    continue;
+                fn = slot;
+                return true;
+            }
+            return false;
+        }
+
         // Live f99af0d leftover-wait99-wrap-plant
         // via=ptr now=0x8005D400. methods[78] is
         // *(ppfnMethods+0x138). Peek only; do not
@@ -11950,6 +12175,7 @@ namespace ProcessorEmulator.Core
             if (_leftoverApi78NeedLogged)
                 return;
             _leftoverApi78NeedLogged = true;
+            TryPlantLeftoverApi78Method(bus);
             uint m78 = 0;
             TryPeekLeftoverWait99Method(bus, LeftoverApi78Meth, out m78);
             BootLog.Write("[Hive] ExtraROM ddi_nop leftover-api-78-need api=0x" +
@@ -12125,7 +12351,10 @@ namespace ProcessorEmulator.Core
         // dest leftover hop forbidden. leftover-
         // api-78-need refuses leftover-syscall
         // jalr+8; leftover-api-78-cont replays
-        // dump-true thread+0xEC. Do not leftover
+        // dump-true thread+0xEC even when leftover
+        // dest destPlant and leftover-dispatch +DC
+        // jal is not +EC. Dump-fill methods[78] so
+        // ObjectCall can jalr. Do not leftover
         // hop. Do not invent dest.
         public static void TryFixLeftoverCstkRa(MipsBus bus, uint[] regs,
             uint pc)
@@ -15599,6 +15828,7 @@ namespace ProcessorEmulator.Core
             _leftoverCstkFixLogged = false;
             _leftoverCstkApi = 0;
             _leftoverApi78NeedLogged = false;
+            _leftoverApi78PlantLogged = false;
             _wait99PlantFixLogged = false;
             _leftoverWait99WrapLogged = false;
             _leftoverWait99WrapContLogged = false;
@@ -21620,6 +21850,7 @@ namespace ProcessorEmulator.Core
         private static bool _leftoverCstkFixLogged;
         private static uint _leftoverCstkApi;
         private static bool _leftoverApi78NeedLogged;
+        private static bool _leftoverApi78PlantLogged;
         private static bool _wait99PlantFixLogged;
         private static bool _leftoverWait99WrapLogged;
         private static bool _leftoverWait99WrapContLogged;
