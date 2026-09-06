@@ -674,10 +674,12 @@ namespace ProcessorEmulator.Core
         // +DC=0x800305AC. +DC is leftover-dispatch
         // jal+8; +DC-8 jal is not +EC. leftover-
         // api-54-need refuses leftover hop to
-        // 0x80095EBC. leftover-api-54-cont replays
-        // dump-true thread+0xEC. Dump-fill
-        // methods[54] from the same table as
-        // GetProc 0x8005D400. Do not plant +EC as
+        // 0x80095EBC. leftover-api-54-cont
+        // ObjectCall jalr dest-live methods[54]
+        // already present. Do not replay dump
+        // memset mid +EC. Dump-fill methods[54]
+        // from the same table as GetProc
+        // 0x8005D400. Do not plant +EC as
         // methods[54]. leftover dest GetProc dest
         // leftover hop forbidden. Do not leftover
         // hop. Do not invent dest.
@@ -689,15 +691,19 @@ namespace ProcessorEmulator.Core
         // 0x80095EBC m54=0x8005A6D0 dest-live then
         // leftover-api-54-halt leftover mid
         // 0x800159B0 +EC=0x8005950C (dump memset
-        // mid 0x800593F0–0x80059588). leftover-
-        // api-54-cont required IsSanePlantResumePc
-        // so memset poison hid dump-true thread+0xEC.
-        // leftover hop plant-fix to memset hung;
+        // mid 0x800593F0–0x80059588 /
+        // IsPoisonMidPlantResume). Live f0cb076
+        // leftover-api-54-cont replayed that +EC
+        // (namedEc / memset-range accept) without
+        // leftover-api-54-cont log (_plantFixLogged
+        // leftover-api-78-cont) then silent freeze.
+        // leftover hop plant-fix to memset hung.
         // leftover-api-54-cont after refuse leftover
-        // hop replays that +EC. m54 already dest-live;
-        // do not invent. leftover dest GetProc dest
-        // leftover hop forbidden. Do not leftover
-        // hop. Do not invent dest.
+        // hop ObjectCall jalr dest-live methods[54]
+        // already present. Do not replay memset mid.
+        // leftover dest GetProc dest leftover hop
+        // forbidden. Do not leftover hop. Do not
+        // invent dest.
         public const uint LeftoverApi54Ec = 0x8005950C;
         public const uint LeftoverApi54MethLive = 0x8005A6D0;
         public const uint LeftoverApi54Ret = 0x80095EBC;
@@ -10702,45 +10708,42 @@ namespace ProcessorEmulator.Core
                 TryPlantLeftoverApi54Method(bus);
             bool api78Cont = api78 && IsLeftoverApiContPc(bus, ec,
                 LeftoverApi78Ec, LeftoverApi78Meth);
-            bool api54Cont = api54 && IsLeftoverApiContPc(bus, ec,
-                LeftoverApi54Ec, LeftoverApi54Meth);
+            uint api54Dest = 0;
+            bool api54Cont = api54 && TryLeftoverApi54ContDest(bus, out api54Dest);
             bool apiCont = api78Cont || api54Cont;
             if ((destStub && !apiCont)
                 || ((destPlant || leftoverMid) && !apiCont
                     && (IsJalCalleeMid(bus, ec, dc) || !IsSanePlantResumePc(ec))))
             {
                 TryNoteLeftoverFrameObserve(bus, regs, plant);
-                if (!_leftoverHaltLogged)
+                uint mid = leftoverMid && !destPlant
+                    ? (was == LeftoverJalRet ? was : regs[12])
+                    : was;
+                uint waitRa = PeekGpr(regs, 31);
+                uint destOfRa = 0;
+                if (IsLeftoverDestVa(waitRa))
+                    destOfRa = LeftoverDestKseg + (waitRa - LeftoverDestLo);
+                uint leftoverJalr8 = 0;
+                if (destStub
+                    && mid >= LeftoverDestKseg
+                    && mid < LeftoverDestKseg + (LeftoverDestHi - LeftoverDestLo))
+                    leftoverJalr8 = LeftoverDestLo + (mid - LeftoverDestKseg);
+                if (api54)
+                    TryNoteLeftoverApi54Halt(bus, mid, ec, dc);
+                else if (!_leftoverHaltLogged)
                 {
                     _leftoverHaltLogged = true;
-                    uint mid = leftoverMid && !destPlant
-                        ? (was == LeftoverJalRet ? was : regs[12])
-                        : was;
-                    uint waitRa = PeekGpr(regs, 31);
-                    uint destOfRa = 0;
-                    if (IsLeftoverDestVa(waitRa))
-                        destOfRa = LeftoverDestKseg + (waitRa - LeftoverDestLo);
-                    uint leftoverJalr8 = 0;
-                    if (destStub
-                        && mid >= LeftoverDestKseg
-                        && mid < LeftoverDestKseg + (LeftoverDestHi - LeftoverDestLo))
-                        leftoverJalr8 = LeftoverDestLo + (mid - LeftoverDestKseg);
-                    if (api78 || api54)
+                    if (api78)
                     {
-                        uint meth = api54 ? LeftoverApi54Meth : LeftoverApi78Meth;
-                        uint api = api54 ? LeftoverApi54 : LeftoverApi78;
-                        int imm = api54 ? LeftoverApi54Imm : LeftoverApi78Imm;
-                        string tag = api54 ? "54" : "78";
                         uint m = 0;
                         uint jalr8 = 0;
-                        TryPeekLeftoverWait99Method(bus, meth, out m);
-                        TryResolveLeftoverCstkFromApi(bus, api, out jalr8);
-                        BootLog.Write("[Hive] ExtraROM ddi_nop leftover-api-" +
-                            tag + "-halt api=0x" +
-                            api.ToString("X8") +
-                            " imm=" + imm +
+                        TryPeekLeftoverWait99Method(bus, LeftoverApi78Meth, out m);
+                        TryResolveLeftoverCstkFromApi(bus, LeftoverApi78, out jalr8);
+                        BootLog.Write("[Hive] ExtraROM ddi_nop leftover-api-78-halt api=0x" +
+                            LeftoverApi78.ToString("X8") +
+                            " imm=" + LeftoverApi78Imm +
                             " jalr8=0x" + jalr8.ToString("X8") +
-                            " m" + meth + "=0x" + m.ToString("X8") +
+                            " m78=0x" + m.ToString("X8") +
                             " was=0x" + mid.ToString("X8") +
                             " +EC=0x" + ec.ToString("X8") +
                             " +DC=0x" + dc.ToString("X8"));
@@ -10767,24 +10770,23 @@ namespace ProcessorEmulator.Core
             if (apiCont
                 || (IsSanePlantResumePc(ec) && !IsJalCalleeMid(bus, ec, dc)))
             {
-                ApplyPlantResume(regs, pc, ec);
-                if (!_plantFixLogged)
+                uint resume = api54Cont ? api54Dest : ec;
+                ApplyPlantResume(regs, pc, resume);
+                if (api54Cont)
+                    TryNoteLeftoverApi54Cont(bus, was, ec, dc, resume);
+                else if (!_plantFixLogged)
                 {
                     _plantFixLogged = true;
-                    if (api78 || api54)
+                    if (api78)
                     {
-                        uint meth = api54 ? LeftoverApi54Meth : LeftoverApi78Meth;
-                        uint api = api54 ? LeftoverApi54 : LeftoverApi78;
-                        string tag = api54 ? "54" : "78";
                         uint m = 0;
-                        TryPeekLeftoverWait99Method(bus, meth, out m);
-                        BootLog.Write("[Hive] ExtraROM ddi_nop leftover-api-" +
-                            tag + "-cont api=0x" +
-                            api.ToString("X8") +
+                        TryPeekLeftoverWait99Method(bus, LeftoverApi78Meth, out m);
+                        BootLog.Write("[Hive] ExtraROM ddi_nop leftover-api-78-cont api=0x" +
+                            LeftoverApi78.ToString("X8") +
                             " +EC=0x" + ec.ToString("X8") +
                             " +DC=0x" + dc.ToString("X8") +
                             " was=0x" + was.ToString("X8") +
-                            " m" + meth + "=0x" + m.ToString("X8"));
+                            " m78=0x" + m.ToString("X8"));
                     }
                     else
                     {
@@ -12001,35 +12003,103 @@ namespace ProcessorEmulator.Core
         // entered +EC. Live 11cf70a leftover-api-
         // 54-halt +EC=0x8005950C leftover mid
         // 0x800159B0. That +EC is dump memset mid
-        // (0x800593F0–0x80059588). leftover hop
-        // plant-fix to memset hung; leftover-api-
-        // 54-cont after refuse leftover hop
-        // replays named dump-true thread+0xEC /
-        // dest-live methods[N]. Refuse leftover
-        // dest / leftover hop GetProc dest / idle.
-        // Do not leftover hop. Do not invent dest.
+        // (0x800593F0–0x80059588 /
+        // IsPoisonMidPlantResume). Live f0cb076
+        // leftover-api-54-cont namedEc / memset
+        // range accepted that +EC then silent
+        // freeze. leftover hop plant-fix to memset
+        // hung. leftover-api-54-cont after refuse
+        // leftover hop ObjectCall jalr dest-live
+        // methods[54]. Refuse leftover dest /
+        // leftover hop GetProc dest / idle /
+        // poison mid. Do not leftover hop. Do not
+        // invent dest.
         private static bool IsLeftoverApiContPc(MipsBus bus, uint ec,
             uint namedEc, uint meth)
         {
             if ((ec & 3) != 0 || IsPoisonPlant(ec) || IsNearNullVa(ec)
                 || IsLeftoverDestVa(ec) || IsNkIdleResumePc(ec)
+                || IsPoisonMidPlantResume(ec)
                 || ec == LeftoverWait99GetProcDest)
                 return false;
-            if (ec == namedEc)
-                return true;
-            uint fn = 0;
-            if (TryPeekLeftoverWait99Method(bus, meth, out fn)
-                && fn == ec && IsDumpWait99GetProcDest(fn))
-                return true;
-            if (ec >= MemsetJal && ec < MemsetEnd
-                && ec >= LeftoverWait99NkImage && ec < NkImageEnd)
-                return true;
             if (!IsSanePlantResumePc(ec))
                 return false;
             uint w = 0;
             if (!TryPeekWord(bus, ec, out w) || !IsFirmwareJrRa(w))
                 return true;
-            return false;
+            if (ec == namedEc)
+                return true;
+            uint fn = 0;
+            return TryPeekLeftoverWait99Method(bus, meth, out fn)
+                && fn == ec && IsDumpWait99GetProcDest(fn);
+        }
+
+        // Live f0cb076 leftover-api-54-need refuse
+        // 0x80095EBC m54=0x8005A6D0 dest-live then
+        // silent freeze: leftover-api-54-cont
+        // replayed dump memset mid +EC=0x8005950C
+        // without leftover-api-54-cont log
+        // (_plantFixLogged leftover-api-78-cont).
+        // leftover hop plant-fix to memset hung.
+        // leftover-api-54-cont after refuse leftover
+        // hop ObjectCall jalr dest-live methods[54]
+        // already present. Do not replay memset mid.
+        // leftover dest GetProc dest leftover hop
+        // forbidden. Do not leftover hop. Do not
+        // invent dest.
+        private static bool TryLeftoverApi54ContDest(MipsBus bus, out uint dest)
+        {
+            dest = 0;
+            uint m54 = 0;
+            if (!TryPeekLeftoverWait99Method(bus, LeftoverApi54Meth, out m54))
+                return false;
+            if (!IsDumpWait99GetProcDest(m54) || !IsSanePlantResumePc(m54)
+                || IsPoisonMidPlantResume(m54)
+                || m54 == LeftoverWait99GetProcDest)
+                return false;
+            dest = m54;
+            return true;
+        }
+
+        private static void TryNoteLeftoverApi54Cont(MipsBus bus, uint was,
+            uint ec, uint dc, uint dest)
+        {
+            if (_leftoverApi54ContLogged)
+                return;
+            _leftoverApi54ContLogged = true;
+            _plantFixLogged = true;
+            uint m54 = 0;
+            TryPeekLeftoverWait99Method(bus, LeftoverApi54Meth, out m54);
+            BootLog.Write("[Hive] ExtraROM ddi_nop leftover-api-54-cont api=0x" +
+                LeftoverApi54.ToString("X8") +
+                " +EC=0x" + ec.ToString("X8") +
+                " +DC=0x" + dc.ToString("X8") +
+                " was=0x" + was.ToString("X8") +
+                " m54=0x" + m54.ToString("X8") +
+                " dest=0x" + dest.ToString("X8") +
+                " (ObjectCall jalr dest-live methods[54]; refuse memset mid +EC; do not leftover dest)");
+        }
+
+        private static void TryNoteLeftoverApi54Halt(MipsBus bus, uint was,
+            uint ec, uint dc)
+        {
+            if (_leftoverApi54HaltLogged)
+                return;
+            _leftoverApi54HaltLogged = true;
+            _leftoverHaltLogged = true;
+            uint m54 = 0;
+            uint jalr8 = 0;
+            TryPeekLeftoverWait99Method(bus, LeftoverApi54Meth, out m54);
+            TryResolveLeftoverCstkFromApi(bus, LeftoverApi54, out jalr8);
+            BootLog.Write("[Hive] ExtraROM ddi_nop leftover-api-54-halt api=0x" +
+                LeftoverApi54.ToString("X8") +
+                " imm=" + LeftoverApi54Imm +
+                " jalr8=0x" + jalr8.ToString("X8") +
+                " m54=0x" + m54.ToString("X8") +
+                " was=0x" + was.ToString("X8") +
+                " +EC=0x" + ec.ToString("X8") +
+                " +DC=0x" + dc.ToString("X8") +
+                " (refuse memset mid +EC / leftover dest; do not leftover dest)");
         }
 
         // Live 509dd8f wrap-plant via=ptr now=
@@ -12467,8 +12537,10 @@ namespace ProcessorEmulator.Core
         // leftover-syscall -1238 jalr+8 0x80095EBC
         // for api 0xFFFFFFCA (-54 / methods[54]).
         // leftover-api-54-need refuses that hop;
-        // leftover-api-54-cont replays +EC=
-        // 0x800305B0. Do not leftover hop. Do not
+        // leftover-api-54-cont ObjectCall jalr
+        // dest-live methods[54] already present.
+        // Do not replay dump memset mid +EC=
+        // 0x8005950C. Do not leftover hop. Do not
         // invent dest.
         public static void TryFixLeftoverCstkRa(MipsBus bus, uint[] regs,
             uint pc)
@@ -15964,6 +16036,8 @@ namespace ProcessorEmulator.Core
             _leftoverApi78PlantLogged = false;
             _leftoverApi54NeedLogged = false;
             _leftoverApi54PlantLogged = false;
+            _leftoverApi54ContLogged = false;
+            _leftoverApi54HaltLogged = false;
             _wait99PlantFixLogged = false;
             _leftoverWait99WrapLogged = false;
             _leftoverWait99WrapContLogged = false;
@@ -21988,6 +22062,8 @@ namespace ProcessorEmulator.Core
         private static bool _leftoverApi78PlantLogged;
         private static bool _leftoverApi54NeedLogged;
         private static bool _leftoverApi54PlantLogged;
+        private static bool _leftoverApi54ContLogged;
+        private static bool _leftoverApi54HaltLogged;
         private static bool _wait99PlantFixLogged;
         private static bool _leftoverWait99WrapLogged;
         private static bool _leftoverWait99WrapContLogged;
