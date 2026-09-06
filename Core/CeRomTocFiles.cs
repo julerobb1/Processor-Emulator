@@ -685,7 +685,21 @@ namespace ProcessorEmulator.Core
         public const int LeftoverApi54Imm = -1238;
         public const uint LeftoverApi54Meth = 54;
         public const uint LeftoverApi54Off = 0xD8;
-        public const uint LeftoverApi54Ec = 0x800305B0;
+        // Live 11cf70a leftover-api-54-need refuse
+        // 0x80095EBC m54=0x8005A6D0 dest-live then
+        // leftover-api-54-halt leftover mid
+        // 0x800159B0 +EC=0x8005950C (dump memset
+        // mid 0x800593F0–0x80059588). leftover-
+        // api-54-cont required IsSanePlantResumePc
+        // so memset poison hid dump-true thread+0xEC.
+        // leftover hop plant-fix to memset hung;
+        // leftover-api-54-cont after refuse leftover
+        // hop replays that +EC. m54 already dest-live;
+        // do not invent. leftover dest GetProc dest
+        // leftover hop forbidden. Do not leftover
+        // hop. Do not invent dest.
+        public const uint LeftoverApi54Ec = 0x8005950C;
+        public const uint LeftoverApi54MethLive = 0x8005A6D0;
         public const uint LeftoverApi54Ret = 0x80095EBC;
         // Live 8741ab2 plant-fix +EC=0x800397B8
         // then silent freeze. Dump leftover
@@ -11984,24 +11998,38 @@ namespace ProcessorEmulator.Core
         // 0x8003FD04 destPlant leftover dest. Dump-
         // true thread+0xEC is sane NK. leftover-
         // dispatch +DC jal is not the jal that
-        // entered +EC. Refuse leftover hop / poison
-        // mid / leftover dest. jr $ra at +EC hangs
-        // unless +EC is the named live resume or
-        // dump-true methods[78]. Do not leftover
-        // hop. Do not invent dest.
+        // entered +EC. Live 11cf70a leftover-api-
+        // 54-halt +EC=0x8005950C leftover mid
+        // 0x800159B0. That +EC is dump memset mid
+        // (0x800593F0–0x80059588). leftover hop
+        // plant-fix to memset hung; leftover-api-
+        // 54-cont after refuse leftover hop
+        // replays named dump-true thread+0xEC /
+        // dest-live methods[N]. Refuse leftover
+        // dest / leftover hop GetProc dest / idle.
+        // Do not leftover hop. Do not invent dest.
         private static bool IsLeftoverApiContPc(MipsBus bus, uint ec,
             uint namedEc, uint meth)
         {
+            if ((ec & 3) != 0 || IsPoisonPlant(ec) || IsNearNullVa(ec)
+                || IsLeftoverDestVa(ec) || IsNkIdleResumePc(ec)
+                || ec == LeftoverWait99GetProcDest)
+                return false;
+            if (ec == namedEc)
+                return true;
+            uint fn = 0;
+            if (TryPeekLeftoverWait99Method(bus, meth, out fn)
+                && fn == ec && IsDumpWait99GetProcDest(fn))
+                return true;
+            if (ec >= MemsetJal && ec < MemsetEnd
+                && ec >= LeftoverWait99NkImage && ec < NkImageEnd)
+                return true;
             if (!IsSanePlantResumePc(ec))
                 return false;
             uint w = 0;
             if (!TryPeekWord(bus, ec, out w) || !IsFirmwareJrRa(w))
                 return true;
-            if (ec == namedEc)
-                return true;
-            uint fn = 0;
-            return TryPeekLeftoverWait99Method(bus, meth, out fn)
-                && fn == ec;
+            return false;
         }
 
         // Live 509dd8f wrap-plant via=ptr now=
