@@ -471,7 +471,21 @@ namespace ProcessorEmulator.Core
         // wait99-wrap-halt leftover dest dest-wrapper
         // so leftover-syscall -1630 is never entered.
         // Do not leftover hop. Do not invent dest.
+        // Live c673486 leftover-wait99-wrap-halt pc=
+        // 0x03F71720 word=0x8EC20000 plant=0x03F74844
+        // after LoadO32-ret v0=0. word is dump lw $v0,
+        // 0($s6) (leftover-CAE8 dest-word 0x8EC20000),
+        // not leftover-syscall jalr / dest wrapper mid
+        // lw $a2,0($fp). leftover dest GetProc leftover
+        // dest 0x03F71720 is leftover dest GetProc
+        // leftover dest load. leftover dest GetProc dest
+        // 0x8008C844 leftover hop forbidden. leftover
+        // dest GetProc leftover dest load continues.
+        // leftover dest dest-wrapper jalr leftover-
+        // syscall / dest wrapper mid wrap-halt stays.
+        // Do not leftover hop. Do not invent dest.
         public const uint LeftoverWait99Wrap = 0x03F71720;
+        public const uint LeftoverWait99WrapWord = 0x8EC20000;
         public const uint LeftoverWait99WrapRa = 0x03F71740;
         public const uint LeftoverWait99WrapRaWord = 0x8FC60000;
         public const uint LeftoverWait99HashWord = 0x01873821;
@@ -10778,7 +10792,32 @@ namespace ProcessorEmulator.Core
                 && (short)(word & 0xFFFF) == -1630;
             bool wrapMid = pc == LeftoverWait99WrapRa
                 && word == LeftoverWait99WrapRaWord;
-            if (!jalr && !addiu1630 && !wrapMid && pc != LeftoverWait99Wrap)
+            bool wrapLoad = pc == LeftoverWait99Wrap
+                && word == LeftoverWait99WrapWord;
+            if (wrapLoad)
+            {
+                if (!_leftoverWait99WrapContLogged)
+                {
+                    _leftoverWait99WrapContLogged = true;
+                    uint destWord = 0;
+                    uint raWord = 0;
+                    uint s6 = PeekGpr(regs, 22);
+                    TryPeekWord(bus, LeftoverWait99GetProcDest, out destWord);
+                    TryPeekWord(bus, LeftoverWait99WrapRa, out raWord);
+                    uint plant = 0;
+                    TryPeekWord(bus, ExnContinueWord, out plant);
+                    TryNoteLeftoverWait99Why(bus, plant, LeftoverWait99WrapRa,
+                        destWord, raWord);
+                    BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-wrap-cont pc=0x" +
+                        pc.ToString("X8") +
+                        " word=0x" + word.ToString("X8") +
+                        " s6=0x" + s6.ToString("X8") +
+                        " plant=0x" + plant.ToString("X8") +
+                        " (dump leftover dest GetProc leftover dest lw $v0,0($s6); leftover dest GetProc dest leftover hop forbidden; leftover dest dest-wrapper jalr leftover-syscall wrap-halt stays; do not leftover dest)");
+                }
+                return false;
+            }
+            if (!jalr && !addiu1630 && !wrapMid)
                 return false;
             if (!_leftoverWait99WrapLogged)
             {
@@ -10829,7 +10868,7 @@ namespace ProcessorEmulator.Core
                 " w1=0x" + w1.ToString("X8") +
                 " w2=0x" + w2.ToString("X8") +
                 " w3=0x" + w3.ToString("X8") +
-                " (dump leftover dest GetProc leftover dest dest-wrapper mid lw $a2,0($fp); leftover dest dest-wrapper jalr leftover-syscall; not LoadO32; do not leftover dest)");
+                " (dump leftover dest GetProc leftover dest lw $v0,0($s6) at wrap; leftover dest GetProc dest leftover hop forbidden; leftover dest dest-wrapper jalr leftover-syscall wrap-halt stays; do not leftover dest)");
         }
 
         // Live 05a9778 leftover-ret frame+4
@@ -14335,6 +14374,7 @@ namespace ProcessorEmulator.Core
             _leftoverCstkFixLogged = false;
             _wait99PlantFixLogged = false;
             _leftoverWait99WrapLogged = false;
+            _leftoverWait99WrapContLogged = false;
             _leftoverWait99WhyLogged = false;
             _leftoverRetFixLogged = false;
             _leftoverCstkSpinLogged = false;
@@ -20347,6 +20387,7 @@ namespace ProcessorEmulator.Core
         private static bool _leftoverCstkFixLogged;
         private static bool _wait99PlantFixLogged;
         private static bool _leftoverWait99WrapLogged;
+        private static bool _leftoverWait99WrapContLogged;
         private static bool _leftoverWait99WhyLogged;
         private static bool _leftoverRetFixLogged;
         private static bool _leftoverCstkSpinLogged;
