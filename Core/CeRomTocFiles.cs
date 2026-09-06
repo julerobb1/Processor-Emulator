@@ -415,7 +415,14 @@ namespace ProcessorEmulator.Core
         // 0x80089740 mid-hash), not jalr+8. Plant
         // root 0x8001597C sw $ra,40($sp): dest-live
         // continue leftover dest leftover-syscall $ra
-        // when dest is mid-hash. Do not leftover hop.
+        // when dest is mid-hash. Live 0381f60
+        // leftover-wait99-fix dest-live continue
+        // leftover dest leftover-syscall $ra then
+        // silent freeze; leftover-cstk / leftover-
+        // halt / plant-fix / adel-pc did not fire.
+        // leftover-wait99-spin names the live PC.
+        // leftover dest leftover-syscall $ra / dest
+        // mid-hash leftover-halt. Do not leftover hop.
         // Do not invent dest.
         public const uint LeftoverWait99RaSw = 0x8001597C;
         // Dump 0x800397F8 lw $s3,4($a0) with $a0
@@ -10581,7 +10588,14 @@ namespace ProcessorEmulator.Core
         // jalr+8 / poison +EC. dest-live continue
         // leftover dest leftover-syscall $ra at
         // wait99 plant root when dest is mid-hash.
-        // dest leftover-syscall stub / dest wrapper
+        // Live 0381f60 leftover-wait99-fix dest-
+        // live continue leftover dest leftover-
+        // syscall $ra dest=0x80089740 mid-hash
+        // then silent freeze. leftover-wait99-spin
+        // names the live PC after leftover-wait99-
+        // fix. leftover dest leftover-syscall $ra
+        // / dest mid-hash leftover-halt. dest
+        // leftover-syscall stub / dest wrapper
         // jalr+8 stay leftover-halt. Do not leftover
         // hop. Do not invent dest.
         public static bool TryFixWait99PlantRa(MipsBus bus, uint[] regs,
@@ -10728,6 +10742,99 @@ namespace ProcessorEmulator.Core
                 " fp=0x" + fp.ToString("X8") +
                 " ra=0x" + ra.ToString("X8") +
                 " (after leftover-cstk-fix; do not leftover dest)");
+        }
+
+        // Live 0381f60 leftover-wait99-fix dest-live
+        // continue leftover dest leftover-syscall $ra
+        // dest=0x80089740 mid-hash then silent freeze;
+        // leftover-cstk / leftover-halt / plant-fix /
+        // adel-pc did not fire. Name the stuck PC
+        // after leftover-wait99-fix if leftover-halt
+        // has not. leftover dest leftover-syscall $ra
+        // / dest mid-hash leftover-halt (poison
+        // resume). Do not leftover hop. Do not invent
+        // dest.
+        public static bool TryNoteLeftoverWait99Spin(MipsBus bus, uint[] regs,
+            uint pc)
+        {
+            if (!_wait99PlantFixLogged || _leftoverWait99SpinLogged
+                || _leftoverHaltLogged)
+                return false;
+            if (pc == 0 || pc == LeftoverWait99RaSw)
+                return false;
+            _leftoverWait99SpinN++;
+            if (_leftoverWait99SpinN < 4096)
+                return false;
+            _leftoverWait99SpinLogged = true;
+            uint v0 = PeekGpr(regs, 2);
+            uint a0 = PeekGpr(regs, 4);
+            uint ra = PeekGpr(regs, 31);
+            uint dest = LeftoverWait99DestOf(pc);
+            if (dest == 0 && IsLeftoverDestVa(ra) && (ra & 3) == 0)
+                dest = LeftoverDestKseg + (ra - LeftoverDestLo);
+            BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-spin pc=0x" +
+                pc.ToString("X8") +
+                " v0=0x" + v0.ToString("X8") +
+                " a0=0x" + a0.ToString("X8") +
+                " ra=0x" + ra.ToString("X8") +
+                " dest=0x" + dest.ToString("X8") +
+                " (after leftover-wait99-fix; do not leftover dest)");
+            if (!IsLeftoverWait99PoisonResume(bus, pc))
+                return false;
+            uint thr;
+            uint ec;
+            uint dc;
+            uint plant;
+            TryPeekThreadCtxPc(bus, out thr, out ec, out dc, out plant);
+            if (!_leftoverHaltLogged)
+            {
+                _leftoverHaltLogged = true;
+                BootLog.Write("[Hive] ExtraROM ddi_nop leftover-halt was=0x" +
+                    pc.ToString("X8") +
+                    " +EC=0x" + ec.ToString("X8") +
+                    " +DC=0x" + dc.ToString("X8") +
+                    " plant=0x" + plant.ToString("X8") +
+                    " ra=0x" + ra.ToString("X8") +
+                    " dest=0x" + dest.ToString("X8") +
+                    " (refuse leftover dest leftover-syscall $ra mid-hash after leftover-wait99-fix; do not leftover dest)");
+            }
+            return true;
+        }
+
+        private static uint LeftoverWait99DestOf(uint pc)
+        {
+            if (IsLeftoverDestVa(pc) && (pc & 3) == 0)
+                return LeftoverDestKseg + (pc - LeftoverDestLo);
+            if ((pc & 3) == 0
+                && pc >= LeftoverDestKseg
+                && pc < LeftoverDestKseg + (LeftoverDestHi - LeftoverDestLo))
+                return pc;
+            return 0;
+        }
+
+        // leftover dest leftover-syscall $ra dest-live
+        // continue (live 0x03F71740) / dest mid-hash
+        // (live 0x80089740 addu) is not a LoadO32
+        // resume. dest leftover-syscall jalr+8 / dest
+        // wrapper stay leftover-halt dest stub, not
+        // this mid-hash. Do not leftover hop. Do not
+        // invent dest.
+        private static bool IsLeftoverWait99PoisonResume(MipsBus bus, uint pc)
+        {
+            if ((pc & 3) != 0)
+                return false;
+            if (IsLeftoverDestVa(pc))
+                return true;
+            uint dest = LeftoverWait99DestOf(pc);
+            if (dest == 0 || dest != pc)
+                return false;
+            if (IsLeftoverSyscallStubRet(bus, dest))
+                return false;
+            uint leftoverRa = LeftoverDestLo + (dest - LeftoverDestKseg);
+            uint wrapperDest;
+            if (TryResolveLeftoverCstkFromDestWrapper(bus, leftoverRa, out wrapperDest))
+                return false;
+            return true;
         }
 
         private static bool IsLeftoverApi938Ra(uint ra)
@@ -13990,6 +14097,8 @@ namespace ProcessorEmulator.Core
             _leftoverRetFixLogged = false;
             _leftoverCstkSpinLogged = false;
             _leftoverCstkSpinN = 0;
+            _leftoverWait99SpinLogged = false;
+            _leftoverWait99SpinN = 0;
             _leftoverFrameLogged = false;
             _epcHaltLogged = false;
             _c2TlbsLogged = false;
@@ -19998,6 +20107,8 @@ namespace ProcessorEmulator.Core
         private static bool _leftoverRetFixLogged;
         private static bool _leftoverCstkSpinLogged;
         private static int _leftoverCstkSpinN;
+        private static bool _leftoverWait99SpinLogged;
+        private static int _leftoverWait99SpinN;
         private static Dictionary<int, uint> _leftoverStubJalr8;
         private static bool _leftoverFrameLogged;
         private static bool _epcHaltLogged;
