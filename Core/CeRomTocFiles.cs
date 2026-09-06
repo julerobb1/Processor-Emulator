@@ -520,24 +520,21 @@ namespace ProcessorEmulator.Core
         public const uint LeftoverWait99WrapSyscallWord = 0x2402F9A2;
         public const uint LeftoverWait99WrapJalr = 0x03F71738;
         public const uint LeftoverWait99WrapJalrWord = 0x0040F809;
-        // Live a843fce leftover-wait99-wrap-plant
-        // via=ptr gp=0x8003EABC leftover-api-54-
-        // cont dest=0x8005A6D0 then NK filesys.exe
-        // LoadE32-ret v0=0 dest-word=0x7 dest0=
-        // 0x802809C8 object+6=2 (TOC flags /
-        // LoadE32 success) leftover-wait99-wrap-
-        // halt pc=0x03F71740 word=0x8FC60000
-        // plant=0x03F74844. dump dest leftover-
-        // syscall wrapper 0x80095738 jalr $v0;
-        // jalr+8 0x80095740 same page offset as
-        // leftover dest dest-wrapper mid lw $a2,
-        // 0($fp). wrap-halt at GetProc-wrapper $ra
-        // after wrap-plant dest-live GetProc.
-        // leftover dest leftover $fp / leftover
-        // dest leftover-syscall -1630 wrap-halt
-        // stays. leftover dest GetProc dest
-        // leftover hop forbidden. Do not leftover
-        // hop. Do not invent dest.
+        // Live 58f17ea leftover-api-54-cont dest=
+        // 0x8005A6D0 leftover-wait99-wrap-halt
+        // pc=0x03F71740 word=0x8FC60000 plant=
+        // 0x03F74844 (refuse leftover dest leftover
+        // $fp). wrap-plant dest-live GetProc
+        // gp=0x8003EABC / methods[152] already
+        // present. leftover $fp gate blocked
+        // leftover-wait99-wrap-cont. leftover-
+        // wait99-wrap-cont at GetProc-wrapper $ra
+        // when dest-live methods[152] is present
+        // even if leftover $fp is leftover dest.
+        // leftover dest leftover-syscall -1630 /
+        // missing GetProc wrap-halt stays. leftover
+        // dest GetProc dest leftover hop forbidden.
+        // Do not leftover hop. Do not invent dest.
         public const uint LeftoverWait99WrapRa = 0x03F71740;
         public const uint LeftoverWait99WrapRaWord = 0x8FC60000;
         public const uint LeftoverWait99HashWord = 0x01873821;
@@ -11072,7 +11069,7 @@ namespace ProcessorEmulator.Core
                     pc.ToString("X8") +
                     " word=0x" + word.ToString("X8") +
                     " plant=0x" + plant.ToString("X8") +
-                    " (refuse leftover dest leftover $fp / leftover dest leftover-syscall -1630; dump dest leftover-syscall wrapper jalr+8 wrap-cont after wrap-plant dest-live GetProc; leftover dest GetProc dest leftover hop forbidden; do not leftover dest)");
+                    " (refuse leftover dest leftover-syscall -1630 / missing dest-live GetProc; dump dest leftover-syscall wrapper jalr+8 wrap-cont after wrap-plant dest-live methods[152]; leftover dest GetProc dest leftover hop forbidden; do not leftover dest)");
             }
             return true;
         }
@@ -11084,47 +11081,38 @@ namespace ProcessorEmulator.Core
         // 0x03F7172C b +2 / 0x03F71730 lw $v0,608($v0)
         // / 0x03F71738 jalr $v0. leftover dest leftover-
         // syscall -1630 wrap-halt stays when cache is
-        // 0 / dest-live words miss dump. Live a843fce
+        // 0 / dest-live words miss dump. Live 58f17ea
         // leftover-wait99-wrap-halt pc=0x03F71740
-        // after wrap-plant dest-live GetProc. dump
-        // dest leftover-syscall wrapper jalr+8
-        // 0x80095740 same page offset leftover dest
-        // dest-wrapper mid lw $a2,0($fp). leftover-
-        // wait99-wrap-cont at GetProc-wrapper $ra
-        // when dest-live methods[152] and leftover
-        // $fp is not leftover dest. leftover dest
-        // leftover $fp / leftover dest leftover-
-        // syscall -1630 wrap-halt stays. leftover
-        // dest GetProc dest 0x8008C844 leftover hop
-        // forbidden. Do not leftover hop. Do not
-        // invent dest.
+        // after wrap-plant dest-live GetProc
+        // gp=0x8003EABC: leftover $fp gate blocked
+        // leftover-wait99-wrap-cont. leftover-wait99-
+        // wrap-cont at GetProc-wrapper $ra when dest-
+        // live methods[152] is present even if leftover
+        // $fp is leftover dest. leftover dest leftover-
+        // syscall -1630 / missing GetProc wrap-halt
+        // stays. leftover dest GetProc dest 0x8008C844
+        // leftover hop forbidden. Do not leftover hop.
+        // Do not invent dest.
 
-        // Live a843fce leftover-wait99-wrap-plant
-        // via=ptr gp=0x8003EABC leftover-api-54-
-        // cont dest=0x8005A6D0 then leftover-
-        // wait99-wrap-halt pc=0x03F71740 word=
-        // 0x8FC60000 plant=0x03F74844 after NK
-        // filesys.exe LoadE32-ret v0=0 dest-word=
-        // 0x7 dest0=0x802809C8 object+6=2. dest-
-        // word=0x7 is TOC flags (LoadE32 success).
-        // wrap-halt at GetProc-wrapper $ra after
-        // wrap-plant dest-live GetProc. dump dest
-        // leftover-syscall wrapper jalr+8
-        // 0x80095740 leftover dest dest-wrapper
-        // mid lw $a2,0($fp). leftover dest leftover
-        // $fp poison wrap-halt stays. leftover dest
-        // GetProc dest leftover hop forbidden. Do
-        // not leftover hop. Do not invent dest.
+        // Live 58f17ea leftover-wait99-wrap-halt
+        // pc=0x03F71740 word=0x8FC60000 plant=
+        // 0x03F74844 after wrap-plant dest-live
+        // GetProc gp=0x8003EABC / methods[152].
+        // leftover $fp gate blocked leftover-
+        // wait99-wrap-cont. dump dest leftover-
+        // syscall wrapper jalr+8 0x80095740
+        // leftover dest dest-wrapper mid lw $a2,
+        // 0($fp). leftover-wait99-wrap-cont at
+        // GetProc-wrapper $ra when dest-live
+        // methods[152] is present even if leftover
+        // $fp is leftover dest. leftover dest
+        // leftover-syscall -1630 / missing GetProc
+        // wrap-halt stays. leftover dest GetProc
+        // dest leftover hop forbidden. Do not
+        // leftover hop. Do not invent dest.
         private static bool TryContinueLeftoverWait99WrapRa(MipsBus bus,
             uint[] regs)
         {
-            uint fp = PeekGpr(regs, 30);
-            if (fp == 0 || fp == 0xFFFFFFFFu || IsNearNullVa(fp)
-                || IsLeftoverDestVa(fp) || fp == LeftoverWait99GetProcDest)
-                return false;
-            if (fp >= LeftoverDestKseg
-                && fp < LeftoverDestKseg + (LeftoverDestHi - LeftoverDestLo))
-                return false;
             uint cache = 0;
             if (!TryPeekWord(bus, ProcessInfoFaultVa, out cache)
                 || cache == 0 || cache == 0xFFFFFFFFu)
@@ -11157,7 +11145,7 @@ namespace ProcessorEmulator.Core
                 " cache=0x" + cache.ToString("X8") +
                 " getproc=0x" + getproc.ToString("X8") +
                 " plant=0x" + plant.ToString("X8") +
-                " (dump dest leftover-syscall wrapper jalr+8 GetProc-wrapper $ra; refuse leftover dest leftover $fp / leftover dest leftover-syscall -1630; leftover dest GetProc dest leftover hop forbidden; do not leftover dest)");
+                " (dump dest leftover-syscall wrapper jalr+8 GetProc-wrapper $ra dest-live methods[152]; leftover dest leftover $fp ok after wrap-plant; leftover dest leftover-syscall -1630 / missing GetProc wrap-halt stays; leftover dest GetProc dest leftover hop forbidden; do not leftover dest)");
         }
 
         private static bool TryContinueLeftoverWait99GetProc(MipsBus bus,
