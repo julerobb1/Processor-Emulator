@@ -404,6 +404,20 @@ namespace ProcessorEmulator.Core
         // $ra there loops. leftover-halt that mid.
         // Do not leftover hop. Do not invent dest.
         public const uint LeftoverJalRet = 0x800159B0;
+        // Live 7ecd04b leftover-halt dest leftover-
+        // syscall jalr+8 was=0x8009573C +EC=
+        // 0x800382F8 ra=0x800159B0 leftover-jalr8=
+        // 0x03F7D73C. leftover-cstk-fix stored dest
+        // leftover-syscall jalr+8. ERET dest wrapper
+        // mid / poison +EC. leftover dest leftover-
+        // syscall return is leftover dest leftover-
+        // syscall $ra (live 0x03F71740 dest
+        // 0x80089740 mid-hash), not jalr+8. Plant
+        // root 0x8001597C sw $ra,40($sp): dest-live
+        // continue leftover dest leftover-syscall $ra
+        // when dest is mid-hash. Do not leftover hop.
+        // Do not invent dest.
+        public const uint LeftoverWait99RaSw = 0x8001597C;
         // Dump 0x800397F8 lw $s3,4($a0) with $a0
         // = thread+0x18 syscall frame. 0x800399E8
         // or $v0,$s3 returns that. Live b757425
@@ -10560,6 +10574,45 @@ namespace ProcessorEmulator.Core
                 " (do not invent dest)");
         }
 
+        // Live 7ecd04b leftover-halt dest leftover-
+        // syscall jalr+8. leftover dest leftover-
+        // syscall return is leftover dest leftover-
+        // syscall $ra, not dest leftover-syscall
+        // jalr+8 / poison +EC. dest-live continue
+        // leftover dest leftover-syscall $ra at
+        // wait99 plant root when dest is mid-hash.
+        // dest leftover-syscall stub / dest wrapper
+        // jalr+8 stay leftover-halt. Do not leftover
+        // hop. Do not invent dest.
+        public static bool TryFixWait99PlantRa(MipsBus bus, uint[] regs,
+            ref uint programCounter)
+        {
+            if (programCounter != LeftoverWait99RaSw)
+                return false;
+            if (regs == null || regs.Length <= 31)
+                return false;
+            uint ra = PeekGpr(regs, 31);
+            if (!IsLeftoverDestVa(ra) || (ra & 3) != 0)
+                return false;
+            uint destOfRa = LeftoverDestKseg + (ra - LeftoverDestLo);
+            if (IsLeftoverSyscallStubRet(bus, destOfRa))
+                return false;
+            uint wrapperDest;
+            if (TryResolveLeftoverCstkFromDestWrapper(bus, ra, out wrapperDest))
+                return false;
+            programCounter = ra;
+            if (!_wait99PlantFixLogged)
+            {
+                _wait99PlantFixLogged = true;
+                BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-fix was=0x" +
+                    LeftoverWait99RaSw.ToString("X8") +
+                    " ra=0x" + ra.ToString("X8") +
+                    " dest=0x" + destOfRa.ToString("X8") +
+                    " (leftover dest leftover-syscall return is leftover dest leftover-syscall $ra; refuse leftover dest leftover-syscall jalr+8; do not leftover dest)");
+            }
+            return true;
+        }
+
         // Live 05a9778 leftover-ret frame+4
         // leftover dest already. Dump who wrote
         // it: 0x800391CC sw leftover $ra during
@@ -13933,6 +13986,7 @@ namespace ProcessorEmulator.Core
             _leftoverRetLogged = false;
             _leftoverCstkLogged = false;
             _leftoverCstkFixLogged = false;
+            _wait99PlantFixLogged = false;
             _leftoverRetFixLogged = false;
             _leftoverCstkSpinLogged = false;
             _leftoverCstkSpinN = 0;
@@ -19940,6 +19994,7 @@ namespace ProcessorEmulator.Core
         private static bool _leftoverRetLogged;
         private static bool _leftoverCstkLogged;
         private static bool _leftoverCstkFixLogged;
+        private static bool _wait99PlantFixLogged;
         private static bool _leftoverRetFixLogged;
         private static bool _leftoverCstkSpinLogged;
         private static int _leftoverCstkSpinN;
