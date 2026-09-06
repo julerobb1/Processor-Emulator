@@ -541,6 +541,23 @@ namespace ProcessorEmulator.Core
         public const uint LeftoverWait99GetProc = 0x03F74844;
         public const uint LeftoverWait99GetProcDest = 0x8008C844;
         public const uint LeftoverWait99GetProcOff = 0x260;
+        // Live 2b0bcf3 leftover-wait99-wrap-plant
+        // via=ptr now=0x8005D400 gp=0x8003EABC
+        // leftover-wait99-wrap-cont pc=0x03F7172C
+        // cache=0x8005D400 getproc=0x8003EABC then
+        // leftover-wait99-wrap-halt pc=0x03F71740
+        // (missing dest-live GetProc). *0x01FFFCA4
+        // at GetProc-wrapper $ra is not the plant
+        // table. dump dest leftover-syscall wrapper
+        // plant table 0x8005D400 methods[152]
+        // 0x8003EABC still dest-live. leftover-
+        // wait99-wrap-cont at $ra peeks plant
+        // table / KData when the slot is cleared.
+        // leftover dest GetProc dest leftover hop
+        // forbidden. Do not leftover hop. Do not
+        // invent dest.
+        public const uint LeftoverWait99WrapPlantMeth = 0x8005D400;
+        public const uint LeftoverWait99WrapPlantGp = 0x8003EABC;
         // Live 394f3fd leftover-wait99-wrap-cont s6=
         // 0x01FFFCA4 cache=0x02000000 (lui 0x200
         // before the lw) getproc=0 then leftover-
@@ -11063,12 +11080,23 @@ namespace ProcessorEmulator.Core
                 TryPeekWord(bus, LeftoverWait99WrapRa, out raWord);
                 uint plant = 0;
                 TryPeekWord(bus, ExnContinueWord, out plant);
+                uint cache = 0;
+                uint getproc = 0;
+                uint meth = 0;
+                TryPeekLeftoverWait99WrapGetProcLive(bus, out cache, out getproc,
+                    out meth);
+                uint fp = PeekGpr(regs, 30);
                 TryNoteLeftoverWait99Why(bus, plant, LeftoverWait99WrapRa,
                     destWord, raWord);
                 BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-wrap-halt pc=0x" +
                     pc.ToString("X8") +
                     " word=0x" + word.ToString("X8") +
                     " plant=0x" + plant.ToString("X8") +
+                    " cache=0x" + cache.ToString("X8") +
+                    " getproc=0x" + getproc.ToString("X8") +
+                    " meth=0x" + meth.ToString("X8") +
+                    " fp=0x" + fp.ToString("X8") +
+                    " v0=0x" + v0.ToString("X8") +
                     " (refuse leftover dest leftover-syscall -1630 / missing dest-live GetProc; dump dest leftover-syscall wrapper jalr+8 wrap-cont after wrap-plant dest-live methods[152]; leftover dest GetProc dest leftover hop forbidden; do not leftover dest)");
             }
             return true;
@@ -11081,47 +11109,102 @@ namespace ProcessorEmulator.Core
         // 0x03F7172C b +2 / 0x03F71730 lw $v0,608($v0)
         // / 0x03F71738 jalr $v0. leftover dest leftover-
         // syscall -1630 wrap-halt stays when cache is
-        // 0 / dest-live words miss dump. Live 58f17ea
-        // leftover-wait99-wrap-halt pc=0x03F71740
-        // after wrap-plant dest-live GetProc
-        // gp=0x8003EABC: leftover $fp gate blocked
-        // leftover-wait99-wrap-cont. leftover-wait99-
-        // wrap-cont at GetProc-wrapper $ra when dest-
-        // live methods[152] is present even if leftover
-        // $fp is leftover dest. leftover dest leftover-
+        // 0 / dest-live words miss dump. Live 2b0bcf3
+        // leftover-wait99-wrap-plant via=ptr now=
+        // 0x8005D400 gp=0x8003EABC leftover-wait99-
+        // wrap-cont pc=0x03F7172C cache=0x8005D400
+        // getproc=0x8003EABC then leftover-wait99-
+        // wrap-halt pc=0x03F71740 (missing dest-live
+        // GetProc). *0x01FFFCA4 at GetProc-wrapper
+        // $ra is not the plant table. leftover-wait99-
+        // wrap-cont at $ra peeks plant table
+        // 0x8005D400 / KData 0xFFFFDCA4 when the
+        // slot is cleared. leftover dest leftover-
         // syscall -1630 / missing GetProc wrap-halt
         // stays. leftover dest GetProc dest 0x8008C844
         // leftover hop forbidden. Do not leftover hop.
         // Do not invent dest.
 
-        // Live 58f17ea leftover-wait99-wrap-halt
-        // pc=0x03F71740 word=0x8FC60000 plant=
-        // 0x03F74844 after wrap-plant dest-live
-        // GetProc gp=0x8003EABC / methods[152].
-        // leftover $fp gate blocked leftover-
-        // wait99-wrap-cont. dump dest leftover-
-        // syscall wrapper jalr+8 0x80095740
-        // leftover dest dest-wrapper mid lw $a2,
-        // 0($fp). leftover-wait99-wrap-cont at
-        // GetProc-wrapper $ra when dest-live
-        // methods[152] is present even if leftover
-        // $fp is leftover dest. leftover dest
+        // Live 2b0bcf3 leftover-wait99-wrap-halt
+        // pc=0x03F71740 after wrap-plant dest-live
+        // GetProc gp=0x8003EABC / wrap-cont
+        // cache=0x8005D400. ProcessInfoFaultVa peek
+        // at $ra missed dest-live methods[152].
+        // dump dest leftover-syscall wrapper plant
+        // table 0x8005D400 methods[152] 0x8003EABC
+        // still dest-live. leftover-wait99-wrap-cont
+        // at GetProc-wrapper $ra when plant table /
+        // KData / slot still dest-live. leftover dest
         // leftover-syscall -1630 / missing GetProc
-        // wrap-halt stays. leftover dest GetProc
-        // dest leftover hop forbidden. Do not
-        // leftover hop. Do not invent dest.
+        // wrap-halt stays. leftover dest GetProc dest
+        // leftover hop forbidden. Do not leftover hop.
+        // Do not invent dest.
         private static bool TryContinueLeftoverWait99WrapRa(MipsBus bus,
             uint[] regs)
         {
             uint cache = 0;
-            if (!TryPeekWord(bus, ProcessInfoFaultVa, out cache)
-                || cache == 0 || cache == 0xFFFFFFFFu)
-                return false;
             uint getproc = 0;
-            if (!TryPeekWord(bus, cache + LeftoverWait99GetProcOff, out getproc)
-                || !IsDumpWait99GetProcDest(getproc))
-                return false;
-            return true;
+            uint meth = 0;
+            return TryPeekLeftoverWait99WrapGetProcLive(bus, out cache,
+                out getproc, out meth);
+        }
+
+        private static void RememberLeftoverWait99WrapPlant(uint methods,
+            uint getproc)
+        {
+            if (IsDumpWait99GetProcTable(methods))
+                _leftoverWait99WrapPlantMeth = methods;
+            if (IsDumpWait99GetProcDest(getproc))
+                _leftoverWait99WrapPlantGp = getproc;
+        }
+
+        private static bool TryPeekLeftoverWait99WrapGetProcLive(MipsBus bus,
+            out uint cache, out uint getproc, out uint meth)
+        {
+            cache = 0;
+            getproc = 0;
+            meth = 0;
+            uint slot = 0;
+            uint kdata = 0;
+            TryPeekWord(bus, ProcessInfoFaultVa, out slot);
+            TryPeekWord(bus, LeftoverWait99CacheKdata, out kdata);
+            cache = slot;
+            if (TryAcceptLeftoverWait99GetProcTable(bus, slot, out getproc))
+            {
+                meth = slot;
+                RememberLeftoverWait99WrapPlant(slot, getproc);
+                return true;
+            }
+            if (TryAcceptLeftoverWait99GetProcTable(bus, kdata, out getproc))
+            {
+                meth = kdata;
+                RememberLeftoverWait99WrapPlant(kdata, getproc);
+                return true;
+            }
+            uint plant = _leftoverWait99WrapPlantMeth != 0
+                ? _leftoverWait99WrapPlantMeth
+                : LeftoverWait99WrapPlantMeth;
+            if (TryAcceptLeftoverWait99GetProcTable(bus, plant, out getproc))
+            {
+                meth = plant;
+                RememberLeftoverWait99WrapPlant(plant, getproc);
+                return true;
+            }
+            uint methods = 0;
+            uint viaWn32 = 0;
+            uint hop = 0;
+            string via = "";
+            if (TryResolveLeftoverWait99GetProcTable(bus, out methods,
+                out getproc, out via, out viaWn32, out hop))
+            {
+                meth = methods;
+                RememberLeftoverWait99WrapPlant(methods, getproc);
+                return true;
+            }
+            meth = plant;
+            if (plant != 0)
+                TryPeekWord(bus, plant + LeftoverWait99GetProcOff, out getproc);
+            return false;
         }
 
         private static void TryNoteLeftoverWait99WrapRaCont(MipsBus bus,
@@ -11133,9 +11216,9 @@ namespace ProcessorEmulator.Core
             uint fp = PeekGpr(regs, 30);
             uint cache = 0;
             uint getproc = 0;
-            TryPeekWord(bus, ProcessInfoFaultVa, out cache);
-            if (cache != 0 && cache != 0xFFFFFFFFu)
-                TryPeekWord(bus, cache + LeftoverWait99GetProcOff, out getproc);
+            uint meth = 0;
+            TryPeekLeftoverWait99WrapGetProcLive(bus, out cache, out getproc,
+                out meth);
             uint plant = 0;
             TryPeekWord(bus, ExnContinueWord, out plant);
             BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-wrap-cont pc=0x" +
@@ -11144,8 +11227,9 @@ namespace ProcessorEmulator.Core
                 " fp=0x" + fp.ToString("X8") +
                 " cache=0x" + cache.ToString("X8") +
                 " getproc=0x" + getproc.ToString("X8") +
+                " meth=0x" + meth.ToString("X8") +
                 " plant=0x" + plant.ToString("X8") +
-                " (dump dest leftover-syscall wrapper jalr+8 GetProc-wrapper $ra dest-live methods[152]; leftover dest leftover $fp ok after wrap-plant; leftover dest leftover-syscall -1630 / missing GetProc wrap-halt stays; leftover dest GetProc dest leftover hop forbidden; do not leftover dest)");
+                " (dump dest leftover-syscall wrapper jalr+8 GetProc-wrapper $ra dest-live plant table methods[152]; leftover dest leftover-syscall -1630 / missing GetProc wrap-halt stays; leftover dest GetProc dest leftover hop forbidden; do not leftover dest)");
         }
 
         private static bool TryContinueLeftoverWait99GetProc(MipsBus bus,
@@ -11251,6 +11335,7 @@ namespace ProcessorEmulator.Core
             }
             uint slot = 0;
             TryPeekWord(bus, ProcessInfoFaultVa, out slot);
+            RememberLeftoverWait99WrapPlant(methods, getproc);
             if (slot == methods)
                 return;
             try
@@ -12497,6 +12582,7 @@ namespace ProcessorEmulator.Core
                 return;
             else
                 _leftoverWait99WrapContLogged = true;
+            RememberLeftoverWait99WrapPlant(cache, getproc);
             uint destWord = 0;
             uint raWord = 0;
             uint s6 = PeekGpr(regs, 22);
@@ -16127,6 +16213,8 @@ namespace ProcessorEmulator.Core
             _leftoverWait99WrapGetProcLogged = false;
             _leftoverWait99WrapPlantLogged = false;
             _leftoverWait99WrapRaContLogged = false;
+            _leftoverWait99WrapPlantMeth = 0;
+            _leftoverWait99WrapPlantGp = 0;
             _leftoverWait99WrapNeedLogged = false;
             _leftoverWait99ScanVia = "";
             _leftoverWait99Cf = 0;
@@ -22154,6 +22242,8 @@ namespace ProcessorEmulator.Core
         private static bool _leftoverWait99WrapGetProcLogged;
         private static bool _leftoverWait99WrapPlantLogged;
         private static bool _leftoverWait99WrapRaContLogged;
+        private static uint _leftoverWait99WrapPlantMeth;
+        private static uint _leftoverWait99WrapPlantGp;
         private static bool _leftoverWait99WrapNeedLogged;
         private static string _leftoverWait99ScanVia = "";
         private static int _leftoverWait99Cf;
