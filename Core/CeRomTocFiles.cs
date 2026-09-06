@@ -560,14 +560,23 @@ namespace ProcessorEmulator.Core
         // (HiveLineMax 180). Scan started at
         // 0x80200000 and missed dump nk.exe ImageBase
         // 0x80010000 (Win32CreateFile 0x8003D700).
-        // Widen to ImageBase / ahSys[32] / PE data;
-        // skip leftover dest kseg and unmapped pages.
-        // Do not leftover hop. Do not invent dest.
+        // Live 0e57fb6: via=wn32-miss wn32=hop=meth=gp=0
+        // ib=y c0=y — ImageBase and copy dest readable,
+        // acName 0x32334E57 never on the live bus. Do
+        // not require WN32. Find ppfnMethods by dump-
+        // named Win32 thunks: CreateFile 0x8003D700 and
+        // ReadFile 0x8003D7E0 are 56 slots apart.
+        // methods[152] must be dest-live GetProc. Offline
+        // nk.bin B000FF extract if guest walk misses.
+        // leftover dest GetProc dest leftover hop
+        // forbidden. Do not leftover hop. Do not invent
+        // dest.
         public const uint LeftoverWait99Wn32Name = 0x32334E57;
         public const uint LeftoverWait99GetProcOffAlt = 0x25C;
         public const uint LeftoverWait99NkDataLo = 0x80200000;
         public const uint LeftoverWait99NkImage = 0x80010000;
         public const int LeftoverWait99AhCount = 32;
+        public const uint LeftoverWait99ReadFileDelta = 0xE0;
         // Dump 0x800397F8 lw $s3,4($a0) with $a0
         // = thread+0x18 syscall frame. 0x800399E8
         // or $v0,$s3 returns that. Live b757425
@@ -11117,7 +11126,9 @@ namespace ProcessorEmulator.Core
             if (TryScanDumpWn32Methods(bus, out methods, out getproc, out wn32,
                 out hop))
             {
-                via = "wn32";
+                via = string.IsNullOrEmpty(_leftoverWait99ScanVia)
+                    ? "wn32"
+                    : _leftoverWait99ScanVia;
                 return true;
             }
             NoteWait99Wn32Hit(ahW, ahH, ahM, ahG, ref wn32, ref hop,
@@ -11153,6 +11164,9 @@ namespace ProcessorEmulator.Core
             getproc = 0;
             wn32 = 0;
             hop = 0;
+            _leftoverWait99ScanVia = "";
+            _leftoverWait99Cf = 0;
+            _leftoverWait99Sk = 0;
             if (bus == null)
                 return false;
             uint peM = 0;
@@ -11165,6 +11179,7 @@ namespace ProcessorEmulator.Core
                 getproc = peG;
                 wn32 = peW;
                 hop = peH;
+                _leftoverWait99ScanVia = "wn32";
                 return true;
             }
             NoteWait99Wn32Hit(peW, peH, peM, peG, ref wn32, ref hop,
@@ -11181,11 +11196,440 @@ namespace ProcessorEmulator.Core
                 getproc = linG;
                 wn32 = linW;
                 hop = linH;
+                _leftoverWait99ScanVia = "wn32";
                 return true;
             }
             NoteWait99Wn32Hit(linW, linH, linM, linG, ref wn32, ref hop,
                 ref methods, ref getproc);
+            uint ptrM = 0;
+            uint ptrG = 0;
+            uint ptrW = 0;
+            uint ptrH = 0;
+            if (TryScanDumpWin32PtrMethods(bus, out ptrM, out ptrG, out ptrW,
+                out ptrH))
+            {
+                methods = ptrM;
+                getproc = ptrG;
+                wn32 = ptrW;
+                hop = ptrH;
+                _leftoverWait99ScanVia = "ptr";
+                return true;
+            }
+            NoteWait99Wn32Hit(ptrW, ptrH, ptrM, ptrG, ref wn32, ref hop,
+                ref methods, ref getproc);
+            if (TryScanDumpNkBinWin32Methods(bus, out ptrM, out ptrG, out ptrW,
+                out ptrH))
+            {
+                methods = ptrM;
+                getproc = ptrG;
+                wn32 = ptrW;
+                hop = ptrH;
+                _leftoverWait99ScanVia = "dump";
+                return true;
+            }
+            NoteWait99Wn32Hit(ptrW, ptrH, ptrM, ptrG, ref wn32, ref hop,
+                ref methods, ref getproc);
             return false;
+        }
+
+        // Live 0e57fb6: no WN32 acName on dest-live ImageBase /
+        // copy dest. Dump Win32CreateFile 0x8003D700 and
+        // KernelReadFile 0x8003D7E0 differ by 0xE0 (56
+        // slots). Walk those thunks; accept a table only
+        // when methods[152] is dest-live GetProc and the
+        // ReadFile/CreateFile pair (or a second dump-named
+        // 0x8003Dxxx thunk) sits in the same array.
+        // leftover dest GetProc dest leftover hop
+        // forbidden. Do not invent dest.
+        private static bool TryScanDumpWin32PtrMethods(MipsBus bus,
+            out uint methods, out uint getproc, out uint wn32, out uint hop)
+        {
+            methods = 0;
+            getproc = 0;
+            wn32 = 0;
+            hop = 0;
+            if (bus == null)
+                return false;
+            uint destLo = LeftoverDestKseg;
+            uint destHi = LeftoverDestKseg + (LeftoverDestHi - LeftoverDestLo);
+            uint nkHi = NkCopy0Dst + NkCopy0DestLen;
+            for (uint va = LeftoverWait99NkImage; va + 4 < nkHi; va += 4)
+            {
+                if (va >= destLo && va < destHi)
+                {
+                    va = destHi - 4;
+                    continue;
+                }
+                uint word = 0;
+                if (!TryPeekWord(bus, va, out word))
+                {
+                    _leftoverWait99Sk++;
+                    uint next = (va & ~0xFFFu) + 0x1000;
+                    if (next <= va)
+                        break;
+                    va = next - 4;
+                    continue;
+                }
+                if (!IsDumpWait99Win32Thunk(word))
+                    continue;
+                if (word == Win32CreateFile)
+                    _leftoverWait99Cf++;
+                uint m = 0;
+                uint g = 0;
+                uint h = 0;
+                if (TryGuessWait99TableFromHit(bus, va, word, out m, out g,
+                    out h))
+                {
+                    methods = m;
+                    getproc = g;
+                    wn32 = va;
+                    hop = h;
+                    return true;
+                }
+                NoteWait99Wn32Hit(va, h, m, g, ref wn32, ref hop, ref methods,
+                    ref getproc);
+            }
+            return false;
+        }
+
+        private static bool IsDumpWait99Win32Thunk(uint va)
+        {
+            if (va == Win32CreateFile || va == KernelReadFile
+                || va == KernelCreateFileMapping)
+                return true;
+            if (va == HostHardDisk.KernelRegOpen
+                || va == HostHardDisk.KernelRegQuery)
+                return true;
+            return false;
+        }
+
+        private static bool TryGuessWait99TableFromHit(MipsBus bus, uint hitVa,
+            uint hitWord, out uint methods, out uint getproc, out uint hop)
+        {
+            methods = 0;
+            getproc = 0;
+            hop = 0;
+            if (bus == null || (hitVa & 3) != 0)
+                return false;
+            for (uint idx = 0; idx <= 220; idx++)
+            {
+                uint table = hitVa - (idx * 4);
+                if (table > hitVa)
+                    break;
+                if (!IsDumpWait99GetProcTable(table))
+                    continue;
+                uint raw = 0;
+                TryPeekWord(bus, table + LeftoverWait99GetProcOff, out raw);
+                if (raw == LeftoverWait99GetProcDest)
+                {
+                    hop = raw;
+                    continue;
+                }
+                uint gp = 0;
+                if (!TryAcceptLeftoverWait99GetProcTable(bus, table, out gp))
+                    continue;
+                if (!Wait99TableHasDumpPair(bus, table, hitVa, hitWord))
+                    continue;
+                methods = table;
+                getproc = gp;
+                return true;
+            }
+            return false;
+        }
+
+        private static bool Wait99TableHasDumpPair(MipsBus bus, uint table,
+            uint hitVa, uint hitWord)
+        {
+            uint other = 0;
+            if (hitWord == Win32CreateFile)
+            {
+                if (TryPeekWord(bus, hitVa + LeftoverWait99ReadFileDelta,
+                    out other) && other == KernelReadFile)
+                    return true;
+            }
+            else if (hitWord == KernelReadFile)
+            {
+                if (hitVa >= LeftoverWait99ReadFileDelta
+                    && TryPeekWord(bus, hitVa - LeftoverWait99ReadFileDelta,
+                        out other) && other == Win32CreateFile)
+                    return true;
+            }
+            else if (hitWord == HostHardDisk.KernelRegOpen)
+            {
+                if (TryPeekWord(bus, hitVa + LeftoverWait99ReadFileDelta,
+                    out other) && other == HostHardDisk.KernelRegQuery)
+                    return true;
+            }
+            else if (hitWord == HostHardDisk.KernelRegQuery)
+            {
+                if (hitVa >= LeftoverWait99ReadFileDelta
+                    && TryPeekWord(bus, hitVa - LeftoverWait99ReadFileDelta,
+                        out other) && other == HostHardDisk.KernelRegOpen)
+                    return true;
+            }
+            for (uint i = 0; i < 256; i++)
+            {
+                uint w = 0;
+                if (!TryPeekWord(bus, table + (i * 4), out w))
+                    continue;
+                if (w != hitWord && IsDumpWait99Win32Thunk(w))
+                    return true;
+            }
+            return false;
+        }
+
+        private static bool TryScanDumpNkBinWin32Methods(MipsBus bus,
+            out uint methods, out uint getproc, out uint wn32, out uint hop)
+        {
+            methods = 0;
+            getproc = 0;
+            wn32 = 0;
+            hop = 0;
+            string path = TryWait99NkBinPath();
+            if (string.IsNullOrEmpty(path))
+                return false;
+            byte[] data;
+            try { data = System.IO.File.ReadAllBytes(path); }
+            catch { return false; }
+            if (data == null || data.Length < 0x2000)
+                return false;
+            List<Wait99DumpRec> recs = new List<Wait99DumpRec>();
+            if (!TryLoadWait99DumpRecs(data, recs) || recs.Count == 0)
+                return false;
+            uint destLo = LeftoverDestKseg;
+            uint destHi = LeftoverDestKseg + (LeftoverDestHi - LeftoverDestLo);
+            for (int r = 0; r < recs.Count; r++)
+            {
+                Wait99DumpRec rec = recs[r];
+                if (rec.Data == null || rec.Data.Length < 4)
+                    continue;
+                int max = rec.Data.Length - 3;
+                for (int off = 0; off < max; off += 4)
+                {
+                    uint word = (uint)(rec.Data[off]
+                        | (rec.Data[off + 1] << 8)
+                        | (rec.Data[off + 2] << 16)
+                        | (rec.Data[off + 3] << 24));
+                    if (!IsDumpWait99Win32Thunk(word))
+                        continue;
+                    if (word == Win32CreateFile)
+                        _leftoverWait99Cf++;
+                    uint hitVa = rec.Va + (uint)off;
+                    if (hitVa >= destLo && hitVa < destHi)
+                        continue;
+                    uint m = 0;
+                    uint g = 0;
+                    uint h = 0;
+                    if (!TryGuessWait99TableFromDump(recs, hitVa, word, out m,
+                        out g, out h))
+                    {
+                        NoteWait99Wn32Hit(hitVa, h, m, g, ref wn32, ref hop,
+                            ref methods, ref getproc);
+                        continue;
+                    }
+                    if (g == LeftoverWait99GetProcDest)
+                    {
+                        hop = g;
+                        continue;
+                    }
+                    if (!IsDumpWait99GetProcDest(g)
+                        || !IsDumpWait99GetProcTable(m))
+                        continue;
+                    if (!TryEnsureWait99DumpTableLive(bus, recs, m))
+                    {
+                        NoteWait99Wn32Hit(hitVa, h, m, g, ref wn32, ref hop,
+                            ref methods, ref getproc);
+                        continue;
+                    }
+                    uint live = 0;
+                    if (!TryAcceptLeftoverWait99GetProcTable(bus, m, out live))
+                    {
+                        NoteWait99Wn32Hit(hitVa, h, m, g, ref wn32, ref hop,
+                            ref methods, ref getproc);
+                        continue;
+                    }
+                    methods = m;
+                    getproc = live;
+                    wn32 = hitVa;
+                    hop = h;
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static string TryWait99NkBinPath()
+        {
+            string root = HostHardDisk.Root;
+            if (string.IsNullOrEmpty(root))
+                return "";
+            string p = System.IO.Path.Combine(root, "nk.bin");
+            try
+            {
+                if (System.IO.File.Exists(p)
+                    && new System.IO.FileInfo(p).Length >= 0x2000)
+                    return p;
+            }
+            catch
+            {
+            }
+            return "";
+        }
+
+        private static bool TryLoadWait99DumpRecs(byte[] data,
+            List<Wait99DumpRec> recs)
+        {
+            if (data == null || recs == null || data.Length < 15)
+                return false;
+            int pos = 0;
+            if (data.Length >= 7
+                && data[0] == (byte)'B' && data[1] == (byte)'0'
+                && data[2] == (byte)'0' && data[3] == (byte)'0'
+                && data[4] == (byte)'F' && data[5] == (byte)'F'
+                && data[6] == (byte)'\n')
+                pos = 7;
+            if (pos + 8 > data.Length)
+                return false;
+            uint imageLength = (uint)(data[pos + 4] | (data[pos + 5] << 8)
+                | (data[pos + 6] << 16) | (data[pos + 7] << 24));
+            pos += 8;
+            while (pos + 12 <= data.Length)
+            {
+                uint addr = (uint)(data[pos] | (data[pos + 1] << 8)
+                    | (data[pos + 2] << 16) | (data[pos + 3] << 24));
+                uint len = (uint)(data[pos + 4] | (data[pos + 5] << 8)
+                    | (data[pos + 6] << 16) | (data[pos + 7] << 24));
+                pos += 12;
+                if (addr == 0 && len == 0)
+                    break;
+                if (len == 0 || len > imageLength || pos + (int)len > data.Length)
+                    break;
+                byte[] rec = new byte[len];
+                System.Buffer.BlockCopy(data, pos, rec, 0, (int)len);
+                pos += (int)len;
+                recs.Add(new Wait99DumpRec { Va = addr, Data = rec });
+                if (recs.Count > 512)
+                    break;
+            }
+            return recs.Count > 0;
+        }
+
+        private static bool TryDumpPeekWait99(List<Wait99DumpRec> recs, uint va,
+            out uint word)
+        {
+            word = 0;
+            if (recs == null || (va & 3) != 0)
+                return false;
+            for (int i = 0; i < recs.Count; i++)
+            {
+                Wait99DumpRec rec = recs[i];
+                if (rec.Data == null || va < rec.Va)
+                    continue;
+                uint off = va - rec.Va;
+                if (off + 4 > (uint)rec.Data.Length)
+                    continue;
+                int o = (int)off;
+                word = (uint)(rec.Data[o] | (rec.Data[o + 1] << 8)
+                    | (rec.Data[o + 2] << 16) | (rec.Data[o + 3] << 24));
+                return true;
+            }
+            return false;
+        }
+
+        private static bool TryGuessWait99TableFromDump(List<Wait99DumpRec> recs,
+            uint hitVa, uint hitWord, out uint methods, out uint getproc,
+            out uint hop)
+        {
+            methods = 0;
+            getproc = 0;
+            hop = 0;
+            if (recs == null || (hitVa & 3) != 0)
+                return false;
+            for (uint idx = 0; idx <= 220; idx++)
+            {
+                uint table = hitVa - (idx * 4);
+                if (table > hitVa)
+                    break;
+                if (!IsDumpWait99GetProcTable(table))
+                    continue;
+                uint raw = 0;
+                TryDumpPeekWait99(recs, table + LeftoverWait99GetProcOff,
+                    out raw);
+                if (raw == LeftoverWait99GetProcDest)
+                {
+                    hop = raw;
+                    continue;
+                }
+                if (!IsDumpWait99GetProcDest(raw))
+                    continue;
+                if (!Wait99DumpTableHasPair(recs, table, hitVa, hitWord))
+                    continue;
+                methods = table;
+                getproc = raw;
+                return true;
+            }
+            return false;
+        }
+
+        private static bool Wait99DumpTableHasPair(List<Wait99DumpRec> recs,
+            uint table, uint hitVa, uint hitWord)
+        {
+            uint other = 0;
+            if (hitWord == Win32CreateFile)
+            {
+                if (TryDumpPeekWait99(recs, hitVa + LeftoverWait99ReadFileDelta,
+                    out other) && other == KernelReadFile)
+                    return true;
+            }
+            else if (hitWord == KernelReadFile)
+            {
+                if (hitVa >= LeftoverWait99ReadFileDelta
+                    && TryDumpPeekWait99(recs,
+                        hitVa - LeftoverWait99ReadFileDelta, out other)
+                    && other == Win32CreateFile)
+                    return true;
+            }
+            for (uint i = 0; i < 256; i++)
+            {
+                uint w = 0;
+                if (!TryDumpPeekWait99(recs, table + (i * 4), out w))
+                    continue;
+                if (w != hitWord && IsDumpWait99Win32Thunk(w))
+                    return true;
+            }
+            return false;
+        }
+
+        private static bool TryEnsureWait99DumpTableLive(MipsBus bus,
+            List<Wait99DumpRec> recs, uint table)
+        {
+            if (bus == null || recs == null || !IsDumpWait99GetProcTable(table))
+                return false;
+            uint live = 0;
+            if (TryPeekWord(bus, table + LeftoverWait99GetProcOff, out live)
+                && IsDumpWait99GetProcDest(live))
+                return true;
+            for (uint i = 0; i <= 160; i++)
+            {
+                uint va = table + (i * 4);
+                uint dump = 0;
+                if (!TryDumpPeekWait99(recs, va, out dump) || dump == 0)
+                    continue;
+                uint cur = 0;
+                bool poked = TryPeekWord(bus, va, out cur);
+                if (poked && cur != 0 && cur != dump)
+                    continue;
+                try { bus.Write32(va, dump); }
+                catch { return false; }
+            }
+            return TryPeekWord(bus, table + LeftoverWait99GetProcOff, out live)
+                && IsDumpWait99GetProcDest(live);
+        }
+
+        private sealed class Wait99DumpRec
+        {
+            public uint Va;
+            public byte[] Data;
         }
 
         private static bool TryWalkAhSysWn32(MipsBus bus, out uint methods,
@@ -11435,6 +11879,8 @@ namespace ProcessorEmulator.Core
                 " hop=0x" + hop.ToString("X8") +
                 " meth=0x" + methods.ToString("X8") +
                 " gp=0x" + getproc.ToString("X8") +
+                " cf=" + _leftoverWait99Cf +
+                " sk=" + _leftoverWait99Sk +
                 " ib=" + (ibOk ? "y" : "n") +
                 " c0=" + (c0Ok ? "y" : "n"));
         }
@@ -15027,6 +15473,9 @@ namespace ProcessorEmulator.Core
             _leftoverWait99WrapGetProcLogged = false;
             _leftoverWait99WrapPlantLogged = false;
             _leftoverWait99WrapNeedLogged = false;
+            _leftoverWait99ScanVia = "";
+            _leftoverWait99Cf = 0;
+            _leftoverWait99Sk = 0;
             _leftoverWait99WhyLogged = false;
             _leftoverRetFixLogged = false;
             _leftoverCstkSpinLogged = false;
@@ -21043,6 +21492,9 @@ namespace ProcessorEmulator.Core
         private static bool _leftoverWait99WrapGetProcLogged;
         private static bool _leftoverWait99WrapPlantLogged;
         private static bool _leftoverWait99WrapNeedLogged;
+        private static string _leftoverWait99ScanVia = "";
+        private static int _leftoverWait99Cf;
+        private static int _leftoverWait99Sk;
         private static bool _leftoverWait99WhyLogged;
         private static bool _leftoverRetFixLogged;
         private static bool _leftoverCstkSpinLogged;
