@@ -266,11 +266,15 @@ namespace ProcessorEmulator.Core
         // 4643c74 FIRST-WIN: jalr pc=0x8006DB0C
         // word=0x27BDFFD0 via=HdstubDLLEntry;
         // after v0=1 saw=y via=ret; next=
-        // osaxst0.dll. Observe leftover-wait99-
-        // o32-nk-chain osaxst0/coredll CallDLL
-        // / BindImp. Honest TOC miss osaxst1/
-        // kd/kcover (nmods=0). Do not leftover-
-        // hop dest. FILE[26] unchanged. Display
+        // osaxst0.dll. Live 37ce7dd FIRST-WIN
+        // naming: osaxst0 startip=0 bindlib/
+        // loade32; CallDLL startip=0x80061CA0
+        // name=-. Do not plant osaxst0/osaxst1/
+        // kd/kcover. Name 0x80061CA0 from MODULE
+        // +8 / +0x50 (coredll ImageBase
+        // 0x03F50000). Observe jalr/after and
+        // filesys. Do not leftover-hop dest.
+        // FILE[26] unchanged. Display
         // ddi_nop.dll.
         public const uint LoadO32WrapStartip = 0x8001E960;
         public const uint WrapCopyRetScanHi = 0x8001EA00;
@@ -1420,6 +1424,11 @@ namespace ProcessorEmulator.Core
         public const uint CallDllFlag = 0x8000;
         public const uint ModuleStartip = 0x5C;
         public const uint ModuleFileObj = 96;
+        // Live 37ce7dd leftover-wait99-o32-nk-chain
+        // name=- startip=0x80061CA0 via=calldll.
+        // Name from MODULE lpszModName +8 / BasePtr
+        // +0x50. Do not leftover-hop this VA.
+        public const uint ChainCallVaLive = 0x80061CA0;
         public const uint CurProc = 0xFFFFDAC4;
         public const uint EcecTocPtr = 0x80010044;
         public const uint RomHdrListPtr = 0x80342B10;
@@ -6418,6 +6427,7 @@ namespace ProcessorEmulator.Core
                 || NamesMatchRom(name, "ceddk.dll")
                 || NamesMatchRom(name, "nk.exe")
                 || NamesMatchRom(name, "filesys.exe")
+                || NamesMatchRom(name, "filesys.dll")
                 || NamesMatchRom(name, "osaxst0.dll");
         }
 
@@ -14530,18 +14540,20 @@ namespace ProcessorEmulator.Core
 
         // Live 4643c74 Hdstub CallDLL ret v0=1 then
         // NK osaxst0.dll LoadE32-ret / coredll
-        // LoadO32. leftover-wait99-o32-nk-chain
-        // names the next real loader step:
-        // osaxst0/coredll/filesys CallDLL, startip,
-        // BindImp name. osaxst1/kd/kcover stay
-        // honest TOC misses (nmods=0). Do not
-        // invent those modules. Do not leftover-
-        // hop dest. Keep Hdstub jalr+after.
+        // LoadO32. Live 37ce7dd chain name=-
+        // startip=0x80061CA0 via=calldll. Name
+        // that MODULE from +8 / +0x50 (coredll
+        // ImageBase 0x03F50000). Observe jalr/
+        // after like Hdstub and filesys LoadE32.
+        // Do not plant osaxst0/osaxst1/kd/kcover.
+        // Do not leftover-hop dest. Keep Hdstub
+        // jalr+after.
         private static bool IsNkChainName(string name)
         {
             return NamesMatchRom(name, "osaxst0.dll")
                 || NamesMatchRom(name, "coredll.dll")
                 || NamesMatchRom(name, "filesys.exe")
+                || NamesMatchRom(name, "filesys.dll")
                 || NamesMatchRom(name, "fsdmgr.dll");
         }
 
@@ -14552,9 +14564,77 @@ namespace ProcessorEmulator.Core
                 || NamesMatchRom(name, "kcover.dll");
         }
 
-        private static string PeekNkChainName(MipsBus bus, uint[] regs,
-            uint pc)
+        private static bool IsChainCallVa(uint va)
         {
+            if (va == 0 || va == HdDllEntryVa || va == HdDllInitVa
+                || va == HdDllEntryRva || IsWrapDestSize(va)
+                || IsWrapDestFp50Va(va) || IsHdDllImageBase(va)
+                || IsLeftoverBindRefuse(va) || IsLeftoverDestVa(va))
+                return false;
+            if (va == ChainCallVaLive)
+                return true;
+            if (_leftoverWait99O32NkChainCallVa != 0
+                && va == _leftoverWait99O32NkChainCallVa)
+                return true;
+            return false;
+        }
+
+        private static bool IsCoredllBasePtr(uint p50)
+        {
+            if (p50 == CoredllSharedLo)
+                return true;
+            return p50 >= CoredllSharedLo && p50 < CoredllSharedHi;
+        }
+
+        private static string PeekNkModuleName(MipsBus bus, uint mod)
+        {
+            if (bus == null || mod == 0 || (mod & 3) != 0
+                || IsLeftoverBindRefuse(mod) || IsWrapDestSize(mod)
+                || IsWrapDestFp50Va(mod) || IsHdDllImageBase(mod)
+                || IsLeftoverDestVa(mod) || mod == HdDllEntryVa)
+                return "";
+            uint np = 0;
+            if (TryPeekWord(bus, mod + ModuleLpszName, out np) && np != 0
+                && (np & 1) == 0 && !IsLeftoverBindRefuse(np)
+                && !IsWrapDestSize(np) && !IsLeftoverDestVa(np))
+            {
+                string utf = "";
+                try
+                {
+                    utf = ReadUtf16Name(bus, np);
+                }
+                catch
+                {
+                }
+                if (IsWrapDllName(utf) || IsNkChainName(utf)
+                    || NamesMatchRom(utf, "filesys.exe"))
+                    return utf;
+            }
+            string inline = "";
+            try
+            {
+                inline = ReadUtf16Name(bus, mod + ModuleLpszName);
+            }
+            catch
+            {
+            }
+            if (IsWrapDllName(inline) || IsNkChainName(inline)
+                || NamesMatchRom(inline, "filesys.exe"))
+                return inline;
+            return "";
+        }
+
+        private static string PeekNkChainName(MipsBus bus, uint[] regs,
+            uint pc, uint mod, uint p50, uint startip)
+        {
+            string fromMod = PeekNkModuleName(bus, mod);
+            if (fromMod.Length > 1)
+                return fromMod;
+            if (mod != 0 && _coredllModule != 0 && mod == _coredllModule)
+                return "coredll.dll";
+            if (IsCoredllBasePtr(p50)
+                || (IsChainCallVa(startip) && IsCoredllBasePtr(p50)))
+                return "coredll.dll";
             string bind = PeekWrapBindLibName(bus, regs, pc);
             if (IsNkChainName(bind) || IsHonestTocMissName(bind)
                 || IsWrapDllName(bind))
@@ -14573,8 +14653,6 @@ namespace ProcessorEmulator.Core
         {
             if (!_leftoverWait99O32NkJalrSawTarget)
                 return;
-            if (_leftoverWait99O32NkChainLog >= 4)
-                return;
             if (pc == LeftoverWait99O32RefuseRa
                 || pc == LeftoverWait99GetProcDest
                 || IsLeftoverBindRefuse(pc)
@@ -14584,15 +14662,13 @@ namespace ProcessorEmulator.Core
                 || IsWrapDestSize(pc)
                 || pc == HdDllEntryRva)
                 return;
+            bool atTarget = IsChainCallVa(pc);
             bool atCall = pc == CallDllStartip || pc == CallDllEntry
                 || pc == CallDllAfterJalr || pc == XipDllCallDllJal
                 || pc == XipCallDllUsegChk || pc == LoadO32WrapStartip;
             bool atBind = pc == BindImpHdr || pc == BindImpDllName
                 || pc == BindImpLoadLib || pc == BindImpLoadLibRet;
-            if (!atCall && !atBind)
-                return;
-            string name = PeekNkChainName(bus, regs, pc);
-            if (IsHdDllBindName(name))
+            if (!atTarget && !atCall && !atBind)
                 return;
             uint mod = PeekGpr(regs, 4);
             if (mod == 0 || IsHdDllImageBase(mod) || IsLeftoverBindRefuse(mod)
@@ -14609,14 +14685,21 @@ namespace ProcessorEmulator.Core
                 TryPeekWord(bus, mod + ModuleStartip, out startip);
                 TryPeekWord(bus, mod + ProcModule, out p50);
             }
+            if (atTarget)
+                startip = pc;
             if (startip == HdDllEntryVa || startip == HdDllInitVa
                 || IsHdDllImageBase(startip) || IsLeftoverBindRefuse(startip)
                 || IsWrapDestSize(startip) || startip == HdDllEntryRva)
             {
-                if (atCall)
+                if (atCall && !atTarget)
                     return;
                 startip = 0;
             }
+            if (IsChainCallVa(startip) && _leftoverWait99O32NkChainCallVa == 0)
+                _leftoverWait99O32NkChainCallVa = startip;
+            string name = PeekNkChainName(bus, regs, pc, mod, p50, startip);
+            if (IsHdDllBindName(name))
+                return;
             uint jalrDest = 0;
             uint insn = 0;
             uint rs;
@@ -14624,9 +14707,29 @@ namespace ProcessorEmulator.Core
                 jalrDest = PeekGpr(regs, (int)rs);
             if (jalrDest == HdDllEntryVa || jalrDest == HdDllInitVa)
                 return;
+            if (IsChainCallVa(jalrDest) && _leftoverWait99O32NkChainCallVa == 0)
+                _leftoverWait99O32NkChainCallVa = jalrDest;
             uint s5 = PeekS5(regs);
+            bool mapped = true;
+            uint word = 0;
+            uint peekVa = atTarget ? pc : (IsChainCallVa(startip) ? startip : 0);
+            if (peekVa != 0)
+            {
+                bool threw;
+                word = PeekDestWordRaw(bus, peekVa, out threw);
+                mapped = !threw;
+            }
             string why;
-            if (IsHonestTocMissName(name))
+            if (atTarget)
+            {
+                if (!mapped)
+                    why = "unmap";
+                else if (word == 0)
+                    why = "empty";
+                else
+                    why = "entry";
+            }
+            else if (IsHonestTocMissName(name))
                 why = "toc-miss";
             else if (pc == XipCallDllUsegChk && mod != 0
                 && IsCallDllSkipUseg(p50))
@@ -14637,13 +14740,19 @@ namespace ProcessorEmulator.Core
                 why = "startip";
             else if ((pc == CallDllStartip || pc == CallDllEntry
                 || pc == XipDllCallDllJal)
-                && (jalrDest != 0 || startip != 0))
+                && (IsChainCallVa(jalrDest) || IsChainCallVa(startip)))
+                why = "calldll";
+            else if ((pc == CallDllStartip || pc == CallDllEntry
+                || pc == XipDllCallDllJal)
+                && (jalrDest != 0 || startip != 0)
+                && (IsNkChainName(name) || name.Length > 1))
                 why = "calldll";
             else if ((pc == CallDllStartip || pc == CallDllEntry
                 || pc == XipDllCallDllJal)
                 && startip == 0 && jalrDest == 0)
                 why = "startip-0";
-            else if (pc == CallDllAfterJalr)
+            else if (pc == CallDllAfterJalr
+                && (IsChainCallVa(startip) || _leftoverWait99O32NkChainSawEntry))
                 why = "ret";
             else if (atBind && name.Length > 1)
                 why = "bindlib";
@@ -14653,9 +14762,21 @@ namespace ProcessorEmulator.Core
                 why = "s5-skip";
             else
                 return;
+            bool keep = atTarget || why == "calldll" || why == "ret"
+                || why == "entry" || why == "empty" || why == "unmap"
+                || NamesMatchRom(name, "coredll.dll")
+                || NamesMatchRom(name, "filesys.exe")
+                || NamesMatchRom(name, "filesys.dll")
+                || NamesMatchRom(name, "fsdmgr.dll");
+            if (!keep && _leftoverWait99O32NkChainLog >= 4)
+                return;
+            if (!keep && NamesMatchRom(name, "osaxst0.dll")
+                && startip == 0 && (why == "bindlib" || why == "loade32"
+                    || why == "startip-0"))
+                return;
             if (!IsNkChainName(name) && !IsHonestTocMissName(name)
-                && why != "calldll" && why != "startip-0"
-                && why != "ret" && why != "startip")
+                && !atTarget && why != "calldll" && why != "startip-0"
+                && why != "ret" && why != "startip" && why != "entry")
                 return;
             if (name.Length == 0)
                 name = "-";
@@ -14664,14 +14785,18 @@ namespace ProcessorEmulator.Core
                 && why == _leftoverWait99O32NkChainVia
                 && name == _leftoverWait99O32NkChainName)
                 return;
+            if (atTarget)
+                _leftoverWait99O32NkChainSawEntry = true;
             _leftoverWait99O32NkChainLast = key;
             _leftoverWait99O32NkChainVia = why;
             _leftoverWait99O32NkChainName = name;
-            _leftoverWait99O32NkChainLog++;
+            if (!keep)
+                _leftoverWait99O32NkChainLog++;
             BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-o32-nk-chain pc=0x" +
                 pc.ToString("X8") +
                 " name=" + name +
                 " startip=0x" + startip.ToString("X") +
+                " word=0x" + word.ToString("X") +
                 " via=" + why);
         }
 
@@ -14680,16 +14805,27 @@ namespace ProcessorEmulator.Core
         {
             if (!_leftoverWait99O32NkJalrSawTarget)
                 return;
-            if (_leftoverWait99O32NkChainLog >= 4)
-                return;
             if (string.IsNullOrEmpty(name) || IsHdDllBindName(name))
                 return;
             string why;
             if (IsHonestTocMissName(name))
                 why = "toc-miss";
+            else if (NamesMatchRom(name, "coredll.dll")
+                || NamesMatchRom(name, "filesys.exe")
+                || NamesMatchRom(name, "filesys.dll")
+                || NamesMatchRom(name, "fsdmgr.dll"))
+                why = "loade32";
             else if (IsNkChainName(name))
                 why = "loade32";
             else
+                return;
+            bool keep = NamesMatchRom(name, "coredll.dll")
+                || NamesMatchRom(name, "filesys.exe")
+                || NamesMatchRom(name, "filesys.dll")
+                || NamesMatchRom(name, "fsdmgr.dll");
+            if (!keep && _leftoverWait99O32NkChainLog >= 4)
+                return;
+            if (!keep && NamesMatchRom(name, "osaxst0.dll"))
                 return;
             uint key = 0xE32u ^ (uint)name.Length;
             if (key == _leftoverWait99O32NkChainLast
@@ -14699,10 +14835,12 @@ namespace ProcessorEmulator.Core
             _leftoverWait99O32NkChainLast = key;
             _leftoverWait99O32NkChainVia = why;
             _leftoverWait99O32NkChainName = name;
-            _leftoverWait99O32NkChainLog++;
+            if (!keep)
+                _leftoverWait99O32NkChainLog++;
             BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-o32-nk-chain pc=0x0" +
                 " name=" + name +
                 " startip=0x0" +
+                " word=0x0" +
                 " via=" + why);
         }
 
@@ -20267,6 +20405,7 @@ namespace ProcessorEmulator.Core
 
         private const uint ModuleLpSelf = 0;
         private const uint ModulePmodNext = 4;
+        private const uint ModuleLpszName = 8;
         private const int DdiNopWalkCap = 32;
         private const int DdiNopWalkSeedMax = 12;
 
@@ -20398,6 +20537,8 @@ namespace ProcessorEmulator.Core
             _leftoverWait99O32NkChainLast = 0;
             _leftoverWait99O32NkChainVia = "";
             _leftoverWait99O32NkChainName = "";
+            _leftoverWait99O32NkChainCallVa = 0;
+            _leftoverWait99O32NkChainSawEntry = false;
             _leftoverWait99O32NkRa = 0;
             _leftoverWait99O32NkA0 = 0;
             _leftoverWait99O32NkA2 = 0;
@@ -26476,6 +26617,8 @@ namespace ProcessorEmulator.Core
         private static uint _leftoverWait99O32NkChainLast;
         private static string _leftoverWait99O32NkChainVia = "";
         private static string _leftoverWait99O32NkChainName = "";
+        private static uint _leftoverWait99O32NkChainCallVa;
+        private static bool _leftoverWait99O32NkChainSawEntry;
         private static uint _leftoverWait99O32NkRa;
         private static uint _leftoverWait99O32NkA0;
         private static uint _leftoverWait99O32NkA2;
