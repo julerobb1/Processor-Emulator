@@ -252,8 +252,15 @@ namespace ProcessorEmulator.Core
         // 0x03F74DEC / GetProc dest 0x8008C844
         // leftover hop forbidden. Do not hop
         // dest-e32 0x1B0C or dest-fp50 as PC.
-        // FILE[26] unchanged. Display
-        // ddi_nop.dll.
+        // Live 2b02f4e named nk-entry
+        // Target_VA=0x8006DB0C via=
+        // HdstubDLLEntry; e32_entryrva=0
+        // objcnt=0 hdr-off=0; no guest jalr
+        // into dest. Feed MODULE+0x5C startip
+        // so CallDLL jalrs that VA. Observe
+        // leftover-wait99-o32-nk-jalr. Do not
+        // leftover-hop dest. FILE[26]
+        // unchanged. Display ddi_nop.dll.
         public const uint LoadO32WrapStartip = 0x8001E960;
         public const uint WrapCopyRetScanHi = 0x8001EA00;
         // Live 0be2cb9 leftover-wait99-o32-nk-
@@ -11916,6 +11923,7 @@ namespace ProcessorEmulator.Core
         {
             if ((pc & 3) != 0)
                 return;
+            TryNoteLeftoverWait99O32NkJalr(bus, regs, pc);
             if (pc == LoadO32WrapJalO32 || pc == LoadO32Rom)
             {
                 if (pc == LoadO32WrapJalO32)
@@ -13176,6 +13184,88 @@ namespace ProcessorEmulator.Core
             }
         }
 
+        // CallDLL 0x80018B34 jalrs MODULE+0x5C.
+        // Wrapper 0x8001E960 skips that store when
+        // 32($sp) entryrva is 0. Live 2b02f4e named
+        // Target_VA=HdstubDLLEntry only. Write the
+        // dump export VA into startip so the guest
+        // jalr can run. Do not leftover-hop dest.
+        // Do not write dest-e32 SIZE / dest-fp50.
+        private static uint PeekHdDllModule(MipsBus bus, uint[] regs,
+            uint destFp50)
+        {
+            uint a0 = PeekGpr(regs, 4);
+            uint[] mods = new uint[] { _leftoverWait99O32NkBindMod, a0 };
+            for (int i = 0; i < mods.Length; i++)
+            {
+                uint mod = mods[i];
+                if (mod == 0 || (mod & 3) != 0
+                    || IsLeftoverBindRefuse(mod)
+                    || IsWrapDestSize(mod) || IsWrapDestFp50Va(mod)
+                    || IsHdDllImageBase(mod) || IsLeftoverDestVa(mod)
+                    || mod == HdDllEntryVa || mod == HdDllInitVa
+                    || mod == HdDllEntryRva)
+                    continue;
+                uint p50 = 0;
+                if (TryPeekWord(bus, mod + ProcModule, out p50)
+                    && (IsHdDllImageBase(p50) || (destFp50 != 0
+                        && p50 == destFp50)))
+                    return mod;
+                if (IsHdDllBindName(_leftoverWait99O32NkBindName)
+                    && mod == _leftoverWait99O32NkBindMod)
+                    return mod;
+            }
+            return 0;
+        }
+
+        private static bool IsHdDllStartipKeep(uint cur)
+        {
+            if (cur == 0)
+                return false;
+            if (IsLeftoverBindRefuse(cur) || IsWrapDestSize(cur)
+                || cur == WrapDestE32SizeLive || cur == HdDllEntryRva
+                || IsWrapDestFp50Va(cur) || IsHdDllImageBase(cur)
+                || IsLeftoverDestVa(cur))
+                return false;
+            return true;
+        }
+
+        private static uint TryPlantHdDllStartip(MipsBus bus, uint[] regs,
+            uint targetVa)
+        {
+            if (bus == null || targetVa == 0)
+                return 0;
+            if (targetVa != HdDllEntryVa && targetVa != HdDllInitVa)
+                return 0;
+            if (IsWrapDestSize(targetVa) || targetVa == HdDllEntryRva
+                || IsWrapDestFp50Va(targetVa) || IsHdDllImageBase(targetVa)
+                || IsLeftoverBindRefuse(targetVa) || IsLeftoverDestVa(targetVa))
+                return 0;
+            uint destFp50 = ResolveWrapDestFp50(bus, regs);
+            if (!IsHdDllImageBase(destFp50)
+                && !IsHdDllBindName(_leftoverWait99O32NkBindName))
+                return 0;
+            uint mod = PeekHdDllModule(bus, regs, destFp50);
+            if (mod == 0)
+                return 0;
+            uint cur = 0;
+            if (!TryPeekWord(bus, mod + ModuleStartip, out cur))
+                return 0;
+            if (cur == targetVa)
+                return cur;
+            if (IsHdDllStartipKeep(cur))
+                return cur;
+            try
+            {
+                bus.Write32(mod + ModuleStartip, targetVa);
+            }
+            catch
+            {
+                return 0;
+            }
+            return targetVa;
+        }
+
         // Live 26cbe16 leftover dest 0x03F74DEC /
         // GetProc dest 0x8008C844 leftover hop
         // forbidden during BindImp of hd.dll.
@@ -13323,6 +13413,14 @@ namespace ProcessorEmulator.Core
                 out hdr, out hdrOff, out entryRva, out vbase, out targetVa);
             if (entryRva != 0)
                 _leftoverWait99O32NkEntryRva = entryRva;
+            if (entryRva == 0
+                && (targetVa == HdDllEntryVa || targetVa == HdDllInitVa
+                    || IsHdDllBindName(name) || IsHdDllImageBase(destFp50)))
+            {
+                if (targetVa == 0)
+                    targetVa = HdDllEntryVa;
+                TryPlantHdDllStartip(bus, regs, targetVa);
+            }
             BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-o32-nk-iat-stub pc=0x" +
                 pc.ToString("X8") +
                 " name=" + name +
@@ -13539,7 +13637,9 @@ namespace ProcessorEmulator.Core
             // SIZE. If e32_entryrva is genuinely 0,
             // launch via dump export HdstubDLLEntry
             // (no HD_Init/Open). Do not name entryrva
-            // 0x1B0C. Do not leftover-hop Target_VA.
+            // 0x1B0C. Feed MODULE+0x5C startip so
+            // CallDLL jalrs Target_VA. Do not
+            // leftover-hop dest.
             if (targetVa == 0 && entryRva == 0
                 && (IsHdDllImageBase(destFp50)
                     || IsHdDllBindName(_leftoverWait99O32NkBindName)))
@@ -14132,7 +14232,6 @@ namespace ProcessorEmulator.Core
                 _leftoverWait99O32NkEntryRva = entryRva;
             if (targetVa != 0)
                 _leftoverWait99O32NkEntryTarget = targetVa;
-            uint ra = PeekGpr(regs, 31);
             TryNoteLeftoverWait99O32NkE32(bus, regs, pc);
             string why = entryRva != 0 && targetVa != 0 ? "entry" : "entryrva-0";
             if (entryRva == 0 && targetVa == HdDllEntryVa)
@@ -14143,15 +14242,25 @@ namespace ProcessorEmulator.Core
                 why = "entryrva-0";
             if (IsLeftoverBindRefuse(pc) || IsLeftoverBindRefuse(targetVa))
                 why = "leftover-getproc";
+            uint startip = 0;
+            if (entryRva == 0
+                && (targetVa == HdDllEntryVa || targetVa == HdDllInitVa))
+                startip = TryPlantHdDllStartip(bus, regs, targetVa);
+            if (startip == 0)
+            {
+                uint mod = PeekHdDllModule(bus, regs, destFp50);
+                if (mod != 0)
+                    TryPeekWord(bus, mod + ModuleStartip, out startip);
+            }
+            // HiveLineMax 180: drop dest-e32 / target /
+            // ra / hdr-off so via= is not truncated.
             BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-o32-nk-entry pc=0x" +
                 pc.ToString("X8") +
-                " ra=0x" + ra.ToString("X8") +
-                " dest-e32=0x" + destE32.ToString("X") +
                 " dest-fp50=0x" + destFp50.ToString("X") +
                 " hdr-off=" + FormatWrapHdrOff(hdrOff) +
                 " entryrva=0x" + entryRva.ToString("X") +
-                " target=0x" + targetVa.ToString("X") +
                 " Target_VA=0x" + targetVa.ToString("X") +
+                " startip=0x" + startip.ToString("X") +
                 " via=" + why);
             if (targetVa != 0
                 && !IsWrapDestFp50Va(targetVa)
@@ -14164,6 +14273,113 @@ namespace ProcessorEmulator.Core
                 && targetVa != LeftoverWait99GetProcDest)
                 TryNoteLeftoverWait99O32ContFromNkWrap(bus, pc, targetVa,
                     "entry");
+        }
+
+        // Live 2b02f4e named Target_VA but never
+        // jalr'd HdstubDLLEntry. leftover-wait99-
+        // o32-nk-jalr names guest dispatch into
+        // that VA, or why CallDLL / startip skip.
+        // Do not leftover-hop dest. Do not force
+        // CallDLL. Do not hop dest-e32 SIZE /
+        // dest-fp50 as PC.
+        private static void TryNoteLeftoverWait99O32NkJalr(MipsBus bus,
+            uint[] regs, uint pc)
+        {
+            if (_leftoverWait99O32NkJalrLog >= 2)
+                return;
+            if (pc == LeftoverWait99O32RefuseRa
+                || pc == LeftoverWait99GetProcDest
+                || IsLeftoverBindRefuse(pc)
+                || IsWrapDestFp50Va(pc)
+                || IsHdDllImageBase(pc)
+                || IsWrapDestSize(pc)
+                || pc == WrapDestE32SizeLive
+                || pc == HdDllEntryRva)
+                return;
+            uint targetVa = _leftoverWait99O32NkEntryTarget;
+            if (targetVa == 0
+                && (IsHdDllBindName(_leftoverWait99O32NkBindName)
+                    || IsHdDllImageBase(ResolveWrapDestFp50(bus, regs))))
+                targetVa = HdDllEntryVa;
+            bool atTarget = targetVa != 0
+                && (pc == targetVa || pc == HdDllEntryVa
+                    || pc == HdDllInitVa);
+            bool atCall = pc == CallDllStartip || pc == CallDllEntry
+                || pc == CallDllAfterJalr || pc == XipDllCallDllJal
+                || pc == XipCallDllUsegChk || pc == LoadO32WrapStartip;
+            if (!atTarget && !atCall)
+                return;
+            if (targetVa != HdDllEntryVa && targetVa != HdDllInitVa
+                && !atTarget)
+                return;
+            uint destFp50 = ResolveWrapDestFp50(bus, regs);
+            uint destE32 = PeekWrapDestE32(bus, regs);
+            if (atCall && (targetVa == HdDllEntryVa || targetVa == HdDllInitVa))
+                TryPlantHdDllStartip(bus, regs, targetVa);
+            uint mod = PeekHdDllModule(bus, regs, destFp50);
+            uint startip = 0;
+            uint p50 = 0;
+            if (mod != 0)
+            {
+                TryPeekWord(bus, mod + ModuleStartip, out startip);
+                TryPeekWord(bus, mod + ProcModule, out p50);
+            }
+            uint callMod = PeekGpr(regs, 4);
+            if (callMod == 0)
+                callMod = PeekGpr(regs, 30);
+            bool thisHd = mod != 0 && (callMod == mod
+                || IsHdDllImageBase(destFp50)
+                || IsHdDllBindName(_leftoverWait99O32NkBindName));
+            uint jalrDest = 0;
+            uint word = 0;
+            uint rs;
+            if (TryPeekWord(bus, pc, out word) && IsJalrInsn(word, out rs))
+                jalrDest = PeekGpr(regs, (int)rs);
+            if (jalrDest == 0)
+                jalrDest = startip;
+            uint sp32 = PeekSpWord(bus, regs, 0x20);
+            uint s5 = PeekS5(regs);
+            string why;
+            if (atTarget)
+                why = pc == HdDllInitVa ? "HdstubInit" : "HdstubDLLEntry";
+            else if (!thisHd && jalrDest != targetVa
+                && jalrDest != HdDllEntryVa && jalrDest != HdDllInitVa)
+                return;
+            else if (pc == XipCallDllUsegChk && mod != 0
+                && IsCallDllSkipUseg(p50))
+                why = "useg-skip";
+            else if (pc == LoadO32WrapStartip
+                && (startip == 0 || startip != targetVa)
+                && (sp32 == 0 || sp32 == destE32
+                    || sp32 == WrapDestE32SizeLive
+                    || IsHdDllEntryRva(sp32)))
+                why = "startip-skip-0";
+            else if (pc == LoadO32WrapStartip
+                && (startip == targetVa || startip == HdDllEntryVa))
+                return;
+            else if ((pc == CallDllStartip || pc == CallDllEntry
+                || pc == XipDllCallDllJal)
+                && (jalrDest == targetVa || jalrDest == HdDllEntryVa
+                    || jalrDest == HdDllInitVa))
+                why = "calldll";
+            else if ((pc == CallDllStartip || pc == CallDllEntry
+                || pc == XipDllCallDllJal)
+                && jalrDest == 0 && thisHd)
+                why = "startip-0";
+            else if ((pc == CallDllStartip || pc == CallDllEntry
+                || pc == XipDllCallDllJal)
+                && thisHd && (s5 & WrapS5CallDll) == 0)
+                why = "s5-skip";
+            else
+                return;
+            _leftoverWait99O32NkJalrLog++;
+            BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-o32-nk-jalr pc=0x" +
+                pc.ToString("X8") +
+                " dest-fp50=0x" + destFp50.ToString("X") +
+                " mod=0x" + mod.ToString("X") +
+                " startip=0x" + startip.ToString("X") +
+                " Target_VA=0x" + targetVa.ToString("X") +
+                " via=" + why);
         }
 
         // Live 92eb906 leftover-wait99-o32-halt
@@ -19850,6 +20066,7 @@ namespace ProcessorEmulator.Core
             _leftoverWait99O32NkEntryRva = 0;
             _leftoverWait99O32NkEntryTarget = 0;
             _leftoverWait99O32NkCallDllLogged = false;
+            _leftoverWait99O32NkJalrLog = 0;
             _leftoverWait99O32NkRa = 0;
             _leftoverWait99O32NkA0 = 0;
             _leftoverWait99O32NkA2 = 0;
@@ -25920,6 +26137,7 @@ namespace ProcessorEmulator.Core
         private static uint _leftoverWait99O32NkEntryRva;
         private static uint _leftoverWait99O32NkEntryTarget;
         private static bool _leftoverWait99O32NkCallDllLogged;
+        private static int _leftoverWait99O32NkJalrLog;
         private static uint _leftoverWait99O32NkRa;
         private static uint _leftoverWait99O32NkA0;
         private static uint _leftoverWait99O32NkA2;
