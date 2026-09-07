@@ -573,9 +573,23 @@ namespace ProcessorEmulator.Core
         // returns. Do not resume leftover-wait99-
         // o32-halt +5C/+EC/+DC. Do not leftover hop.
         public const uint LeftoverWait99WrapDumpPrologue = 0x800956F0;
+        public const uint LeftoverWait99WrapDumpSw = 0x800956F4;
         public const uint LeftoverWait99WrapDump = 0x80095720;
         public const uint LeftoverWait99WrapDumpRa = 0x80095740;
         public const uint LeftoverWait99WrapPrologue = 0x03F716F0;
+        public const uint LeftoverWait99WrapSw = 0x03F716F4;
+        // Live 6a7f2dc leftover-wait99-o32-halt
+        // dump-pro=0x27BDFFE0 addiu $sp,-32.
+        // dump-ra/useg-ra 0x8FC60000 is wrap $ra
+        // lw $a2,0($fp), not sw $ra. via refuse
+        // 0x03F74DEC leftover dest (plant
+        // 0x03F74844 neighborhood). Frame is 32.
+        // sw $ra is dump-pro+4 / useg-pro+4.
+        // leftover dest GetProc dest leftover hop
+        // forbidden.
+        public const uint LeftoverWait99WrapAddiuSp = 0x27BDFFE0;
+        public const int LeftoverWait99WrapFrame = 32;
+        public const uint LeftoverWait99O32RefuseRa = 0x03F74DEC;
         // Live 489b416 leftover-wait99-wrap-cont
         // pc=0x03F71740 getproc=0x8003EABC meth=
         // 0x8005D400 leftover-api-54-cont dest=
@@ -11334,51 +11348,32 @@ namespace ProcessorEmulator.Core
                 out getproc, out meth);
         }
 
-        // Live c8e54d2 leftover-wait99-wrap-cont
-        // pc=0x03F71740 getproc=0x8003EABC then
-        // leftover-api-54-cont leftover-wait99-
-        // halt dest=0x80088B94 leftover-wait99-
-        // o32-halt +5C/+EC/+DC. No leftover-
-        // wait99-o32-cont / wrap-o32-halt. Bus
-        // peek of dump kseg 0x800956F0 is leftover
-        // dest hash (0x80084000–0x80098000), not
-        // dest wrapper. leftover $fp gate missed
-        // (fp not leftover dest) so wrap-cont
-        // fallthrough ran lw $a2,0($fp) into
-        // leftover-syscall plant. Peek dest-live
-        // useg 0x03F716F0 / dump nk.bin 0x800956F0
-        // only. leftover-wait99-o32-halt at wrap
-        // $ra when no dest-live LoadO32 $ra; do
-        // not wrap-cont fallthrough. leftover
-        // dest GetProc dest leftover hop
-        // forbidden. Do not leftover hop. Do
-        // not invent dest.
+        // Live 6a7f2dc leftover-wait99-o32-halt
+        // ra=0x03F71740 dump-pro=0x27BDFFE0
+        // dump-ra/useg-ra=0x8FC60000 via=refuse-
+        // useg-03F716F4-0x03F74DEC. dump-pro is
+        // addiu $sp,-32. dump-ra is wrap $ra
+        // lw $a2,0($fp), not sw $ra. 0x03F74DEC
+        // leftover dest / plant neighborhood.
+        // leftover-wait99-o32-cont from dump-pro+4
+        // sw $ra / 32-byte frame dest-live NK
+        // LoadO32 / BindImp. leftover dest GetProc
+        // dest leftover hop forbidden. Do not
+        // leftover hop. Do not invent dest.
         private static bool TryLeftoverWait99O32ResumeFromWrap(MipsBus bus,
             uint[] regs, out uint dest, out string via)
         {
             dest = 0;
             via = "";
-            uint saved = 0;
-            int raOff = 0;
-            bool useFp = false;
-            if (!TryPeekLeftoverWait99WrapSavedRa(bus, regs, out saved,
-                out raOff, out useFp, out via))
+            if (!TryPeekLeftoverWait99O32FrameDest(bus, regs, out dest, out via))
                 return false;
-            if (!IsLeftoverWait99O32Caller(saved))
-            {
-                via = "refuse-" + via + "-0x" + saved.ToString("X8");
-                return false;
-            }
-            dest = saved;
             if (regs != null && regs.Length > 31)
-                regs[31] = saved;
-            int frame = 0;
-            if (TryPeekLeftoverWait99WrapFrame(bus, out frame)
-                && frame != 0 && regs != null && regs.Length > 29)
+                regs[31] = dest;
+            if (regs != null && regs.Length > 29)
             {
                 uint sp = PeekGpr(regs, 29);
                 if (IsLeftoverWait99WrapStackVa(sp))
-                    regs[29] = sp + (uint)frame;
+                    regs[29] = sp + (uint)LeftoverWait99WrapFrame;
             }
             int fpOff = 0;
             uint fpSaved = 0;
@@ -11396,6 +11391,8 @@ namespace ProcessorEmulator.Core
                 return false;
             if (IsLeftoverDestVa(pc) || pc == LeftoverWait99GetProcDest
                 || pc == LeftoverWait99NeedDest || pc == LeftoverWait99GetProc
+                || pc == LeftoverWait99O32RefuseRa
+                || pc == LeftoverWait99WrapRaWord
                 || pc == LeftoverWait99O32Halt5C
                 || pc == LeftoverWait99O32HaltEc
                 || pc == LeftoverWait99O32HaltDc
@@ -11451,19 +11448,34 @@ namespace ProcessorEmulator.Core
             return true;
         }
 
-        private static bool TryPeekLeftoverWait99WrapSavedRa(MipsBus bus,
-            uint[] regs, out uint saved, out int raOff, out bool useFp,
-            out string via)
+        // Live 6a7f2dc dump-pro=0x27BDFFE0 frame 32.
+        // dump-ra 0x8FC60000 is lw $a2,0($fp) at wrap
+        // $ra, not sw $ra. useg 0x03F716F4 / dump
+        // 0x800956F4 is dump-pro+4. via refused
+        // leftover dest 0x03F74DEC. Scan the 32-
+        // byte frame for dest-live NK LoadO32 /
+        // BindImp. leftover dest GetProc dest
+        // leftover hop forbidden. Do not leftover
+        // hop. Do not invent dest.
+        private static bool TryPeekLeftoverWait99O32FrameDest(MipsBus bus,
+            uint[] regs, out uint dest, out string via)
         {
-            saved = 0;
-            raOff = 0;
-            useFp = false;
+            dest = 0;
             via = "";
-            if (!TryFindLeftoverWait99WrapRaOff(bus, out raOff, out useFp,
-                out via))
+            uint swWord = 0;
+            if (!TryPeekLeftoverWait99UsegText(bus, LeftoverWait99WrapSw,
+                out swWord))
+                TryPeekLeftoverWait99DumpOnly(LeftoverWait99WrapDumpSw,
+                    out swWord);
+            int raOff = -1;
+            bool useFp = false;
+            int off;
+            if (IsSwRaSp(swWord, out off) || IsLwRaSp(swWord, out off))
+                raOff = off;
+            else if (IsSwRaFp(swWord, out off) || IsLwRaFp(swWord, out off))
             {
-                via = "miss-pro";
-                return false;
+                raOff = off;
+                useFp = true;
             }
             uint sp = PeekGpr(regs, 29);
             uint fp = PeekGpr(regs, 30);
@@ -11473,116 +11485,55 @@ namespace ProcessorEmulator.Core
             else if (IsLeftoverWait99WrapStackVa(sp))
                 baseVa = sp;
             else if (IsLeftoverWait99WrapStackVa(fp))
-            {
                 baseVa = fp;
-                useFp = true;
-                via = via + "-fp";
-            }
-            else
+            if (baseVa == 0)
             {
                 via = "leftover-sp";
                 return false;
             }
-            if (!TryPeekWord(bus, baseVa + (uint)raOff, out saved))
+            if (raOff >= 0 && raOff < LeftoverWait99WrapFrame)
             {
-                via = "miss-slot";
-                return false;
+                uint slot = 0;
+                if (TryPeekWord(bus, baseVa + (uint)raOff, out slot)
+                    && IsLeftoverWait99O32Caller(slot))
+                {
+                    dest = slot;
+                    via = "sw-" + raOff.ToString("X");
+                    return true;
+                }
+                if (slot == LeftoverWait99O32RefuseRa || IsLeftoverDestVa(slot)
+                    || slot == LeftoverWait99WrapRaWord)
+                    via = "refuse-0x" + slot.ToString("X8");
             }
-            return (saved & 3) == 0 && saved != 0 && saved != 0xFFFFFFFFu;
-        }
-
-        private static bool TryFindLeftoverWait99WrapRaOff(MipsBus bus,
-            out int raOff, out bool useFp, out string via)
-        {
-            raOff = 0;
-            useFp = false;
-            via = "";
-            for (uint i = 1; i <= 32; i++)
+            for (int slotOff = 0; slotOff < LeftoverWait99WrapFrame;
+                slotOff += 4)
             {
-                uint va = LeftoverWait99Wrap - (i * 4);
-                uint word = 0;
-                if (!TryPeekLeftoverWait99UsegText(bus, va, out word))
+                uint slot = 0;
+                if (!TryPeekWord(bus, baseVa + (uint)slotOff, out slot))
                     continue;
-                int off;
-                if (IsSwRaSp(word, out off) || IsLwRaSp(word, out off))
-                {
-                    raOff = off;
-                    via = "useg-" + va.ToString("X8");
-                    return true;
-                }
-                if (IsSwRaFp(word, out off) || IsLwRaFp(word, out off))
-                {
-                    raOff = off;
-                    useFp = true;
-                    via = "useg-fp-" + va.ToString("X8");
-                    return true;
-                }
-            }
-            for (uint i = 0; i < 24; i++)
-            {
-                uint va = LeftoverWait99WrapRa + (i * 4);
-                uint word = 0;
-                if (!TryPeekLeftoverWait99UsegText(bus, va, out word))
+                if (!IsLeftoverWait99O32Caller(slot))
                     continue;
-                int off;
-                if (IsLwRaSp(word, out off))
-                {
-                    raOff = off;
-                    via = "useg-lw-" + va.ToString("X8");
-                    return true;
-                }
-                if (IsLwRaFp(word, out off))
-                {
-                    raOff = off;
-                    useFp = true;
-                    via = "useg-lw-fp-" + va.ToString("X8");
-                    return true;
-                }
-            }
-            for (uint i = 0; i < 24; i++)
-            {
-                uint va = LeftoverWait99WrapDumpPrologue + (i * 4);
-                uint word = 0;
-                if (!TryPeekLeftoverWait99DumpOnly(va, out word))
-                    continue;
-                int off;
-                if (IsSwRaSp(word, out off) || IsLwRaSp(word, out off))
-                {
-                    raOff = off;
-                    via = "dump-" + va.ToString("X8");
-                    return true;
-                }
-                if (IsSwRaFp(word, out off) || IsLwRaFp(word, out off))
-                {
-                    raOff = off;
-                    useFp = true;
-                    via = "dump-fp-" + va.ToString("X8");
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        private static bool TryPeekLeftoverWait99WrapFrame(MipsBus bus,
-            out int frame)
-        {
-            frame = 0;
-            for (uint i = 0; i <= 32; i++)
-            {
-                uint word = 0;
-                uint va = LeftoverWait99Wrap - (i * 4);
-                if (i == 0)
-                    va = LeftoverWait99WrapPrologue;
-                if (!TryPeekLeftoverWait99UsegText(bus, va, out word)
-                    && !TryPeekLeftoverWait99DumpOnly(
-                        LeftoverWait99WrapDumpPrologue + (i * 4), out word))
-                    continue;
-                int n;
-                if (!IsAddiuSpNeg(word, out n))
-                    continue;
-                frame = n;
+                dest = slot;
+                via = "slot-" + slotOff.ToString("X");
                 return true;
             }
+            if (baseVa != fp && IsLeftoverWait99WrapStackVa(fp))
+            {
+                for (int slotOff = 0; slotOff < LeftoverWait99WrapFrame;
+                    slotOff += 4)
+                {
+                    uint slot = 0;
+                    if (!TryPeekWord(bus, fp + (uint)slotOff, out slot))
+                        continue;
+                    if (!IsLeftoverWait99O32Caller(slot))
+                        continue;
+                    dest = slot;
+                    via = "fp-slot-" + slotOff.ToString("X");
+                    return true;
+                }
+            }
+            if (string.IsNullOrEmpty(via))
+                via = "miss-slot";
             return false;
         }
 
@@ -11752,29 +11703,22 @@ namespace ProcessorEmulator.Core
             _leftoverWait99O32HaltLogged = true;
             _leftoverWait99WrapRaContLogged = true;
             uint saved = 0;
-            int raOff = 0;
-            bool useFp = false;
             string peekVia = "";
-            TryPeekLeftoverWait99WrapSavedRa(bus, regs, out saved, out raOff,
-                out useFp, out peekVia);
+            TryPeekLeftoverWait99O32FrameDest(bus, regs, out saved, out peekVia);
             if (string.IsNullOrEmpty(via))
                 via = peekVia;
-            uint usegPro = 0;
-            uint usegRa = 0;
             uint dumpPro = 0;
-            uint dumpRa = 0;
-            TryPeekLeftoverWait99UsegText(bus, LeftoverWait99WrapPrologue,
-                out usegPro);
-            TryPeekLeftoverWait99UsegText(bus, LeftoverWait99WrapRa, out usegRa);
+            uint dumpSw = 0;
+            uint usegSw = 0;
             TryPeekLeftoverWait99DumpOnly(LeftoverWait99WrapDumpPrologue,
                 out dumpPro);
-            TryPeekLeftoverWait99DumpOnly(LeftoverWait99WrapDumpRa, out dumpRa);
+            TryPeekLeftoverWait99DumpOnly(LeftoverWait99WrapDumpSw, out dumpSw);
+            TryPeekLeftoverWait99UsegText(bus, LeftoverWait99WrapSw, out usegSw);
             BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-o32-halt ra=0x" +
                 LeftoverWait99WrapRa.ToString("X8") +
                 " dump-pro=0x" + dumpPro.ToString("X8") +
-                " dump-ra=0x" + dumpRa.ToString("X8") +
-                " useg-pro=0x" + usegPro.ToString("X8") +
-                " useg-ra=0x" + usegRa.ToString("X8") +
+                " dump-sw=0x" + dumpSw.ToString("X8") +
+                " useg-sw=0x" + usegSw.ToString("X8") +
                 " via=" + via +
                 " dest=0x" + saved.ToString("X8"));
         }
