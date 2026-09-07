@@ -130,43 +130,45 @@ namespace ProcessorEmulator.Core
         // 0x8001637C is a 0x400 predicate, not heap alloc:
         //   **(obj) or obj+8; andi 0x400; 0 -> v0=1; busy -> v0=0.
         // ExtraROM e32 live0 0x212E0003 & 0x400 = 0, so v0=1.
-        // 0x800165DC: fp=**(obj) LiveEntry first word (not e32
-        // live0 unless they alias); jal predicate; andi fp,0x200;
-        // beqz -> 0x80016830 skip jal 0x8003E660 kmode thunk;
-        // 0x80016848 move v0,0 success, dest never written.
-        // ExtraROM LiveEntry0 is dump TOC dwFileAttributes
-        // (extract 0x807), not e32 0x212E0003. Dump nk.exe
-        // already decompiled: 0x80016830 is not MapO32.
-        // After andi fp,0x200 beqz: 0x8001662C sw zero,
-        // 0x20(sp); skip never jal 0x8003E660; 0x80016830
-        // lw v0,0x20(sp); beqz 0x80016848; move v0,0; jr ra.
-        // Dest out (s4) is only sw when 0x20(sp) is the
-        // thunk return. Skip leaves dest 0 and still
-        // succeeds. 0x8003E660 only when fp&0x200
-        // (a0=-1 a1=sp+0x20 a2=s7). ExtraROM 0x807 and
-        // ddi_nop 0x807 both skip it. LoadO32 jal
-        // CreateFileMapping 0x8003DA64 at 0x800167AC is
-        // on the 0x200 TAKEN path after 0x8001665C
-        // andi/beqz skip. ExtraROM dumpToc0 0x807 never
-        // reaches it. ddi_nop dest is MapO32 0x8001AEB4
-        // CreateFileMapping miss then 0x8001AECC
-        // SetFilePointer (object+6>=2), not LoadO32
-        // 0x800167AC. Do not set 0x200.
+        // Dump nk.exe LoadO32 0x800165DC (live 183c8f4
+        // leftover-wait99-o32-nk-ret dest-word=2):
+        //   s2=a0 obj; s4=a3 dest-addr out; s5=a2 byte out;
+        //   s7=a1; sw 0,0x20(sp). obj+4 bit1 ROM path.
+        //   fp=**(obj) or obj+8; jal pred 0x8001637C;
+        //   0x80016654 beqz v0,0x80016810. andi fp,0x200;
+        //   beqz -> 0x80016830. ExtraROM LiveEntry0 is
+        //   dump TOC dwFileAttributes (0x807), not e32
+        //   0x212E0003. 0x80016830 lw v0,0x20(sp);
+        //   beqz 0x80016848; beqz s4,0x80016848;
+        //   sw v0,0(s4) dest-addr only if thunk filled
+        //   0x20(sp) AND a3!=0. 0x80016848 move v0,0
+        //   success; $ra still pred 0x80016654 until
+        //   lw $ra,1100(sp) at 0x80016870. Wrapper
+        //   0x8001E40C addiu a3,0 so dest-addr out is
+        //   0; skip never stores dest. 0x8003E660 only
+        //   when fp&0x200 (a0=-1 a1=sp+0x20 a2=s7).
+        //   ExtraROM 0x807 / ddi_nop 0x807 / NK 0x1007
+        //   all skip. Do not set 0x200.
+        // Wrapper 0x8001E284 addiu s4,fp,0xCE;
+        //   0x8001E27C s0=2; 0x8001E2C8 sb s0,0(s4);
+        //   0x8001E2C4 sw 0,0xD0(fp). LoadO32 a2=s4
+        //   is that byte-out. dest-word=2 is unaligned
+        //   peek of sb-2 at fp+0xCE, not dest-set.
         // Wrapper after LoadO32 v0=0:
         //   0x8001E428 andi s5,2 then jal 0x800283FC
         //   a0=0x7E000000 a2=0x1102000 VirtualAlloc-like,
-        //   not CEDecompressROM
+        //   not CEDecompressROM. If LoadE32 dest
+        //   0x20(sp) was 0, wrapper ori flags 3 so
+        //   bit2 can take that VALLOC dump-true.
         //   0x8001E45C andi s5,0x8000 then jal 0x8001AF20
-        //   (NOT MapO32: lbu obj+4 bit4; walk o32 at
-        //   LiveEntry+0x18; page-sum vsizes; sw delta
-        //   module+0xC; jr ra)
-        //   0x8001ACC4 jal 0x80028844 is MapO32 inner.
-        //   0x8001AC9C is bnez flags&0x80002000, not that jal.
+        //   (NOT MapO32). leftover-wait99-o32-nk-wrap
+        //   names s5/bit2/bit8000/sp20/sp24.
         //   0x8001E4A8 lw 0x24(sp); andi 0x2000; beqz
-        //   0x8001E534 v0=0xC1. 0x24(sp) is LoadE32 out
-        //   (e32_imageflags). ExtraROM e32 0x212E0003
-        //   has 0x2000 DLL so C1 should not fire if that
-        //   copy ran. Log 0x24(sp). Do not invent 0x2000.
+        //   0x8001E534 v0=0xC1. Do not invent 0x2000.
+        // ddi_nop dest is MapO32 0x8001AEB4
+        // CreateFileMapping miss then 0x8001AECC
+        // SetFilePointer (object+6>=2), not LoadO32
+        // 0x800167AC. Do not write object+6.
         // Honest miss: after BuiltIn LoadO32 skip,
         // firmware never VirtualCopys ExtraROM o32.
         // ddi_nop dest remains OpenFile/LoadDriver
@@ -186,9 +188,16 @@ namespace ProcessorEmulator.Core
         public const uint LoadO32WrapJalO32 = 0x8001E418;
         public const uint LoadO32WrapAfter = 0x8001E428;
         public const uint LoadO32Pred = 0x8001637C;
+        public const uint LoadO32PredRet = 0x80016654;
         public const uint LoadO32PredFail = 0x80016810;
         public const uint LoadO32SkipStore = 0x8001662C;
         public const uint LoadO32Andi200 = 0x8001665C;
+        // Dump wrapper 0x8001E284 addiu $s4,$fp,0xCE;
+        // 0x8001E2C8 sb 2,0($s4). LoadO32 a2 is that
+        // byte-out, not dest-addr (a3). dest-word=2
+        // is this init byte. Do not treat as dest-set.
+        public const uint LoadO32DestCeOff = 0xCE;
+        public const uint LoadO32DestCeInit = 2;
         public const uint LoadO32CreateFileMapping = 0x800167AC;
         public const uint LoadO32SkipValloc = 0x80016830;
         public const uint LoadO32OkRet = 0x80016848;
@@ -624,16 +633,25 @@ namespace ProcessorEmulator.Core
         // 0x03F716F0 via=jal. leftover jal INTO
         // wrap entry. leftover→wrap loop, NOT
         // LoadO32. Do not continue via that jal
-        // dest. leftover-wait99-o32-nk-call /
-        // leftover-wait99-o32-nk-ret observe the
-        // real NK LoadO32 jal 0x8001E418 /
-        // entry 0x800165DC / ret 0x8001E420
-        // ($ra / dest-word / v0). leftover-
+        // dest. Live 183c8f4 leftover-wait99-
+        // o32-nk-call pc=0x8001E418 ra=
+        // 0x8001E420 dest=0x800165DC word=
+        // 0x0C005977 via=jal (good $ra).
+        // leftover-wait99-o32-nk-ret pc=
+        // 0x80016848 v0=0 dest-word=0x2 ra=
+        // 0x80016654 skip200=y bit200=n via=
+        // dest-set was a miss-name: dest-word=2
+        // is dump wrapper sb 2 at fp+0xCE
+        // (a2 byte-out); dest-addr a3=0;
+        // skip200 is dump-true ExtraROM 0x807.
+        // leftover-wait99-o32-nk-wrap names
+        // wrapper 0x8001E428 s5 bit2 / bit8000
+        // dest-live VALLOC / o32walk. leftover-
         // wait99-o32-cont only dump-true dest-
-        // live NK LoadO32 / BindImp jal dest.
-        // leftover dest 0x03F74DEC / leftover
-        // dest GetProc dest 0x8008C844 leftover
-        // hop forbidden.
+        // live NK LoadO32 / BindImp / wrap
+        // dest. leftover dest 0x03F74DEC /
+        // leftover dest GetProc dest 0x8008C844
+        // leftover hop forbidden.
         public const uint LeftoverWait99WrapAddiuSp = 0x27BDFFE0;
         public const uint LeftoverWait99WrapSwRaWord = 0xAFBF001C;
         public const int LeftoverWait99WrapRaOff = 0x1C;
@@ -8807,6 +8825,22 @@ namespace ProcessorEmulator.Core
             }
         }
 
+        // Dump wrapper dest-out is a byte at fp+0xCE
+        // (unaligned). dest-word=2 is that sb, not dest.
+        private static uint PeekDestByte(MipsBus bus, uint va)
+        {
+            if (bus == null || va == 0)
+                return 0;
+            try
+            {
+                return bus.Read8(va);
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
         // dest0 useg / destDump peek must not go through
         // MapFirmwareSlotVa pfn6 remap (that hid dest0-useg).
         private static uint PeekDestWordRaw(MipsBus bus, uint va, out bool threw)
@@ -11614,18 +11648,18 @@ namespace ProcessorEmulator.Core
             TryNoteLeftoverWait99O32NkCallDump(bus);
         }
 
-        // Live 0ab1b68 leftover-wait99-o32-ra-src
-        // dest=0x03F716F0 via=jal is leftover→
-        // wrap, not LoadO32. Observe the real NK
-        // wrapper jal LoadO32 at 0x8001E418 /
-        // entry 0x800165DC / ret 0x8001E420.
-        // leftover-wait99-o32-nk-call names $ra
-        // (good is LoadO32RomRet). leftover-
-        // wait99-o32-nk-ret names v0 / dest-word
-        // / skip200. leftover dest 0x03F74DEC /
-        // leftover dest GetProc dest 0x8008C844
-        // leftover hop forbidden. Do not leftover
-        // hop. Do not invent dest.
+        // Live 183c8f4 leftover-wait99-o32-nk-call
+        // is dump-true NK LoadO32 ($ra=
+        // LoadO32RomRet). leftover-wait99-o32-
+        // nk-ret dest-word=2 skip200=y via=dest-
+        // set was the byte-out at fp+0xCE, not
+        // dest-set. leftover-wait99-o32-nk-wrap
+        // names wrapper 0x8001E428 s5 bit2 /
+        // bit8000 after skip. leftover dest
+        // 0x03F74DEC / leftover dest GetProc dest
+        // 0x8008C844 leftover hop forbidden. Do
+        // not leftover hop. Do not invent dest.
+        // Do not set 0x200.
         private static void TryLeftoverWait99O32NkObserve(MipsBus bus,
             uint[] regs, uint pc)
         {
@@ -11667,9 +11701,15 @@ namespace ProcessorEmulator.Core
             }
             if (pc == LoadO32SkipValloc)
                 _leftoverWait99O32NkSkip200 = true;
-            if (pc == LoadO32RomRet || pc == LoadO32OkRet || pc == LoadO32WrapAfter)
+            if (pc == LoadO32OkRet)
             {
                 TryNoteLeftoverWait99O32NkRet(bus, regs, pc);
+                return;
+            }
+            if (pc == LoadO32WrapAfter || pc == LoadO32WrapS5Hi
+                || pc == LoadO32WrapValloc || pc == LoadO32WrapC1)
+            {
+                TryNoteLeftoverWait99O32NkWrap(bus, regs, pc);
                 return;
             }
             if (pc == BindImpHdr || pc == BindImpOrdJalRet)
@@ -11726,8 +11766,10 @@ namespace ProcessorEmulator.Core
             _leftoverWait99O32NkRa = ra;
             uint a0 = PeekGpr(regs, 4);
             uint a2 = PeekGpr(regs, 6);
+            uint a3 = PeekGpr(regs, 7);
             _leftoverWait99O32NkA0 = a0;
             _leftoverWait99O32NkA2 = a2;
+            _leftoverWait99O32NkA3 = a3;
             uint destWord = 0;
             if (a2 != 0)
                 destWord = PeekDestWord(bus, a2);
@@ -11770,32 +11812,90 @@ namespace ProcessorEmulator.Core
             uint ra = PeekGpr(regs, 31);
             if (ra == 0)
                 ra = _leftoverWait99O32NkRa;
-            uint dest0 = _leftoverWait99O32NkA2;
-            if (dest0 == 0)
-                dest0 = _loadE32OkDest0;
-            if (dest0 == 0)
-                dest0 = _nkLoadO32Toc;
-            uint destWord = dest0 != 0 ? PeekDestWord(bus, dest0) : _leftoverWait99O32NkDestWord;
+            uint destCe = _leftoverWait99O32NkA2;
+            if (destCe == 0)
+                destCe = PeekGpr(regs, 21);
+            uint destA3 = _leftoverWait99O32NkA3;
+            if (destA3 == 0)
+                destA3 = PeekGpr(regs, 20);
+            uint destWord = destCe != 0
+                ? PeekDestWord(bus, destCe) : _leftoverWait99O32NkDestWord;
+            uint destByte = PeekDestByte(bus, destCe);
+            uint destSp20 = PeekSpWord(bus, regs, 0x20);
+            uint destAddr = destA3 != 0 ? PeekDestWord(bus, destA3) : 0;
             uint live0 = _leftoverWait99O32NkLive0;
             if (live0 == 0)
                 live0 = _nkLoadO32Word0;
             bool bit200 = _leftoverWait99O32NkBit200
                 || (live0 & LoadO32VallocBit) != 0
                 || _loadE32OkBit200;
-            bool skip200 = _leftoverWait99O32NkSkip200 || _loadE32OkSkip200;
-            string why = destWord != 0
-                ? "dest-set"
-                : (skip200 || !bit200 ? "skip200" : "dest-word-0");
+            bool skip200 = _leftoverWait99O32NkSkip200 || _loadE32OkSkip200
+                || !bit200;
+            string why;
             if (ra == LeftoverWait99O32RefuseRa
-                || ra == LeftoverWait99GetProcDest)
+                || ra == LeftoverWait99GetProcDest
+                || destAddr == LeftoverWait99O32RefuseRa
+                || destAddr == LeftoverWait99GetProcDest)
                 why = "refuse-ra";
+            else if (destAddr != 0)
+                why = "dest-set";
+            else if (skip200 && (destWord == LoadO32DestCeInit
+                || destByte == LoadO32DestCeInit))
+                why = "skip200-ce2";
+            else if (skip200)
+                why = "skip200";
+            else
+                why = "dest-word-0";
             BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-o32-nk-ret pc=0x" +
                 pc.ToString("X8") +
                 " v0=0x" + v0.ToString("X") +
                 " dest-word=0x" + destWord.ToString("X") +
+                " dest-a3=0x" + destA3.ToString("X") +
+                " dest-ce=0x" + destByte.ToString("X") +
+                " dest-sp20=0x" + destSp20.ToString("X") +
                 " ra=0x" + ra.ToString("X8") +
                 " skip200=" + (skip200 ? "y" : "n") +
                 " bit200=" + (bit200 ? "y" : "n") +
+                " via=" + why);
+        }
+
+        // Live 183c8f4 LoadO32 skip200 dest-a3=0 dest-word=2
+        // is dump wrapper sb 2 at fp+0xCE. ExtraROM dest
+        // after skip is wrapper 0x8001E428 andi s5,2
+        // VALLOC / andi s5,0x8000 o32walk. Observe only.
+        // leftover dest 0x03F74DEC / leftover dest
+        // GetProc dest 0x8008C844 leftover hop
+        // forbidden. Do not leftover hop. Do not invent
+        // dest. Do not set 0x200.
+        private static void TryNoteLeftoverWait99O32NkWrap(MipsBus bus,
+            uint[] regs, uint pc)
+        {
+            if (_leftoverWait99O32NkWrapLogged)
+                return;
+            _leftoverWait99O32NkWrapLogged = true;
+            uint v0 = PeekGpr(regs, 2);
+            uint s5 = PeekS5(regs);
+            uint sp20 = PeekSpWord(bus, regs, 0x20);
+            uint sp24 = PeekSpWord(bus, regs, 0x24);
+            bool bit2 = (s5 & WrapS5Bit2) != 0;
+            bool bit8000 = (s5 & WrapS5CallDll) != 0;
+            string why;
+            if (pc == LoadO32WrapC1)
+                why = "c1";
+            else if (pc == LoadO32WrapValloc || bit2)
+                why = "valloc";
+            else if (bit8000)
+                why = "o32walk";
+            else
+                why = "skip-wrap";
+            BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-o32-nk-wrap pc=0x" +
+                pc.ToString("X8") +
+                " v0=0x" + v0.ToString("X") +
+                " s5=0x" + s5.ToString("X") +
+                " bit2=" + (bit2 ? "y" : "n") +
+                " bit8000=" + (bit8000 ? "y" : "n") +
+                " sp20=0x" + sp20.ToString("X") +
+                " sp24=0x" + sp24.ToString("X") +
                 " via=" + why);
         }
 
@@ -17451,10 +17551,12 @@ namespace ProcessorEmulator.Core
             _leftoverWait99O32RaSrcLogged = false;
             _leftoverWait99O32NkCallLogged = false;
             _leftoverWait99O32NkRetLogged = false;
+            _leftoverWait99O32NkWrapLogged = false;
             _leftoverWait99O32NkBindLogged = false;
             _leftoverWait99O32NkRa = 0;
             _leftoverWait99O32NkA0 = 0;
             _leftoverWait99O32NkA2 = 0;
+            _leftoverWait99O32NkA3 = 0;
             _leftoverWait99O32NkDestWord = 0;
             _leftoverWait99O32NkLive0 = 0;
             _leftoverWait99O32NkBit200 = false;
@@ -23496,10 +23598,12 @@ namespace ProcessorEmulator.Core
         private static bool _leftoverWait99O32RaSrcLogged;
         private static bool _leftoverWait99O32NkCallLogged;
         private static bool _leftoverWait99O32NkRetLogged;
+        private static bool _leftoverWait99O32NkWrapLogged;
         private static bool _leftoverWait99O32NkBindLogged;
         private static uint _leftoverWait99O32NkRa;
         private static uint _leftoverWait99O32NkA0;
         private static uint _leftoverWait99O32NkA2;
+        private static uint _leftoverWait99O32NkA3;
         private static uint _leftoverWait99O32NkDestWord;
         private static uint _leftoverWait99O32NkLive0;
         private static bool _leftoverWait99O32NkBit200;
