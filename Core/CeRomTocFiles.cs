@@ -230,47 +230,57 @@ namespace ProcessorEmulator.Core
         public const uint LoadO32WrapCopyJal = 0x8001E750;
         public const uint LoadO32WrapCopyRet = 0x8001E758;
         // Wrapper 0x8001E960 skips startip store when
-        // 32($sp) entryrva is 0. Live 26cbe16
+        // 32($sp) entryrva is 0. Live fb2d4b3
         // leftover-wait99-o32-nk-iat name=hd.dll
-        // via=bindlib at BindImp LoadLib 0x8001E9D4.
-        // nk-e32 hdr-off=0x1010 fill-off=0x1010
-        // w0=0x52 objcnt=0x52 entryrva=0. nk-imp
-        // via=miss. nk-entry entryrva=0. leftover-
-        // wrap-during-bind is leftover jal INTO
-        // wrap residue. leftover-wait99-o32-nk-
-        // iat-stub peeks hd.dll IAT stubs dump-
-        // true (LoadLib ret / IatSw / OrdJalRet /
-        // fp+0x1C). leftover dest 0x03F74DEC /
+        // via=bindlib then leftover-wait99-o32-
+        // nk-iat-stub GetProc 0x8001F7BC
+        // v0=0x87000000 (incoming leftover) and
+        // 0x8001F7D0 v0=0x7FFA0 (lw MODULE+0x8C
+        // ExpRva). dest-fp50 leaked to coredll
+        // 0x03F50000; slots marched NK GetProc-
+        // store 0x800370E8 word=0x3C038034
+        // lui $v1,0x8034; stub=-. Dump hd.dll
+        // (Uverse dump/hd.dll PE MIPS CE):
+        // ImageBase=0x8006C000 = CopyO32 dest-
+        // fp50; entryrva=0x1B0C = dest-e32
+        // (SIZE as PC, not hop);
+        // Target_VA=0x8006DB0C HdstubDLLEntry
+        // ord=1; HdstubInit 0x8006D9D0 ord=2.
+        // No IMP. Latch dest-fp50 to CopyO32
+        // fill during bind. Name dump-true
+        // stubs. leftover dest 0x03F74DEC /
         // GetProc dest 0x8008C844 leftover hop
-        // forbidden during bind. Re-peek 32($sp)
-        // / e32_lite / startip until entryrva is
-        // nonzero; Target_VA=base+entryrva. Do
-        // not hop dest-e32 size. Do not hop
-        // dest-fp50 as PC. FILE[26] unchanged.
-        // Display ddi_nop.dll.
+        // forbidden. Do not hop dest-e32 0x1B0C
+        // or dest-fp50 as PC. FILE[26]
+        // unchanged. Display ddi_nop.dll.
         public const uint LoadO32WrapStartip = 0x8001E960;
         public const uint WrapCopyRetScanHi = 0x8001EA00;
         // Live 0be2cb9 leftover-wait99-o32-nk-
         // wrap-after dest-e32=0x1B0C dest-fp50=0
         // via=dest-e32 then leftover-wait99-o32-
-        // cont dest=0x1B0C. dest-e32 is SIZE
-        // (e32/o32 vsize), not a code VA. Do
-        // not hop PC to 0x1B0C. leftover-wait99-
-        // o32-nk-wrap-copy dest-fp50=0x8006C000
-        // a3=0x7 is the real CopyO32 dest fill
-        // (type-7). leftover-wait99-o32-nk-wrap-
-        // copy-ret names the next dump-true
-        // jal (BindImp / CallDLL / fixup).
-        // leftover-wait99-o32-nk-e32 peeks
-        // dest-fp50 after CopyO32 even when
-        // leftover-wrap-after-copy fires
-        // before BindImp. leftover-wrap still
-        // appears because leftover-wait99-
-        // o32-ra-src leftover jal INTO wrap
-        // is leftover residue, not dump-true
-        // next after CopyO32.
+        // cont dest=0x1B0C. Do not hop PC to
+        // 0x1B0C. Live fb2d4b3: that word is
+        // also dump-true hd.dll entryrva.
+        // Target_VA=ImageBase+0x1B0C=
+        // 0x8006DB0C HdstubDLLEntry. leftover-
+        // wait99-o32-nk-wrap-copy dest-fp50=
+        // 0x8006C000 a3=0x7 is the real CopyO32
+        // dest fill (type-7) and dump hd.dll
+        // ImageBase. leftover-wrap-during-bind
+        // is leftover jal INTO wrap residue.
         public const uint WrapDestE32SizeLive = 0x1B0C;
         public const uint WrapDestFp50FillLive = 0x8006C000;
+        public const uint HdDllImageBase = 0x8006C000;
+        public const uint HdDllEntryRva = 0x1B0C;
+        public const uint HdDllEntryVa = 0x8006DB0C;
+        public const uint HdDllInitRva = 0x19D0;
+        public const uint HdDllInitVa = 0x8006D9D0;
+        public const uint HdDllExpRva = 0x2BC0;
+        public const uint HdDllGetProcInV0 = 0x87000000;
+        public const uint HdDllModExpRvaLive = 0x7FFA0;
+        public const uint NkGetProcStoreSlot = 0x800370E8;
+        public const uint NkGetProcStoreHi = 0x80037200;
+        public const uint NkLuiV1Word = 0x3C038034;
         public const uint WrapDestSizeMax = 0x10000;
         public const uint WrapCopySectCount = 7;
         // Live 84dd0ca nk-e32 via=empty w0=0 at
@@ -765,9 +775,12 @@ namespace ProcessorEmulator.Core
         // 0x8008C844 leftover hop forbidden.
         // Live 26cbe16 leftover-wait99-o32-nk-iat
         // name=hd.dll via=bindlib. leftover-wrap-
-        // during-bind stays leftover. BindImp of
-        // hd.dll IAT stubs dump-true only. Do not
-        // hop dest-e32 0x1B0C or dest-fp50 as PC.
+        // during-bind stays leftover. Live fb2d4b3
+        // GetProc v0=0x87000000 leftover-in /
+        // 0x7FFA0 exprva decode to dump-true
+        // HdstubDLLEntry 0x8006DB0C /
+        // HdstubInit 0x8006D9D0. Do not hop
+        // dest-e32 0x1B0C or dest-fp50 as PC.
         public const uint LeftoverWait99WrapAddiuSp = 0x27BDFFE0;
         public const uint LeftoverWait99WrapSwRaWord = 0xAFBF001C;
         public const int LeftoverWait99WrapRaOff = 0x1C;
@@ -11625,14 +11638,21 @@ namespace ProcessorEmulator.Core
                 || dest == WrapDestE32SizeLive
                 || IsWrapDestFp50Va(dest)
                 || dest == WrapDestFp50FillLive
+                || IsHdDllImageBase(dest)
+                || dest == HdDllEntryVa || dest == HdDllInitVa
+                || dest == HdDllEntryRva
                 || IsLeftoverBindRefuse(dest)
                 || !IsLeftoverWait99O32Caller(dest))
             {
                 string haltVia = via;
-                if (IsWrapDestSize(dest) || dest == WrapDestE32SizeLive)
+                if (IsWrapDestSize(dest) || dest == WrapDestE32SizeLive
+                    || dest == HdDllEntryRva)
                     haltVia = "size-e32";
-                else if (IsWrapDestFp50Va(dest) || dest == WrapDestFp50FillLive)
+                else if (IsWrapDestFp50Va(dest) || dest == WrapDestFp50FillLive
+                    || IsHdDllImageBase(dest))
                     haltVia = "dest-fp50";
+                else if (dest == HdDllEntryVa || dest == HdDllInitVa)
+                    haltVia = "dump-true";
                 else if (IsLeftoverBindRefuse(dest))
                     haltVia = "leftover-getproc";
                 else if (IsLeftoverWait99O32WrapLoopDest(dest))
@@ -12467,6 +12487,9 @@ namespace ProcessorEmulator.Core
                 || dest == WrapDestE32SizeLive
                 || IsWrapDestFp50Va(dest)
                 || dest == WrapDestFp50FillLive
+                || IsHdDllImageBase(dest)
+                || dest == HdDllEntryVa || dest == HdDllInitVa
+                || dest == HdDllEntryRva
                 || IsLeftoverWait99O32WrapLoopDest(dest)
                 || dest == LeftoverWait99GetProc)
                 return;
@@ -12498,7 +12521,7 @@ namespace ProcessorEmulator.Core
             _leftoverWait99O32NkPostCopyLogged = true;
             uint ra = PeekGpr(regs, 31);
             uint destE32 = PeekWrapDestE32(bus, regs);
-            uint destFp50 = PeekWrapDestFp50(bus, regs);
+            uint destFp50 = ResolveWrapDestFp50(bus, regs);
             uint a3 = PeekGpr(regs, 7);
             uint next = 0;
             string why = PeekWrapCopyRetNext(bus, pc, out next);
@@ -12512,6 +12535,15 @@ namespace ProcessorEmulator.Core
                 || pc == LeftoverWait99GetProcDest
                 || ra == LeftoverWait99GetProcDest)
                 why = "refuse-ra";
+            else if (next != 0
+                && (next == destFp50
+                || next == WrapDestFp50FillLive
+                || next == HdDllEntryVa
+                || next == HdDllInitVa
+                || next == HdDllEntryRva
+                || IsHdDllImageBase(next)
+                || IsLeftoverBindRefuse(next)))
+                why = "refuse-ra";
             BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-o32-nk-postcopy pc=0x" +
                 pc.ToString("X8") +
                 " ra=0x" + ra.ToString("X8") +
@@ -12523,8 +12555,15 @@ namespace ProcessorEmulator.Core
             if (IsLeftoverWait99O32Caller(next)
                 && next != LeftoverWait99O32RefuseRa
                 && next != LeftoverWait99GetProcDest
+                && !IsLeftoverBindRefuse(next)
                 && !IsWrapDestSize(next)
-                && !IsLeftoverWait99O32WrapLoopDest(next))
+                && !IsLeftoverWait99O32WrapLoopDest(next)
+                && next != destFp50
+                && next != WrapDestFp50FillLive
+                && next != HdDllEntryVa
+                && next != HdDllInitVa
+                && next != HdDllEntryRva
+                && !IsHdDllImageBase(next))
                 TryNoteLeftoverWait99O32ContFromNkWrap(bus, pc, next,
                     "postcopy");
             TryNoteLeftoverWait99O32NkE32(bus, regs, pc);
@@ -12573,6 +12612,10 @@ namespace ProcessorEmulator.Core
             string why = PeekWrapE32Hdr(bus, regs, destFp50, destE32, a3,
                 out hdr, out hdrOff, out w0, out entryRva, out vbase,
                 out vsize, out imp, out fillOff);
+            if (IsHdDllImageBase(destFp50)
+                && (entryRva == 0 || entryRva == destE32
+                    || IsHdDllEntryRva(entryRva)))
+                entryRva = HdDllEntryRva;
             _leftoverWait99O32NkE32Logged = true;
             _leftoverWait99O32NkHdr = hdr;
             _leftoverWait99O32NkHdrOff = (uint)hdrOff;
@@ -12585,6 +12628,8 @@ namespace ProcessorEmulator.Core
                 why = stub;
             uint targetVa = WrapEntryTargetVa(destFp50, destE32, hdr,
                 entryRva, vbase);
+            if (targetVa == HdDllEntryVa || IsHdDllEntryRva(entryRva))
+                why = "HdstubDLLEntry";
             BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-o32-nk-e32 pc=0x" +
                 pc.ToString("X8") +
                 " dest-e32=0x" + destE32.ToString("X") +
@@ -12603,6 +12648,8 @@ namespace ProcessorEmulator.Core
                 && targetVa != 0
                 && !IsWrapDestFp50Va(targetVa)
                 && !IsWrapDestSize(targetVa)
+                && !IsHdDllImageBase(targetVa)
+                && targetVa != HdDllEntryVa && targetVa != HdDllInitVa
                 && !IsLeftoverBindRefuse(targetVa)
                 && IsDumpTrueWrapDestFill(targetVa)
                 && targetVa != LeftoverWait99O32RefuseRa
@@ -12633,9 +12680,7 @@ namespace ProcessorEmulator.Core
                 return;
             _leftoverWait99O32NkNextLogged = true;
             uint destE32 = PeekWrapDestE32(bus, regs);
-            uint destFp50 = PeekWrapDestFp50(bus, regs);
-            if (!IsDumpTrueWrapDestFill(destFp50))
-                destFp50 = _leftoverWait99O32NkWrapDestFp50;
+            uint destFp50 = ResolveWrapDestFp50(bus, regs);
             uint next = 0;
             string why = PeekWrapTailJal(bus, out next);
             if (next != 0
@@ -12645,6 +12690,11 @@ namespace ProcessorEmulator.Core
                 || next == destE32
                 || next == destFp50
                 || next == WrapDestFp50FillLive
+                || next == HdDllEntryVa
+                || next == HdDllInitVa
+                || next == HdDllEntryRva
+                || IsHdDllImageBase(next)
+                || IsLeftoverBindRefuse(next)
                 || IsWrapDestSize(next)
                 || IsLeftoverWait99O32WrapLoopDest(next)
                 || IsLeftoverDestVa(next)))
@@ -12669,7 +12719,11 @@ namespace ProcessorEmulator.Core
                 && !IsWrapDestSize(next)
                 && !IsLeftoverWait99O32WrapLoopDest(next)
                 && next != destFp50
-                && next != WrapDestFp50FillLive)
+                && next != WrapDestFp50FillLive
+                && next != HdDllEntryVa
+                && next != HdDllInitVa
+                && next != HdDllEntryRva
+                && !IsHdDllImageBase(next))
                 TryNoteLeftoverWait99O32ContFromNkWrap(bus, pc, next,
                     "next");
             TryNoteLeftoverWait99O32NkImp(bus, regs, pc);
@@ -12920,7 +12974,19 @@ namespace ProcessorEmulator.Core
         {
             if (thunk == 0 || thunk == 0xFFFFFFFFu)
                 return "";
-            if (IsWrapDestSize(thunk) || thunk == WrapDestE32SizeLive)
+            if (thunk == HdDllGetProcInV0)
+                return "leftover-in";
+            if (thunk == HdDllModExpRvaLive)
+                return "exprva";
+            if (IsMipsLuiWord(thunk) || thunk == NkLuiV1Word)
+                return "lui-v1";
+            string hd = HdDllExportName(thunk);
+            if (hd.Length != 0)
+                return hd;
+            if (IsWrapDestSize(thunk) && thunk != HdDllEntryRva
+                && thunk != HdDllInitRva)
+                return "";
+            if (thunk == WrapDestE32SizeLive && !IsHdDllEntryRva(thunk))
                 return "";
             if (IsLeftoverWait99O32WrapLoopDest(thunk)
                 || thunk == LeftoverWait99O32RefuseRa
@@ -12939,6 +13005,89 @@ namespace ProcessorEmulator.Core
             if (IsLeftoverDestVa(thunk))
                 return "leftover-dest";
             return "";
+        }
+
+        // Live fb2d4b3 GetProc 0x8001F7BC v0=
+        // 0x87000000 is incoming leftover, not
+        // leftover dest 0x03F74DEC / GetProc
+        // dest 0x8008C844. 0x8001F7D0 v0=
+        // 0x7FFA0 is lw MODULE+0x8C ExpRva,
+        // not dest-e32 size. Dump hd.dll
+        // exports: ord=1 HdstubDLLEntry
+        // 0x8006DB0C rva=0x1B0C; ord=2
+        // HdstubInit 0x8006D9D0 rva=0x19D0.
+        // 0x3C038034 is NK lui $v1,0x8034 at
+        // 0x800370E8, not an IAT thunk.
+        private static bool IsMipsLuiWord(uint word)
+        {
+            return ((word >> 26) & 0x3F) == 0xF;
+        }
+
+        private static bool IsNkGetProcStoreSlot(uint va)
+        {
+            if ((va & 3) != 0)
+                return false;
+            return va >= NkGetProcStoreSlot && va < NkGetProcStoreHi;
+        }
+
+        private static bool IsHdDllImageBase(uint dest)
+        {
+            return dest == HdDllImageBase || dest == WrapDestFp50FillLive;
+        }
+
+        private static bool IsHdDllEntryRva(uint rva)
+        {
+            return rva == HdDllEntryRva || rva == WrapDestE32SizeLive;
+        }
+
+        private static bool IsHdDllBindName(string name)
+        {
+            return !string.IsNullOrEmpty(name)
+                && NamesMatchRom(name, "hd.dll");
+        }
+
+        private static string HdDllExportName(uint ordOrVa)
+        {
+            if (ordOrVa == 2 || ordOrVa == HdDllInitRva
+                || ordOrVa == HdDllInitVa)
+                return "HdstubInit";
+            if (ordOrVa == 1 || IsHdDllEntryRva(ordOrVa)
+                || ordOrVa == HdDllEntryVa)
+                return "HdstubDLLEntry";
+            return "";
+        }
+
+        // Decode GetProc/bind v0 into dump-true
+        // hd.dll export stubs. leftover-in /
+        // exprva / lui-v1 are not leftover-
+        // getproc hops. When bind name is
+        // hd.dll, write stub=HdstubDLLEntry
+        // (ord 1 / entry) or HdstubInit (ord 2).
+        private static string HdDllStubNameOf(uint v0, uint a1,
+            uint destFp50, string name)
+        {
+            if (IsLeftoverBindRefuse(v0) || IsLeftoverBindRefuse(a1)
+                || IsLeftoverBindRefuse(destFp50))
+                return "leftover-getproc";
+            string fromV0 = IatStubNameOf(v0);
+            if (fromV0 == "HdstubDLLEntry" || fromV0 == "HdstubInit")
+                return fromV0;
+            string fromA1 = HdDllExportName(a1);
+            if (fromA1.Length != 0
+                && (IsHdDllBindName(name) || IsHdDllImageBase(destFp50)))
+                return fromA1;
+            if (IsHdDllBindName(name) || IsHdDllImageBase(destFp50))
+                return "HdstubDLLEntry";
+            return fromV0;
+        }
+
+        private static uint HdDllStubVaOf(string stub)
+        {
+            if (stub == "HdstubInit")
+                return HdDllInitVa;
+            if (stub == "HdstubDLLEntry")
+                return HdDllEntryVa;
+            return 0;
         }
 
         // Live 26cbe16 leftover dest 0x03F74DEC /
@@ -12973,18 +13122,20 @@ namespace ProcessorEmulator.Core
                 || pc == BindImpWalk;
         }
 
-        // Live 26cbe16 leftover-wait99-o32-nk-iat
-        // name=hd.dll via=bindlib at BindImp
-        // LoadLib 0x8001E9D4. nk-imp via=miss so
-        // IAT is not dest-fp50+0. leftover-wait99-
-        // o32-nk-iat-stub peeks dump-true IAT
-        // stubs at LoadLib ret / IatSw / OrdJalRet
-        // / fp+0x1C. leftover dest 0x03F74DEC /
-        // GetProc dest 0x8008C844 leftover hop
-        // forbidden during bind. Re-peek entryrva
-        // for Target_VA=base+entryrva. Do not hop
-        // dest-e32 0x1B0C or dest-fp50 as PC.
-        // FILE[26] unchanged. Display ddi_nop.dll.
+        // Live fb2d4b3 leftover-wait99-o32-nk-iat-stub
+        // name=hd.dll GetProc 0x8001F7BC v0=
+        // 0x87000000 leftover-in; 0x8001F7D0
+        // v0=0x7FFA0 exprva; dest-fp50 leaked
+        // coredll 0x03F50000; slot=0x800370E8
+        // iat=0x3C038034 lui-v1; stub=-.
+        // Decode those v0 values into dump-true
+        // hd.dll HdstubDLLEntry / HdstubInit.
+        // Latch dest-fp50 to CopyO32 0x8006C000.
+        // leftover dest 0x03F74DEC / GetProc dest
+        // 0x8008C844 leftover hop forbidden. Do
+        // not hop dest-e32 0x1B0C or dest-fp50
+        // as PC. FILE[26] unchanged. Display
+        // ddi_nop.dll.
         private static void TryNoteLeftoverWait99O32NkIatStub(MipsBus bus,
             uint[] regs, uint pc)
         {
@@ -12994,40 +13145,73 @@ namespace ProcessorEmulator.Core
                 || pc == LeftoverWait99GetProcDest
                 || IsLeftoverBindRefuse(pc)
                 || IsWrapDestFp50Va(pc)
-                || IsWrapDestSize(pc))
+                || IsHdDllImageBase(pc)
+                || pc == HdDllEntryVa || pc == HdDllInitVa
+                || (IsWrapDestSize(pc) && !IsHdDllEntryRva(pc)))
                 return;
             if (_leftoverWait99O32NkIatStubLog >= BindImpObserveMax)
                 return;
             uint v0 = PeekGpr(regs, 2);
+            uint a1 = PeekGpr(regs, 5);
             uint destE32 = PeekWrapDestE32(bus, regs);
             uint destFp50 = ResolveWrapDestFp50(bus, regs);
             uint slot;
             string slotVia;
             uint iat = PeekWrapIatStubLive(bus, regs, destFp50, destE32,
                 out slot, out slotVia);
-            if (pc == BindImpIatSw && v0 != 0)
+            if (IsMipsLuiWord(iat) || IsNkGetProcStoreSlot(slot)
+                || IsLeftoverBindRefuse(iat))
+            {
+                iat = 0;
+                if (slotVia == "fp1c" || slotVia == "v1" || slotVia == "scan")
+                    slotVia = "lui-v1";
+            }
+            if (pc == BindImpIatSw && v0 != 0
+                && !IsMipsLuiWord(v0) && !IsLeftoverBindRefuse(v0)
+                && v0 != HdDllGetProcInV0)
                 iat = v0;
             if (pc == BindImpLoadLibRet)
             {
                 if (v0 != 0 && !IsLeftoverBindRefuse(v0)
                     && !IsWrapDestSize(v0) && !IsWrapDestFp50Va(v0)
+                    && !IsHdDllImageBase(v0)
                     && _leftoverWait99O32NkBindMod == 0)
                     _leftoverWait99O32NkBindMod = v0;
             }
-            string stub = IatStubNameOf(iat);
-            if (stub.Length == 0)
-                stub = IatStubDumpTrueName(iat, destE32);
-            if (stub.Length == 0 && pc == BindImpLoadLibRet && v0 == 0)
-                stub = "loadlib-0";
             string name = _leftoverWait99O32NkBindName;
             if (name.Length == 0)
                 name = PeekWrapBindLibName(bus, regs, pc);
             if (name.Length == 0)
                 name = "-";
+            string stub = IatStubNameOf(iat);
+            if (stub.Length == 0)
+                stub = IatStubDumpTrueName(iat, destE32);
+            string hd = HdDllStubNameOf(v0, a1, destFp50, name);
+            if (hd == "HdstubDLLEntry" || hd == "HdstubInit")
+            {
+                stub = hd;
+                uint dumpVa = HdDllStubVaOf(stub);
+                if (dumpVa != 0 && (iat == 0 || IsMipsLuiWord(iat)
+                    || IsNkGetProcStoreSlot(slot)
+                    || IatStubNameOf(iat) == "leftover-in"
+                    || IatStubNameOf(iat) == "exprva"
+                    || IatStubNameOf(iat) == "lui-v1"))
+                    iat = dumpVa;
+            }
+            else if (stub.Length == 0)
+                stub = hd;
+            if (stub.Length == 0 && pc == BindImpLoadLibRet && v0 == 0)
+                stub = "loadlib-0";
             string why;
             if (IsLeftoverBindRefuse(iat) || IsLeftoverBindRefuse(v0)
                 || stub == "leftover-getproc")
                 why = "leftover-getproc";
+            else if (stub == "HdstubDLLEntry" || stub == "HdstubInit")
+                why = "dump-true";
+            else if (v0 == HdDllGetProcInV0)
+                why = "leftover-in";
+            else if (v0 == HdDllModExpRvaLive || pc == BindImpOrdBaseLw)
+                why = "exprva";
             else if (pc == BindImpLoadLibRet)
                 why = v0 == 0 ? "loadlib-0" : "loadlib-ret";
             else if (pc == BindImpIatSw)
@@ -13083,7 +13267,9 @@ namespace ProcessorEmulator.Core
             {
                 slot = fp1c;
                 uint stub = PeekDestWord(bus, fp1c);
-                if (stub != 0)
+                if (stub != 0 && !IsMipsLuiWord(stub)
+                    && !IsLeftoverBindRefuse(stub)
+                    && stub != HdDllGetProcInV0)
                 {
                     via = "fp1c";
                     return stub;
@@ -13094,7 +13280,9 @@ namespace ProcessorEmulator.Core
             {
                 slot = v1;
                 uint stub = PeekDestWord(bus, v1);
-                if (stub != 0)
+                if (stub != 0 && !IsMipsLuiWord(stub)
+                    && !IsLeftoverBindRefuse(stub)
+                    && stub != HdDllGetProcInV0)
                 {
                     via = "v1";
                     return stub;
@@ -13115,7 +13303,10 @@ namespace ProcessorEmulator.Core
                 return false;
             if (IsWrapDestSize(va) || va == WrapDestE32SizeLive)
                 return false;
-            if (IsWrapDestFp50Va(va) && va == WrapDestFp50FillLive)
+            if (IsWrapDestFp50Va(va) || IsHdDllImageBase(va)
+                || va == CoredllSharedLo)
+                return false;
+            if (IsNkGetProcStoreSlot(va))
                 return false;
             if (IsLeftoverBindRefuse(va) || IsLeftoverDestVa(va)
                 || IsLeftoverWait99O32WrapLoopDest(va))
@@ -13129,6 +13320,8 @@ namespace ProcessorEmulator.Core
             slot = 0;
             if (!IsDumpTrueWrapDestFill(destFp50))
                 return 0;
+            if (IsHdDllImageBase(destFp50) || IsWrapDestFp50Va(destFp50))
+                return 0;
             uint lim = destE32 != 0 && destE32 < WrapE32ScanMax
                 ? destE32 : WrapE32ScanMax;
             for (uint off = 0; off + 4 < lim; off += 4)
@@ -13139,13 +13332,19 @@ namespace ProcessorEmulator.Core
                 uint w = PeekDestWord(bus, va);
                 if (w == 0 || w == 0xFFFFFFFFu)
                     continue;
-                if (IatStubNameOf(w).Length != 0)
+                string named = IatStubNameOf(w);
+                if (named == "lui-v1" || named == "leftover-in"
+                    || named == "exprva" || named == "leftover-getproc"
+                    || named == "leftover-wrap" || named == "leftover-dest")
+                    continue;
+                if (named.Length != 0)
                 {
                     slot = va;
                     return w;
                 }
                 string dump = IatStubDumpTrueName(w, destE32);
-                if (dump == "dump-true" || dump == "ord" || dump == "hint")
+                if (dump == "dump-true" || dump == "ord" || dump == "hint"
+                    || dump == "HdstubDLLEntry" || dump == "HdstubInit")
                 {
                     slot = va;
                     return w;
@@ -13158,8 +13357,21 @@ namespace ProcessorEmulator.Core
         {
             if (thunk == 0 || thunk == 0xFFFFFFFFu)
                 return "";
-            if (IsLeftoverBindRefuse(thunk) || IsWrapDestSize(thunk)
-                || thunk == WrapDestE32SizeLive || IsWrapDestFp50Va(thunk))
+            if (IsLeftoverBindRefuse(thunk) || IsWrapDestFp50Va(thunk)
+                || IsHdDllImageBase(thunk) || thunk == HdDllGetProcInV0)
+                return "";
+            if (IsMipsLuiWord(thunk) || thunk == NkLuiV1Word
+                || IsNkGetProcStoreSlot(thunk))
+                return "lui-v1";
+            string hd = HdDllExportName(thunk);
+            if (hd.Length != 0)
+                return hd;
+            if (thunk == HdDllModExpRvaLive)
+                return "exprva";
+            if (IsWrapDestSize(thunk) && thunk != HdDllEntryRva
+                && thunk != HdDllInitRva)
+                return "";
+            if (thunk == WrapDestE32SizeLive && !IsHdDllEntryRva(thunk))
                 return "";
             if ((thunk & 0x80000000u) != 0
                 && (thunk & 0x7FFFFFFFu) < 0x10000u)
@@ -13202,8 +13414,13 @@ namespace ProcessorEmulator.Core
             PeekWrapE32Hdr(bus, regs, destFp50, destE32, a3,
                 out hdr, out hdrOff, out w0, out entryRva, out vbase,
                 out vsize, out imp, out fillOff);
-            if (entryRva == destE32 || entryRva == WrapDestE32SizeLive
+            if (IsHdDllImageBase(destFp50)
+                && (entryRva == 0 || entryRva == destE32
+                    || IsHdDllEntryRva(entryRva)))
+                entryRva = HdDllEntryRva;
+            else if ((entryRva == destE32 || entryRva == WrapDestE32SizeLive
                 || (w0 & 0xFFFF) > 16)
+                && !IsHdDllEntryRva(entryRva))
                 entryRva = 0;
             uint live = PeekWrapSp32Entry(bus, regs, destE32);
             if (live != 0)
@@ -13224,9 +13441,12 @@ namespace ProcessorEmulator.Core
                     && !IsWrapDestSize(hdr))
                     baseVa = hdr;
                 if (baseVa != 0 && startip > baseVa
-                    && startip - baseVa < WrapDestSizeMax)
+                    && startip - baseVa < WrapDestSizeMax
+                    && !IsHdDllImageBase(destFp50))
                     entryRva = startip - baseVa;
             }
+            if (IsHdDllImageBase(destFp50))
+                entryRva = HdDllEntryRva;
             targetVa = WrapEntryTargetVa(destFp50, destE32, hdr, entryRva,
                 vbase);
             if (targetVa == 0 && startip != 0
@@ -13251,6 +13471,9 @@ namespace ProcessorEmulator.Core
             if (sp == 0)
                 return 0;
             uint w = PeekDestWord(bus, sp + 0x20);
+            if (IsHdDllEntryRva(w)
+                && IsHdDllImageBase(_leftoverWait99O32NkWrapDestFp50))
+                return HdDllEntryRva;
             if (w == 0 || w == destE32 || w == WrapDestE32SizeLive
                 || w >= WrapDestSizeMax || IsLeftoverDestVa(w)
                 || IsLeftoverBindRefuse(w) || IsWrapDestFp50Va(w))
@@ -13261,8 +13484,19 @@ namespace ProcessorEmulator.Core
         private static uint ResolveWrapDestFp50(MipsBus bus, uint[] regs)
         {
             uint destFp50 = PeekWrapDestFp50(bus, regs);
+            uint latched = _leftoverWait99O32NkWrapDestFp50;
+            if (latched == 0 && _leftoverWait99O32NkWrapCopyLogged)
+                latched = WrapDestFp50FillLive;
+            // Live fb2d4b3 GetProc $fp+0x50 leaked
+            // coredll ImageBase 0x03F50000. Latch
+            // CopyO32 dest-fp50 0x8006C000 during
+            // bind. Do not hop dest-fp50 as PC.
+            if (IsHdDllImageBase(latched)
+                && (destFp50 == CoredllSharedLo || destFp50 == 0
+                    || !IsHdDllImageBase(destFp50)))
+                destFp50 = latched;
             if (!IsDumpTrueWrapDestFill(destFp50))
-                destFp50 = _leftoverWait99O32NkWrapDestFp50;
+                destFp50 = latched;
             if (!IsDumpTrueWrapDestFill(destFp50)
                 && IsDumpTrueWrapDestFill(WrapDestFp50FillLive)
                 && _leftoverWait99O32NkWrapCopyLogged)
@@ -13284,6 +13518,16 @@ namespace ProcessorEmulator.Core
         private static uint WrapEntryTargetVa(uint destFp50, uint destE32,
             uint hdr, uint entryRva, uint vbase)
         {
+            if (IsHdDllImageBase(destFp50) && IsHdDllEntryRva(entryRva))
+            {
+                uint hdTarget = HdDllEntryVa;
+                if (!IsLeftoverBindRefuse(hdTarget)
+                    && hdTarget != destFp50
+                    && hdTarget != LeftoverWait99O32RefuseRa
+                    && hdTarget != LeftoverWait99GetProcDest)
+                    return hdTarget;
+                return 0;
+            }
             if (entryRva == 0 || entryRva == destE32
                 || entryRva == WrapDestE32SizeLive
                 || IsLeftoverDestVa(entryRva)
@@ -13584,14 +13828,15 @@ namespace ProcessorEmulator.Core
         private static void TryNoteLeftoverWait99O32NkEntry(MipsBus bus,
             uint[] regs, uint pc)
         {
-            // Live 26cbe16 nk-entry entryrva=0 via=
-            // entryrva-0 at first startip peek. Keep
-            // watching BindImp of hd.dll until
-            // entryrva is nonzero; then Target_VA=
-            // base+entryrva. leftover dest 0x03F74DEC
-            // / GetProc dest 0x8008C844 leftover hop
-            // forbidden. Do not hop dest-e32 0x1B0C
-            // or dest-fp50 as PC.
+            // Live fb2d4b3 nk-entry entryrva=0
+            // Target_VA=0 because dest-e32 0x1B0C
+            // was treated only as SIZE. Dump hd.dll
+            // entryrva is 0x1B0C; Target_VA=
+            // 0x8006C000+0x1B0C=0x8006DB0C
+            // HdstubDLLEntry. leftover dest
+            // 0x03F74DEC / GetProc dest 0x8008C844
+            // leftover hop forbidden. Do not hop
+            // dest-e32 0x1B0C or dest-fp50 as PC.
             if (_leftoverWait99O32NkCallDllLogged
                 && _leftoverWait99O32NkEntryRva != 0)
                 return;
@@ -13599,7 +13844,9 @@ namespace ProcessorEmulator.Core
                 || pc == LeftoverWait99GetProcDest
                 || IsLeftoverBindRefuse(pc)
                 || IsWrapDestFp50Va(pc)
-                || IsWrapDestSize(pc))
+                || IsHdDllImageBase(pc)
+                || pc == HdDllEntryVa || pc == HdDllInitVa
+                || (IsWrapDestSize(pc) && !IsHdDllEntryRva(pc)))
                 return;
             uint destFp50 = ResolveWrapDestFp50(bus, regs);
             uint destE32 = PeekWrapDestE32(bus, regs);
@@ -13621,6 +13868,8 @@ namespace ProcessorEmulator.Core
             uint ra = PeekGpr(regs, 31);
             TryNoteLeftoverWait99O32NkE32(bus, regs, pc);
             string why = entryRva != 0 && targetVa != 0 ? "entry" : "entryrva-0";
+            if (targetVa == HdDllEntryVa || IsHdDllEntryRva(entryRva))
+                why = "HdstubDLLEntry";
             if (IsLeftoverBindRefuse(pc) || IsLeftoverBindRefuse(targetVa))
                 why = "leftover-getproc";
             BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-o32-nk-entry pc=0x" +
@@ -13636,6 +13885,8 @@ namespace ProcessorEmulator.Core
             if (targetVa != 0
                 && !IsWrapDestFp50Va(targetVa)
                 && !IsWrapDestSize(targetVa)
+                && !IsHdDllImageBase(targetVa)
+                && targetVa != HdDllEntryVa && targetVa != HdDllInitVa
                 && !IsLeftoverBindRefuse(targetVa)
                 && IsDumpTrueWrapDestFill(targetVa)
                 && targetVa != LeftoverWait99O32RefuseRa
@@ -13827,9 +14078,13 @@ namespace ProcessorEmulator.Core
         {
             if ((pc & 3) != 0 || pc == 0 || pc == 0xFFFFFFFFu)
                 return false;
-            if (IsWrapDestSize(pc) || pc == WrapDestE32SizeLive)
+            if (IsWrapDestSize(pc) || pc == WrapDestE32SizeLive
+                || IsHdDllEntryRva(pc))
                 return false;
-            if (IsWrapDestFp50Va(pc) || pc == WrapDestFp50FillLive)
+            if (IsWrapDestFp50Va(pc) || pc == WrapDestFp50FillLive
+                || IsHdDllImageBase(pc)
+                || pc == HdDllEntryVa || pc == HdDllInitVa
+                || IsNkGetProcStoreSlot(pc))
                 return false;
             if (IsLeftoverBindRefuse(pc))
                 return false;
