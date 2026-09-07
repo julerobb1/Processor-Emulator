@@ -230,13 +230,24 @@ namespace ProcessorEmulator.Core
         public const uint LoadO32WrapCopyJal = 0x8001E750;
         public const uint LoadO32WrapCopyRet = 0x8001E758;
         // Wrapper 0x8001E960 skips startip store when
-        // 32($sp) entryrva is 0. leftover-wait99-o32-
-        // nk-entry peeks dest-fp50 + that RVA after
-        // BindImp. leftover-wait99-o32-nk-next
-        // scans wrap-copy-ret through BindImp
-        // LoadLib for that jal. Do not hop
-        // dest-e32 size. Do not hop dest-fp50
-        // as PC.
+        // 32($sp) entryrva is 0. Live 26cbe16
+        // leftover-wait99-o32-nk-iat name=hd.dll
+        // via=bindlib at BindImp LoadLib 0x8001E9D4.
+        // nk-e32 hdr-off=0x1010 fill-off=0x1010
+        // w0=0x52 objcnt=0x52 entryrva=0. nk-imp
+        // via=miss. nk-entry entryrva=0. leftover-
+        // wrap-during-bind is leftover jal INTO
+        // wrap residue. leftover-wait99-o32-nk-
+        // iat-stub peeks hd.dll IAT stubs dump-
+        // true (LoadLib ret / IatSw / OrdJalRet /
+        // fp+0x1C). leftover dest 0x03F74DEC /
+        // GetProc dest 0x8008C844 leftover hop
+        // forbidden during bind. Re-peek 32($sp)
+        // / e32_lite / startip until entryrva is
+        // nonzero; Target_VA=base+entryrva. Do
+        // not hop dest-e32 size. Do not hop
+        // dest-fp50 as PC. FILE[26] unchanged.
+        // Display ddi_nop.dll.
         public const uint LoadO32WrapStartip = 0x8001E960;
         public const uint WrapCopyRetScanHi = 0x8001EA00;
         // Live 0be2cb9 leftover-wait99-o32-nk-
@@ -263,13 +274,17 @@ namespace ProcessorEmulator.Core
         public const uint WrapDestSizeMax = 0x10000;
         public const uint WrapCopySectCount = 7;
         // Live 84dd0ca nk-e32 via=empty w0=0 at
-        // dest-fp50+0. Header is not at +0.
-        // First o32 is usually RVA 0x1000;
-        // dest-fp50 may be that section dest
-        // (vbase = dest-fp50-0x1000) or image
-        // dest (fill at +0x1000). Scan those
-        // offs plus e32_lite / dump TOC e32.
-        // Do not hop dest-fp50 or dest-e32
+        // dest-fp50+0. Live 26cbe16 nk-e32
+        // hdr-off=0x1010 fill-off=0x1010 w0=
+        // 0x52 objcnt=0x52 entryrva=0. Header
+        // is not at +0 and +0x1010 fill is not
+        // e32_rom (objcnt 0x52). First o32 is
+        // usually RVA 0x1000; dest-fp50 may be
+        // that section dest (vbase = dest-fp50-
+        // 0x1000) or image dest (fill at
+        // +0x1000). Scan those offs plus
+        // e32_lite / dump TOC e32 / BindImp
+        // IAT. Do not hop dest-fp50 or dest-e32
         // size as PC.
         public const uint WrapO32RvaLive = 0x1000;
         public const uint WrapE32ScanMax = 0x2000;
@@ -748,6 +763,11 @@ namespace ProcessorEmulator.Core
         // fp50 / wrap-copy-ret. leftover dest
         // 0x03F74DEC / leftover dest GetProc dest
         // 0x8008C844 leftover hop forbidden.
+        // Live 26cbe16 leftover-wait99-o32-nk-iat
+        // name=hd.dll via=bindlib. leftover-wrap-
+        // during-bind stays leftover. BindImp of
+        // hd.dll IAT stubs dump-true only. Do not
+        // hop dest-e32 0x1B0C or dest-fp50 as PC.
         public const uint LeftoverWait99WrapAddiuSp = 0x27BDFFE0;
         public const uint LeftoverWait99WrapSwRaWord = 0xAFBF001C;
         public const int LeftoverWait99WrapRaOff = 0x1C;
@@ -11602,11 +11622,19 @@ namespace ProcessorEmulator.Core
                 || dest == LeftoverWait99O32RefuseJalr
                 || IsLeftoverWait99O32WrapLoopDest(dest)
                 || IsWrapDestSize(dest)
+                || dest == WrapDestE32SizeLive
+                || IsWrapDestFp50Va(dest)
+                || dest == WrapDestFp50FillLive
+                || IsLeftoverBindRefuse(dest)
                 || !IsLeftoverWait99O32Caller(dest))
             {
                 string haltVia = via;
-                if (IsWrapDestSize(dest))
+                if (IsWrapDestSize(dest) || dest == WrapDestE32SizeLive)
                     haltVia = "size-e32";
+                else if (IsWrapDestFp50Va(dest) || dest == WrapDestFp50FillLive)
+                    haltVia = "dest-fp50";
+                else if (IsLeftoverBindRefuse(dest))
+                    haltVia = "leftover-getproc";
                 else if (IsLeftoverWait99O32WrapLoopDest(dest))
                     haltVia = LeftoverWrapAfterCopyVia();
                 else if (dest == 0 || dest == 0xFFFFFFFFu)
@@ -11893,12 +11921,14 @@ namespace ProcessorEmulator.Core
             if (_leftoverWait99O32NkWrapCopyLogged
                 && pc >= LoadO32RomRet && pc <= LoadO32WrapS5Hi)
                 TryNoteLeftoverWait99O32NkPostCopy(bus, regs, pc);
-            if (pc == BindImpHdr || pc == BindImpOrdJalRet
-                || pc == BindImpLoadLib || pc == BindImpDllName
-                || pc == BindImpIatSw)
+            if (pc == BindImpHdr || pc == BindImpDllName
+                || pc == BindImpLoadLib)
                 TryNoteLeftoverWait99O32NkIat(bus, regs, pc);
+            if (IsLeftoverWait99O32NkBindPc(pc))
+                TryNoteLeftoverWait99O32NkIatStub(bus, regs, pc);
             if (pc == CallDllStartip || pc == XipDllCallDllJal
-                || pc == LoadO32WrapStartip)
+                || pc == LoadO32WrapStartip || pc == BindImpLoadLibRet
+                || pc == BindImpIatSw || pc == BindImpOrdJalRet)
                 TryNoteLeftoverWait99O32NkEntry(bus, regs, pc);
         }
 
@@ -12431,6 +12461,8 @@ namespace ProcessorEmulator.Core
                 || dest == LeftoverWait99O32RefuseRa
                 || dest == LeftoverWait99GetProcDest
                 || pc == LeftoverWait99GetProcDest
+                || IsLeftoverBindRefuse(pc)
+                || IsLeftoverBindRefuse(dest)
                 || IsWrapDestSize(dest)
                 || dest == WrapDestE32SizeLive
                 || IsWrapDestFp50Va(dest)
@@ -12571,6 +12603,7 @@ namespace ProcessorEmulator.Core
                 && targetVa != 0
                 && !IsWrapDestFp50Va(targetVa)
                 && !IsWrapDestSize(targetVa)
+                && !IsLeftoverBindRefuse(targetVa)
                 && IsDumpTrueWrapDestFill(targetVa)
                 && targetVa != LeftoverWait99O32RefuseRa
                 && targetVa != LeftoverWait99GetProcDest)
@@ -12632,6 +12665,7 @@ namespace ProcessorEmulator.Core
                 && IsLeftoverWait99O32Caller(next)
                 && next != LeftoverWait99O32RefuseRa
                 && next != LeftoverWait99GetProcDest
+                && !IsLeftoverBindRefuse(next)
                 && !IsWrapDestSize(next)
                 && !IsLeftoverWait99O32WrapLoopDest(next)
                 && next != destFp50
@@ -12642,13 +12676,15 @@ namespace ProcessorEmulator.Core
         }
 
         // Live 84dd0ca leftover-wait99-o32-nk-imp
-        // via=miss at dest-fp50+0. Header is not
-        // at +0. Peek IMP from scanned hdr-off /
+        // via=miss at dest-fp50+0. Live 26cbe16
+        // nk-iat name=hd.dll via=bindlib; nk-imp
+        // still via=miss. Header is not at +0.
+        // Peek IMP from scanned hdr-off /
         // e32_lite / dump TOC e32, first DLL name
         // at dest-fp50+NameRVA or BindImp LoadLib
-        // a0 UTF-16, first IAT thunk. Live
-        // nk-iat iat=0x640068 at 0x8001E9D4 is
-        // *a0 UTF-16 "hd...", not dest-fp50+0.
+        // a0 UTF-16, first IAT thunk. leftover-
+        // wait99-o32-nk-iat-stub peeks hd.dll
+        // IAT stubs dump-true after LoadLib.
         // Do not invent the DLL. Do not hop
         // dest-e32 size. Do not hop dest-fp50
         // as PC. leftover dest 0x03F74DEC /
@@ -12845,6 +12881,8 @@ namespace ProcessorEmulator.Core
             // is *a0 UTF-16 first word, not an IAT thunk.
             if (pc == BindImpLoadLib)
                 iat = 0;
+            if (name.Length > 1)
+                _leftoverWait99O32NkBindName = name;
             string stub = IatStubNameOf(iat);
             string why;
             if (stub.Length != 0)
@@ -12871,6 +12909,7 @@ namespace ProcessorEmulator.Core
             if (IsLeftoverWait99O32Caller(pc)
                 && pc != LeftoverWait99O32RefuseRa
                 && pc != LeftoverWait99GetProcDest
+                && !IsLeftoverBindRefuse(pc)
                 && !IsWrapDestSize(pc)
                 && !IsWrapDestFp50Va(pc)
                 && stub.Length == 0)
@@ -12881,19 +12920,342 @@ namespace ProcessorEmulator.Core
         {
             if (thunk == 0 || thunk == 0xFFFFFFFFu)
                 return "";
-            if (IsWrapDestSize(thunk))
+            if (IsWrapDestSize(thunk) || thunk == WrapDestE32SizeLive)
                 return "";
             if (IsLeftoverWait99O32WrapLoopDest(thunk)
                 || thunk == LeftoverWait99O32RefuseRa
                 || thunk == LeftoverWait99O32RefusePrologue
                 || thunk == LeftoverWait99O32RefuseJalr)
                 return "leftover-wrap";
-            if (thunk == LeftoverWait99GetProcDest
+            if (IsLeftoverBindRefuse(thunk)
+                || thunk == LeftoverWait99GetProcDest
                 || thunk == LeftoverWait99GetProc)
+                return "leftover-getproc";
+            uint destOf = LeftoverWait99DestOf(thunk);
+            if (destOf == LeftoverWait99GetProcDest
+                || destOf == LeftoverWait99O32RefuseRa
+                || destOf == LeftoverWait99O32RefuseDump)
                 return "leftover-getproc";
             if (IsLeftoverDestVa(thunk))
                 return "leftover-dest";
             return "";
+        }
+
+        // Live 26cbe16 leftover dest 0x03F74DEC /
+        // GetProc dest 0x8008C844 leftover hop
+        // forbidden during BindImp of hd.dll.
+        private static bool IsLeftoverBindRefuse(uint dest)
+        {
+            if (dest == 0 || dest == 0xFFFFFFFFu)
+                return false;
+            if (dest == LeftoverWait99O32RefuseRa
+                || dest == LeftoverWait99GetProcDest
+                || dest == LeftoverWait99GetProc
+                || dest == LeftoverWait99O32RefusePrologue
+                || dest == LeftoverWait99O32RefuseJalr
+                || dest == LeftoverWait99O32RefuseDump
+                || dest == LeftoverWait99O32RefuseDumpJalr
+                || dest == LeftoverWait99O32RefuseCoredllJalr)
+                return true;
+            uint destOf = LeftoverWait99DestOf(dest);
+            return destOf == LeftoverWait99GetProcDest
+                || destOf == LeftoverWait99O32RefuseRa
+                || destOf == LeftoverWait99O32RefuseDump;
+        }
+
+        private static bool IsLeftoverWait99O32NkBindPc(uint pc)
+        {
+            return pc == BindImpLoadLibRet || pc == BindImpIatSw
+                || pc == BindImpIatSlotLw || pc == BindImpIatNext
+                || pc == BindImpIatNextAfter || pc == BindImpOrdJalRet
+                || pc == BindImpOrdLookup || pc == BindImpOrdBaseLw
+                || pc == BindImpIatKdata || pc == BindImpIatAfter
+                || pc == BindImpWalk;
+        }
+
+        // Live 26cbe16 leftover-wait99-o32-nk-iat
+        // name=hd.dll via=bindlib at BindImp
+        // LoadLib 0x8001E9D4. nk-imp via=miss so
+        // IAT is not dest-fp50+0. leftover-wait99-
+        // o32-nk-iat-stub peeks dump-true IAT
+        // stubs at LoadLib ret / IatSw / OrdJalRet
+        // / fp+0x1C. leftover dest 0x03F74DEC /
+        // GetProc dest 0x8008C844 leftover hop
+        // forbidden during bind. Re-peek entryrva
+        // for Target_VA=base+entryrva. Do not hop
+        // dest-e32 0x1B0C or dest-fp50 as PC.
+        // FILE[26] unchanged. Display ddi_nop.dll.
+        private static void TryNoteLeftoverWait99O32NkIatStub(MipsBus bus,
+            uint[] regs, uint pc)
+        {
+            if (!_leftoverWait99O32NkBindLogged)
+                return;
+            if (pc == LeftoverWait99O32RefuseRa
+                || pc == LeftoverWait99GetProcDest
+                || IsLeftoverBindRefuse(pc)
+                || IsWrapDestFp50Va(pc)
+                || IsWrapDestSize(pc))
+                return;
+            if (_leftoverWait99O32NkIatStubLog >= BindImpObserveMax)
+                return;
+            uint v0 = PeekGpr(regs, 2);
+            uint destE32 = PeekWrapDestE32(bus, regs);
+            uint destFp50 = ResolveWrapDestFp50(bus, regs);
+            uint slot;
+            string slotVia;
+            uint iat = PeekWrapIatStubLive(bus, regs, destFp50, destE32,
+                out slot, out slotVia);
+            if (pc == BindImpIatSw && v0 != 0)
+                iat = v0;
+            if (pc == BindImpLoadLibRet)
+            {
+                if (v0 != 0 && !IsLeftoverBindRefuse(v0)
+                    && !IsWrapDestSize(v0) && !IsWrapDestFp50Va(v0)
+                    && _leftoverWait99O32NkBindMod == 0)
+                    _leftoverWait99O32NkBindMod = v0;
+            }
+            string stub = IatStubNameOf(iat);
+            if (stub.Length == 0)
+                stub = IatStubDumpTrueName(iat, destE32);
+            if (stub.Length == 0 && pc == BindImpLoadLibRet && v0 == 0)
+                stub = "loadlib-0";
+            string name = _leftoverWait99O32NkBindName;
+            if (name.Length == 0)
+                name = PeekWrapBindLibName(bus, regs, pc);
+            if (name.Length == 0)
+                name = "-";
+            string why;
+            if (IsLeftoverBindRefuse(iat) || IsLeftoverBindRefuse(v0)
+                || stub == "leftover-getproc")
+                why = "leftover-getproc";
+            else if (pc == BindImpLoadLibRet)
+                why = v0 == 0 ? "loadlib-0" : "loadlib-ret";
+            else if (pc == BindImpIatSw)
+                why = stub.Length != 0 ? stub : "iat-sw";
+            else if (pc == BindImpOrdJalRet || pc == BindImpOrdLookup
+                || pc == BindImpOrdBaseLw)
+                why = stub.Length != 0 ? stub : "ord";
+            else if (slotVia.Length != 0 && slotVia != "miss")
+                why = slotVia;
+            else if (stub.Length != 0)
+                why = stub;
+            else
+                why = "bind";
+            uint key = iat ^ slot ^ v0 ^ pc;
+            if (key == _leftoverWait99O32NkIatStubLast && why == _leftoverWait99O32NkIatStubVia)
+                return;
+            _leftoverWait99O32NkIatStubLast = key;
+            _leftoverWait99O32NkIatStubVia = why;
+            _leftoverWait99O32NkIatStubLog++;
+            uint hdr;
+            int hdrOff;
+            uint entryRva;
+            uint vbase;
+            uint targetVa;
+            PeekWrapEntryNow(bus, regs, destFp50, destE32,
+                out hdr, out hdrOff, out entryRva, out vbase, out targetVa);
+            if (entryRva != 0)
+                _leftoverWait99O32NkEntryRva = entryRva;
+            BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-o32-nk-iat-stub pc=0x" +
+                pc.ToString("X8") +
+                " name=" + name +
+                " v0=0x" + v0.ToString("X") +
+                " dest-fp50=0x" + destFp50.ToString("X") +
+                " slot=0x" + slot.ToString("X") +
+                " iat=0x" + iat.ToString("X") +
+                " stub=" + (stub.Length != 0 ? stub : "-") +
+                " entryrva=0x" + entryRva.ToString("X") +
+                " Target_VA=0x" + targetVa.ToString("X") +
+                " via=" + why);
+            if (entryRva != 0 && targetVa != 0)
+                TryNoteLeftoverWait99O32NkEntry(bus, regs, pc);
+        }
+
+        private static uint PeekWrapIatStubLive(MipsBus bus, uint[] regs,
+            uint destFp50, uint destE32, out uint slot, out string via)
+        {
+            slot = 0;
+            via = "miss";
+            uint fp = PeekGpr(regs, 30);
+            uint fp1c = 0;
+            if (fp != 0 && TryPeekWord(bus, fp + BindImpFpIatOff, out fp1c)
+                && IsDumpTrueIatSlot(fp1c))
+            {
+                slot = fp1c;
+                uint stub = PeekDestWord(bus, fp1c);
+                if (stub != 0)
+                {
+                    via = "fp1c";
+                    return stub;
+                }
+            }
+            uint v1 = PeekGpr(regs, 3);
+            if (IsDumpTrueIatSlot(v1))
+            {
+                slot = v1;
+                uint stub = PeekDestWord(bus, v1);
+                if (stub != 0)
+                {
+                    via = "v1";
+                    return stub;
+                }
+            }
+            uint scan = PeekWrapIatStubScan(bus, destFp50, destE32, out slot);
+            if (scan != 0)
+            {
+                via = "scan";
+                return scan;
+            }
+            return 0;
+        }
+
+        private static bool IsDumpTrueIatSlot(uint va)
+        {
+            if ((va & 3) != 0 || va == 0 || va == 0xFFFFFFFFu)
+                return false;
+            if (IsWrapDestSize(va) || va == WrapDestE32SizeLive)
+                return false;
+            if (IsWrapDestFp50Va(va) && va == WrapDestFp50FillLive)
+                return false;
+            if (IsLeftoverBindRefuse(va) || IsLeftoverDestVa(va)
+                || IsLeftoverWait99O32WrapLoopDest(va))
+                return false;
+            return IsDumpTrueWrapDestFill(va);
+        }
+
+        private static uint PeekWrapIatStubScan(MipsBus bus, uint destFp50,
+            uint destE32, out uint slot)
+        {
+            slot = 0;
+            if (!IsDumpTrueWrapDestFill(destFp50))
+                return 0;
+            uint lim = destE32 != 0 && destE32 < WrapE32ScanMax
+                ? destE32 : WrapE32ScanMax;
+            for (uint off = 0; off + 4 < lim; off += 4)
+            {
+                uint va = destFp50 + off;
+                if (IsWrapDestFp50Va(va) && off == 0)
+                    continue;
+                uint w = PeekDestWord(bus, va);
+                if (w == 0 || w == 0xFFFFFFFFu)
+                    continue;
+                if (IatStubNameOf(w).Length != 0)
+                {
+                    slot = va;
+                    return w;
+                }
+                string dump = IatStubDumpTrueName(w, destE32);
+                if (dump == "dump-true" || dump == "ord" || dump == "hint")
+                {
+                    slot = va;
+                    return w;
+                }
+            }
+            return 0;
+        }
+
+        private static string IatStubDumpTrueName(uint thunk, uint destE32)
+        {
+            if (thunk == 0 || thunk == 0xFFFFFFFFu)
+                return "";
+            if (IsLeftoverBindRefuse(thunk) || IsWrapDestSize(thunk)
+                || thunk == WrapDestE32SizeLive || IsWrapDestFp50Va(thunk))
+                return "";
+            if ((thunk & 0x80000000u) != 0
+                && (thunk & 0x7FFFFFFFu) < 0x10000u)
+                return "ord";
+            if (IsWrapImpRva(thunk, destE32))
+                return "hint";
+            if (IsDumpTrueWrapDestFill(thunk)
+                && !IsLeftoverDestVa(thunk)
+                && !IsLeftoverWait99O32WrapLoopDest(thunk)
+                && IsLeftoverWait99O32Caller(thunk))
+                return "dump-true";
+            if (IsDumpTrueWrapDestFill(thunk)
+                && !IsLeftoverDestVa(thunk)
+                && !IsLeftoverWait99O32WrapLoopDest(thunk)
+                && thunk >= 0x80010000u && thunk < NkImageEnd)
+                return "dump-true";
+            if (thunk >= ExtraRomPhysFirst && thunk < ExtraRomPhysLast
+                && !IsLeftoverDestVa(thunk)
+                && !IsLeftoverWait99O32WrapLoopDest(thunk))
+                return "dump-true";
+            return "";
+        }
+
+        private static void PeekWrapEntryNow(MipsBus bus, uint[] regs,
+            uint destFp50, uint destE32, out uint hdr, out int hdrOff,
+            out uint entryRva, out uint vbase, out uint targetVa)
+        {
+            hdr = 0;
+            hdrOff = 0;
+            entryRva = 0;
+            vbase = 0;
+            targetVa = 0;
+            uint a3 = PeekGpr(regs, 7);
+            if (a3 == 0)
+                a3 = WrapCopySectCount;
+            uint w0;
+            uint vsize;
+            uint imp;
+            uint fillOff;
+            PeekWrapE32Hdr(bus, regs, destFp50, destE32, a3,
+                out hdr, out hdrOff, out w0, out entryRva, out vbase,
+                out vsize, out imp, out fillOff);
+            if (entryRva == destE32 || entryRva == WrapDestE32SizeLive
+                || (w0 & 0xFFFF) > 16)
+                entryRva = 0;
+            uint live = PeekWrapSp32Entry(bus, regs, destE32);
+            if (live != 0)
+                entryRva = live;
+            uint mod = _leftoverWait99O32NkBindMod;
+            uint startip = 0;
+            if (mod != 0 && !IsLeftoverBindRefuse(mod)
+                && !IsWrapDestSize(mod) && !IsWrapDestFp50Va(mod)
+                && TryPeekWord(bus, mod + ModuleStartip, out startip)
+                && startip != 0 && !IsLeftoverBindRefuse(startip)
+                && !IsWrapDestSize(startip) && !IsWrapDestFp50Va(startip))
+            {
+                uint baseVa = destFp50;
+                if (IsDumpTrueWrapDestFill(vbase) && !IsWrapDestFp50Va(vbase)
+                    && !IsWrapDestSize(vbase))
+                    baseVa = vbase;
+                else if (IsDumpTrueWrapDestFill(hdr) && !IsWrapDestFp50Va(hdr)
+                    && !IsWrapDestSize(hdr))
+                    baseVa = hdr;
+                if (baseVa != 0 && startip > baseVa
+                    && startip - baseVa < WrapDestSizeMax)
+                    entryRva = startip - baseVa;
+            }
+            targetVa = WrapEntryTargetVa(destFp50, destE32, hdr, entryRva,
+                vbase);
+            if (targetVa == 0 && startip != 0
+                && !IsLeftoverBindRefuse(startip)
+                && !IsWrapDestSize(startip)
+                && !IsWrapDestFp50Va(startip)
+                && !IsLeftoverDestVa(startip))
+                targetVa = startip;
+        }
+
+        // Wrapper 0x20(sp) is dest-e32 SIZE 0x1B0C
+        // after CopyO32. Do not treat SIZE as
+        // entryrva. A later nonzero 32($sp) that
+        // is not dest-e32 / leftover is live
+        // entryrva for Target_VA=base+entryrva.
+        private static uint PeekWrapSp32Entry(MipsBus bus, uint[] regs,
+            uint destE32)
+        {
+            uint sp = _leftoverWait99O32NkWrapSp;
+            if (sp == 0)
+                sp = PeekGpr(regs, 29);
+            if (sp == 0)
+                return 0;
+            uint w = PeekDestWord(bus, sp + 0x20);
+            if (w == 0 || w == destE32 || w == WrapDestE32SizeLive
+                || w >= WrapDestSizeMax || IsLeftoverDestVa(w)
+                || IsLeftoverBindRefuse(w) || IsWrapDestFp50Va(w))
+                return 0;
+            return w;
         }
 
         private static uint ResolveWrapDestFp50(MipsBus bus, uint[] regs)
@@ -13222,33 +13584,45 @@ namespace ProcessorEmulator.Core
         private static void TryNoteLeftoverWait99O32NkEntry(MipsBus bus,
             uint[] regs, uint pc)
         {
-            if (_leftoverWait99O32NkCallDllLogged)
+            // Live 26cbe16 nk-entry entryrva=0 via=
+            // entryrva-0 at first startip peek. Keep
+            // watching BindImp of hd.dll until
+            // entryrva is nonzero; then Target_VA=
+            // base+entryrva. leftover dest 0x03F74DEC
+            // / GetProc dest 0x8008C844 leftover hop
+            // forbidden. Do not hop dest-e32 0x1B0C
+            // or dest-fp50 as PC.
+            if (_leftoverWait99O32NkCallDllLogged
+                && _leftoverWait99O32NkEntryRva != 0)
                 return;
-            _leftoverWait99O32NkCallDllLogged = true;
-            uint ra = PeekGpr(regs, 31);
+            if (pc == LeftoverWait99O32RefuseRa
+                || pc == LeftoverWait99GetProcDest
+                || IsLeftoverBindRefuse(pc)
+                || IsWrapDestFp50Va(pc)
+                || IsWrapDestSize(pc))
+                return;
             uint destFp50 = ResolveWrapDestFp50(bus, regs);
             uint destE32 = PeekWrapDestE32(bus, regs);
-            uint a3 = PeekGpr(regs, 7);
-            if (a3 == 0)
-                a3 = WrapCopySectCount;
-            TryNoteLeftoverWait99O32NkE32(bus, regs, pc);
             uint hdr;
             int hdrOff;
-            uint w0;
             uint entryRva;
             uint vbase;
-            uint vsize;
-            uint imp;
-            uint fillOff;
-            PeekWrapE32Hdr(bus, regs, destFp50, destE32, a3,
-                out hdr, out hdrOff, out w0, out entryRva, out vbase,
-                out vsize, out imp, out fillOff);
-            uint targetVa = WrapEntryTargetVa(destFp50, destE32, hdr,
-                entryRva, vbase);
+            uint targetVa;
+            PeekWrapEntryNow(bus, regs, destFp50, destE32,
+                out hdr, out hdrOff, out entryRva, out vbase, out targetVa);
+            if (_leftoverWait99O32NkCallDllLogged && entryRva == 0)
+                return;
+            if (_leftoverWait99O32NkCallDllLogged && entryRva != 0
+                && entryRva == _leftoverWait99O32NkEntryRva)
+                return;
+            _leftoverWait99O32NkCallDllLogged = true;
+            if (entryRva != 0)
+                _leftoverWait99O32NkEntryRva = entryRva;
+            uint ra = PeekGpr(regs, 31);
+            TryNoteLeftoverWait99O32NkE32(bus, regs, pc);
             string why = entryRva != 0 && targetVa != 0 ? "entry" : "entryrva-0";
-            if (pc == LeftoverWait99O32RefuseRa
-                || pc == LeftoverWait99GetProcDest)
-                why = "refuse-ra";
+            if (IsLeftoverBindRefuse(pc) || IsLeftoverBindRefuse(targetVa))
+                why = "leftover-getproc";
             BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-o32-nk-entry pc=0x" +
                 pc.ToString("X8") +
                 " ra=0x" + ra.ToString("X8") +
@@ -13257,10 +13631,12 @@ namespace ProcessorEmulator.Core
                 " hdr-off=" + FormatWrapHdrOff(hdrOff) +
                 " entryrva=0x" + entryRva.ToString("X") +
                 " target=0x" + targetVa.ToString("X") +
+                " Target_VA=0x" + targetVa.ToString("X") +
                 " via=" + why);
             if (targetVa != 0
                 && !IsWrapDestFp50Va(targetVa)
                 && !IsWrapDestSize(targetVa)
+                && !IsLeftoverBindRefuse(targetVa)
                 && IsDumpTrueWrapDestFill(targetVa)
                 && targetVa != LeftoverWait99O32RefuseRa
                 && targetVa != LeftoverWait99GetProcDest)
@@ -13452,6 +13828,10 @@ namespace ProcessorEmulator.Core
             if ((pc & 3) != 0 || pc == 0 || pc == 0xFFFFFFFFu)
                 return false;
             if (IsWrapDestSize(pc) || pc == WrapDestE32SizeLive)
+                return false;
+            if (IsWrapDestFp50Va(pc) || pc == WrapDestFp50FillLive)
+                return false;
+            if (IsLeftoverBindRefuse(pc))
                 return false;
             if (IsLeftoverDestVa(pc) || pc == LeftoverWait99GetProcDest
                 || pc == LeftoverWait99NeedDest || pc == LeftoverWait99GetProc
@@ -18935,6 +19315,12 @@ namespace ProcessorEmulator.Core
             _leftoverWait99O32NkHdr = 0;
             _leftoverWait99O32NkHdrOff = 0;
             _leftoverWait99O32NkBindLogged = false;
+            _leftoverWait99O32NkBindName = "";
+            _leftoverWait99O32NkBindMod = 0;
+            _leftoverWait99O32NkIatStubLog = 0;
+            _leftoverWait99O32NkIatStubLast = 0;
+            _leftoverWait99O32NkIatStubVia = "";
+            _leftoverWait99O32NkEntryRva = 0;
             _leftoverWait99O32NkCallDllLogged = false;
             _leftoverWait99O32NkRa = 0;
             _leftoverWait99O32NkA0 = 0;
@@ -24997,6 +25383,12 @@ namespace ProcessorEmulator.Core
         private static uint _leftoverWait99O32NkHdr;
         private static uint _leftoverWait99O32NkHdrOff;
         private static bool _leftoverWait99O32NkBindLogged;
+        private static string _leftoverWait99O32NkBindName = "";
+        private static uint _leftoverWait99O32NkBindMod;
+        private static int _leftoverWait99O32NkIatStubLog;
+        private static uint _leftoverWait99O32NkIatStubLast;
+        private static string _leftoverWait99O32NkIatStubVia = "";
+        private static uint _leftoverWait99O32NkEntryRva;
         private static bool _leftoverWait99O32NkCallDllLogged;
         private static uint _leftoverWait99O32NkRa;
         private static uint _leftoverWait99O32NkA0;
