@@ -257,8 +257,12 @@ namespace ProcessorEmulator.Core
         // HdstubDLLEntry; e32_entryrva=0
         // objcnt=0 hdr-off=0; no guest jalr
         // into dest. Feed MODULE+0x5C startip
-        // so CallDLL jalrs that VA. Observe
-        // leftover-wait99-o32-nk-jalr. Do not
+        // so CallDLL jalrs that VA. Live a273e3a
+        // nk-jalr pc=0x80018B34 / 0x80018BAC
+        // via=calldll startip=0x8006DB0C; cap 2
+        // burned before guest PC at Target_VA.
+        // Observe PC-at-export / CallDLL ret /
+        // leftover-wait99-o32-nk-after. Do not
         // leftover-hop dest. FILE[26]
         // unchanged. Display ddi_nop.dll.
         public const uint LoadO32WrapStartip = 0x8001E960;
@@ -6335,6 +6339,7 @@ namespace ProcessorEmulator.Core
             }
             if (string.IsNullOrEmpty(name))
                 return;
+            TryNoteLeftoverWait99O32NkAfterLoad(bus, name);
             if (!WantNkLoadE32Log(name) && _nkLoadE32Logged >= 8)
                 return;
             uint o32v = PeekLoadE32Word(bus, o32);
@@ -11924,6 +11929,7 @@ namespace ProcessorEmulator.Core
             if ((pc & 3) != 0)
                 return;
             TryNoteLeftoverWait99O32NkJalr(bus, regs, pc);
+            TryNoteLeftoverWait99O32NkAfter(bus, regs, pc);
             if (pc == LoadO32WrapJalO32 || pc == LoadO32Rom)
             {
                 if (pc == LoadO32WrapJalO32)
@@ -14279,14 +14285,41 @@ namespace ProcessorEmulator.Core
         // jalr'd HdstubDLLEntry. leftover-wait99-
         // o32-nk-jalr names guest dispatch into
         // that VA, or why CallDLL / startip skip.
-        // Do not leftover-hop dest. Do not force
-        // CallDLL. Do not hop dest-e32 SIZE /
-        // dest-fp50 as PC.
+        // Live a273e3a FIRST-WIN via=calldll at
+        // 0x80018B34 / 0x80018BAC; cap 2 burned
+        // before PC at 0x8006DB0C. Keep calldll
+        // lines; always name PC-at/near export.
+        // Peek live word at Target_VA (kseg0 fill;
+        // not TLB). Do not leftover-hop dest.
+        // Do not force CallDLL. Do not hop dest-
+        // e32 SIZE / dest-fp50 as PC.
+        private static bool IsHdDllTargetPc(uint pc, uint targetVa)
+        {
+            if (pc == HdDllEntryVa || pc == HdDllInitVa)
+                return true;
+            if (targetVa == 0 || targetVa == HdDllEntryRva
+                || IsWrapDestSize(targetVa) || IsWrapDestFp50Va(targetVa)
+                || IsHdDllImageBase(targetVa) || IsLeftoverDestVa(targetVa)
+                || IsLeftoverBindRefuse(targetVa))
+                return false;
+            return pc >= targetVa && pc < targetVa + 0x20;
+        }
+
+        private static uint PeekHdDllTargetWord(MipsBus bus, uint targetVa,
+            out bool mapped)
+        {
+            mapped = false;
+            if (targetVa != HdDllEntryVa && targetVa != HdDllInitVa)
+                return 0;
+            bool threw;
+            uint w = PeekDestWordRaw(bus, targetVa, out threw);
+            mapped = !threw;
+            return w;
+        }
+
         private static void TryNoteLeftoverWait99O32NkJalr(MipsBus bus,
             uint[] regs, uint pc)
         {
-            if (_leftoverWait99O32NkJalrLog >= 2)
-                return;
             if (pc == LeftoverWait99O32RefuseRa
                 || pc == LeftoverWait99GetProcDest
                 || IsLeftoverBindRefuse(pc)
@@ -14301,13 +14334,15 @@ namespace ProcessorEmulator.Core
                 && (IsHdDllBindName(_leftoverWait99O32NkBindName)
                     || IsHdDllImageBase(ResolveWrapDestFp50(bus, regs))))
                 targetVa = HdDllEntryVa;
-            bool atTarget = targetVa != 0
-                && (pc == targetVa || pc == HdDllEntryVa
-                    || pc == HdDllInitVa);
+            bool atTarget = IsHdDllTargetPc(pc, targetVa);
             bool atCall = pc == CallDllStartip || pc == CallDllEntry
-                || pc == CallDllAfterJalr || pc == XipDllCallDllJal
+                || pc == XipDllCallDllJal
                 || pc == XipCallDllUsegChk || pc == LoadO32WrapStartip;
             if (!atTarget && !atCall)
+                return;
+            if (atTarget && _leftoverWait99O32NkJalrSawTarget)
+                return;
+            if (!atTarget && _leftoverWait99O32NkJalrLog >= 2)
                 return;
             if (targetVa != HdDllEntryVa && targetVa != HdDllInitVa
                 && !atTarget)
@@ -14331,17 +14366,27 @@ namespace ProcessorEmulator.Core
                 || IsHdDllImageBase(destFp50)
                 || IsHdDllBindName(_leftoverWait99O32NkBindName));
             uint jalrDest = 0;
-            uint word = 0;
+            uint insn = 0;
             uint rs;
-            if (TryPeekWord(bus, pc, out word) && IsJalrInsn(word, out rs))
+            if (TryPeekWord(bus, pc, out insn) && IsJalrInsn(insn, out rs))
                 jalrDest = PeekGpr(regs, (int)rs);
             if (jalrDest == 0)
                 jalrDest = startip;
             uint sp32 = PeekSpWord(bus, regs, 0x20);
             uint s5 = PeekS5(regs);
+            bool mapped;
+            uint word = PeekHdDllTargetWord(bus, targetVa, out mapped);
             string why;
             if (atTarget)
-                why = pc == HdDllInitVa ? "HdstubInit" : "HdstubDLLEntry";
+            {
+                if (!mapped)
+                    why = "unmap";
+                else if (word == 0)
+                    why = "empty";
+                else
+                    why = pc == HdDllInitVa ? "HdstubInit" : "HdstubDLLEntry";
+                _leftoverWait99O32NkJalrSawTarget = true;
+            }
             else if (!thisHd && jalrDest != targetVa
                 && jalrDest != HdDllEntryVa && jalrDest != HdDllInitVa)
                 return;
@@ -14361,7 +14406,10 @@ namespace ProcessorEmulator.Core
                 || pc == XipDllCallDllJal)
                 && (jalrDest == targetVa || jalrDest == HdDllEntryVa
                     || jalrDest == HdDllInitVa))
+            {
                 why = "calldll";
+                _leftoverWait99O32NkJalrSawCall = true;
+            }
             else if ((pc == CallDllStartip || pc == CallDllEntry
                 || pc == XipDllCallDllJal)
                 && jalrDest == 0 && thisHd)
@@ -14372,13 +14420,100 @@ namespace ProcessorEmulator.Core
                 why = "s5-skip";
             else
                 return;
-            _leftoverWait99O32NkJalrLog++;
+            if (!atTarget)
+                _leftoverWait99O32NkJalrLog++;
             BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-o32-nk-jalr pc=0x" +
                 pc.ToString("X8") +
                 " dest-fp50=0x" + destFp50.ToString("X") +
-                " mod=0x" + mod.ToString("X") +
                 " startip=0x" + startip.ToString("X") +
+                " word=0x" + word.ToString("X") +
                 " Target_VA=0x" + targetVa.ToString("X") +
+                " via=" + why);
+        }
+
+        // Live a273e3a CallDLL jalr dest was
+        // HdstubDLLEntry; no hive PC at Target_VA
+        // then NK LoadE32 osaxst0/coredll. Name
+        // CallDLL return, miss-pc, next module, or
+        // unmap/empty fill. Do not leftover-hop.
+        private static void TryNoteLeftoverWait99O32NkAfter(MipsBus bus,
+            uint[] regs, uint pc)
+        {
+            if (!_leftoverWait99O32NkJalrSawCall)
+                return;
+            if (_leftoverWait99O32NkAfterLog >= 2)
+                return;
+            if (pc != CallDllAfterJalr)
+                return;
+            if (pc == LeftoverWait99O32RefuseRa
+                || pc == LeftoverWait99GetProcDest
+                || IsLeftoverBindRefuse(pc)
+                || IsWrapDestFp50Va(pc)
+                || IsHdDllImageBase(pc)
+                || IsWrapDestSize(pc)
+                || pc == HdDllEntryRva)
+                return;
+            uint targetVa = _leftoverWait99O32NkEntryTarget;
+            if (targetVa == 0)
+                targetVa = HdDllEntryVa;
+            if (targetVa != HdDllEntryVa && targetVa != HdDllInitVa)
+                return;
+            bool mapped;
+            uint word = PeekHdDllTargetWord(bus, targetVa, out mapped);
+            uint v0 = PeekGpr(regs, 2);
+            string why;
+            if (!mapped)
+                why = "unmap";
+            else if (_leftoverWait99O32NkJalrSawTarget)
+                why = "ret";
+            else if (word == 0)
+                why = "empty";
+            else
+                why = "miss-pc";
+            WriteLeftoverWait99O32NkAfter(pc, v0, word, why, "-");
+        }
+
+        private static void TryNoteLeftoverWait99O32NkAfterLoad(MipsBus bus,
+            string name)
+        {
+            if (!_leftoverWait99O32NkJalrSawCall)
+                return;
+            if (_leftoverWait99O32NkAfterLog >= 2)
+                return;
+            if (string.IsNullOrEmpty(name) || IsHdDllBindName(name))
+                return;
+            uint targetVa = _leftoverWait99O32NkEntryTarget;
+            if (targetVa == 0)
+                targetVa = HdDllEntryVa;
+            bool mapped;
+            uint word = PeekHdDllTargetWord(bus, targetVa, out mapped);
+            string why;
+            if (_leftoverWait99O32NkJalrSawTarget)
+                why = "next";
+            else if (!mapped)
+                why = "unmap";
+            else if (word == 0)
+                why = "empty";
+            else
+                why = "miss-pc";
+            WriteLeftoverWait99O32NkAfter(0, 0, word, why, name);
+        }
+
+        private static void WriteLeftoverWait99O32NkAfter(uint pc, uint v0,
+            uint word, string why, string next)
+        {
+            _leftoverWait99O32NkAfterLog++;
+            string saw = _leftoverWait99O32NkJalrSawTarget ? "y" : "n";
+            BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-o32-nk-after pc=0x" +
+                pc.ToString("X8") +
+                " v0=0x" + v0.ToString("X") +
+                " word=0x" + word.ToString("X") +
+                " saw=" + saw +
+                " next=" + (string.IsNullOrEmpty(next) ? "-" : next) +
+                " Target_VA=0x" +
+                (_leftoverWait99O32NkEntryTarget != 0
+                    ? _leftoverWait99O32NkEntryTarget : HdDllEntryVa)
+                    .ToString("X") +
                 " via=" + why);
         }
 
@@ -20067,6 +20202,9 @@ namespace ProcessorEmulator.Core
             _leftoverWait99O32NkEntryTarget = 0;
             _leftoverWait99O32NkCallDllLogged = false;
             _leftoverWait99O32NkJalrLog = 0;
+            _leftoverWait99O32NkJalrSawCall = false;
+            _leftoverWait99O32NkJalrSawTarget = false;
+            _leftoverWait99O32NkAfterLog = 0;
             _leftoverWait99O32NkRa = 0;
             _leftoverWait99O32NkA0 = 0;
             _leftoverWait99O32NkA2 = 0;
@@ -26138,6 +26276,9 @@ namespace ProcessorEmulator.Core
         private static uint _leftoverWait99O32NkEntryTarget;
         private static bool _leftoverWait99O32NkCallDllLogged;
         private static int _leftoverWait99O32NkJalrLog;
+        private static bool _leftoverWait99O32NkJalrSawCall;
+        private static bool _leftoverWait99O32NkJalrSawTarget;
+        private static int _leftoverWait99O32NkAfterLog;
         private static uint _leftoverWait99O32NkRa;
         private static uint _leftoverWait99O32NkA0;
         private static uint _leftoverWait99O32NkA2;
