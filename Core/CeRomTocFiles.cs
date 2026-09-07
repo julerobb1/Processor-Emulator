@@ -589,11 +589,27 @@ namespace ProcessorEmulator.Core
         // wait99-o32-cont only when that slot is
         // dest-live NK LoadO32 / BindImp. leftover
         // dest GetProc dest leftover hop forbidden.
+        // Live 92eb906 leftover-wait99-o32-halt
+        // ra=0x03F71740 dump-sp10=0x03FBF69C
+        // dump-sp14=0x86F5F8BA dump-sp18=
+        // 0x2007FCB8 dump-sp1c leftover dest
+        // 0x03F74DEC via refuse; fp=0x00005800
+        // junk. wrap $ra 32-byte frame already
+        // poisoned. First dump-true AFBF001C is
+        // wrap entry 0x03F716F4 / dump 0x800956F4.
+        // leftover dest 0x03F74DE0 neighborhood
+        // is observe-only when that PC is
+        // AFBF001C. leftover-wait99-o32-cont only
+        // dest-live NK LoadO32 / BindImp $ra of
+        // that first write. leftover dest
+        // 0x03F74DEC / leftover dest GetProc dest
+        // 0x8008C844 leftover hop forbidden.
         public const uint LeftoverWait99WrapAddiuSp = 0x27BDFFE0;
         public const uint LeftoverWait99WrapSwRaWord = 0xAFBF001C;
         public const int LeftoverWait99WrapRaOff = 0x1C;
         public const int LeftoverWait99WrapFrame = 32;
         public const uint LeftoverWait99O32RefuseRa = 0x03F74DEC;
+        public const uint LeftoverWait99O32RefusePrologue = 0x03F74DE0;
         // Live 489b416 leftover-wait99-wrap-cont
         // pc=0x03F71740 getproc=0x8003EABC meth=
         // 0x8005D400 leftover-api-54-cont dest=
@@ -11223,6 +11239,8 @@ namespace ProcessorEmulator.Core
         public static bool TryRefuseLeftoverWait99Wrap(MipsBus bus, uint[] regs,
             ref uint pc)
         {
+            if (TryLeftoverWait99O32FirstSwRa(bus, regs, ref pc))
+                return true;
             if (pc < LeftoverWait99Wrap || pc > LeftoverWait99WrapRa
                 || (pc & 3) != 0)
                 return false;
@@ -11352,17 +11370,145 @@ namespace ProcessorEmulator.Core
                 out getproc, out meth);
         }
 
+        // Live 92eb906 leftover-wait99-o32-halt
+        // dump-sp1c leftover dest 0x03F74DEC via
+        // refuse. wrap $ra frame already leftover.
+        // Observe the first dump-true AFBF001C
+        // sw $ra,0x1C($sp) at wrap entry
+        // 0x03F716F4 / dump 0x800956F4, and
+        // leftover dest 0x03F74DE0 neighborhood
+        // when that word is AFBF001C. Incoming
+        // $ra is the original saved return before
+        // residue overwrites $sp+0x1C.
+        // leftover-wait99-o32-cont only dest-live
+        // NK LoadO32 / BindImp. leftover dest
+        // 0x03F74DEC / leftover dest GetProc dest
+        // 0x8008C844 leftover hop forbidden. Do
+        // not leftover hop. Do not invent dest.
+        private static bool TryLeftoverWait99O32FirstSwRa(MipsBus bus,
+            uint[] regs, ref uint pc)
+        {
+            if (_leftoverWait99O32SwLogged)
+            {
+                if (_leftoverWait99O32HaltLogged
+                    && IsLeftoverWait99O32FirstSwSite(pc))
+                    return true;
+                return false;
+            }
+            if ((pc & 3) != 0 || !IsLeftoverWait99O32FirstSwSite(pc))
+                return false;
+            uint word = 0;
+            if (!TryPeekLeftoverWait99WrapWord(bus, pc, out word))
+                TryPeekWord(bus, pc, out word);
+            int off;
+            if (word != LeftoverWait99WrapSwRaWord
+                && (!IsSwRaSp(word, out off)
+                    || off != LeftoverWait99WrapRaOff))
+                return false;
+            uint ra = PeekGpr(regs, 31);
+            uint destOfRa = LeftoverWait99DestOf(ra);
+            if (ra == LeftoverWait99O32RefuseRa
+                || ra == LeftoverWait99GetProcDest
+                || destOfRa == LeftoverWait99GetProcDest
+                || destOfRa == LeftoverWait99O32RefuseRa
+                || !IsLeftoverWait99O32Caller(ra))
+            {
+                string via = "refuse-0x" + ra.ToString("X8");
+                if (ra == 0 || ra == 0xFFFFFFFFu)
+                    via = "miss-ra";
+                TryNoteLeftoverWait99O32SwHalt(bus, regs, pc, ra, destOfRa,
+                    via);
+                return true;
+            }
+            TryLeftoverWait99O32PopWrapFrame(bus, regs, pc);
+            if (regs != null && regs.Length > 31)
+                regs[31] = ra;
+            uint dest = ra;
+            pc = dest;
+            TryNoteLeftoverWait99O32ContFromSw(dest, "sw-1c");
+            return true;
+        }
+
+        private static bool IsLeftoverWait99O32FirstSwSite(uint pc)
+        {
+            if (pc == LeftoverWait99WrapSw
+                || pc == LeftoverWait99WrapDumpSw)
+                return true;
+            if (pc >= LeftoverWait99O32RefusePrologue
+                && pc < LeftoverWait99O32RefusePrologue + 0x20)
+                return true;
+            uint destLo = LeftoverWait99DestOf(LeftoverWait99O32RefusePrologue);
+            if (destLo != 0 && pc >= destLo && pc < destLo + 0x20)
+                return true;
+            return false;
+        }
+
+        private static void TryLeftoverWait99O32PopWrapFrame(MipsBus bus,
+            uint[] regs, uint pc)
+        {
+            if (regs == null || regs.Length <= 29)
+                return;
+            uint prev = 0;
+            if (!TryPeekLeftoverWait99WrapWord(bus, pc - 4, out prev)
+                && !TryPeekWord(bus, pc - 4, out prev))
+                return;
+            int n;
+            if (!IsAddiuSpNeg(prev, out n) || n != LeftoverWait99WrapFrame)
+                return;
+            uint sp = PeekGpr(regs, 29);
+            if (!IsLeftoverWait99WrapStackVa(sp))
+                return;
+            regs[29] = sp + (uint)LeftoverWait99WrapFrame;
+        }
+
+        private static void TryNoteLeftoverWait99O32ContFromSw(uint dest,
+            string via)
+        {
+            if (_leftoverWait99O32ContLogged)
+                return;
+            _leftoverWait99O32SwLogged = true;
+            _leftoverWait99O32ContLogged = true;
+            _leftoverWait99WrapRaContLogged = true;
+            _wait99PlantFixLogged = true;
+            BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-o32-cont ra=0x" +
+                LeftoverWait99WrapSw.ToString("X8") +
+                " dest=0x" + dest.ToString("X8") +
+                " via=" + via +
+                " (dump dest-live NK LoadO32 / BindImp $ra first AFBF001C; refuse leftover dest GetProc dest leftover hop)");
+        }
+
+        private static void TryNoteLeftoverWait99O32SwHalt(MipsBus bus,
+            uint[] regs, uint pc, uint ra, uint destOfRa, string via)
+        {
+            _leftoverWait99O32SwLogged = true;
+            if (_leftoverWait99O32HaltLogged)
+                return;
+            _leftoverWait99O32HaltLogged = true;
+            _leftoverWait99WrapRaContLogged = true;
+            uint sp1c = 0;
+            uint sp = PeekGpr(regs, 29);
+            if (IsLeftoverWait99WrapStackVa(sp))
+                TryPeekWord(bus, sp + (uint)LeftoverWait99WrapRaOff, out sp1c);
+            BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-o32-sw-halt pc=0x" +
+                pc.ToString("X8") +
+                " ra=0x" + ra.ToString("X8") +
+                " dest=0x" + destOfRa.ToString("X8") +
+                " dump-sp1c=0x" + sp1c.ToString("X8") +
+                " via=" + via);
+        }
+
         // Live 0142875 leftover-wait99-o32-halt
         // ra=0x03F71740 dump-pro=0x27BDFFE0
         // dump-sw=useg-sw=0xAFBF001C via=refuse-
         // 0x03F74DEC dest=0. dump-pro is addiu
         // $sp,-32. dump-sw is sw $ra,0x1C($sp).
         // $sp+0x1C is leftover dest, not LoadO32.
-        // leftover-wait99-o32-cont only dump-true
-        // dest-live NK LoadO32 / BindImp in the
-        // AFBF imm slot / 32-byte frame. leftover
-        // dest GetProc dest leftover hop forbidden.
-        // Do not leftover hop. Do not invent dest.
+        // Live 92eb906 wrap $ra frame already
+        // leftover dest. leftover-wait99-o32-cont
+        // prefers first AFBF001C incoming $ra.
+        // leftover dest GetProc dest leftover hop
+        // forbidden. Do not leftover hop. Do not
+        // invent dest.
         private static bool TryLeftoverWait99O32ResumeFromWrap(MipsBus bus,
             uint[] regs, out uint dest, out string via)
         {
@@ -16846,6 +16992,7 @@ namespace ProcessorEmulator.Core
             _leftoverWait99WrapPlantGp = 0;
             _leftoverWait99O32ContLogged = false;
             _leftoverWait99O32HaltLogged = false;
+            _leftoverWait99O32SwLogged = false;
             _leftoverWait99WrapNeedLogged = false;
             _leftoverWait99DumpRecsTried = false;
             _leftoverWait99DumpRecs = null;
@@ -22879,6 +23026,7 @@ namespace ProcessorEmulator.Core
         private static uint _leftoverWait99WrapPlantGp;
         private static bool _leftoverWait99O32ContLogged;
         private static bool _leftoverWait99O32HaltLogged;
+        private static bool _leftoverWait99O32SwLogged;
         private static bool _leftoverWait99WrapNeedLogged;
         private static bool _leftoverWait99DumpRecsTried;
         private static List<Wait99DumpRec> _leftoverWait99DumpRecs;
