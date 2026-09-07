@@ -439,6 +439,14 @@ namespace ProcessorEmulator.Core
         // / jal ObjectCall. Do not leftover hop.
         // Do not invent dest.
         public const uint LeftoverWait99RaSw = 0x8001597C;
+        // Live 0c21f53 leftover-wait99-need dest=
+        // 0x80088B94 dest-word=0x01495825 (or $t3,
+        // $t2,$t1 mid-hash). leftover dest leftover-
+        // syscall $ra dest mid-hash is not a
+        // LoadO32 continue. leftover dest GetProc
+        // dest leftover hop forbidden. Do not leftover
+        // hop. Do not invent dest.
+        public const uint LeftoverWait99NeedDest = 0x80088B94;
         public const uint LeftoverWait99JalrRa = 0x80015360;
         public const uint LeftoverWait99IeClr = 0x80015368;
         // Live a2375d3 leftover-wait99-halt then leftover-
@@ -10982,6 +10990,13 @@ namespace ProcessorEmulator.Core
             uint wrapperDest;
             if (TryResolveLeftoverCstkFromDestWrapper(bus, ra, out wrapperDest))
                 return false;
+            uint o32 = 0;
+            if (TryLeftoverWait99O32Resume(bus, ra, destOfRa, out o32))
+            {
+                programCounter = o32;
+                TryNoteLeftoverWait99O32Cont(bus, ra, destOfRa, o32);
+                return true;
+            }
             if (!_wait99PlantFixLogged)
             {
                 _wait99PlantFixLogged = true;
@@ -10989,8 +11004,9 @@ namespace ProcessorEmulator.Core
                     LeftoverWait99RaSw.ToString("X8") +
                     " ra=0x" + ra.ToString("X8") +
                     " dest=0x" + destOfRa.ToString("X8") +
-                    " (refuse leftover dest leftover-syscall $ra dest-live continue; refuse leftover-cstk leftover-halt dest stub after leftover-wait99-halt; dump 0x80015980 jal ObjectCall; do not leftover dest)");
+                    " (refuse leftover dest leftover-syscall $ra dest mid-hash dest-live continue; refuse leftover dest GetProc dest leftover hop; dump 0x80015980 jal ObjectCall; do not leftover dest)");
                 TryNoteLeftoverWait99Need(bus, ra, destOfRa);
+                TryNoteLeftoverWait99O32Halt(bus, ra, destOfRa);
             }
             return true;
         }
@@ -11040,6 +11056,119 @@ namespace ProcessorEmulator.Core
                 " dest0=0x" + _nkLoadO32Toc.ToString("X8") +
                 " (dump dest mid-hash; leftover dest leftover-syscall $ra != leftover dest leftover-syscall -1630 jalr+8; no dest-live LoadO32 resume; do not leftover dest)");
             TryNoteLeftoverWait99Why(bus, plant, ra, destWord, raWord);
+        }
+
+        // Live 0c21f53 leftover-wait99-wrap-cont then
+        // leftover-wait99-halt ra=0x03F70B94 dest=
+        // 0x80088B94 dest-word=0x01495825 +5C=
+        // 0x03FBF69C +EC=0x03F74B5C +DC=0x03F71618
+        // plant=0x03F74844 leftover-wait99-tick-halt
+        // pc=0x800557F4. dest dest-word is or $t3,
+        // $t2,$t1 mid-hash, not LoadO32. +5C is
+        // coredll ThreadExceptionExit CreateThread
+        // start (0x03F74B18 worker). +EC leftover
+        // dest dest-wrapper / leftover dest GetProc
+        // dest neighborhood. +DC leftover dest mid-
+        // hash dest 0x80089618. plant leftover dest
+        // GetProc dest 0x8008C844 leftover hop
+        // forbidden. leftover-wait99-o32-cont only
+        // dest-live NK LoadO32 (0x800165DC–
+        // 0x8001E420) / dest-live leftover-api-78
+        // +EC / dest-live methods[54]. leftover-
+        // wait99-o32-halt when none. leftover dest
+        // leftover-syscall $ra dest mid-hash is not
+        // a LoadO32 continue. leftover dest GetProc
+        // dest leftover hop forbidden. Do not leftover
+        // hop. Do not invent dest.
+        private static bool TryLeftoverWait99O32Resume(MipsBus bus, uint ra,
+            uint destOfRa, out uint resume)
+        {
+            resume = 0;
+            if (destOfRa == LeftoverWait99GetProcDest
+                || destOfRa == LeftoverWait99NeedDest)
+                return false;
+            uint thr;
+            uint ec;
+            uint dc;
+            uint plant;
+            TryPeekThreadCtxPc(bus, out thr, out ec, out dc, out plant);
+            if (TryLeftoverWait99O32DestLive(ec, out resume))
+                return true;
+            if (TryLeftoverWait99O32DestLive(dc, out resume))
+                return true;
+            return false;
+        }
+
+        private static bool TryLeftoverWait99O32DestLive(uint pc, out uint dest)
+        {
+            dest = 0;
+            if ((pc & 3) != 0 || IsLeftoverDestVa(pc)
+                || pc == LeftoverWait99GetProcDest || IsNearNullVa(pc)
+                || IsNkIdleResumePc(pc) || IsPoisonMidPlantResume(pc)
+                || !IsSanePlantResumePc(pc))
+                return false;
+            if (pc >= CoredllSharedLo && pc < CoredllSharedHi)
+                return false;
+            if (pc >= LoadO32Pred && pc <= LoadO32RomRet)
+            {
+                dest = pc;
+                return true;
+            }
+            if (pc == LeftoverApi78Ec || pc == LeftoverApi54MethLive)
+            {
+                dest = pc;
+                return true;
+            }
+            return false;
+        }
+
+        private static void TryNoteLeftoverWait99O32Cont(MipsBus bus, uint ra,
+            uint destOfRa, uint resume)
+        {
+            if (_leftoverWait99O32ContLogged)
+                return;
+            _leftoverWait99O32ContLogged = true;
+            _wait99PlantFixLogged = true;
+            uint thr;
+            uint ec;
+            uint dc;
+            uint plant;
+            TryPeekThreadCtxPc(bus, out thr, out ec, out dc, out plant);
+            BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-o32-cont ra=0x" +
+                ra.ToString("X8") +
+                " dest=0x" + destOfRa.ToString("X8") +
+                " resume=0x" + resume.ToString("X8") +
+                " +EC=0x" + ec.ToString("X8") +
+                " +DC=0x" + dc.ToString("X8") +
+                " plant=0x" + plant.ToString("X8") +
+                " (dump dest-live NK LoadO32; refuse leftover dest leftover-syscall $ra dest mid-hash / leftover dest GetProc dest leftover hop; do not leftover dest)");
+        }
+
+        private static void TryNoteLeftoverWait99O32Halt(MipsBus bus, uint ra,
+            uint destOfRa)
+        {
+            if (_leftoverWait99O32HaltLogged)
+                return;
+            _leftoverWait99O32HaltLogged = true;
+            uint destWord = 0;
+            TryPeekWord(bus, destOfRa, out destWord);
+            uint thr;
+            uint ec;
+            uint dc;
+            uint plant;
+            TryPeekThreadCtxPc(bus, out thr, out ec, out dc, out plant);
+            uint startip = 0;
+            if (thr != 0 && thr != 0xFFFFFFFFu)
+                TryPeekWord(bus, thr + ThreadStartip, out startip);
+            BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-o32-halt ra=0x" +
+                ra.ToString("X8") +
+                " dest=0x" + destOfRa.ToString("X8") +
+                " dest-word=0x" + destWord.ToString("X8") +
+                " +5C=0x" + startip.ToString("X8") +
+                " +EC=0x" + ec.ToString("X8") +
+                " +DC=0x" + dc.ToString("X8") +
+                " plant=0x" + plant.ToString("X8") +
+                " (refuse leftover dest leftover-syscall $ra dest mid-hash 0x80088B94 / leftover dest dest-wrapper +EC/+DC / leftover dest GetProc dest 0x8008C844 / ThreadExceptionExit +5C; no dest-live NK LoadO32; leftover-wait99-halt stays; do not leftover dest)");
         }
 
         // Live a77cd06 leftover dest leftover-syscall $ra
@@ -16255,6 +16384,8 @@ namespace ProcessorEmulator.Core
             _leftoverWait99WrapRaContLogged = false;
             _leftoverWait99WrapPlantMeth = 0;
             _leftoverWait99WrapPlantGp = 0;
+            _leftoverWait99O32ContLogged = false;
+            _leftoverWait99O32HaltLogged = false;
             _leftoverWait99WrapNeedLogged = false;
             _leftoverWait99ScanVia = "";
             _leftoverWait99Cf = 0;
@@ -22284,6 +22415,8 @@ namespace ProcessorEmulator.Core
         private static bool _leftoverWait99WrapRaContLogged;
         private static uint _leftoverWait99WrapPlantMeth;
         private static uint _leftoverWait99WrapPlantGp;
+        private static bool _leftoverWait99O32ContLogged;
+        private static bool _leftoverWait99O32HaltLogged;
         private static bool _leftoverWait99WrapNeedLogged;
         private static string _leftoverWait99ScanVia = "";
         private static int _leftoverWait99Cf;
