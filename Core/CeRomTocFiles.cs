@@ -178,8 +178,13 @@ namespace ProcessorEmulator.Core
         //   0x8006C000 is CopyO32 dest fill.
         //   leftover-wait99-o32-nk-wrap-copy-ret
         //   names post-CopyO32 BindImp / CallDLL
-        //   / leftover-wrap-after-copy. Do not
-        //   hop dest-e32 size. 0x8001E4A8 lw
+        //   / leftover-wrap-after-copy.
+        //   leftover-wait99-o32-nk-e32 peeks
+        //   dest-fp50 e32/image after CopyO32
+        //   fill (w0/objcnt/entryrva/vbase/
+        //   vsize/imp). Do not hop dest-e32
+        //   size. Do not hop dest-fp50 as PC.
+        //   0x8001E4A8 lw
         //   0x24(sp); andi 0x2000; beqz
         //   0x8001E534 v0=0xC1. Do not invent 0x2000.
         // ddi_nop dest is MapO32 0x8001AEB4
@@ -240,15 +245,24 @@ namespace ProcessorEmulator.Core
         // (type-7). leftover-wait99-o32-nk-wrap-
         // copy-ret names the next dump-true
         // jal (BindImp / CallDLL / fixup).
-        // leftover-wrap still appears because
-        // leftover-wait99-o32-ra-src leftover
-        // jal INTO wrap is leftover residue,
-        // not dump-true next after CopyO32.
+        // leftover-wait99-o32-nk-e32 peeks
+        // dest-fp50 after CopyO32 even when
+        // leftover-wrap-after-copy fires
+        // before BindImp. leftover-wrap still
+        // appears because leftover-wait99-
+        // o32-ra-src leftover jal INTO wrap
+        // is leftover residue, not dump-true
+        // next after CopyO32.
         public const uint WrapDestE32SizeLive = 0x1B0C;
         public const uint WrapDestFp50FillLive = 0x8006C000;
         public const uint WrapDestSizeMax = 0x10000;
         public const uint WrapCopySectCount = 7;
         public const uint E32RomEntryRvaOff = 4;
+        public const uint E32RomVbaseOff = 8;
+        public const uint E32RomVsizeOff = 0x14;
+        public const uint E32RomImpRvaOff = 0x28;
+        public const uint E32LiteImpRvaOff = 0x2C;
+        public const uint E32MzMagic = 0x5A4D;
         public const uint LoadO32WrapO32Walk = 0x8001AF20;
         public const uint LoadO32WrapS5Hi = 0x8001E45C;
         public const uint LoadO32WrapFlagsChk = 0x8001E4A8;
@@ -11726,6 +11740,8 @@ namespace ProcessorEmulator.Core
                 " word=0x" + word.ToString("X8") +
                 " dest=0x" + dest.ToString("X8") +
                 " via=" + via);
+            if (_leftoverWait99O32NkWrapCopyLogged)
+                TryNoteLeftoverWait99O32NkE32(bus, null, pc);
             TryNoteLeftoverWait99O32NkCallDump(bus);
         }
 
@@ -12152,8 +12168,11 @@ namespace ProcessorEmulator.Core
                 " a3=0x" + a3.ToString("X") +
                 " via=copyo32");
             if (IsDumpTrueWrapDestFill(destFp50))
+            {
+                _leftoverWait99O32NkWrapDestFp50 = destFp50;
                 TryNoteLeftoverWait99O32ContFromNkWrap(bus, pc, destFp50,
                     "wrap-copy");
+            }
         }
 
         // Live 0be2cb9 leftover-wait99-o32-nk-wrap-
@@ -12205,6 +12224,7 @@ namespace ProcessorEmulator.Core
                 && !IsLeftoverWait99O32WrapLoopDest(next))
                 TryNoteLeftoverWait99O32ContFromNkWrap(bus, pc, next,
                     "copy-ret");
+            TryNoteLeftoverWait99O32NkE32(bus, regs, pc);
         }
 
         private static string PeekWrapCopyRetNext(MipsBus bus, uint pc,
@@ -12344,6 +12364,115 @@ namespace ProcessorEmulator.Core
                 && !IsLeftoverWait99O32WrapLoopDest(next))
                 TryNoteLeftoverWait99O32ContFromNkWrap(bus, pc, next,
                     "postcopy");
+            TryNoteLeftoverWait99O32NkE32(bus, regs, pc);
+        }
+
+        // Live 0be2cb9 leftover-wait99-o32-nk-wrap-
+        // copy dest-fp50=0x8006C000 then leftover-
+        // wait99-o32-ra-src leftover-wrap-after-
+        // copy. dest-e32=0x1B0C is SIZE. Peek
+        // dest-fp50 e32/image here so Boot names
+        // w0/objcnt/entryrva/vbase/vsize/imp even
+        // if BindImp / CallDLL never run. via=
+        // e32-rom only when objcnt matches CopyO32
+        // a3 and vsize matches dest-e32. Do not
+        // invent dest from +0x10 COM/stackmax.
+        // Do not hop dest-e32 size. Do not hop
+        // dest-fp50 as PC. leftover dest
+        // 0x03F74DEC / leftover dest GetProc dest
+        // 0x8008C844 leftover hop forbidden.
+        private static void TryNoteLeftoverWait99O32NkE32(MipsBus bus,
+            uint[] regs, uint pc)
+        {
+            if (_leftoverWait99O32NkE32Logged)
+                return;
+            if (!_leftoverWait99O32NkWrapCopyLogged)
+                return;
+            if (pc == LoadO32WrapCopy || pc == LoadO32WrapCopyJal)
+                return;
+            uint destE32 = PeekWrapDestE32(bus, regs);
+            uint destFp50 = PeekWrapDestFp50(bus, regs);
+            if (!IsDumpTrueWrapDestFill(destFp50))
+                destFp50 = _leftoverWait99O32NkWrapDestFp50;
+            if (!IsDumpTrueWrapDestFill(destFp50)
+                && IsDumpTrueWrapDestFill(WrapDestFp50FillLive)
+                && _leftoverWait99O32NkWrapCopyLogged)
+                destFp50 = WrapDestFp50FillLive;
+            if (!IsDumpTrueWrapDestFill(destFp50))
+                return;
+            uint w0 = PeekDestWord(bus, destFp50);
+            _leftoverWait99O32NkE32Logged = true;
+            uint objcnt = w0 & 0xFFFF;
+            uint entryRva = PeekDestWord(bus, destFp50 + E32RomEntryRvaOff);
+            uint vbase = PeekDestWord(bus, destFp50 + E32RomVbaseOff);
+            uint vsize = PeekDestWord(bus, destFp50 + E32RomVsizeOff);
+            uint impRom = PeekDestWord(bus, destFp50 + E32RomImpRvaOff);
+            uint impLite = PeekDestWord(bus, destFp50 + E32LiteImpRvaOff);
+            uint a3 = PeekGpr(regs, 7);
+            if (a3 == 0)
+                a3 = WrapCopySectCount;
+            string why;
+            if (pc == LeftoverWait99O32RefuseRa
+                || pc == LeftoverWait99GetProcDest)
+                why = "refuse-ra";
+            else if ((w0 & 0xFFFF) == E32MzMagic)
+                why = "mz";
+            else if (w0 == 0)
+                why = "empty";
+            else if (objcnt >= 1 && objcnt <= 16
+                && (objcnt == a3 || objcnt == WrapCopySectCount)
+                && entryRva != destE32
+                && entryRva != WrapDestE32SizeLive
+                && destE32 != 0 && vsize == destE32)
+                why = "e32-rom";
+            else
+                why = "fill";
+            uint imp = 0;
+            if (why == "e32-rom")
+                imp = impRom;
+            else if (impLite != 0 && impLite != destE32
+                && impLite != WrapDestE32SizeLive)
+                imp = impLite;
+            else if (impRom != 0 && impRom != destE32)
+                imp = impRom;
+            string stub = IatStubNameOf(imp);
+            if (stub.Length != 0)
+                why = stub;
+            uint targetVa = 0;
+            if (why == "e32-rom"
+                && entryRva != 0
+                && entryRva != destE32
+                && entryRva != WrapDestE32SizeLive
+                && !IsLeftoverDestVa(entryRva)
+                && entryRva < WrapDestSizeMax)
+                targetVa = destFp50 + entryRva;
+            if (targetVa == LeftoverWait99O32RefuseRa
+                || targetVa == LeftoverWait99GetProcDest
+                || targetVa == destE32
+                || targetVa == destFp50
+                || IsWrapDestSize(targetVa)
+                || IsLeftoverWait99O32WrapLoopDest(targetVa)
+                || IsLeftoverDestVa(targetVa))
+                targetVa = 0;
+            BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-o32-nk-e32 pc=0x" +
+                pc.ToString("X8") +
+                " dest-e32=0x" + destE32.ToString("X") +
+                " dest-fp50=0x" + destFp50.ToString("X") +
+                " w0=0x" + w0.ToString("X") +
+                " objcnt=0x" + objcnt.ToString("X") +
+                " entryrva=0x" + entryRva.ToString("X") +
+                " vbase=0x" + vbase.ToString("X") +
+                " vsize=0x" + vsize.ToString("X") +
+                " imp=0x" + imp.ToString("X") +
+                " target=0x" + targetVa.ToString("X") +
+                " via=" + why);
+            if (why == "e32-rom"
+                && IsDumpTrueWrapDestFill(targetVa)
+                && targetVa != LeftoverWait99O32RefuseRa
+                && targetVa != LeftoverWait99GetProcDest
+                && !IsWrapDestSize(targetVa))
+                TryNoteLeftoverWait99O32ContFromNkWrap(bus, pc, targetVa,
+                    "e32-entry");
         }
 
         private static void TryNoteLeftoverWait99O32NkIat(MipsBus bus,
@@ -12419,13 +12548,9 @@ namespace ProcessorEmulator.Core
             uint entryRva = 0;
             if (IsDumpTrueWrapDestFill(baseVa))
                 entryRva = PeekDestWord(bus, baseVa + E32RomEntryRvaOff);
-            if (entryRva == 0 || entryRva == destE32 || IsWrapDestSize(entryRva)
-                && entryRva == WrapDestE32SizeLive)
-            {
-                uint alt = PeekDestWord(bus, baseVa + 0x10);
-                if (alt != 0 && alt != destE32 && alt != WrapDestE32SizeLive)
-                    entryRva = alt;
-            }
+            if (entryRva == destE32 || entryRva == WrapDestE32SizeLive)
+                entryRva = 0;
+            TryNoteLeftoverWait99O32NkE32(bus, regs, pc);
             uint targetVa = 0;
             if (IsDumpTrueWrapDestFill(baseVa) && entryRva != 0
                 && entryRva != destE32 && entryRva != WrapDestE32SizeLive
@@ -18108,8 +18233,10 @@ namespace ProcessorEmulator.Core
             _leftoverWait99O32NkWrapCopyLogged = false;
             _leftoverWait99O32NkWrapCopyRetLogged = false;
             _leftoverWait99O32NkPostCopyLogged = false;
+            _leftoverWait99O32NkE32Logged = false;
             _leftoverWait99O32NkWrapSp = 0;
             _leftoverWait99O32NkWrapFp = 0;
+            _leftoverWait99O32NkWrapDestFp50 = 0;
             _leftoverWait99O32NkBindLogged = false;
             _leftoverWait99O32NkCallDllLogged = false;
             _leftoverWait99O32NkRa = 0;
@@ -24164,8 +24291,10 @@ namespace ProcessorEmulator.Core
         private static bool _leftoverWait99O32NkWrapCopyLogged;
         private static bool _leftoverWait99O32NkWrapCopyRetLogged;
         private static bool _leftoverWait99O32NkPostCopyLogged;
+        private static bool _leftoverWait99O32NkE32Logged;
         private static uint _leftoverWait99O32NkWrapSp;
         private static uint _leftoverWait99O32NkWrapFp;
+        private static uint _leftoverWait99O32NkWrapDestFp50;
         private static bool _leftoverWait99O32NkBindLogged;
         private static bool _leftoverWait99O32NkCallDllLogged;
         private static uint _leftoverWait99O32NkRa;
