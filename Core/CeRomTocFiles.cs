@@ -13658,7 +13658,7 @@ namespace ProcessorEmulator.Core
             vsize = PeekDestWord(bus, destFp50 + E32RomVsizeOff);
             imp = PeekWrapImpRva(bus, destFp50, destE32);
             fillOff = PeekWrapFillOff(bus, destFp50, destE32);
-            string why = WrapE32Why(w0, entryRva, vsize, destE32, a3);
+            string why = WrapE32Why(w0, entryRva, vbase, vsize, destE32, a3);
             if (why == "e32-rom" || why == "mz")
                 return why;
             uint scan = PeekWrapE32RomScan(bus, destFp50, destE32, a3,
@@ -13758,12 +13758,12 @@ namespace ProcessorEmulator.Core
             vbase = PeekDestWord(bus, va + E32RomVbaseOff);
             vsize = PeekDestWord(bus, va + E32RomVsizeOff);
             imp = PeekWrapImpRva(bus, va, destE32);
-            why = WrapE32Why(w0, entryRva, vsize, destE32, a3);
+            why = WrapE32Why(w0, entryRva, vbase, vsize, destE32, a3);
             return why == "e32-rom" || why == "mz";
         }
 
-        private static string WrapE32Why(uint w0, uint entryRva, uint vsize,
-            uint destE32, uint a3)
+        private static string WrapE32Why(uint w0, uint entryRva, uint vbase,
+            uint vsize, uint destE32, uint a3)
         {
             uint objcnt = w0 & 0xFFFF;
             if ((w0 & 0xFFFF) == E32MzMagic)
