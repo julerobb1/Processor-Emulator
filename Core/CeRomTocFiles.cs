@@ -305,9 +305,16 @@ namespace ProcessorEmulator.Core
         // size as PC.
         public const uint WrapO32RvaLive = 0x1000;
         public const uint WrapE32ScanMax = 0x2000;
+        // WinCE e32_rom (pehdr.h / ExtraROM dump), not
+        // IMAGE_OPTIONAL_HEADER. e32_entryrva +4,
+        // e32_vbase +8, e32_vsize +0x14. e32_rva is
+        // e32_unit[0].rva: pehdr +0x20, ExtraROM
+        // packed units after public 0x24 (EXP +0x24).
+        // Do not read PE OptionalHeader+0x10 as entry.
         public const uint E32RomEntryRvaOff = 4;
         public const uint E32RomVbaseOff = 8;
         public const uint E32RomVsizeOff = 0x14;
+        public const uint E32RomRvaOff = 0x20;
         public const uint E32RomImpRvaOff = 0x28;
         public const uint E32LiteImpRvaOff = 0x2C;
         public const uint E32ImpNameOff = 0xC;
@@ -12677,6 +12684,7 @@ namespace ProcessorEmulator.Core
                 why = stub;
             uint targetVa = WrapEntryTargetVa(destFp50, destE32, hdr,
                 entryRva, vbase, proven);
+            uint e32Rva = PeekWrapE32Rva(bus, hdr);
             BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-o32-nk-e32 pc=0x" +
                 pc.ToString("X8") +
                 " dest-e32=0x" + destE32.ToString("X") +
@@ -12685,6 +12693,10 @@ namespace ProcessorEmulator.Core
                 " fill-off=0x" + fillOff.ToString("X") +
                 " w0=0x" + w0.ToString("X") +
                 " objcnt=0x" + objcnt.ToString("X") +
+                " e32_entryrva=0x" + entryRva.ToString("X") +
+                " e32_vbase=0x" + vbase.ToString("X") +
+                " e32_vsize=0x" + vsize.ToString("X") +
+                " e32_rva=0x" + e32Rva.ToString("X") +
                 " entryrva=0x" + entryRva.ToString("X") +
                 " vbase=0x" + vbase.ToString("X") +
                 " vsize=0x" + vsize.ToString("X") +
@@ -13522,6 +13534,16 @@ namespace ProcessorEmulator.Core
                 && !IsWrapDestFp50Va(startip)
                 && !IsLeftoverDestVa(startip))
                 targetVa = startip;
+            // Dump hd.dll e32_rom is not in the CopyO32
+            // PE fill; PE OptionalHeader+0x10 is 0x1B0C
+            // SIZE. If e32_entryrva is genuinely 0,
+            // launch via dump export HdstubDLLEntry
+            // (no HD_Init/Open). Do not name entryrva
+            // 0x1B0C. Do not leftover-hop Target_VA.
+            if (targetVa == 0 && entryRva == 0
+                && (IsHdDllImageBase(destFp50)
+                    || IsHdDllBindName(_leftoverWait99O32NkBindName)))
+                targetVa = HdDllEntryVa;
         }
 
         // Wrapper 0x20(sp) is dest-e32 SIZE 0x1B0C
@@ -13639,6 +13661,14 @@ namespace ProcessorEmulator.Core
             string why = WrapE32Why(w0, entryRva, vsize, destE32, a3);
             if (why == "e32-rom" || why == "mz")
                 return why;
+            uint scan = PeekWrapE32RomScan(bus, destFp50, destE32, a3,
+                out w0, out entryRva, out vbase, out vsize, out imp, out why);
+            if (scan != 0)
+            {
+                hdr = scan;
+                hdrOff = (int)(scan - destFp50);
+                return why;
+            }
             int[] offs = new int[]
             {
                 (int)WrapO32RvaLive, -(int)WrapO32RvaLive, 0x40, 0x80,
@@ -13757,6 +13787,90 @@ namespace ProcessorEmulator.Core
                 || IsHdDllImageBase(vbase)))
                 return "e32-rom";
             return "fill";
+        }
+
+        // Scan CopyO32 dest-fp50 for WinCE e32_rom
+        // (e32_entryrva +4, e32_vbase +8, e32_vsize
+        // +0x14, e32_rva unit[0] +0x20/+0x24). Do
+        // not treat PE OptionalHeader+0x10 0x1B0C
+        // as entry. Skip dest+.text+0x10 w0=0x52.
+        private static uint PeekWrapE32RomScan(MipsBus bus, uint destFp50,
+            uint destE32, uint a3, out uint w0, out uint entryRva,
+            out uint vbase, out uint vsize, out uint imp, out string why)
+        {
+            w0 = 0;
+            entryRva = 0;
+            vbase = 0;
+            vsize = 0;
+            imp = 0;
+            why = "empty";
+            if (!IsDumpTrueWrapDestFill(destFp50))
+                return 0;
+            uint lim = destE32 != 0 && destE32 < WrapE32ScanMax
+                ? destE32 : WrapE32ScanMax;
+            if (lim < 0x80)
+                lim = 0x80;
+            bool mz = PeekDestWord(bus, destFp50) == E32MzMagic;
+            for (uint off = 0; off + 0x28 < lim; off += 4)
+            {
+                if (off == WrapO32RvaLive + 0x10)
+                    continue;
+                uint va = destFp50 + off;
+                uint live0 = PeekDestWord(bus, va);
+                if (!IsWrapE32Objcnt(live0 & 0xFFFF))
+                    continue;
+                uint liveEntry = PeekDestWord(bus, va + E32RomEntryRvaOff);
+                uint liveVbase = PeekDestWord(bus, va + E32RomVbaseOff);
+                uint liveVsize = PeekDestWord(bus, va + E32RomVsizeOff);
+                if (mz && liveEntry == WrapDestE32SizeLive
+                    && liveVbase != destFp50 && !IsHdDllImageBase(liveVbase))
+                    continue;
+                if (liveVbase != destFp50 && !IsHdDllImageBase(liveVbase)
+                    && liveVbase != 0)
+                    continue;
+                if (liveVbase == 0 && liveVsize == 0 && liveEntry == 0)
+                    continue;
+                if (liveVsize == 0x52)
+                    continue;
+                if (TryAcceptWrapE32At(bus, va, destE32, a3, out w0,
+                    out entryRva, out vbase, out vsize, out imp, out why)
+                    && why == "e32-rom")
+                    return va;
+                if ((IsHdDllImageBase(liveVbase) || liveVbase == destFp50)
+                    && liveEntry < WrapDestSizeMax
+                    && !IsLeftoverDestVa(liveEntry)
+                    && (liveVsize == 0 || IsWrapDestSize(liveVsize)
+                        || liveVsize == destE32 || liveVsize == 0x6000u))
+                {
+                    w0 = live0;
+                    entryRva = liveEntry;
+                    vbase = liveVbase;
+                    vsize = liveVsize;
+                    imp = PeekWrapImpRva(bus, va, destE32);
+                    why = "e32-rom";
+                    return va;
+                }
+            }
+            return 0;
+        }
+
+        private static uint PeekWrapE32Rva(MipsBus bus, uint hdr)
+        {
+            if (hdr == 0 || IsWrapDestSize(hdr) || IsLeftoverDestVa(hdr))
+                return 0;
+            uint u20 = PeekDestWord(bus, hdr + E32RomRvaOff);
+            uint u24 = PeekDestWord(bus, hdr + E32RomExpRva);
+            if (u20 == HdDllExpRva)
+                return u20;
+            if (u24 == HdDllExpRva)
+                return u24;
+            if (u20 != 0 && u20 < WrapDestSizeMax && !IsLeftoverDestVa(u20)
+                && u20 != WrapDestE32SizeLive && u20 != HdDllEntryRva)
+                return u20;
+            if (u24 != 0 && u24 < WrapDestSizeMax && !IsLeftoverDestVa(u24)
+                && u24 != WrapDestE32SizeLive && u24 != HdDllEntryRva)
+                return u24;
+            return 0;
         }
 
         private static uint PeekWrapFillOff(MipsBus bus, uint destFp50,
@@ -13986,7 +14100,7 @@ namespace ProcessorEmulator.Core
             // hop forbidden. Do not hop dest-e32
             // 0x1B0C or dest-fp50 as PC.
             if (_leftoverWait99O32NkCallDllLogged
-                && _leftoverWait99O32NkEntryRva != 0)
+                && _leftoverWait99O32NkEntryTarget != 0)
                 return;
             if (pc == LeftoverWait99O32RefuseRa
                 || pc == LeftoverWait99GetProcDest
@@ -14007,7 +14121,8 @@ namespace ProcessorEmulator.Core
             uint targetVa;
             PeekWrapEntryNow(bus, regs, destFp50, destE32,
                 out hdr, out hdrOff, out entryRva, out vbase, out targetVa);
-            if (_leftoverWait99O32NkCallDllLogged && entryRva == 0)
+            if (_leftoverWait99O32NkCallDllLogged && entryRva == 0
+                && targetVa == 0)
                 return;
             if (_leftoverWait99O32NkCallDllLogged && entryRva != 0
                 && entryRva == _leftoverWait99O32NkEntryRva)
@@ -14015,9 +14130,15 @@ namespace ProcessorEmulator.Core
             _leftoverWait99O32NkCallDllLogged = true;
             if (entryRva != 0)
                 _leftoverWait99O32NkEntryRva = entryRva;
+            if (targetVa != 0)
+                _leftoverWait99O32NkEntryTarget = targetVa;
             uint ra = PeekGpr(regs, 31);
             TryNoteLeftoverWait99O32NkE32(bus, regs, pc);
             string why = entryRva != 0 && targetVa != 0 ? "entry" : "entryrva-0";
+            if (entryRva == 0 && targetVa == HdDllEntryVa)
+                why = "HdstubDLLEntry";
+            else if (entryRva == 0 && targetVa == HdDllInitVa)
+                why = "HdstubInit";
             if (targetVa == destFp50 || (targetVa == destE32 && entryRva == 0))
                 why = "entryrva-0";
             if (IsLeftoverBindRefuse(pc) || IsLeftoverBindRefuse(targetVa))
@@ -19727,6 +19848,7 @@ namespace ProcessorEmulator.Core
             _leftoverWait99O32NkIatStubVia = "";
             _leftoverWait99O32NkBindLastPc = 0;
             _leftoverWait99O32NkEntryRva = 0;
+            _leftoverWait99O32NkEntryTarget = 0;
             _leftoverWait99O32NkCallDllLogged = false;
             _leftoverWait99O32NkRa = 0;
             _leftoverWait99O32NkA0 = 0;
@@ -25796,6 +25918,7 @@ namespace ProcessorEmulator.Core
         private static string _leftoverWait99O32NkIatStubVia = "";
         private static uint _leftoverWait99O32NkBindLastPc;
         private static uint _leftoverWait99O32NkEntryRva;
+        private static uint _leftoverWait99O32NkEntryTarget;
         private static bool _leftoverWait99O32NkCallDllLogged;
         private static uint _leftoverWait99O32NkRa;
         private static uint _leftoverWait99O32NkA0;
