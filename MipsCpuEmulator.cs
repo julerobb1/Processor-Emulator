@@ -502,6 +502,8 @@ namespace ProcessorEmulator.Emulation
                 ref instruction);
             CeRomTocFiles.TryFixStk2470SbAsDumpSw(_bus, registers, programCounter,
                 ref instruction);
+            CeRomTocFiles.TryFixNest1670SbAsDumpSb(_bus, registers, programCounter,
+                ref instruction);
             programCounter += 4;
             return instruction;
         }

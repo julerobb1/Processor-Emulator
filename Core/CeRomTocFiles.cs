@@ -1487,19 +1487,22 @@ namespace ProcessorEmulator.Core
         public const uint CoredllDllMainStk2470Live = 0xA0042470;
         public const uint CoredllDllMainStk2470Prev = 0xAFA50004;
         public const uint CoredllDllMainStk2470Next = 0xAFA7000C;
-        // Live 7ae816b: after dump-sw, TLBS
-        // epc=0x80042470 bad=0x1670. Dump is
-        // sb $a3,443($v0) (0xA04701BB) after
-        // lbu 443($v0); +1; $a2=KDataNest.
-        // Not stack-relative — do not rewrite
-        // as dump-sw. Observe live word once.
-        // Do not invent page 0x1000.
+        // Live 9eea658: after dump-sw, TLBS
+        // epc=0x80042470 bad=0x1670
+        // word=0xA0041670 sb $a0,0x1670($0).
+        // Dump is sb $a3,443($v0) (0xA04701BB).
+        // Same abs-rs=0 overwrite as dump-sw /
+        // sb-jr. Live $v0=0x86FBE028 (THREAD
+        // page already mapped). Rewrite fetch
+        // to dump sb. Do not invent page 0x1000.
         public const uint CoredllDllMainStk1670Epc = 0x80042470;
         public const uint CoredllDllMainStk1670Bad = 0x1670;
         public const uint CoredllDllMainStk1670Page = 0x1000;
         public const uint CoredllDllMainStk1670Insn = 0xA04701BB;
+        public const uint CoredllDllMainStk1670Live = 0xA0041670;
         public const uint CoredllDllMainStk1670Prev = 0x2406D885;
         public const uint CoredllDllMainStk1670Next = 0x80C50000;
+        public const uint CoredllDllMainStk1670ThrPage = 0x86FB0000;
         // Live f628fa6: after sb-jalr-skip, TLBL
         // epc=0x80341A74 bad=0x7EB8. epc!=bad so
         // data load at jalr dest, not I-fetch
@@ -10532,6 +10535,79 @@ namespace ProcessorEmulator.Core
             return true;
         }
 
+        // Live 9eea658: sb $a0,0x1670($0) at
+        // dump sb $a3,443($v0). After dump-sw
+        // only. Rewrite fetch to dump sb when
+        // $v0 peeks on the 0x86FB THREAD class.
+        // Do not invent page 0x1000. Log once.
+        // Do not leftover-hop.
+        public static bool TryFixNest1670SbAsDumpSb(MipsBus bus, uint[] regs,
+            uint pc, ref uint insn)
+        {
+            if (pc != CoredllDllMainStk1670Epc)
+                return false;
+            if (insn != CoredllDllMainStk1670Live)
+                return false;
+            if (!_leftoverWait99O32NkCoredllSawEntry || !_stk2470SwLogged)
+                return false;
+            uint prev = 0;
+            uint next = 0;
+            if (!TryPeekWord(bus, CoredllDllMainStk1670Epc - 4, out prev)
+                || prev != CoredllDllMainStk1670Prev)
+                return false;
+            if (!TryPeekWord(bus, CoredllDllMainStk1670Epc + 4, out next)
+                || next != CoredllDllMainStk1670Next)
+                return false;
+            uint v0 = PeekGpr(regs, 2);
+            if (v0 == 0 || (v0 & 3) != 0)
+                return false;
+            if ((v0 & 0xFFFF0000u) != CoredllDllMainStk1670ThrPage)
+                return false;
+            if (v0 == LeftoverWait99O32RefuseRa
+                || v0 == LeftoverWait99GetProcDest
+                || v0 == LeftoverWait99O32RefuseDump
+                || v0 == CoredllDllMainKdataWrapRefuse
+                || IsLeftoverDestVa(v0)
+                || IsWrapDestSize(v0) || IsWrapDestFp50Va(v0)
+                || IsHdDllImageBase(v0) || v0 == WrapDestE32SizeLive
+                || v0 == WrapDestFp50FillLive)
+                return false;
+            uint thr = 0;
+            if (!TryPeekWord(bus, v0, out thr) || thr == 0)
+                return false;
+            uint ra = PeekGpr(regs, 31);
+            if (ra == LeftoverWait99O32RefuseRa
+                || ra == LeftoverWait99GetProcDest
+                || ra == LeftoverWait99O32RefuseDump
+                || ra == CoredllDllMainKdataWrapRefuse
+                || IsLeftoverDestVa(ra)
+                || IsWrapDestSize(ra) || IsWrapDestFp50Va(ra)
+                || IsHdDllImageBase(ra) || ra == WrapDestE32SizeLive
+                || ra == WrapDestFp50FillLive)
+                return false;
+            insn = CoredllDllMainStk1670Insn;
+            _stk1670Logged = true;
+            if (!_stk1670SbLogged)
+            {
+                _stk1670SbLogged = true;
+                uint a0 = PeekGpr(regs, 4);
+                uint a3 = PeekGpr(regs, 7);
+                BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk nest-1670 sb-sb" +
+                    " epc=0x" + CoredllDllMainStk1670Epc.ToString("X") +
+                    " bad=0x" + CoredllDllMainStk1670Bad.ToString("X") +
+                    " word=0x" + CoredllDllMainStk1670Live.ToString("X") +
+                    " dump=0x" + CoredllDllMainStk1670Insn.ToString("X") +
+                    " ra=0x" + ra.ToString("X") +
+                    " v0=0x" + v0.ToString("X") +
+                    " *v0=0x" + thr.ToString("X") +
+                    " a0=0x" + a0.ToString("X") +
+                    " a3=0x" + a3.ToString("X") +
+                    " via=dump-sb (live sb $a0,0x1670($0) overwrote dump" +
+                    " sb $a3,443($v0); THREAD $v0; do not invent dest)");
+            }
+            return true;
+        }
+
         public static uint MapStk2470Va(MipsBus bus, uint va)
         {
             if (_stk2470Busy)
@@ -16467,6 +16543,7 @@ namespace ProcessorEmulator.Core
             bool stk1670 = _leftoverWait99O32NkCoredllSawEntry
                 && _stk2470SwLogged
                 && !_stk1670Logged
+                && !_stk1670SbLogged
                 && (code == 2 || code == 3)
                 && (epc == CoredllDllMainStk1670Epc
                     || vaddr == CoredllDllMainStk1670Bad);
@@ -22863,6 +22940,7 @@ namespace ProcessorEmulator.Core
             _stk2470SwLogged = false;
             _stk2470ExnLogged = false;
             _stk1670Logged = false;
+            _stk1670SbLogged = false;
             _ffffFe54SkipLogged = false;
             _bindImpIatSwExpect = false;
             _bindImpIatSwLogged = false;
@@ -28983,6 +29061,7 @@ namespace ProcessorEmulator.Core
         private static bool _stk2470SwLogged;
         private static bool _stk2470ExnLogged;
         private static bool _stk1670Logged;
+        private static bool _stk1670SbLogged;
         private static bool _ffffFe54SkipLogged;
         private static bool _bindImpIatSwExpect;
         private static bool _bindImpIatSwLogged;
