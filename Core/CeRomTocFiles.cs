@@ -14481,10 +14481,22 @@ namespace ProcessorEmulator.Core
         // lw-skip can fire. After lw-skip,
         // leave cookie 0x80048190. After
         // jr, leave dump-true link
-        // 0x8003F78C. Do not re-enter
-        // 0x80048174.
+        // 0x8003F78C. After s3 / bne,
+        // leave 0x8003F7A0 / taken
+        // 0x8003F7AC / join 0x8003F7B0.
+        // Live da2ecb1: stk-sw cap left
+        // cookie 0x80048190 after s3 and
+        // spun. Do not re-enter
+        // 0x80048174 / 0x80048190 after
+        // caller progress.
         private static uint DumpMem15C28OuterJalProgressLeave()
         {
+            if (_exn15C28AfterOuterJalLandLogged)
+                return CoredllDllMainExn15C28OuterJalLinkSltu;
+            if (_exn15C28AfterOuterJalBneLogged)
+                return CoredllDllMainExn15C28OuterJalLinkBneTaken;
+            if (_exn15C28AfterOuterJalS3Logged)
+                return CoredllDllMainExn15C28OuterJalLinkBne;
             if (_exn15C28AfterOuterJalJrLogged)
                 return CoredllDllMainExn15C28OuterJalLink;
             if (_exn15C28AfterOuterJalLwLogged)
@@ -15161,7 +15173,11 @@ namespace ProcessorEmulator.Core
                 return false;
             if (_exn15C28AfterOuterJalLwLogged)
             {
-                cpuPc = CoredllDllMainExn15C28OuterJalDestJr;
+                uint capLeave = DumpMem15C28OuterJalProgressLeave();
+                if (capLeave == 0 || IsDumpMemRefuseVa(capLeave)
+                    || IsExn15C28Na02Frame(capLeave))
+                    return false;
+                cpuPc = capLeave;
                 return true;
             }
             uint lwDump = 0;
@@ -15394,13 +15410,23 @@ namespace ProcessorEmulator.Core
         {
             if (!_leftoverWait99O32NkCoredllSawEntry || !_exn15C28Left)
                 return false;
-            if (!_exn15C28AfterOuterJalLwLogged
-                || _exn15C28AfterOuterJalJrLogged)
+            if (!_exn15C28AfterOuterJalLwLogged)
                 return false;
             if (pc != CoredllDllMainExn15C28OuterJalDestJr)
                 return false;
             if (inDelay)
                 return false;
+            if (_exn15C28AfterOuterJalJrLogged)
+            {
+                uint capLeave = DumpMem15C28OuterJalProgressLeave();
+                if (capLeave == 0
+                    || capLeave == CoredllDllMainExn15C28OuterJalDestJr
+                    || IsDumpMemRefuseVa(capLeave)
+                    || IsExn15C28Na02Frame(capLeave))
+                    return false;
+                cpuPc = capLeave;
+                return true;
+            }
             if (IsDumpMemRefuseVa(pc)
                 || IsDumpMemRefuseVa(CoredllDllMainExn15C28OuterJalLink)
                 || IsExn15C28Na02Frame(pc)
@@ -15873,11 +15899,23 @@ namespace ProcessorEmulator.Core
         {
             if (!_leftoverWait99O32NkCoredllSawEntry || !_exn15C28Left)
                 return false;
-            if (!_exn15C28AfterOuterJalS3Logged
-                || _exn15C28AfterOuterJalBneLogged)
+            if (!_exn15C28AfterOuterJalS3Logged)
                 return false;
             if (pc != CoredllDllMainExn15C28OuterJalLinkBne)
                 return false;
+            if (_exn15C28AfterOuterJalBneLogged)
+            {
+                if (inDelay)
+                    return false;
+                uint capLeave = DumpMem15C28OuterJalProgressLeave();
+                if (capLeave == 0
+                    || capLeave == CoredllDllMainExn15C28OuterJalLinkBne
+                    || IsDumpMemRefuseVa(capLeave)
+                    || IsExn15C28Na02Frame(capLeave))
+                    return false;
+                cpuPc = capLeave;
+                return true;
+            }
             if (inDelay)
                 return false;
             if (IsDumpMemRefuseVa(pc)
