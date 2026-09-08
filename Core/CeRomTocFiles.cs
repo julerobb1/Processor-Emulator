@@ -13980,6 +13980,22 @@ namespace ProcessorEmulator.Core
             return (va & 0xFFF00000u) == 0x9FF00000u;
         }
 
+        // Live dcf9658: after a3-lui, $sp
+        // walked 0x9A02… into 0x99FF…
+        // (0x99FFF5A8 / 0x99FFF128).
+        // Detect only; do not invent a
+        // 0x99FF page.
+        private static bool IsExn15C28N9ffFrame(uint va)
+        {
+            return (va & 0xFFF00000u) == 0x99F00000u;
+        }
+
+        private static bool IsExn15C28StkRecurseFrame(uint va)
+        {
+            return IsExn15C28Na02Frame(va) || IsExn15C28NfffFrame(va)
+                || IsExn15C28N9ffFrame(va);
+        }
+
         private static bool IsExn15C28OuterJalLwS4Progress()
         {
             return _exn15C28AfterOuterJalEpiLhuLogged
@@ -14147,7 +14163,7 @@ namespace ProcessorEmulator.Core
             {
                 uint nfffSp = PeekGpr(regs, 29);
                 uint nfffLeave = DumpMem15C28OuterJalProgressLeave();
-                if ((IsExn15C28NfffFrame(nfffSp) || IsExn15C28Na02Frame(nfffSp))
+                if (IsExn15C28StkRecurseFrame(nfffSp)
                     && nfffLeave != 0 && (nfffLeave & 3) == 0
                     && nfffLeave != CoredllDllMainExn15C28JalS1AluNext
                     && nfffLeave != CoredllDllMainExn15C28StkSwNext
@@ -14161,7 +14177,8 @@ namespace ProcessorEmulator.Core
                             && nfffLeave != CoredllDllMainExn15C28OuterJalLinkEpiLuiNext
                             && nfffLeave != CoredllDllMainExn15C28OuterJalLinkEpiJrNext))
                     && (!_exn15C28AfterOuterJalEpiA3LuiLogged
-                        || (nfffLeave != CoredllDllMainExn15C28OuterJalLinkEpiSwNext
+                        || (nfffLeave != CoredllDllMainExn15C28OuterJalLinkEpiA3LuiNext
+                            && nfffLeave != CoredllDllMainExn15C28OuterJalLinkEpiSwNext
                             && nfffLeave != CoredllDllMainExn15C28OuterJalLinkEpiV1AddiuNext
                             && nfffLeave != CoredllDllMainExn15C28OuterJalLinkEpiV0AddiuNext
                             && nfffLeave != CoredllDllMainExn15C28OuterJalLinkEpiLuiNext
@@ -14181,6 +14198,7 @@ namespace ProcessorEmulator.Core
                     && !IsDumpMemRefuseVa(nfffLeave)
                     && !IsExn15C28Na02Frame(nfffLeave)
                     && !IsExn15C28NfffFrame(nfffLeave)
+                    && !IsExn15C28N9ffFrame(nfffLeave)
                     && !IsExn15C28HelperBody(nfffLeave))
                 {
                     if (bus != null)
@@ -14957,11 +14975,10 @@ namespace ProcessorEmulator.Core
         private static uint DumpMem15C28OuterJalProgressLeave()
         {
             if (_exn15C28AfterOuterJalEpiLhuLogged
-                || _exn15C28AfterOuterJalEpiLhuNextLogged)
-                return CoredllDllMainExn15C28OuterJalLinkEpiLhuNext;
-            if (_exn15C28AfterOuterJalEpiA3LuiLogged
+                || _exn15C28AfterOuterJalEpiLhuNextLogged
+                || _exn15C28AfterOuterJalEpiA3LuiLogged
                 || _exn15C28AfterOuterJalEpiA3LuiNextLogged)
-                return CoredllDllMainExn15C28OuterJalLinkEpiA3LuiNext;
+                return CoredllDllMainExn15C28OuterJalLinkEpiLhuNext;
             if (_exn15C28AfterOuterJalEpiSwLogged
                 || _exn15C28AfterOuterJalEpiSwNextLogged)
                 return CoredllDllMainExn15C28OuterJalLinkEpiSwNext;
@@ -16094,6 +16111,7 @@ namespace ProcessorEmulator.Core
             if (dest < 0x00010000u || dest >= CoredllDllMainC000Page)
                 return false;
             if (IsExn15C28Na02Frame(dest) || IsDumpMemRefuseVa(dest)
+                || IsExn15C28NfffFrame(dest) || IsExn15C28N9ffFrame(dest)
                 || dest == FfffF000Page
                 || (dest & ~0xFFFu) == FfffE000Page
                 || IsC000StoreSkipVa(dest))
@@ -20753,15 +20771,15 @@ namespace ProcessorEmulator.Core
                     || capLeave == CoredllDllMainExn15C28OuterJalLinkEpiJrNext
                     || capLeave == CoredllDllMainExn15C28OuterJalLinkEpiAddiuNext
                     || capLeave == CoredllDllMainExn15C28OuterJalLink
-                    || (capLeave == CoredllDllMainExn15C28OuterJalLinkEpiA3LuiNext
-                        && _exn15C28AfterOuterJalEpiLhuLogged)
+                    || capLeave == CoredllDllMainExn15C28OuterJalLinkEpiA3LuiNext
                     || capLeave == CoredllDllMainExn15C28JalS1AluNext
                     || capLeave == CoredllDllMainExn15C28StkSwNext
                     || capLeave == CoredllDllMainExn15C28OuterJalLinkBeqTaken
                     || capLeave == PeekGpr(regs, 31)
                     || IsDumpMemRefuseVa(capLeave)
                     || IsExn15C28Na02Frame(capLeave)
-                    || IsExn15C28NfffFrame(capLeave))
+                    || IsExn15C28NfffFrame(capLeave)
+                    || IsExn15C28N9ffFrame(capLeave))
                     return false;
                 cpuPc = capLeave;
                 return true;
@@ -20974,7 +20992,8 @@ namespace ProcessorEmulator.Core
                     || capLeave == PeekGpr(regs, 31)
                     || IsDumpMemRefuseVa(capLeave)
                     || IsExn15C28Na02Frame(capLeave)
-                    || IsExn15C28NfffFrame(capLeave))
+                    || IsExn15C28NfffFrame(capLeave)
+                    || IsExn15C28N9ffFrame(capLeave))
                     return false;
                 cpuPc = capLeave;
                 return true;
@@ -21020,6 +21039,7 @@ namespace ProcessorEmulator.Core
                 || IsDumpMemRefuseVa(epiLhuNext)
                 || IsExn15C28Na02Frame(epiLhuNext)
                 || IsExn15C28NfffFrame(epiLhuNext)
+                || IsExn15C28N9ffFrame(epiLhuNext)
                 || IsExn15C28HelperBody(epiLhuNext)
                 || IsExn15C28JalRaEpiRange(epiLhuNext)
                 || IsLeftoverDestVa(epiLhuNext)
