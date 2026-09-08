@@ -1299,6 +1299,19 @@ namespace ProcessorEmulator.Core
         // hop dest.
         public const uint CoredllDllMainVa = 0x03F57A00;
         public const uint CoredllDllMainWord = 0x27BDFFD8;
+        // Live c7dd951 FIRST-WIN body then leftover-
+        // refuse at 0x03F6EE0C word=0x27BDFFE0
+        // (addiu $sp,$sp,-32). leftover dest RANGE
+        // includes live coredll APIs. Dump-true
+        // ImageBase 0x03F50000 → 0x80074000 so
+        // this VA is dump 0x80092E0C. Name $ra /
+        // next jal. Plant dest-live GetProc only
+        // when that dest is leftover 0x03F74DEC /
+        // GetProc dest 0x8008C844. Do not leftover-
+        // hop dest. Do not hop dest-fp50 / 0x1B0C.
+        public const uint CoredllDllMainJalVa = 0x03F6EE0C;
+        public const uint CoredllDllMainJalWord = 0x27BDFFE0;
+        public const uint CoredllDumpBase = 0x80074000;
         // Live 147e54f: I-fetch TLBL 0x03FB492C (IAT slot6).
         // ImageBase keep-imagebase=0x03F50000. MapCoredllSharedVa
         // still refuses >=0x03FA0000 until tv2 startip
@@ -11980,6 +11993,7 @@ namespace ProcessorEmulator.Core
             TryNoteLeftoverWait99O32NkJalr(bus, regs, pc);
             TryNoteLeftoverWait99O32NkAfter(bus, regs, pc);
             TryNoteLeftoverWait99O32NkChain(bus, regs, pc);
+            TryNoteLeftoverWait99O32NkCoredllJal(bus, regs, pc);
             TryNoteLeftoverWait99O32NkCoredllAfter(bus, regs, pc);
             if (pc == LoadO32WrapJalO32 || pc == LoadO32Rom)
             {
@@ -15093,6 +15107,136 @@ namespace ProcessorEmulator.Core
                 " via=" + why);
         }
 
+        // Live c7dd951 FIRST-WIN rich naming:
+        // via=entry 0x03F57A00, via=body
+        // 0x03F57A04, leftover-refuse 0x03F6EE0C
+        // word=0x27BDFFE0. leftover dest RANGE
+        // misnamed a live DllMain callee. Dump-
+        // true $ra / next jal at 0x03F6EE0C.
+        // Plant dest-live GetProc only when that
+        // dest is leftover 0x03F74DEC / GetProc
+        // dest 0x8008C844. Do not leftover-hop.
+        private static bool TryPeekCoredllDumpWord(MipsBus bus, uint va,
+            out uint word)
+        {
+            word = 0;
+            if ((va & 3) != 0)
+                return false;
+            if (va >= CoredllSharedLo && va < CoredllSharedHi)
+            {
+                uint dump = CoredllDumpBase + (va - CoredllSharedLo);
+                if (TryPeekLeftoverWait99DumpOnly(dump, out word))
+                    return true;
+            }
+            if (va >= 0x03F70000u && va < 0x03F80000u)
+            {
+                uint ck = 0x80094000u + (va - 0x03F70000u);
+                if (TryPeekLeftoverWait99DumpOnly(ck, out word))
+                    return true;
+            }
+            return bus != null && TryPeekWord(bus, va, out word);
+        }
+
+        private static bool TryDecodeCoredllDllMainJal(MipsBus bus, uint[] regs,
+            uint pc, out uint jalDest, out uint apiImm, out string via)
+        {
+            jalDest = 0;
+            apiImm = 0;
+            via = "miss-jal";
+            bool sawJalr = false;
+            for (uint off = 0; off < 0x80; off += 4)
+            {
+                uint va = pc + off;
+                uint word;
+                if (!TryPeekCoredllDumpWord(bus, va, out word))
+                    continue;
+                uint target;
+                uint rs;
+                uint rt;
+                if (IsJalInsn(word, va, out target) && ((word >> 26) & 63) == 3)
+                {
+                    jalDest = target;
+                    via = "jal";
+                    return true;
+                }
+                if (IsJalrInsn(word, out rs))
+                {
+                    // GPR dest is only live at the jalr PC.
+                    // Ahead-scan from the prologue would
+                    // name a stale $t9/$v0 leftover dest.
+                    if (va == pc)
+                        jalDest = PeekGpr(regs, (int)rs);
+                    sawJalr = true;
+                }
+                if (IsAddiuZeroNeg(word, out rt) && rt == 2 && apiImm == 0)
+                    apiImm = (uint)(short)(word & 0xFFFF);
+            }
+            if (apiImm != 0)
+            {
+                via = "api";
+                return true;
+            }
+            if (sawJalr)
+            {
+                via = "jalr";
+                return true;
+            }
+            return false;
+        }
+
+        private static void TryNoteLeftoverWait99O32NkCoredllJal(MipsBus bus,
+            uint[] regs, uint pc)
+        {
+            if (!_leftoverWait99O32NkCoredllSawEntry)
+                return;
+            if (pc != CoredllDllMainJalVa)
+                return;
+            if (_leftoverWait99O32NkCoredllJalLog)
+                return;
+            _leftoverWait99O32NkCoredllJalLog = true;
+            uint ra = PeekGpr(regs, 31);
+            bool threw;
+            uint word = PeekDestWordRaw(bus, pc, out threw);
+            if (word == 0)
+                TryPeekCoredllDumpWord(bus, pc, out word);
+            uint jalDest;
+            uint apiImm;
+            string how;
+            TryDecodeCoredllDllMainJal(bus, regs, pc, out jalDest, out apiImm,
+                out how);
+            string why = "dllmain-jal";
+            if (IsLeftoverBindRefuse(jalDest)
+                || jalDest == LeftoverWait99O32RefuseRa
+                || jalDest == LeftoverWait99GetProcDest)
+            {
+                why = "leftover-thunk";
+                TryPlantLeftoverWait99GetProc(bus, regs);
+            }
+            else if (how == "api")
+            {
+                why = "api";
+                TryPlantLeftoverWait99GetProc(bus, regs);
+            }
+            else if (how == "miss-jal")
+                why = "miss-jal";
+            if (IsLeftoverBindRefuse(ra) || ra == LeftoverWait99O32RefuseRa
+                || ra == LeftoverWait99GetProcDest
+                || IsWrapDestSize(ra) || IsWrapDestFp50Va(ra)
+                || ra == HdDllEntryRva)
+                ra = 0;
+            _leftoverWait99O32NkChainLast = pc ^ CoredllDllMainVa;
+            _leftoverWait99O32NkChainVia = why;
+            _leftoverWait99O32NkChainName = "coredll.dll";
+            BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-o32-nk-chain pc=0x" +
+                pc.ToString("X8") +
+                " name=coredll.dll" +
+                " startip=0x" + CoredllDllMainVa.ToString("X") +
+                " word=0x" + word.ToString("X") +
+                " ra=0x" + ra.ToString("X") +
+                " jal=0x" + jalDest.ToString("X") +
+                " via=" + why);
+        }
+
         // Live e728aa2 FIRST-WIN via=exn at
         // 0x80000180 word=0x3C1A8001 before
         // DllMain; nk-after via=ret was early
@@ -15183,13 +15327,13 @@ namespace ProcessorEmulator.Core
                 return;
             if (pc == CallDllEntry || pc == CallDllStartip
                 || pc == XipDllCallDllJal || pc == LoadO32WrapStartip
-                || pc == CoredllDllMainVa)
+                || pc == CoredllDllMainVa || pc == CoredllDllMainJalVa)
                 return;
             string why;
             uint peekVa = pc;
             if (pc == LeftoverWait99GetProcDest)
                 why = "leftover-getproc";
-            else if (pc == LeftoverWait99O32RefuseRa || IsLeftoverDestVa(pc)
+            else if (pc == LeftoverWait99O32RefuseRa
                 || IsLeftoverBindRefuse(pc))
                 why = "leftover-refuse";
             else if (pc >= CoredllSharedLo && pc < CoredllSharedHi)
@@ -21325,6 +21469,7 @@ namespace ProcessorEmulator.Core
             _leftoverWait99O32NkCoredllBodyPc = 0;
             _leftoverWait99O32NkCoredllSpin = 0;
             _leftoverWait99O32NkCoredllExnLog = false;
+            _leftoverWait99O32NkCoredllJalLog = false;
             _leftoverWait99O32NkChainSawEntry = false;
             _leftoverWait99O32NkRa = 0;
             _leftoverWait99O32NkA0 = 0;
@@ -27410,6 +27555,7 @@ namespace ProcessorEmulator.Core
         private static bool _leftoverWait99O32NkCoredllSawCall;
         private static bool _leftoverWait99O32NkCoredllSawEntry;
         private static bool _leftoverWait99O32NkCoredllExnLog;
+        private static bool _leftoverWait99O32NkCoredllJalLog;
         private static bool _leftoverWait99O32NkCoredllMissLog;
         private static bool _leftoverWait99O32NkCoredllRetLog;
         private static int _leftoverWait99O32NkCoredllAfterLog;
