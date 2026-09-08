@@ -2033,6 +2033,17 @@ namespace ProcessorEmulator.Core
         // SUD / KData). Never jr hop
         // 0x8003F78C. Never MUL.
         public const uint CoredllDllMainExn15C28OuterJalLinkEpiSwNext = 0x8003F80C;
+        public const uint CoredllDllMainExn15C28OuterJalLinkEpiSwNextDump = 0x3C078034;
+        // Live 475ffcb: lui $a3,0x8034 at
+        // 0x8003F80C named only. Exec
+        // dump lui (ALU $a3:=0x80340000).
+        // Next 0x8003F810 lhu $v1,0($v0)
+        // — observe only (load; do not
+        // invent 0x8032 page / dest).
+        // Never jr hop 0x8003F78C.
+        // Never MUL.
+        public const uint CoredllDllMainExn15C28OuterJalLinkEpiA3LuiNext = 0x8003F810;
+        public const uint CoredllDllMainExn15C28OuterJalLinkEpiA3LuiNextDump = 0x94430000;
         // Taken dest 0x8003F748 MULT
         // $s4,$s2 (0x02920018). Next
         // MFLO. Never hop. Never MUL.
@@ -12890,6 +12901,10 @@ namespace ProcessorEmulator.Core
                 return CoredllDllMainExn15C28OuterJalLinkEpiV0AddiuNextDump;
             if (pc == CoredllDllMainExn15C28OuterJalLinkEpiV1AddiuNext)
                 return CoredllDllMainExn15C28OuterJalLinkEpiV1AddiuNextDump;
+            if (pc == CoredllDllMainExn15C28OuterJalLinkEpiSwNext)
+                return CoredllDllMainExn15C28OuterJalLinkEpiSwNextDump;
+            if (pc == CoredllDllMainExn15C28OuterJalLinkEpiA3LuiNext)
+                return CoredllDllMainExn15C28OuterJalLinkEpiA3LuiNextDump;
             return 0;
         }
 
@@ -12963,7 +12978,9 @@ namespace ProcessorEmulator.Core
                 && pc != CoredllDllMainExn15C28OuterJalLinkEpiJrNext
                 && pc != CoredllDllMainExn15C28OuterJalLinkEpiLuiNext
                 && pc != CoredllDllMainExn15C28OuterJalLinkEpiV0AddiuNext
-                && pc != CoredllDllMainExn15C28OuterJalLinkEpiV1AddiuNext)
+                && pc != CoredllDllMainExn15C28OuterJalLinkEpiV1AddiuNext
+                && pc != CoredllDllMainExn15C28OuterJalLinkEpiSwNext
+                && pc != CoredllDllMainExn15C28OuterJalLinkEpiA3LuiNext)
                 return;
             if (IsDumpMemRefuseVa(pc) || IsDumpMemRefuseVa(pc + 4))
                 return;
@@ -13955,7 +13972,9 @@ namespace ProcessorEmulator.Core
 
         private static bool IsExn15C28OuterJalLwS4Progress()
         {
-            return _exn15C28AfterOuterJalEpiSwLogged
+            return _exn15C28AfterOuterJalEpiA3LuiLogged
+                || _exn15C28AfterOuterJalEpiSwNextLogged
+                || _exn15C28AfterOuterJalEpiSwLogged
                 || _exn15C28AfterOuterJalEpiV1AddiuNextLogged
                 || _exn15C28AfterOuterJalEpiV1AddiuLogged
                 || _exn15C28AfterOuterJalEpiV0AddiuNextLogged
@@ -14122,6 +14141,12 @@ namespace ProcessorEmulator.Core
                     && nfffLeave != CoredllDllMainExn15C28StkSwNext
                     && nfffLeave != CoredllDllMainExn15C28OuterJalLinkBeqTaken
                     && nfffLeave != CoredllDllMainExn15C28OuterJalLink
+                    && (!_exn15C28AfterOuterJalEpiA3LuiLogged
+                        || (nfffLeave != CoredllDllMainExn15C28OuterJalLinkEpiSwNext
+                            && nfffLeave != CoredllDllMainExn15C28OuterJalLinkEpiV1AddiuNext
+                            && nfffLeave != CoredllDllMainExn15C28OuterJalLinkEpiV0AddiuNext
+                            && nfffLeave != CoredllDllMainExn15C28OuterJalLinkEpiLuiNext
+                            && nfffLeave != CoredllDllMainExn15C28OuterJalLinkEpiJrNext))
                     && (!_exn15C28AfterOuterJalEpiSwLogged
                         || (nfffLeave != CoredllDllMainExn15C28OuterJalLinkEpiV1AddiuNext
                             && nfffLeave != CoredllDllMainExn15C28OuterJalLinkEpiV0AddiuNext
@@ -14904,6 +14929,9 @@ namespace ProcessorEmulator.Core
         // progress.
         private static uint DumpMem15C28OuterJalProgressLeave()
         {
+            if (_exn15C28AfterOuterJalEpiA3LuiLogged
+                || _exn15C28AfterOuterJalEpiA3LuiNextLogged)
+                return CoredllDllMainExn15C28OuterJalLinkEpiA3LuiNext;
             if (_exn15C28AfterOuterJalEpiSwLogged
                 || _exn15C28AfterOuterJalEpiSwNextLogged)
                 return CoredllDllMainExn15C28OuterJalLinkEpiSwNext;
@@ -20487,6 +20515,8 @@ namespace ProcessorEmulator.Core
                     || capLeave == CoredllDllMainExn15C28OuterJalLinkEpiJrNext
                     || capLeave == CoredllDllMainExn15C28OuterJalLinkEpiAddiuNext
                     || capLeave == CoredllDllMainExn15C28OuterJalLink
+                    || (capLeave == CoredllDllMainExn15C28OuterJalLinkEpiSwNext
+                        && _exn15C28AfterOuterJalEpiA3LuiLogged)
                     || capLeave == CoredllDllMainExn15C28JalS1AluNext
                     || capLeave == CoredllDllMainExn15C28StkSwNext
                     || capLeave == CoredllDllMainExn15C28OuterJalLinkBeqTaken
@@ -20656,6 +20686,216 @@ namespace ProcessorEmulator.Core
                 " via=dump-mem-15c28-after-outer-jal-epi-sw" +
                 " (first I-fetch after sw dest-miss skip;" +
                 " honor ra; no jr hop; no invent $ra / 0xFFFFDB18 / *0xFFFFDB58 / 0x9A02)");
+        }
+
+        // Live 475ffcb: lui $a3,0x8034 at
+        // 0x8003F80C named only. Exec
+        // dump lui (ALU $a3:=0x80340000).
+        // PC:=0x8003F810. Observe lhu
+        // $v1,0($v0) (load; name only).
+        // Refuse jr hop 0x8003F78C /
+        // MULT / SPECIAL 0x16. Not
+        // LoadO32. No leftover-hop. Do
+        // not invent *0xFFFFDB18 /
+        // *0xFFFFDB58 / SUD / 0x9A02 /
+        // 0x8032 page.
+        public static bool TryTakeDumpMem15C28AfterOuterJalEpiA3Lui(MipsBus bus,
+            uint[] regs, uint pc, uint insn, bool inDelay, ref uint cpuPc)
+        {
+            if (!_leftoverWait99O32NkCoredllSawEntry || !_exn15C28Left)
+                return false;
+            if (!_exn15C28AfterOuterJalEpiSwLogged)
+                return false;
+            if (pc != CoredllDllMainExn15C28OuterJalLinkEpiSwNext)
+                return false;
+            if (_exn15C28AfterOuterJalEpiA3LuiLogged)
+            {
+                if (inDelay)
+                    return false;
+                uint capLeave = DumpMem15C28OuterJalProgressLeave();
+                if (capLeave == 0
+                    || capLeave == CoredllDllMainExn15C28OuterJalLinkEpiSwNext
+                    || capLeave == CoredllDllMainExn15C28OuterJalLinkEpiV1AddiuNext
+                    || capLeave == CoredllDllMainExn15C28OuterJalLinkEpiV0AddiuNext
+                    || capLeave == CoredllDllMainExn15C28OuterJalLinkEpiLuiNext
+                    || capLeave == CoredllDllMainExn15C28OuterJalLinkEpiJrNext
+                    || capLeave == CoredllDllMainExn15C28OuterJalLinkEpiAddiuNext
+                    || capLeave == CoredllDllMainExn15C28OuterJalLink
+                    || capLeave == CoredllDllMainExn15C28JalS1AluNext
+                    || capLeave == CoredllDllMainExn15C28StkSwNext
+                    || capLeave == CoredllDllMainExn15C28OuterJalLinkBeqTaken
+                    || capLeave == PeekGpr(regs, 31)
+                    || IsDumpMemRefuseVa(capLeave)
+                    || IsExn15C28Na02Frame(capLeave)
+                    || IsExn15C28NfffFrame(capLeave))
+                    return false;
+                cpuPc = capLeave;
+                return true;
+            }
+            if (inDelay)
+                return false;
+            if (IsDumpMemRefuseVa(pc)
+                || IsDumpMemRefuseVa(CoredllDllMainExn15C28OuterJalLinkEpiA3LuiNext)
+                || IsExn15C28Na02Frame(pc)
+                || IsExn15C28HelperBody(pc)
+                || IsExn15C28JalRaEpiRange(pc))
+                return false;
+            uint epiA3LuiDump = 0;
+            if (!TryPeekLeftoverWait99DumpOnly(pc, out epiA3LuiDump)
+                || epiA3LuiDump == 0)
+                epiA3LuiDump = CoredllDllMainExn15C28OuterJalLinkEpiSwNextDump;
+            if (epiA3LuiDump != CoredllDllMainExn15C28OuterJalLinkEpiSwNextDump)
+                return false;
+            uint epiA3LuiNextDump = 0;
+            if (!TryPeekLeftoverWait99DumpOnly(
+                    CoredllDllMainExn15C28OuterJalLinkEpiA3LuiNext,
+                    out epiA3LuiNextDump)
+                || epiA3LuiNextDump == 0)
+                epiA3LuiNextDump = CoredllDllMainExn15C28OuterJalLinkEpiA3LuiNextDump;
+            if (epiA3LuiNextDump != CoredllDllMainExn15C28OuterJalLinkEpiA3LuiNextDump)
+                return false;
+            if ((epiA3LuiNextDump >> 26) == 0
+                && ((epiA3LuiNextDump & 63) == 0x18
+                    || (epiA3LuiNextDump & 63) == 0x16
+                    || (epiA3LuiNextDump & 63) == 0x08))
+                return false;
+            if (insn != epiA3LuiDump && insn != 0 && !IsMipsAbsRs0Store(insn)
+                && !IsDumpMemAluInsn(insn))
+                return false;
+            if (insn != epiA3LuiDump && insn != 0)
+                TryHealDumpInsn(bus, pc, insn, epiA3LuiDump);
+            uint epiA3LuiNext = CoredllDllMainExn15C28OuterJalLinkEpiA3LuiNext;
+            if (epiA3LuiNext == 0 || (epiA3LuiNext & 3) != 0
+                || epiA3LuiNext == CoredllDllMainExn15C28OuterJalLinkEpiSwNext
+                || epiA3LuiNext == CoredllDllMainExn15C28OuterJalLinkEpiV1AddiuNext
+                || epiA3LuiNext == CoredllDllMainExn15C28OuterJalLinkEpiLuiNext
+                || epiA3LuiNext == CoredllDllMainExn15C28OuterJalLinkEpiJrNext
+                || epiA3LuiNext == CoredllDllMainExn15C28OuterJalLink
+                || epiA3LuiNext == CoredllDllMainExn15C28OuterJalLinkBeqTaken
+                || epiA3LuiNext == CoredllDllMainExn15C28JalS1AluNext
+                || epiA3LuiNext == CoredllDllMainExn15C28StkSwNext
+                || epiA3LuiNext == PeekGpr(regs, 31)
+                || IsDumpMemRefuseVa(epiA3LuiNext)
+                || IsExn15C28Na02Frame(epiA3LuiNext)
+                || IsExn15C28NfffFrame(epiA3LuiNext)
+                || IsExn15C28HelperBody(epiA3LuiNext)
+                || IsExn15C28JalRaEpiRange(epiA3LuiNext)
+                || IsLeftoverDestVa(epiA3LuiNext)
+                || IsWrapDestSize(epiA3LuiNext)
+                || IsWrapDestFp50Va(epiA3LuiNext))
+                return false;
+            bool epiA3LuiOk = TryExecDumpMemAlu(regs, epiA3LuiDump);
+            if (bus != null)
+            {
+                uint epc = bus.PeekEpc();
+                if (epc != 0 && (epc & 3) == 0)
+                    bus.ClearExlIfEpc(epc);
+                bus.ClearExlIfEpc(pc);
+            }
+            cpuPc = epiA3LuiNext;
+            _exn15C28AfterOuterJalEpiSwNextLogged = true;
+            _exn15C28AfterOuterJalEpiA3LuiLogged = true;
+            uint epiA3LuiRa = PeekGpr(regs, 31);
+            uint epiA3LuiSp = PeekGpr(regs, 29);
+            uint epiA3LuiT5 = PeekGpr(regs, 13);
+            uint epiA3LuiV0 = PeekGpr(regs, 2);
+            uint epiA3LuiV1 = PeekGpr(regs, 3);
+            uint epiA3LuiA3 = PeekGpr(regs, 7);
+            _leftoverWait99O32NkChainLast = pc ^ CoredllDllMainVa;
+            _leftoverWait99O32NkChainVia = epiA3LuiOk
+                ? "dump-mem-15c28-outer-jal-epi-a3-lui"
+                : "dump-mem-15c28-outer-jal-epi-a3-lui-skip";
+            _leftoverWait99O32NkChainName = "coredll.dll";
+            BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-o32-nk-chain pc=0x" +
+                pc.ToString("X8") +
+                " name=coredll.dll" +
+                " startip=0x" + CoredllDllMainVa.ToString("X") +
+                " word=0x" + epiA3LuiDump.ToString("X") +
+                " dest=0x" + epiA3LuiNext.ToString("X") +
+                " via=" + _leftoverWait99O32NkChainVia);
+            BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk abs-15c28 outer-jal-epi-a3-lui" +
+                " pc=0x" + pc.ToString("X") +
+                " next=0x" + epiA3LuiNext.ToString("X") +
+                " dump=0x" + epiA3LuiDump.ToString("X") +
+                (insn != 0 && insn != epiA3LuiDump
+                    ? " live=0x" + insn.ToString("X") : "") +
+                (epiA3LuiOk ? " lui=1" : " lui=0") +
+                " a3=0x" + epiA3LuiA3.ToString("X") +
+                " v0=0x" + epiA3LuiV0.ToString("X") +
+                " v1=0x" + epiA3LuiV1.ToString("X") +
+                " t5=0x" + epiA3LuiT5.ToString("X") +
+                " ra=0x" + epiA3LuiRa.ToString("X") +
+                " sp=0x" + epiA3LuiSp.ToString("X") +
+                " via=" + _leftoverWait99O32NkChainVia +
+                " (dump lui $a3,0x8034; ALU $a3:=0x80340000;" +
+                " no invent 0x8032 page / *0xFFFFDB18 / *0xFFFFDB58 / SUD / 0x9A02;" +
+                " no jr hop 0x8003F78C)");
+            return true;
+        }
+
+        // Live 475ffcb: after lui exec,
+        // name first I-fetch at 0x8003F810
+        // (dump lhu $v1,0($v0)). One-shot.
+        // Load — name only this miss. Do
+        // not invent dest / $ra / 0x9A02
+        // / 0x9F / 0x8032 page /
+        // *0xFFFFDB18 / *0xFFFFDB58.
+        // Do not hop MUL / jr 0x8003F78C.
+        public static void TryNoteDumpMem15C28AfterOuterJalEpiA3Lui(MipsBus bus,
+            uint[] regs, uint pc, uint insn)
+        {
+            if (!_leftoverWait99O32NkCoredllSawEntry || !_exn15C28Left)
+                return;
+            if (!_exn15C28AfterOuterJalEpiA3LuiLogged
+                || _exn15C28AfterOuterJalEpiA3LuiNextLogged)
+                return;
+            if (pc != CoredllDllMainExn15C28OuterJalLinkEpiA3LuiNext)
+                return;
+            if (IsDumpMemRefuseVa(pc) || IsExn15C28Na02Frame(pc)
+                || IsExn15C28HelperBody(pc) || IsExn15C28JalRaEpiRange(pc))
+                return;
+            _exn15C28AfterOuterJalEpiA3LuiNextLogged = true;
+            uint epiA3NoteDump = 0;
+            if (!TryPeekLeftoverWait99DumpOnly(pc, out epiA3NoteDump)
+                || epiA3NoteDump == 0)
+                epiA3NoteDump = CoredllDllMainExn15C28OuterJalLinkEpiA3LuiNextDump;
+            uint epiA3NoteRa = PeekGpr(regs, 31);
+            uint epiA3NoteSp = PeekGpr(regs, 29);
+            uint epiA3NoteT5 = PeekGpr(regs, 13);
+            uint epiA3NoteV0 = PeekGpr(regs, 2);
+            uint epiA3NoteV1 = PeekGpr(regs, 3);
+            uint epiA3NoteA3 = PeekGpr(regs, 7);
+            string epiA3NoteDis = insn != 0
+                ? FormatMipsOp(pc, insn)
+                : "peek-miss";
+            string epiA3NoteDumpDis = epiA3NoteDump != 0
+                ? FormatMipsOp(pc, epiA3NoteDump)
+                : "dump-miss";
+            _leftoverWait99O32NkChainLast = pc ^ CoredllDllMainVa;
+            _leftoverWait99O32NkChainVia = "dump-mem-15c28-after-outer-jal-epi-a3-lui";
+            _leftoverWait99O32NkChainName = "coredll.dll";
+            BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-o32-nk-chain pc=0x" +
+                pc.ToString("X8") +
+                " name=coredll.dll" +
+                " startip=0x" + CoredllDllMainVa.ToString("X") +
+                " word=0x" + insn.ToString("X") +
+                (epiA3NoteDump != 0 ? " dump=0x" + epiA3NoteDump.ToString("X") : "") +
+                " via=dump-mem-15c28-after-outer-jal-epi-a3-lui");
+            BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk abs-15c28 after-outer-jal-epi-a3-lui" +
+                " pc=0x" + pc.ToString("X") +
+                " word=0x" + insn.ToString("X") +
+                (epiA3NoteDump != 0 ? " dump=0x" + epiA3NoteDump.ToString("X") : "") +
+                " dis=" + epiA3NoteDis +
+                (epiA3NoteDump != 0 ? " dump-dis=" + epiA3NoteDumpDis : "") +
+                " t5=0x" + epiA3NoteT5.ToString("X") +
+                " a3=0x" + epiA3NoteA3.ToString("X") +
+                " v0=0x" + epiA3NoteV0.ToString("X") +
+                " v1=0x" + epiA3NoteV1.ToString("X") +
+                " ra=0x" + epiA3NoteRa.ToString("X") +
+                " sp=0x" + epiA3NoteSp.ToString("X") +
+                " via=dump-mem-15c28-after-outer-jal-epi-a3-lui" +
+                " (first I-fetch after lui exec; lhu $v1,0($v0);" +
+                " honor ra; no jr hop; no invent $ra / 0x8032 page / *0xFFFFDB18 / 0x9A02)");
         }
 
         private static void PokeGpr(uint[] regs, int i, uint v)
@@ -33475,6 +33715,8 @@ namespace ProcessorEmulator.Core
             _exn15C28AfterOuterJalEpiV1AddiuNextLogged = false;
             _exn15C28AfterOuterJalEpiSwLogged = false;
             _exn15C28AfterOuterJalEpiSwNextLogged = false;
+            _exn15C28AfterOuterJalEpiA3LuiLogged = false;
+            _exn15C28AfterOuterJalEpiA3LuiNextLogged = false;
             _exn15C28Na02IFetchLogN = 0;
             _exn15C28Na02IFetchLast = 0;
             _abs59488Logged = false;
@@ -39728,6 +39970,8 @@ namespace ProcessorEmulator.Core
         private static bool _exn15C28AfterOuterJalEpiV1AddiuNextLogged;
         private static bool _exn15C28AfterOuterJalEpiSwLogged;
         private static bool _exn15C28AfterOuterJalEpiSwNextLogged;
+        private static bool _exn15C28AfterOuterJalEpiA3LuiLogged;
+        private static bool _exn15C28AfterOuterJalEpiA3LuiNextLogged;
         private static int _exn15C28Na02IFetchLogN;
         private static uint _exn15C28Na02IFetchLast;
         private static bool _exn15C28AfterMemsetLogged;
