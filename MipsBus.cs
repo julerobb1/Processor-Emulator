@@ -200,6 +200,8 @@ namespace ProcessorEmulator.Emulation
             vaddr = CeRomTocFiles.MapStk2470Va(this, vaddr);
             vaddr = CeRomTocFiles.MapC0000088Va(this, vaddr);
             vaddr = CeRomTocFiles.MapBadAVa(this, vaddr);
+            if (CeRomTocFiles.TrySkipC0000088Store(this, vaddr, value))
+                return;
             CeRomTocFiles.TryNoteDdiNopIatStore(origVa, vaddr, value);
             CeRomTocFiles.TryNoteBindImpIatSw(origVa, value);
             bool watch = CeRomTocFiles.TryNoteDdiNopDecompStore(vaddr, value);
