@@ -113,8 +113,9 @@ namespace ProcessorEmulator.Core
         // 0x8005731C jr ra; mtc0 a0,Compare
         // 0x8002C070 jr ra; move v0,a0
         // 0x80055DB0 CurMSec (jal ReadCount; 0x803392B0 /
-        // 0x80342C60 scale). 0x800557F4 tick vs 0x80338F70;
-        // MMIO 0xB04007D4. 0x80059CE8 Count+Compare stall.
+        // 0x80342C60 scale; sw tick at 0xFFFFD894).
+        // 0x800557F4 tick vs 0x80338F70; MMIO 0xB04007D4.
+        // 0x80059CE8 Count+Compare stall.
         public const uint OemCurMSec = 0x80055DB0;
         public const uint OemReadCount = 0x8005730C;
         public const uint OemReadCompare = 0x80057314;
@@ -1437,6 +1438,18 @@ namespace ProcessorEmulator.Core
         public const uint CoredllDllMainKdataInsn2 = 0xA002E428;
         public const uint CoredllDllMainKdataNext2 = 0x0040F809;
         public const uint CoredllDllMainKdataT9_2 = 0x80057EB8;
+        // Dump nk.exe $t9=0x80057EB8 (jalr-table dest):
+        // lui 0x8034; addiu $fp,11360 → 0x80342C60
+        // (OemCurMSec scale). addiu $s6,-10092 →
+        // 0xFFFFD894 (same CurMSec word OemCurMSec
+        // sw $a0,0($v1)). jal 0x80059D68 ReadCount
+        // minus last at 0x80339B24; jal 0x80059D90
+        // programs Compare. Do not invent tick.
+        public const uint CoredllDllMainT9Scale = 0x80342C60;
+        public const uint CoredllDllMainT9CurMSec = 0xFFFFD894;
+        public const uint CoredllDllMainT9LastCount = 0x80339B24;
+        public const uint CoredllDllMainT9ReadDelta = 0x80059D68;
+        public const uint CoredllDllMainT9ProgCmp = 0x80059D90;
         // Live f628fa6: after sb-jalr-skip, TLBL
         // epc=0x80341A74 bad=0x7EB8. epc!=bad so
         // data load at jalr dest, not I-fetch
@@ -10275,11 +10288,14 @@ namespace ProcessorEmulator.Core
         // or $v0,$t9; jalr $v0. Live sb-jalr
         // left $v0=0x80341A74 (table) and
         // $t9=*table=0x80057EB8 (NK func:
-        // addiu $sp,-40). jalr $v0 I-fetched
+        // addiu $sp,-40; OemCurMSec-scale
+        // sibling at 0x80342C60 / CurMSec
+        // 0xFFFFD894). jalr $v0 I-fetched
         // the table (RI 0x03C18016). Retarget
         // to $t9 only when *table==$t9 and t9
         // peeks. Do not leftover-hop refuse
-        // dests. Do not MUL. Do not ri-nop.
+        // dests. Do not invent tick. Do not
+        // MUL. Do not ri-nop.
         public static bool TryFixJalrTableDest(MipsBus bus, uint[] regs, ref uint target)
         {
             if (bus == null || regs == null)
@@ -10317,6 +10333,44 @@ namespace ProcessorEmulator.Core
                     " via=t9 (dump lw $t9,0($v0); or $v0,$t9; jalr $v0; do not I-fetch table)");
             }
             return true;
+        }
+
+        // Dump nk.exe: $t9 body is OemCurMSec
+        // sibling (scale 0x80342C60, CurMSec
+        // 0xFFFFD894, last Count 0x80339B24).
+        // Observe peeks only. Do not invent
+        // tick. Do not leftover-hop.
+        private static void TryNoteJalrT9MsecScale(MipsBus bus, uint[] regs,
+            uint pc)
+        {
+            if (_jalrT9MsecLogged)
+                return;
+            if (!_leftoverWait99O32NkCoredllSawEntry || !_ffffE428SkipLogged)
+                return;
+            if (pc != CoredllDllMainKdataT9_2)
+                return;
+            _jalrT9MsecLogged = true;
+            uint a0 = PeekGpr(regs, 4);
+            uint scale0 = 0;
+            uint scale20 = 0;
+            uint k94 = 0;
+            uint last = 0;
+            bool scaleOk = TryPeekWord(bus, CoredllDllMainT9Scale, out scale0);
+            bool scale20Ok = TryPeekWord(bus, CoredllDllMainT9Scale + 20, out scale20);
+            bool k94Ok = TryPeekWord(bus, CoredllDllMainT9CurMSec, out k94);
+            bool lastOk = TryPeekWord(bus, CoredllDllMainT9LastCount, out last);
+            BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk jalr-t9" +
+                " pc=0x" + CoredllDllMainKdataT9_2.ToString("X") +
+                " a0=0x" + a0.ToString("X") +
+                " scale=0x" + CoredllDllMainT9Scale.ToString("X") +
+                (scaleOk ? " *scale=0x" + scale0.ToString("X") : " *scale-miss") +
+                (scale20Ok ? " +20=0x" + scale20.ToString("X") : " +20-miss") +
+                " k94=0x" + CoredllDllMainT9CurMSec.ToString("X") +
+                (k94Ok ? " *k94=0x" + k94.ToString("X") : " *k94-miss") +
+                " last=0x" + CoredllDllMainT9LastCount.ToString("X") +
+                (lastOk ? " *last=0x" + last.ToString("X") : " *last-miss") +
+                " via=msec-scale (dump OemCurMSec sibling; ReadCount-delta;" +
+                " do not invent tick)");
         }
 
         private static bool IsMipsLoadToZero(uint insn)
@@ -12714,6 +12768,7 @@ namespace ProcessorEmulator.Core
             TryNoteLeftoverWait99O32NkCoredllJal(bus, regs, pc);
             TryNoteLeftoverWait99O32NkCoredllPc0(bus, regs, pc);
             TryNoteLeftoverWait99O32NkCoredllAfter(bus, regs, pc);
+            TryNoteJalrT9MsecScale(bus, regs, pc);
             if (pc == LoadO32WrapJalO32 || pc == LoadO32Rom)
             {
                 if (pc == LoadO32WrapJalO32)
@@ -22446,6 +22501,7 @@ namespace ProcessorEmulator.Core
             _jalr1db0Done = false;
             _jalrRiLogged = false;
             _jalrTableFixLogged = false;
+            _jalrT9MsecLogged = false;
             _ffffFe54SkipLogged = false;
             _bindImpIatSwExpect = false;
             _bindImpIatSwLogged = false;
@@ -28557,6 +28613,7 @@ namespace ProcessorEmulator.Core
         private static bool _jalr1db0Done;
         private static bool _jalrRiLogged;
         private static bool _jalrTableFixLogged;
+        private static bool _jalrT9MsecLogged;
         private static bool _ffffFe54SkipLogged;
         private static bool _bindImpIatSwExpect;
         private static bool _bindImpIatSwLogged;
