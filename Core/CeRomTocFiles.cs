@@ -15003,13 +15003,13 @@ namespace ProcessorEmulator.Core
                 && !_leftoverWait99O32NkCoredllRetLog)
             {
                 _leftoverWait99O32NkCoredllRetLog = true;
-                uint v0 = PeekGpr(regs, 2);
+                uint coredllV0 = PeekGpr(regs, 2);
                 bool threw;
-                uint word = PeekDestWordRaw(bus, CoredllDllMainVa, out threw);
+                uint coredllWord = PeekDestWordRaw(bus, CoredllDllMainVa, out threw);
                 BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-o32-nk-after pc=0x" +
                     pc.ToString("X8") +
-                    " v0=0x" + v0.ToString("X") +
-                    " word=0x" + word.ToString("X") +
+                    " v0=0x" + coredllV0.ToString("X") +
+                    " word=0x" + coredllWord.ToString("X") +
                     " saw=y" +
                     " next=coredll.dll" +
                     " Target_VA=0x" + CoredllDllMainVa.ToString("X") +
