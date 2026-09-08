@@ -646,7 +646,13 @@ namespace ProcessorEmulator.Emulation
             if (CeRomTocFiles.TryTakeDumpMem15C28AfterOuterJalEpiA2Addiu(_bus, registers, fetchPc,
                     instruction, _inDelaySlot, ref programCounter))
                 return 0;
+            if (CeRomTocFiles.TryTakeDumpMem15C28AfterOuterJalEpiA1Addiu(_bus, registers, fetchPc,
+                    instruction, _inDelaySlot, ref programCounter))
+                return 0;
             if (CeRomTocFiles.TryTakeDumpMem15C28AfterOuterJalEpiA2Sw(_bus, registers, fetchPc,
+                    instruction, _inDelaySlot, ref programCounter))
+                return 0;
+            if (CeRomTocFiles.TryTakeDumpMem15C28AfterOuterJalEpiA3Lhu(_bus, registers, fetchPc,
                     instruction, _inDelaySlot, ref programCounter))
                 return 0;
             if (CeRomTocFiles.TryTakeDumpMem15C28(_bus, registers, fetchPc,
@@ -746,7 +752,11 @@ namespace ProcessorEmulator.Emulation
                 instruction);
             CeRomTocFiles.TryNoteDumpMem15C28AfterOuterJalEpiA2Addiu(_bus, registers, fetchPc,
                 instruction);
+            CeRomTocFiles.TryNoteDumpMem15C28AfterOuterJalEpiA1Addiu(_bus, registers, fetchPc,
+                instruction);
             CeRomTocFiles.TryNoteDumpMem15C28AfterOuterJalEpiA2Sw(_bus, registers, fetchPc,
+                instruction);
+            CeRomTocFiles.TryNoteDumpMem15C28AfterOuterJalEpiA3Lhu(_bus, registers, fetchPc,
                 instruction);
             programCounter += 4;
             return instruction;
