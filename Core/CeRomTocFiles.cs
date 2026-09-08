@@ -1424,10 +1424,10 @@ namespace ProcessorEmulator.Core
         public const uint CallDllFlag = 0x8000;
         public const uint ModuleStartip = 0x5C;
         public const uint ModuleFileObj = 96;
-        // Live 37ce7dd leftover-wait99-o32-nk-chain
-        // name=- startip=0x80061CA0 via=calldll.
-        // Name from MODULE lpszModName +8 / BasePtr
-        // +0x50. Do not leftover-hop this VA.
+        // Live e65e45c leftover-wait99-o32-nk-chain
+        // name=osaxst0.dll startip=0x80061CA0
+        // via=calldll/entry (MODULE+8). Not
+        // coredll. Do not leftover-hop this VA.
         public const uint ChainCallVaLive = 0x80061CA0;
         public const uint CurProc = 0xFFFFDAC4;
         public const uint EcecTocPtr = 0x80010044;
@@ -6413,6 +6413,9 @@ namespace ProcessorEmulator.Core
                     " dumpToc0&0x200=" + (_nkLoadE32DumpToc0 & LoadO32VallocBit).ToString("X");
                 if (WantNkLoadO32Log(_nkLoadE32Name))
                     BeginNkLoadO32Watch();
+                if (NamesMatchRom(_nkLoadE32Name, "coredll.dll")
+                    && _coredllModule != 0)
+                    TryPlantCoredllStartip(bus, _coredllModule);
             }
             _nkLoadE32Logged++;
             ClearNkLoadE32Watch();
@@ -9569,10 +9572,12 @@ namespace ProcessorEmulator.Core
                     module.ToString("X8") +
                     " was=0x" + p50.ToString("X8") +
                     " undo-xip=0x" + CoredllSharedLo.ToString("X8"));
+                TryPlantCoredllStartip(bus, module);
                 return;
             }
             if (p50 != CoredllSharedLo)
                 return;
+            TryPlantCoredllStartip(bus, module);
             if (_coredllBasePtrLogged)
                 return;
             _coredllBasePtrLogged = true;
@@ -13293,6 +13298,351 @@ namespace ProcessorEmulator.Core
             return targetVa;
         }
 
+        // Live e65e45c coredll LoadO32-ret then
+        // leftover-wait99-o32-nk-chain name=
+        // coredll.dll startip=0 via=startip-skip-0.
+        // 0x80061CA0 is osaxst0 (MODULE+8), not
+        // coredll. Plant dump-true coredll
+        // e32_entryrva / DllMain into MODULE+0x5C
+        // so CallDLL jalrs ImageBase 0x03F50000.
+        // Do not plant osaxst0. Do not leftover-
+        // hop dest. Do not name entryrva=0x1B0C.
+        private static bool IsCoredllStartipVa(uint va)
+        {
+            if (va == 0 || (va & 3) != 0)
+                return false;
+            if (va == HdDllEntryVa || va == HdDllInitVa
+                || va == HdDllEntryRva || va == ChainCallVaLive
+                || va == WrapDestE32SizeLive || IsWrapDestSize(va)
+                || IsWrapDestFp50Va(va) || IsHdDllImageBase(va)
+                || IsLeftoverBindRefuse(va) || IsLeftoverDestVa(va))
+                return false;
+            return va >= CoredllSharedLo && va < CoredllSharedHi;
+        }
+
+        private static uint AcceptCoredllEntry(uint vbase, uint entryRva)
+        {
+            if (entryRva == 0 || IsHdDllEntryRva(entryRva))
+                return 0;
+            if (entryRva >= (CoredllSharedHi - CoredllSharedLo))
+                return 0;
+            uint baseVa = CoredllSharedLo;
+            if (IsCoredllBasePtr(vbase))
+                baseVa = vbase;
+            uint va = baseVa + entryRva;
+            if (!IsCoredllStartipVa(va))
+                return 0;
+            return va;
+        }
+
+        private static uint PeekE32CoredllStartip(MipsBus bus, uint e32)
+        {
+            if (bus == null || e32 == 0 || (e32 & 3) != 0)
+                return 0;
+            uint entryRva = 0;
+            uint vbase = 0;
+            if (!TryPeekWord(bus, e32 + E32RomEntryRvaOff, out entryRva))
+                return 0;
+            TryPeekWord(bus, e32 + E32RomVbaseOff, out vbase);
+            return AcceptCoredllEntry(vbase, entryRva);
+        }
+
+        private static uint PeekCoredllDllMainFromE32(MipsBus bus, uint e32,
+            uint o32)
+        {
+            if (bus == null || e32 == 0 || (e32 & 3) != 0
+                || o32 == 0 || (o32 & 3) != 0)
+                return 0;
+            try
+            {
+                uint objcnt = bus.Read32(e32) & 0xFFFF;
+                uint expRva = bus.Read32(e32 + E32RomExpRva);
+                uint expSize = bus.Read32(e32 + E32RomExpRva + 4);
+                if (expRva == 0 || expSize < 0x28 || expSize > 0x20000)
+                    return 0;
+                if (!TryPackedFromRva(bus, o32, objcnt, expRva, out uint expPacked))
+                    return 0;
+                uint nFuncs = bus.Read32(expPacked + 0x14);
+                uint nNames = bus.Read32(expPacked + 0x18);
+                uint addrFuncs = bus.Read32(expPacked + 0x1C);
+                uint addrNames = bus.Read32(expPacked + 0x20);
+                uint addrOrds = bus.Read32(expPacked + 0x24);
+                if (nNames == 0 || nNames > 2048 || nFuncs == 0
+                    || nFuncs > 2048)
+                    return 0;
+                if (!TryPackedFromRva(bus, o32, objcnt, addrNames,
+                        out uint namesPacked)
+                    || !TryPackedFromRva(bus, o32, objcnt, addrFuncs,
+                        out uint funcsPacked)
+                    || !TryPackedFromRva(bus, o32, objcnt, addrOrds,
+                        out uint ordsPacked))
+                    return 0;
+                uint vbase = 0;
+                TryPeekWord(bus, e32 + E32RomVbaseOff, out vbase);
+                for (uint n = 0; n < nNames; n++)
+                {
+                    uint nameRva = bus.Read32(namesPacked + n * 4);
+                    if (!TryPackedFromRva(bus, o32, objcnt, nameRva,
+                        out uint namePacked))
+                        continue;
+                    if (!NamesEqual(ReadAscii(bus, namePacked), "DllMain"))
+                        continue;
+                    uint ordWord = bus.Read32((ordsPacked + n * 2) & ~3u);
+                    uint ord = ((ordsPacked + n * 2) & 2) == 0
+                        ? (ordWord & 0xFFFF) : (ordWord >> 16);
+                    if (ord >= nFuncs)
+                        return 0;
+                    uint funcRva = bus.Read32(funcsPacked + ord * 4);
+                    return AcceptCoredllEntry(vbase, funcRva);
+                }
+            }
+            catch
+            {
+            }
+            return 0;
+        }
+
+        private static uint PeekCoredllPeDllMain(MipsBus bus)
+        {
+            if (bus == null)
+                return 0;
+            uint baseVa = CoredllSharedLo;
+            uint mz = 0;
+            if (!TryPeekWord(bus, baseVa, out mz)
+                || (mz & 0xFFFF) != E32MzMagic)
+                return 0;
+            uint lfanew = 0;
+            if (!TryPeekWord(bus, baseVa + 0x3C, out lfanew)
+                || lfanew < 0x40 || lfanew > 0x400)
+                return 0;
+            uint pe = baseVa + lfanew;
+            uint sig = 0;
+            if (!TryPeekWord(bus, pe, out sig) || sig != 0x00004550)
+                return 0;
+            uint magic = 0;
+            if (!TryPeekWord(bus, pe + 0x18, out magic)
+                || (magic & 0xFFFF) != 0x10B)
+                return 0;
+            uint expRva = 0;
+            if (!TryPeekWord(bus, pe + 0x78, out expRva) || expRva == 0
+                || expRva >= (CoredllSharedHi - CoredllSharedLo))
+                return 0;
+            uint exp = baseVa + expRva;
+            uint nFuncs = 0;
+            uint nNames = 0;
+            if (!TryPeekWord(bus, exp + 0x14, out nFuncs)
+                || !TryPeekWord(bus, exp + 0x18, out nNames))
+                return 0;
+            if (nNames == 0 || nNames > 2048 || nFuncs == 0
+                || nFuncs > 2048)
+                return 0;
+            uint addrFuncs = 0;
+            uint addrNames = 0;
+            uint addrOrds = 0;
+            if (!TryPeekWord(bus, exp + 0x1C, out addrFuncs)
+                || !TryPeekWord(bus, exp + 0x20, out addrNames)
+                || !TryPeekWord(bus, exp + 0x24, out addrOrds)
+                || addrFuncs == 0 || addrNames == 0 || addrOrds == 0)
+                return 0;
+            uint namesVa = baseVa + addrNames;
+            uint funcsVa = baseVa + addrFuncs;
+            uint ordsVa = baseVa + addrOrds;
+            for (uint n = 0; n < nNames; n++)
+            {
+                uint nameRva = 0;
+                if (!TryPeekWord(bus, namesVa + n * 4, out nameRva)
+                    || nameRva == 0)
+                    continue;
+                string nm = "";
+                try
+                {
+                    nm = ReadAscii(bus, baseVa + nameRva);
+                }
+                catch
+                {
+                    continue;
+                }
+                if (!NamesEqual(nm, "DllMain"))
+                    continue;
+                uint ordWord = 0;
+                uint ordAddr = ordsVa + n * 2;
+                if (!TryPeekWord(bus, ordAddr & ~3u, out ordWord))
+                    return 0;
+                uint ord = (ordAddr & 2) == 0
+                    ? (ordWord & 0xFFFF) : (ordWord >> 16);
+                if (ord >= nFuncs)
+                    return 0;
+                uint funcRva = 0;
+                if (!TryPeekWord(bus, funcsVa + ord * 4, out funcRva))
+                    return 0;
+                return AcceptCoredllEntry(baseVa, funcRva);
+            }
+            return 0;
+        }
+
+        private static uint PeekModuleCoredllStartip(MipsBus bus, uint module)
+        {
+            if (bus == null || module == 0 || (module & 3) != 0)
+                return 0;
+            uint obj = 0;
+            if (!TryPeekWord(bus, module + ModuleFileObj, out obj) || obj == 0
+                || (obj & 3) != 0)
+                return 0;
+            try
+            {
+                if (bus.Read8(obj + 4) != TocAttachType)
+                    return 0;
+                uint toc = bus.Read32(obj);
+                if (toc == 0 || (toc & 3) != 0)
+                    return 0;
+                uint np = bus.Read32(toc + 0x10);
+                string name = ReadAscii(bus, np);
+                if (!NamesMatchRom(name, "coredll.dll"))
+                    return 0;
+                uint e32 = bus.Read32(toc + 0x14);
+                uint o32 = bus.Read32(toc + 0x18);
+                uint va = PeekE32CoredllStartip(bus, e32);
+                if (va != 0)
+                    return va;
+                return PeekCoredllDllMainFromE32(bus, e32, o32);
+            }
+            catch
+            {
+            }
+            return 0;
+        }
+
+        private static uint PeekTocCoredllStartip(MipsBus bus, uint tocOrZero)
+        {
+            if (bus == null)
+                return 0;
+            try
+            {
+                uint toc = tocOrZero;
+                if (toc == 0)
+                    toc = bus.Read32(EcecTocPtr);
+                if (toc == 0)
+                    return 0;
+                uint nmods = bus.Read32(toc + RomHdrNumMods);
+                if (nmods == 0 || nmods > 128)
+                    return 0;
+                for (uint i = 0; i < nmods; i++)
+                {
+                    uint entry = toc + TocFirst + i * TocEntrySize;
+                    uint np = bus.Read32(entry + 0x10);
+                    string name = ReadAscii(bus, np);
+                    if (!NamesMatchRom(name, "coredll.dll"))
+                        continue;
+                    uint e32 = bus.Read32(entry + 0x14);
+                    uint o32 = bus.Read32(entry + 0x18);
+                    if (e32 == 0 || (e32 & 3) != 0)
+                        return 0;
+                    uint va = PeekE32CoredllStartip(bus, e32);
+                    if (va != 0)
+                        return va;
+                    va = PeekCoredllDllMainFromE32(bus, e32, o32);
+                    if (va != 0)
+                        return va;
+                    return 0;
+                }
+            }
+            catch
+            {
+            }
+            return 0;
+        }
+
+        private static uint PeekDumpCoredllStartip(MipsBus bus)
+        {
+            if (_leftoverWait99O32NkCoredllStartip != 0
+                && IsCoredllStartipVa(_leftoverWait99O32NkCoredllStartip))
+                return _leftoverWait99O32NkCoredllStartip;
+            uint live = 0;
+            if (NamesMatchRom(_nkLoadE32Name, "coredll.dll")
+                && _nkLoadE32E32 != 0)
+                live = PeekE32CoredllStartip(bus, _nkLoadE32E32);
+            if (live == 0 && NamesMatchRom(_nkLoadO32Name, "coredll.dll")
+                && _nkLoadO32Toc != 0)
+            {
+                uint e32 = 0;
+                if (TryPeekWord(bus, _nkLoadO32Toc + 0x14, out e32))
+                    live = PeekE32CoredllStartip(bus, e32);
+            }
+            if (IsCoredllStartipVa(live))
+            {
+                _leftoverWait99O32NkCoredllStartip = live;
+                return live;
+            }
+            ExtraRomTocMod slot = FindCachedExtraRomToc("coredll.dll");
+            if (slot != null && slot.E32Words != null
+                && slot.E32Words.Length > 2)
+            {
+                uint va = AcceptCoredllEntry(slot.E32Words[2],
+                    slot.E32Words.Length > 1 ? slot.E32Words[1] : 0);
+                if (va != 0)
+                {
+                    _leftoverWait99O32NkCoredllStartip = va;
+                    return va;
+                }
+            }
+            uint toc = PeekTocCoredllStartip(bus, 0);
+            if (toc == 0)
+                toc = PeekTocCoredllStartip(bus, ExtraRomToc(bus));
+            if (toc == 0)
+                toc = PeekCoredllPeDllMain(bus);
+            if (toc != 0)
+                _leftoverWait99O32NkCoredllStartip = toc;
+            return toc;
+        }
+
+        private static uint TryPlantCoredllStartip(MipsBus bus, uint module)
+        {
+            if (bus == null || module == 0 || (module & 3) != 0
+                || IsLeftoverBindRefuse(module) || IsWrapDestSize(module)
+                || IsWrapDestFp50Va(module) || IsHdDllImageBase(module)
+                || IsLeftoverDestVa(module) || module == HdDllEntryVa)
+                return 0;
+            uint p50 = 0;
+            if (!TryPeekWord(bus, module + ProcModule, out p50))
+                return 0;
+            if (!IsCoredllBasePtr(p50) && module != _coredllModule)
+                return 0;
+            uint want = PeekModuleCoredllStartip(bus, module);
+            if (!IsCoredllStartipVa(want))
+                want = PeekDumpCoredllStartip(bus);
+            if (!IsCoredllStartipVa(want))
+                return 0;
+            uint cur = 0;
+            if (!TryPeekWord(bus, module + ModuleStartip, out cur))
+                return 0;
+            if (cur == want)
+            {
+                if (_leftoverWait99O32NkCoredllStartip == 0)
+                    _leftoverWait99O32NkCoredllStartip = cur;
+                return cur;
+            }
+            if (cur != 0 && IsCoredllStartipVa(cur))
+            {
+                if (_leftoverWait99O32NkCoredllStartip == 0)
+                    _leftoverWait99O32NkCoredllStartip = cur;
+                return cur;
+            }
+            if (cur != 0 && IsHdDllStartipKeep(cur)
+                && !IsCoredllStartipVa(cur))
+                return 0;
+            try
+            {
+                bus.Write32(module + ModuleStartip, want);
+            }
+            catch
+            {
+                return 0;
+            }
+            if (_leftoverWait99O32NkCoredllStartip == 0)
+                _leftoverWait99O32NkCoredllStartip = want;
+            return want;
+        }
+
         // Live 26cbe16 leftover dest 0x03F74DEC /
         // GetProc dest 0x8008C844 leftover hop
         // forbidden during BindImp of hd.dll.
@@ -14538,16 +14888,16 @@ namespace ProcessorEmulator.Core
                 " via=" + why);
         }
 
-        // Live 4643c74 Hdstub CallDLL ret v0=1 then
-        // NK osaxst0.dll LoadE32-ret / coredll
-        // LoadO32. Live 37ce7dd chain name=-
-        // startip=0x80061CA0 via=calldll. Name
-        // that MODULE from +8 / +0x50 (coredll
-        // ImageBase 0x03F50000). Observe jalr/
-        // after like Hdstub and filesys LoadE32.
+        // Live e65e45c named 0x80061CA0 osaxst0
+        // (MODULE+8), not coredll. coredll
+        // LoadO32-ret then startip-skip-0.
+        // Plant dump-true coredll e32_entryrva
+        // / DllMain at ImageBase 0x03F50000
+        // into MODULE+0x5C so CallDLL jalrs.
         // Do not plant osaxst0/osaxst1/kd/kcover.
         // Do not leftover-hop dest. Keep Hdstub
-        // jalr+after.
+        // jalr+after. Do not reattribute
+        // 0x80061CA0.
         private static bool IsNkChainName(string name)
         {
             return NamesMatchRom(name, "osaxst0.dll")
@@ -14575,6 +14925,9 @@ namespace ProcessorEmulator.Core
                 return true;
             if (_leftoverWait99O32NkChainCallVa != 0
                 && va == _leftoverWait99O32NkChainCallVa)
+                return true;
+            if (_leftoverWait99O32NkCoredllStartip != 0
+                && va == _leftoverWait99O32NkCoredllStartip)
                 return true;
             return false;
         }
@@ -14685,6 +15038,13 @@ namespace ProcessorEmulator.Core
                 TryPeekWord(bus, mod + ModuleStartip, out startip);
                 TryPeekWord(bus, mod + ProcModule, out p50);
             }
+            if (!atTarget && startip == 0 && mod != 0
+                && (IsCoredllBasePtr(p50) || mod == _coredllModule))
+            {
+                uint planted = TryPlantCoredllStartip(bus, mod);
+                if (IsCoredllStartipVa(planted))
+                    startip = planted;
+            }
             if (atTarget)
                 startip = pc;
             if (startip == HdDllEntryVa || startip == HdDllInitVa
@@ -14700,6 +15060,23 @@ namespace ProcessorEmulator.Core
             string name = PeekNkChainName(bus, regs, pc, mod, p50, startip);
             if (IsHdDllBindName(name))
                 return;
+            string fromMod = PeekNkModuleName(bus, mod);
+            if (mod != 0 && !IsHdDllImageBase(mod)
+                && !IsLeftoverBindRefuse(mod) && !IsWrapDestSize(mod)
+                && !IsLeftoverDestVa(mod)
+                && (NamesMatchRom(fromMod, "coredll.dll")
+                    || (NamesMatchRom(name, "coredll.dll")
+                        && IsCoredllBasePtr(p50))))
+            {
+                if (_coredllModule == 0)
+                    _coredllModule = mod;
+                if (!atTarget && startip == 0)
+                {
+                    uint planted = TryPlantCoredllStartip(bus, mod);
+                    if (IsCoredllStartipVa(planted))
+                        startip = planted;
+                }
+            }
             uint jalrDest = 0;
             uint insn = 0;
             uint rs;
@@ -14807,6 +15184,8 @@ namespace ProcessorEmulator.Core
                 return;
             if (string.IsNullOrEmpty(name) || IsHdDllBindName(name))
                 return;
+            if (NamesMatchRom(name, "coredll.dll") && _coredllModule != 0)
+                TryPlantCoredllStartip(bus, _coredllModule);
             string why;
             if (IsHonestTocMissName(name))
                 why = "toc-miss";
@@ -20538,6 +20917,7 @@ namespace ProcessorEmulator.Core
             _leftoverWait99O32NkChainVia = "";
             _leftoverWait99O32NkChainName = "";
             _leftoverWait99O32NkChainCallVa = 0;
+            _leftoverWait99O32NkCoredllStartip = 0;
             _leftoverWait99O32NkChainSawEntry = false;
             _leftoverWait99O32NkRa = 0;
             _leftoverWait99O32NkA0 = 0;
@@ -26618,6 +26998,7 @@ namespace ProcessorEmulator.Core
         private static string _leftoverWait99O32NkChainVia = "";
         private static string _leftoverWait99O32NkChainName = "";
         private static uint _leftoverWait99O32NkChainCallVa;
+        private static uint _leftoverWait99O32NkCoredllStartip;
         private static bool _leftoverWait99O32NkChainSawEntry;
         private static uint _leftoverWait99O32NkRa;
         private static uint _leftoverWait99O32NkA0;
