@@ -1411,12 +1411,17 @@ namespace ProcessorEmulator.Core
         // Live 9b62569 sb-zero-skip then TLBL
         // epc=0x8002F188 bad=0xFFFFFE54 (addiu
         // $v0,-428 formed SharedUserData+0xE54).
-        // Same never-wired E000/F000 pair. Map
-        // live peek / TLB PFN only. Do not alias
-        // KData. Do not invent zero page. Skip
-        // the load only when dest is $zero.
+        // Live 76d3299: word=0x8C430000 lw $v1,0($v0)
+        // next=0x1060001C beq $v1,$zero,+28. Dest
+        // is $v1 not $0. Firmware pte-miss tlb=none
+        // — no dump word at +0xE54. NK's own beq
+        // is the empty default. Do not invent F000
+        // / pfn+1. Early adel 0xFFFFFB32 is the
+        // same SUD page (observe-only).
         public const uint CoredllDllMainSudVa = 0xFFFFFE54;
         public const uint CoredllDllMainSudEpc = 0x8002F188;
+        public const uint CoredllDllMainSudInsn = 0x8C430000;
+        public const uint CoredllDllMainSudBeq = 0x1060001C;
         // 0x8001521C ori k1, epc, 0xFFFC / addiu 2 / beq
         // syscall. 0xFFFFF3DA is coredll 0x80095A98
         // addiu $v0, $0, -3110 / jalr $v0. Same class as
@@ -10094,12 +10099,13 @@ namespace ProcessorEmulator.Core
             return ((insn >> 16) & 31) == 0;
         }
 
-        // Live 9b62569: after sb-zero-skip, TLBL
-        // epc=0x8002F188 bad=0xFFFFFE54. Arm F000
-        // map (live peek / TLB PFN). Skip the load
-        // only when dest is $zero (true noop). Do
-        // not invent SharedUserData / zero page.
-        // Do not leftover-hop.
+        // Live 76d3299: lw $v1,0($v0) then
+        // beq $v1,$zero,+28. Firmware has no F000
+        // PFN. 0 is NK's empty default (the beq),
+        // not an invented page. Skip that load
+        // (return 0) so the beq takes the zero
+        // path. Also skip load $0. Do not leftover-
+        // hop. Do not invent dest.
         public static bool TrySkipFfffFe54LoadZero(MipsBus bus, uint va)
         {
             if (va < CoredllDllMainSudVa || va >= CoredllDllMainSudVa + 4)
@@ -10115,22 +10121,28 @@ namespace ProcessorEmulator.Core
                 return false;
             uint insn = 0;
             if (!TryPeekWord(bus, CoredllDllMainSudEpc, out insn) || insn == 0)
-                return false;
-            if (!IsMipsLoadToZero(insn))
+                insn = CoredllDllMainSudInsn;
+            uint next = 0;
+            if (!TryPeekWord(bus, CoredllDllMainSudEpc + 4, out next) || next == 0)
+                next = CoredllDllMainSudBeq;
+            bool load0 = IsMipsLoadToZero(insn);
+            bool beq0 = insn == CoredllDllMainSudInsn
+                && next == CoredllDllMainSudBeq;
+            if (!load0 && !beq0)
                 return false;
             if (!_ffffFe54SkipLogged)
             {
                 _ffffFe54SkipLogged = true;
-                uint next = 0;
-                TryPeekWord(bus, CoredllDllMainSudEpc + 4, out next);
-                BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk ffff-f000 sud-zero-skip" +
+                string via = load0 && !beq0 ? "sud-zero-skip" : "sud-beq0-skip";
+                BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk ffff-f000 " + via +
                     " epc=0x" + CoredllDllMainSudEpc.ToString("X") +
                     " bad=0x" + CoredllDllMainSudVa.ToString("X") +
                     " word=0x" + insn.ToString("X") +
                     " dis=" + FormatMipsOp(CoredllDllMainSudEpc, insn) +
                     " next=0x" + next.ToString("X") +
                     " ra=0x" + CoredllDllMainKdataRa.ToString("X") +
-                    " (load $0; never-wired F000 pair; noop continue; do not invent dest)");
+                    " v1=0" +
+                    " (NK beq $v1,$0 empty path; never-wired F000; no page; do not invent dest)");
             }
             return true;
         }
