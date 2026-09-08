@@ -1346,6 +1346,8 @@ namespace ProcessorEmulator.Emulation
             uint target = registers[rs];
             if (rd != 0)
                 registers[rd] = programCounter + 4;
+            if (CeRomTocFiles.TryFixJalrTableDest(_bus, registers, ref target) && rs != 0)
+                registers[rs] = target;
             if (target == CeRomTocFiles.Win32SetFilePointer
                 && (CeRomTocFiles.IsTv2FileHandle(registers[4])
                     || CeRomTocFiles.IsExtraRomOpenFileHandle(registers[4])))

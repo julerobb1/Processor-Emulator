@@ -10270,6 +10270,55 @@ namespace ProcessorEmulator.Core
             return true;
         }
 
+        // Dump nk.exe at 0x8002F218:
+        // lw $v0,36($sp); lw $t9,0($v0);
+        // or $v0,$t9; jalr $v0. Live sb-jalr
+        // left $v0=0x80341A74 (table) and
+        // $t9=*table=0x80057EB8 (NK func:
+        // addiu $sp,-40). jalr $v0 I-fetched
+        // the table (RI 0x03C18016). Retarget
+        // to $t9 only when *table==$t9 and t9
+        // peeks. Do not leftover-hop refuse
+        // dests. Do not MUL. Do not ri-nop.
+        public static bool TryFixJalrTableDest(MipsBus bus, uint[] regs, ref uint target)
+        {
+            if (bus == null || regs == null)
+                return false;
+            if (!_leftoverWait99O32NkCoredllSawEntry || !_ffffE428SkipLogged)
+                return false;
+            if (target != CoredllDllMainJalrDest)
+                return false;
+            uint t9 = PeekGpr(regs, 25);
+            if (t9 != CoredllDllMainKdataT9_2)
+                return false;
+            if (t9 == LeftoverWait99O32RefuseRa
+                || t9 == LeftoverWait99GetProcDest
+                || t9 == LeftoverWait99O32RefuseDump
+                || IsLeftoverDestVa(t9)
+                || IsWrapDestSize(t9) || IsWrapDestFp50Va(t9)
+                || IsHdDllImageBase(t9) || t9 == WrapDestE32SizeLive)
+                return false;
+            uint word = 0;
+            if (!TryPeekWord(bus, target, out word) || word != t9)
+                return false;
+            uint t9w = 0;
+            if (!TryPeekWord(bus, t9, out t9w) || t9w == 0)
+                return false;
+            target = t9;
+            regs[2] = t9;
+            if (!_jalrTableFixLogged)
+            {
+                _jalrTableFixLogged = true;
+                BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk jalr-table" +
+                    " dest=0x" + CoredllDllMainJalrDest.ToString("X") +
+                    " -> 0x" + t9.ToString("X") +
+                    " *table=0x" + word.ToString("X") +
+                    " t9w=0x" + t9w.ToString("X") +
+                    " via=t9 (dump lw $t9,0($v0); or $v0,$t9; jalr $v0; do not I-fetch table)");
+            }
+            return true;
+        }
+
         private static bool IsMipsLoadToZero(uint insn)
         {
             uint op = insn >> 26;
@@ -22396,6 +22445,7 @@ namespace ProcessorEmulator.Core
             _jalr1db0Busy = false;
             _jalr1db0Done = false;
             _jalrRiLogged = false;
+            _jalrTableFixLogged = false;
             _ffffFe54SkipLogged = false;
             _bindImpIatSwExpect = false;
             _bindImpIatSwLogged = false;
@@ -28506,6 +28556,7 @@ namespace ProcessorEmulator.Core
         private static bool _jalr1db0Busy;
         private static bool _jalr1db0Done;
         private static bool _jalrRiLogged;
+        private static bool _jalrTableFixLogged;
         private static bool _ffffFe54SkipLogged;
         private static bool _bindImpIatSwExpect;
         private static bool _bindImpIatSwLogged;
