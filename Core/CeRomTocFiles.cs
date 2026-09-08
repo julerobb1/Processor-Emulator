@@ -1617,6 +1617,13 @@ namespace ProcessorEmulator.Core
         // Continue-skip dest-miss on a1<0x1000.
         // NEVER invent page 0 / 0x80000070.
         public const uint CoredllDllMainPage0Store = 0x70;
+        // Live fe74462: after page0-store-skip,
+        // list-insert a1=0x1028 via=exn-tlbs-c000
+        // dump-match sw $v0,0($a1) v0=0x228.
+        // Continue-skip dest-miss on
+        // 0x1000–0xFFFF. NEVER invent
+        // those pages. No WalkFirmwarePte.
+        public const uint CoredllDllMainLowUsegStore = 0x1028;
         // Live 0cb3d43: after jal, list-insert
         // TLBS a1=0xC0000088 a0=0x80320254
         // v0=*a0=0xBFFFF288. TLB none.
@@ -1711,6 +1718,9 @@ namespace ProcessorEmulator.Core
         public const uint CoredllDllMainExn15C28JalS1After4Dump = 0x312A0001;
         public const uint CoredllDllMainExn15C28JalS1After5 = 0x80021058;
         public const uint CoredllDllMainExn15C28JalS1After5Dump = 0x3C108000;
+        /// <summary>Dump-true after ALU <c>0x80021048–0x80021058</c>: <c>sw $t3,52($sp)</c> at <c>0x8002105C</c> (<c>0xAFAB0034</c>).</summary>
+        public const uint CoredllDllMainExn15C28JalS1AluNext = 0x8002105C;
+        public const uint CoredllDllMainExn15C28JalS1AluNextDump = 0xAFAB0034;
         // Live e7f0f37: left wrote=0 frame
         // at 0x80015C30. Observe first
         // I-fetch and first TLBL/TLBS
@@ -11290,6 +11300,58 @@ namespace ProcessorEmulator.Core
             return true;
         }
 
+        private static bool IsLowUsegListInsertSkipVa(uint va)
+        {
+            return va >= 0x1000u && va <= 0xFFFFu;
+        }
+
+        // Live fe74462: dump-match
+        // sw $v0,0($a1) a1=0x1028 (low
+        // useg above page 0). Skip dest-
+        // miss like page0-store-skip so
+        // next sw $a1,0($a0) / jr $ra
+        // can run. Do not map/invent
+        // 0x1000–0xFFFF. No WalkFirmwarePte.
+        // Zero-byte stays on sb-zero.
+        // One-shot via=lowuseg-store-skip.
+        public static bool TrySkipLowUsegListInsertStore(MipsBus bus, uint va,
+            uint value)
+        {
+            if (!_leftoverWait99O32NkCoredllSawEntry || !_stk1670SbLogged)
+                return false;
+            if (!IsLowUsegListInsertSkipVa(va))
+                return false;
+            if ((value & 0xFFu) == 0)
+                return false;
+            if (CanPeekC000StoreDest(bus, va))
+                return false;
+            uint dump = 0;
+            if (!TryPeekLeftoverWait99DumpOnly(CoredllDllMainC000Epc, out dump)
+                || dump == 0)
+                dump = CoredllDllMainC000Dump;
+            if (dump != CoredllDllMainC000Dump)
+                return false;
+            if (!_c000LowUsegSkipLogged)
+            {
+                _c000LowUsegSkipLogged = true;
+                uint next = 0;
+                if (!TryPeekLeftoverWait99DumpOnly(CoredllDllMainC000NextPc, out next)
+                    || next == 0)
+                    next = CoredllDllMainC000Next;
+                BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk lowuseg-1028 store-skip" +
+                    " epc=0x" + CoredllDllMainC000Epc.ToString("X") +
+                    " bad=0x" + va.ToString("X") +
+                    " word=0x" + dump.ToString("X") +
+                    " next=0x" + next.ToString("X") +
+                    " next-pc=0x" + CoredllDllMainC000NextPc.ToString("X") +
+                    " val=0x" + value.ToString("X") +
+                    " via=lowuseg-store-skip" +
+                    " (dump sw $v0,0($a1); dest miss; continue" +
+                    " sw $a1,0($a0); no invent 0x1000-0xFFFF)");
+            }
+            return true;
+        }
+
         public static uint MapBadAVa(MipsBus bus, uint va)
         {
             if (_badABusy)
@@ -12154,6 +12216,11 @@ namespace ProcessorEmulator.Core
                 // leave must stay dead.
                 if (_exn15C28JalS1SkipLogged)
                     return false;
+                // Live fe74462: after ALU exec
+                // 21048–21058, leave must stay
+                // dead.
+                if (_exn15C28AfterS1AluLogged)
+                    return false;
                 // Live 71fd3f6: leave-hold
                 // after 59488 re-entry spun
                 // silently. One-shot only;
@@ -12366,6 +12433,8 @@ namespace ProcessorEmulator.Core
                 return CoredllDllMainExn15C28JalS1After4Dump;
             if (pc == CoredllDllMainExn15C28JalS1After5)
                 return CoredllDllMainExn15C28JalS1After5Dump;
+            if (pc == CoredllDllMainExn15C28JalS1AluNext)
+                return CoredllDllMainExn15C28JalS1AluNextDump;
             return 0;
         }
 
@@ -13130,6 +13199,245 @@ namespace ProcessorEmulator.Core
                 " via=dump-mem-15c28-after-s1-next" +
                 " (first I-fetch after after-s1 lui;" +
                 " clear exl; honor ra; no invent dest / page 0 / 0x9A02)");
+        }
+
+        // Dump-true ALU at 0x80021048–0x80021058:
+        // addiu/ori/andi/lui (and safe
+        // SPECIAL). Refuse MUL funct 0x16,
+        // jr/jalr/syscall/break, loads,
+        // stores. Used to exec healed
+        // words, not log-only.
+        private static bool IsDumpMemAluInsn(uint insn)
+        {
+            uint op = insn >> 26;
+            if (op == 0)
+            {
+                uint fn = insn & 63;
+                if (fn == 0x16)
+                    return false;
+                if (fn == 8 || fn == 9 || fn == 12 || fn == 13)
+                    return false;
+                if (fn == 24 || fn == 25 || fn == 26 || fn == 27)
+                    return false;
+                return fn == 0 || fn == 2 || fn == 3 || fn == 4
+                    || fn == 6 || fn == 7
+                    || fn == 33 || fn == 35 || fn == 36 || fn == 37
+                    || fn == 38 || fn == 39 || fn == 42 || fn == 43;
+            }
+            return op >= 8 && op <= 15;
+        }
+
+        private static bool TryExecDumpMemAlu(uint[] regs, uint insn)
+        {
+            if (!IsDumpMemAluInsn(insn))
+                return false;
+            uint op = insn >> 26;
+            int rs = (int)((insn >> 21) & 31);
+            int rt = (int)((insn >> 16) & 31);
+            int rd = (int)((insn >> 11) & 31);
+            int sh = (int)((insn >> 6) & 31);
+            uint fn = insn & 63;
+            uint imm = insn & 0xFFFF;
+            int simm = (short)imm;
+            uint rsv = PeekGpr(regs, rs);
+            uint rtv = PeekGpr(regs, rt);
+            if (op == 0)
+            {
+                uint d = 0;
+                if (fn == 0)
+                    d = rtv << sh;
+                else if (fn == 2)
+                    d = rtv >> sh;
+                else if (fn == 3)
+                    d = (uint)((int)rtv >> sh);
+                else if (fn == 4)
+                    d = rtv << (int)(rsv & 31);
+                else if (fn == 6)
+                    d = rtv >> (int)(rsv & 31);
+                else if (fn == 7)
+                    d = (uint)((int)rtv >> (int)(rsv & 31));
+                else if (fn == 33)
+                    d = rsv + rtv;
+                else if (fn == 35)
+                    d = rsv - rtv;
+                else if (fn == 36)
+                    d = rsv & rtv;
+                else if (fn == 37)
+                    d = rsv | rtv;
+                else if (fn == 38)
+                    d = rsv ^ rtv;
+                else if (fn == 39)
+                    d = ~(rsv | rtv);
+                else if (fn == 42)
+                    d = (int)rsv < (int)rtv ? 1u : 0u;
+                else if (fn == 43)
+                    d = rsv < rtv ? 1u : 0u;
+                else
+                    return false;
+                PokeGpr(regs, rd, d);
+                return true;
+            }
+            uint dest = 0;
+            if (op == 8 || op == 9)
+                dest = rsv + (uint)simm;
+            else if (op == 10)
+                dest = (int)rsv < simm ? 1u : 0u;
+            else if (op == 11)
+                dest = rsv < (uint)simm ? 1u : 0u;
+            else if (op == 12)
+                dest = rsv & imm;
+            else if (op == 13)
+                dest = rsv | imm;
+            else if (op == 14)
+                dest = rsv ^ imm;
+            else if (op == 15)
+                dest = imm << 16;
+            else
+                return false;
+            PokeGpr(regs, rt, dest);
+            return true;
+        }
+
+        // Live fe74462: after-s1-next named
+        // addiu at 0x80021048 then quiet
+        // spin — heal was log-only. Execute
+        // dump-true ALU 0x80021048–0x80021058
+        // (set regs, PC:=0x8002105C), clear
+        // EXL. One-shot. No MUL. No invent
+        // dest / 0x9A02 / page 0.
+        public static bool TryTakeDumpMem15C28AfterS1Alu(MipsBus bus, uint[] regs,
+            uint pc, uint insn, bool inDelay, ref uint cpuPc)
+        {
+            if (!_leftoverWait99O32NkCoredllSawEntry || !_exn15C28Left)
+                return false;
+            if (!_exn15C28AfterS1Logged || _exn15C28AfterS1AluLogged)
+                return false;
+            if (pc < CoredllDllMainExn15C28JalS1After
+                || pc > CoredllDllMainExn15C28JalS1After5)
+                return false;
+            if ((pc & 3) != 0)
+                return false;
+            if (inDelay)
+                return false;
+            if (IsDumpMemRefuseVa(pc)
+                || IsDumpMemRefuseVa(CoredllDllMainExn15C28JalS1AluNext))
+                return false;
+            uint first = 0;
+            if (!TryPeekLeftoverWait99DumpOnly(pc, out first) || first == 0)
+                first = DumpMem15C28AfterWord(pc);
+            if (first == 0 || !IsDumpMemAluInsn(first))
+                return false;
+            if (insn != first && insn != 0 && !IsMipsAbsRs0Store(insn)
+                && !IsDumpMemAluInsn(insn))
+                return false;
+            if (insn != first && insn != 0)
+                TryHealDumpInsn(bus, pc, insn, first);
+            uint ran = 0;
+            for (uint p = pc; p <= CoredllDllMainExn15C28JalS1After5; p += 4)
+            {
+                uint dump = DumpMem15C28AfterWord(p);
+                if (dump == 0 || !IsDumpMemAluInsn(dump))
+                    return false;
+                ran++;
+            }
+            for (uint p = pc; p <= CoredllDllMainExn15C28JalS1After5; p += 4)
+            {
+                uint dump = DumpMem15C28AfterWord(p);
+                if (!TryExecDumpMemAlu(regs, dump))
+                    return false;
+            }
+            if (bus != null)
+            {
+                uint epc = bus.PeekEpc();
+                if (epc != 0 && (epc & 3) == 0)
+                    bus.ClearExlIfEpc(epc);
+                bus.ClearExlIfEpc(pc);
+                bus.ClearExlIfEpc(CoredllDllMainExn15C28JalS1After);
+            }
+            cpuPc = CoredllDllMainExn15C28JalS1AluNext;
+            _exn15C28AfterS1NextLogged = true;
+            _exn15C28AfterS1AluLogged = true;
+            uint ra = PeekGpr(regs, 31);
+            uint sp = PeekGpr(regs, 29);
+            uint v0 = PeekGpr(regs, 2);
+            uint t4 = PeekGpr(regs, 12);
+            uint s2 = PeekGpr(regs, 18);
+            uint s4 = PeekGpr(regs, 20);
+            uint t2 = PeekGpr(regs, 10);
+            uint s0 = PeekGpr(regs, 16);
+            BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk abs-15c28 after-s1-alu" +
+                " pc=0x" + pc.ToString("X") +
+                " next=0x" + CoredllDllMainExn15C28JalS1AluNext.ToString("X") +
+                " dump=0x" + first.ToString("X") +
+                " n=" + ran.ToString() +
+                " t4=0x" + t4.ToString("X") +
+                " s2=0x" + s2.ToString("X") +
+                " s4=0x" + s4.ToString("X") +
+                " t2=0x" + t2.ToString("X") +
+                " s0=0x" + s0.ToString("X") +
+                " v0=0x" + v0.ToString("X") +
+                " ra=0x" + ra.ToString("X") +
+                " sp=0x" + sp.ToString("X") +
+                " via=dump-mem-15c28-after-s1-alu" +
+                " (dump addiu/ori/andi/lui 0x80021048-0x80021058;" +
+                " exec regs; PC>=0x8002105C; clear exl; no MUL;" +
+                " honor ra; no invent dest / 0x9A02)");
+            return true;
+        }
+
+        // Live fe74462: after ALU exec,
+        // name first I-fetch past
+        // 0x80021058 (dump sw $t3,52($sp)
+        // at 0x8002105C). One-shot.
+        // Do not invent dest / 0x9A02.
+        public static void TryNoteDumpMem15C28AfterS1Alu(MipsBus bus, uint[] regs,
+            uint pc, uint insn)
+        {
+            if (!_leftoverWait99O32NkCoredllSawEntry || !_exn15C28Left)
+                return;
+            if (!_exn15C28AfterS1AluLogged || _exn15C28AfterS1AluNextLogged)
+                return;
+            if (pc != CoredllDllMainExn15C28JalS1AluNext)
+                return;
+            if (IsDumpMemRefuseVa(pc) || IsDumpMemRefuseVa(pc + 4))
+                return;
+            _exn15C28AfterS1AluNextLogged = true;
+            uint afterDump = 0;
+            if (!TryPeekLeftoverWait99DumpOnly(pc, out afterDump) || afterDump == 0)
+                afterDump = CoredllDllMainExn15C28JalS1AluNextDump;
+            uint afterRa = PeekGpr(regs, 31);
+            uint afterSp = PeekGpr(regs, 29);
+            uint afterV0 = PeekGpr(regs, 2);
+            uint afterT3 = PeekGpr(regs, 11);
+            string afterDis = insn != 0
+                ? FormatMipsOp(pc, insn)
+                : "peek-miss";
+            string dumpDis = afterDump != 0
+                ? FormatMipsOp(pc, afterDump)
+                : "dump-miss";
+            _leftoverWait99O32NkChainLast = pc ^ CoredllDllMainVa;
+            _leftoverWait99O32NkChainVia = "dump-mem-15c28-after-s1-alu-next";
+            _leftoverWait99O32NkChainName = "coredll.dll";
+            BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-o32-nk-chain pc=0x" +
+                pc.ToString("X8") +
+                " name=coredll.dll" +
+                " startip=0x" + CoredllDllMainVa.ToString("X") +
+                " word=0x" + insn.ToString("X") +
+                (afterDump != 0 ? " dump=0x" + afterDump.ToString("X") : "") +
+                " via=dump-mem-15c28-after-s1-alu-next");
+            BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk abs-15c28 after-s1-alu-next" +
+                " pc=0x" + pc.ToString("X") +
+                " word=0x" + insn.ToString("X") +
+                (afterDump != 0 ? " dump=0x" + afterDump.ToString("X") : "") +
+                " dis=" + afterDis +
+                (afterDump != 0 ? " dump-dis=" + dumpDis : "") +
+                " ra=0x" + afterRa.ToString("X") +
+                " sp=0x" + afterSp.ToString("X") +
+                " v0=0x" + afterV0.ToString("X") +
+                " t3=0x" + afterT3.ToString("X") +
+                " via=dump-mem-15c28-after-s1-alu-next" +
+                " (first I-fetch after 21048-21058 exec;" +
+                " honor ra; no invent dest / 0x9A02)");
         }
 
         private static void PokeGpr(uint[] regs, int i, uint v)
@@ -25864,10 +26172,13 @@ namespace ProcessorEmulator.Core
             _c000E000SkipLogged = false;
             _c000F000SkipLogged = false;
             _c000Page0SkipLogged = false;
+            _c000LowUsegSkipLogged = false;
             _exn15C28JalS1Logged = false;
             _exn15C28JalS1SkipLogged = false;
             _exn15C28AfterS1Logged = false;
             _exn15C28AfterS1NextLogged = false;
+            _exn15C28AfterS1AluLogged = false;
+            _exn15C28AfterS1AluNextLogged = false;
             _abs59488Logged = false;
             _abs59488ExecLogged = false;
             _ffffFe54SkipLogged = false;
@@ -32039,10 +32350,13 @@ namespace ProcessorEmulator.Core
         private static bool _exn15C28JalS1SkipLogged;
         private static bool _exn15C28AfterS1Logged;
         private static bool _exn15C28AfterS1NextLogged;
+        private static bool _exn15C28AfterS1AluLogged;
+        private static bool _exn15C28AfterS1AluNextLogged;
         private static bool _exn15C28AfterMemsetLogged;
         private static bool _c000E000SkipLogged;
         private static bool _c000F000SkipLogged;
         private static bool _c000Page0SkipLogged;
+        private static bool _c000LowUsegSkipLogged;
         private static bool _abs59488Logged;
         private static bool _abs59488ExecLogged;
         private static bool _ffffFe54SkipLogged;

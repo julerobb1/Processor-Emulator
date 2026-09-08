@@ -208,6 +208,8 @@ namespace ProcessorEmulator.Emulation
                 return;
             if (CeRomTocFiles.TrySkipPage0ListInsertStore(this, vaddr, value))
                 return;
+            if (CeRomTocFiles.TrySkipLowUsegListInsertStore(this, vaddr, value))
+                return;
             if (CeRomTocFiles.TrySkip15C28StkStore(this, vaddr))
                 return;
             CeRomTocFiles.TryNoteDdiNopIatStore(origVa, vaddr, value);
