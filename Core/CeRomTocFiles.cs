@@ -12015,6 +12015,7 @@ namespace ProcessorEmulator.Core
             TryNoteLeftoverWait99O32NkAfter(bus, regs, pc);
             TryNoteLeftoverWait99O32NkChain(bus, regs, pc);
             TryNoteLeftoverWait99O32NkCoredllJal(bus, regs, pc);
+            TryNoteLeftoverWait99O32NkCoredllPc0(bus, regs, pc);
             TryNoteLeftoverWait99O32NkCoredllAfter(bus, regs, pc);
             if (pc == LoadO32WrapJalO32 || pc == LoadO32Rom)
             {
@@ -15249,6 +15250,9 @@ namespace ProcessorEmulator.Core
                 || IsWrapDestSize(ra) || IsWrapDestFp50Va(ra)
                 || ra == HdDllEntryRva)
                 ra = 0;
+            if (ra != 0 && (ra & 3) == 0
+                && ra >= CoredllSharedLo && ra < CoredllSharedHi)
+                _leftoverWait99O32NkCoredllJalRa = ra;
             _leftoverWait99O32NkChainLast = pc ^ CoredllDllMainVa;
             _leftoverWait99O32NkChainVia = why;
             _leftoverWait99O32NkChainName = "coredll.dll";
@@ -15259,6 +15263,96 @@ namespace ProcessorEmulator.Core
                 " word=0x" + word.ToString("X") +
                 " ra=0x" + ra.ToString("X") +
                 " jal=0x" + jalDest.ToString("X") +
+                " via=" + why);
+        }
+
+        // Live 4d62343 FIRST-WIN coredll-page maps
+        // then I-fetch TLBL epc=0 bad=0. wrap-plant
+        // slot=0. Dump-true who jalr/jr'd 0
+        // ($v0/$t9/$ra). Plant dest-live GetProc
+        // into $v0/$t9 only. Restore latched
+        // DllMain ra 0x03F57A44 on jr $ra,0.
+        // Do not leftover-hop dest. Do not invent
+        // heap / PTE / page 0.
+        private static uint PeekCoredllDumpTrueGetProc()
+        {
+            uint gp = _leftoverWait99WrapPlantGp;
+            if (!IsDumpWait99GetProcDest(gp))
+                gp = LeftoverWait99WrapPlantGp;
+            if (!IsDumpWait99GetProcDest(gp))
+                return 0;
+            if (IsLeftoverBindRefuse(gp) || gp == LeftoverWait99GetProcDest
+                || IsLeftoverDestVa(gp) || IsWrapDestSize(gp)
+                || IsWrapDestFp50Va(gp) || gp == HdDllEntryRva)
+                return 0;
+            return gp;
+        }
+
+        private static void TryNoteLeftoverWait99O32NkCoredllPc0(MipsBus bus,
+            uint[] regs, uint pc)
+        {
+            if (!_leftoverWait99O32NkCoredllSawEntry)
+                return;
+            if (_leftoverWait99O32NkCoredllPc0Log)
+                return;
+            if (pc == 0 || IsLeftoverBindRefuse(pc)
+                || pc == LeftoverWait99O32RefuseRa
+                || pc == LeftoverWait99GetProcDest
+                || IsWrapDestSize(pc) || IsWrapDestFp50Va(pc)
+                || pc == HdDllEntryRva)
+                return;
+            uint insn = 0;
+            if (!TryPeekWord(bus, pc, out insn) && !TryPeekCoredllDumpWord(bus, pc, out insn))
+                return;
+            uint rs;
+            bool jalr = IsJalrInsn(insn, out rs);
+            bool jr = ((insn >> 26) & 63) == 0 && (insn & 63) == 8;
+            if (!jalr && !jr)
+                return;
+            if (jr)
+                rs = (insn >> 21) & 31;
+            uint dest = PeekGpr(regs, (int)rs);
+            if (dest != 0)
+                return;
+            _leftoverWait99O32NkCoredllPc0Log = true;
+            uint v0 = PeekGpr(regs, 2);
+            uint t9 = PeekGpr(regs, 25);
+            uint ra = PeekGpr(regs, 31);
+            uint slot = 0;
+            TryPeekWord(bus, ProcessInfoFaultVa, out slot);
+            string why = jalr ? "jalr-0" : (rs == 31 ? "jr-ra-0" : "jr-0");
+            if (jalr && (rs == 2 || rs == 25))
+            {
+                uint gp = PeekCoredllDumpTrueGetProc();
+                if (gp != 0 && regs != null && regs.Length > (int)rs)
+                {
+                    regs[rs] = gp;
+                    why = "jalr-0-plant";
+                }
+            }
+            else if (jr && rs == 31)
+            {
+                uint ret = _leftoverWait99O32NkCoredllJalRa;
+                if (ret != 0 && (ret & 3) == 0
+                    && ret >= CoredllSharedLo && ret < CoredllSharedHi
+                    && !IsLeftoverBindRefuse(ret)
+                    && regs != null && regs.Length > 31)
+                {
+                    regs[31] = ret;
+                    why = "jr-ra-ret";
+                }
+            }
+            _leftoverWait99O32NkChainLast = pc ^ CoredllDllMainVa;
+            _leftoverWait99O32NkChainVia = why;
+            _leftoverWait99O32NkChainName = "coredll.dll";
+            BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-o32-nk-chain pc=0x" +
+                pc.ToString("X8") +
+                " name=coredll.dll" +
+                " startip=0x" + CoredllDllMainVa.ToString("X") +
+                " v0=0x" + v0.ToString("X") +
+                " t9=0x" + t9.ToString("X") +
+                " ra=0x" + ra.ToString("X") +
+                " slot=0x" + slot.ToString("X") +
                 " via=" + why);
         }
 
@@ -15348,6 +15442,20 @@ namespace ProcessorEmulator.Core
                 if (slotWord == 0 && kseg != 0)
                     TryPeekWord(bus, kseg | (epc & 0xFFFu), out slotWord);
             }
+            else if (_leftoverWait99O32NkCoredllSawEntry
+                && code == 2 && epc == 0 && vaddr == 0)
+            {
+                why = "exn-tlbl-pc0";
+            }
+            uint pc0V0 = 0;
+            uint pc0T9 = 0;
+            uint pc0Ra = 0;
+            if (why == "exn-tlbl-pc0")
+            {
+                pc0V0 = PeekGpr(regs, 2);
+                pc0T9 = PeekGpr(regs, 25);
+                pc0Ra = PeekGpr(regs, 31);
+            }
             if (_leftoverWait99O32NkCoredllSawEntry)
                 _leftoverWait99O32NkCoredllAfterLog++;
             else
@@ -15363,6 +15471,11 @@ namespace ProcessorEmulator.Core
                 " epc=0x" + epc.ToString("X") +
                 " bad=0x" + vaddr.ToString("X") +
                 (slot || page ? " word=0x" + slotWord.ToString("X") : "") +
+                (why == "exn-tlbl-pc0"
+                    ? " v0=0x" + pc0V0.ToString("X") +
+                      " t9=0x" + pc0T9.ToString("X") +
+                      " ra=0x" + pc0Ra.ToString("X")
+                    : "") +
                 " via=" + why);
         }
 
@@ -21533,6 +21646,8 @@ namespace ProcessorEmulator.Core
             _leftoverWait99O32NkCoredllSpin = 0;
             _leftoverWait99O32NkCoredllExnLog = false;
             _leftoverWait99O32NkCoredllJalLog = false;
+            _leftoverWait99O32NkCoredllJalRa = 0;
+            _leftoverWait99O32NkCoredllPc0Log = false;
             _leftoverWait99O32NkChainSawEntry = false;
             _leftoverWait99O32NkRa = 0;
             _leftoverWait99O32NkA0 = 0;
@@ -27619,6 +27734,8 @@ namespace ProcessorEmulator.Core
         private static bool _leftoverWait99O32NkCoredllSawEntry;
         private static bool _leftoverWait99O32NkCoredllExnLog;
         private static bool _leftoverWait99O32NkCoredllJalLog;
+        private static uint _leftoverWait99O32NkCoredllJalRa;
+        private static bool _leftoverWait99O32NkCoredllPc0Log;
         private static bool _leftoverWait99O32NkCoredllMissLog;
         private static bool _leftoverWait99O32NkCoredllRetLog;
         private static int _leftoverWait99O32NkCoredllAfterLog;
