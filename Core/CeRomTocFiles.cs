@@ -1472,6 +1472,12 @@ namespace ProcessorEmulator.Core
         // invent an opcode / E000/F000 /
         // leftover-hop / cache hierarchy.
         public const uint CoredllDllMainRiEpc = 0x803426A4;
+        // Live 8c5855f: word=0x03C18016
+        // SPECIAL MUL rd=$s0 rs=$fp rt=$at
+        // sa=0 funct=0x16. prev=0xC4000000
+        // next=0xC4002000. Signed GPR
+        // low-32; do not write HI/LO.
+        public const uint CoredllDllMainRiInsn = 0x03C18016;
         // 0x8001521C ori k1, epc, 0xFFFC / addiu 2 / beq
         // syscall. 0xFFFFF3DA is coredll 0x80095A98
         // addiu $v0, $0, -3110 / jalr $v0. Same class as
@@ -7873,6 +7879,8 @@ namespace ProcessorEmulator.Core
                     return "break";
                 if (fn == 0x0F)
                     return "sync";
+                if (fn == 0x16)
+                    return "mul " + MipsRn(rd) + "," + MipsRn(rs) + "," + MipsRn(rt);
                 if (fn == 0x21)
                     return "addu " + MipsRn(rd) + "," + MipsRn(rs) + "," + MipsRn(rt);
                 if (fn == 0x23)
@@ -10453,6 +10461,29 @@ namespace ProcessorEmulator.Core
             {
                 _jalr1db0Busy = false;
             }
+        }
+
+        // Live 8c5855f: SPECIAL MUL funct=0x16 at
+        // 0x803426A4 word=0x03C18016. One hive
+        // after jalr-1db0. GPR low-32 only.
+        public static void TryNoteJalrRiMul(uint pc, uint insn, uint rs, uint rt, uint rd)
+        {
+            if (_jalrRiMulLogged)
+                return;
+            if (!_leftoverWait99O32NkCoredllSawEntry || !_jalr1db0Logged)
+                return;
+            if (pc != CoredllDllMainRiEpc && pc != CoredllDllMainRiEpc - 4
+                && pc != CoredllDllMainRiEpc + 4)
+                return;
+            _jalrRiMulLogged = true;
+            BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk jalr-ri mul" +
+                " epc=0x" + pc.ToString("X") +
+                " word=0x" + insn.ToString("X") +
+                " dis=" + FormatMipsOp(pc, insn) +
+                " rs=0x" + rs.ToString("X") +
+                " rt=0x" + rt.ToString("X") +
+                " rd=0x" + rd.ToString("X") +
+                " (SPECIAL funct=0x16 GPR MUL; no HI/LO; no cache; do not invent dest)");
         }
 
         private static void TryArmUserKPageAlias(MipsBus bus)
@@ -22316,6 +22347,7 @@ namespace ProcessorEmulator.Core
             _jalr1db0Busy = false;
             _jalr1db0Done = false;
             _jalrRiLogged = false;
+            _jalrRiMulLogged = false;
             _ffffFe54SkipLogged = false;
             _bindImpIatSwExpect = false;
             _bindImpIatSwLogged = false;
@@ -28426,6 +28458,7 @@ namespace ProcessorEmulator.Core
         private static bool _jalr1db0Busy;
         private static bool _jalr1db0Done;
         private static bool _jalrRiLogged;
+        private static bool _jalrRiMulLogged;
         private static bool _ffffFe54SkipLogged;
         private static bool _bindImpIatSwExpect;
         private static bool _bindImpIatSwLogged;
