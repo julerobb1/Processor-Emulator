@@ -1450,6 +1450,19 @@ namespace ProcessorEmulator.Core
         public const uint CoredllDllMainJalrDest = 0x80341A74;
         public const uint CoredllDllMainJalrBad = 0x7EB8;
         public const uint CoredllDllMainJalrPage = 0x7000;
+        // Live fe1650b: jalr-7eb8 map via=kseg0
+        // dest-word=0x80057EB8 dis=lb a1,32440(0)
+        // then TLBL epc=0x80341BE0 bad=0x1DB0.
+        // Same class: useg abs load (epc!=bad).
+        // epc is sec0 / 0x80341BE0. Map
+        // 0x1DB0→0x80001DB0 only if dest rs=$0
+        // and that kseg0 word peeks. Map
+        // 0x1DB0→t9 page only if dest rs=$t9.
+        // After jalr-7eb8 only. Do not invent
+        // E000/F000. Do not leftover-hop.
+        public const uint CoredllDllMainJalrDest2 = 0x80341BE0;
+        public const uint CoredllDllMainJalrBad2 = 0x1DB0;
+        public const uint CoredllDllMainJalrPage2 = 0x1000;
         // 0x8001521C ori k1, epc, 0xFFFC / addiu 2 / beq
         // syscall. 0xFFFFF3DA is coredll 0x80095A98
         // addiu $v0, $0, -3110 / jalr $v0. Same class as
@@ -10332,6 +10345,83 @@ namespace ProcessorEmulator.Core
             }
         }
 
+        public static uint MapJalr1db0Va(MipsBus bus, uint va)
+        {
+            if (_jalr1db0Busy)
+                return va;
+            if (!_leftoverWait99O32NkCoredllSawEntry || !_jalr7eb8Logged)
+                return va;
+            if ((va & ~0xFFFu) != CoredllDllMainJalrPage2)
+                return va;
+            if (_jalr1db0Kseg != 0)
+                return _jalr1db0Kseg | (va & 0xFFFu);
+            TryResolveJalr1db0(bus, va);
+            if (_jalr1db0Kseg != 0)
+                return _jalr1db0Kseg | (va & 0xFFFu);
+            return va;
+        }
+
+        private static void TryResolveJalr1db0(MipsBus bus, uint va)
+        {
+            if (bus == null || _jalr1db0Busy || _jalr1db0Done)
+                return;
+            if ((va & ~0xFFFu) != CoredllDllMainJalrPage2)
+                return;
+            try
+            {
+                _jalr1db0Busy = true;
+                uint destw = 0;
+                bool destOk = TryPeekWord(bus, CoredllDllMainJalrDest2, out destw);
+                uint rs = destOk ? ((destw >> 21) & 31) : 0xFFu;
+                bool t9Path = destOk && IsMipsLoad(destw) && rs == 25;
+                uint kseg0 = t9Path
+                    ? ((CoredllDllMainKdataT9_2 & ~0xFFFu) | (va & 0xFFFu))
+                    : (0x80000000u | (va & 0x1FFFFFFFu));
+                string via = t9Path ? "t9" : "kseg0";
+                string destDis = destOk && destw != 0
+                    ? FormatMipsOp(CoredllDllMainJalrDest2, destw)
+                    : "dest-peek-miss";
+                uint word = 0;
+                if (TryPeekWord(bus, kseg0, out word))
+                {
+                    _jalr1db0Kseg = kseg0 & ~0xFFFu;
+                    if (!_jalr1db0Logged)
+                    {
+                        _jalr1db0Logged = true;
+                        _jalr1db0Done = true;
+                        BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk jalr-1db0 map va=0x" +
+                            CoredllDllMainJalrPage2.ToString("X") +
+                            " -> 0x" + _jalr1db0Kseg.ToString("X8") +
+                            (destOk ? " dest-word=0x" + destw.ToString("X") : " dest-peek-miss") +
+                            " dis=" + destDis +
+                            " rs=" + (destOk ? rs.ToString() : "?") +
+                            " via=" + via +
+                            " (useg 0x1DB0; firmware peek; do not invent dest)");
+                    }
+                    return;
+                }
+                if (!_jalr1db0Logged)
+                {
+                    _jalr1db0Logged = true;
+                    _jalr1db0Done = true;
+                    uint t9w = 0;
+                    bool t9ok = TryPeekWord(bus, CoredllDllMainKdataT9_2, out t9w);
+                    BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk jalr-1db0 map va=0x" +
+                        va.ToString("X") +
+                        " pte-miss" +
+                        (destOk ? " dest-word=0x" + destw.ToString("X") : " dest-peek-miss") +
+                        " dis=" + destDis +
+                        " rs=" + (destOk ? rs.ToString() : "?") +
+                        (t9ok ? " t9=0x" + t9w.ToString("X") : " t9-unmapped") +
+                        " (data TLBL at sec0; not I-fetch; useg abs; do not invent dest)");
+                }
+            }
+            finally
+            {
+                _jalr1db0Busy = false;
+            }
+        }
+
         private static void TryArmUserKPageAlias(MipsBus bus)
         {
             if (_userKPageAliasNoted)
@@ -15910,6 +16000,13 @@ namespace ProcessorEmulator.Core
                 && (epc == CoredllDllMainJalrDest
                     || (vaddr & ~0xFFFu) == CoredllDllMainJalrPage)
                 && (code == 2 || code == 3);
+            bool jalr1db0 = _leftoverWait99O32NkCoredllSawEntry
+                && _jalr7eb8Logged
+                && !jalr
+                && (epc == CoredllDllMainJalrDest2
+                    || vaddr == CoredllDllMainJalrBad2
+                    || (vaddr & ~0xFFFu) == CoredllDllMainJalrPage2)
+                && (code == 2 || code == 3);
             if (slot)
             {
                 TryResolveDdiNopProcessInfo(bus);
@@ -15926,9 +16023,11 @@ namespace ProcessorEmulator.Core
                 TryResolveFfffF000(bus, vaddr);
             if (jalr)
                 TryResolveJalr7eb8(bus, vaddr);
+            if (jalr1db0)
+                TryResolveJalr1db0(bus, vaddr);
             if (_leftoverWait99O32NkCoredllSawEntry
                 && _leftoverWait99O32NkCoredllAfterLog >= 2
-                && !kdata && !sud && !jalr)
+                && !kdata && !sud && !jalr && !jalr1db0)
                 return;
             string why = CoredllExnWhy(code);
             uint slotWord = 0;
@@ -15963,6 +16062,11 @@ namespace ProcessorEmulator.Core
                 why = code == 2 && epc != vaddr ? "exn-tlbl-jalr" : CoredllExnWhy(code) + "-jalr";
                 TryPeekWord(bus, epc, out slotWord);
             }
+            else if (jalr1db0)
+            {
+                why = code == 2 && epc != vaddr ? "exn-tlbl-1db0" : CoredllExnWhy(code) + "-1db0";
+                TryPeekWord(bus, epc, out slotWord);
+            }
             else if (_leftoverWait99O32NkCoredllSawEntry
                 && code == 2 && epc == 0 && vaddr == 0)
             {
@@ -15974,13 +16078,13 @@ namespace ProcessorEmulator.Core
             uint kdataPrev = 0;
             uint kdataNext = 0;
             string kdataDis = "";
-            if (why == "exn-tlbl-pc0" || kdata || sud || jalr)
+            if (why == "exn-tlbl-pc0" || kdata || sud || jalr || jalr1db0)
             {
                 pc0V0 = PeekGpr(regs, 2);
                 pc0T9 = PeekGpr(regs, 25);
                 pc0Ra = PeekGpr(regs, 31);
             }
-            if (kdata || sud || jalr)
+            if (kdata || sud || jalr || jalr1db0)
             {
                 kdataDis = slotWord != 0
                     ? FormatMipsOp(epc, slotWord)
@@ -16002,10 +16106,13 @@ namespace ProcessorEmulator.Core
                 " cause=" + code +
                 " epc=0x" + epc.ToString("X") +
                 " bad=0x" + vaddr.ToString("X") +
-                (slot || page || kdata || sud || jalr ? " word=0x" + slotWord.ToString("X") : "") +
-                (why == "exn-tlbl-pc0" || kdata || sud || jalr
+                (slot || page || kdata || sud || jalr || jalr1db0 ? " word=0x" + slotWord.ToString("X") : "") +
+                (why == "exn-tlbl-pc0" || kdata || sud || jalr || jalr1db0
                     ? " v0=0x" + pc0V0.ToString("X") +
                       " t9=0x" + pc0T9.ToString("X")
+                    : "") +
+                (jalr1db0 && slotWord != 0
+                    ? " rs=" + ((slotWord >> 21) & 31).ToString()
                     : "") +
                 " via=" + why);
             if (kdata)
@@ -16042,6 +16149,18 @@ namespace ProcessorEmulator.Core
                     " v0=0x" + pc0V0.ToString("X") +
                     " t9=0x" + pc0T9.ToString("X") +
                     " (data TLBL bad=0x7EB8 at jalr dest; t9-low=0x7EB8; not I-fetch; do not invent dest)");
+            }
+            if (jalr1db0)
+            {
+                BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk jalr-1db0 load" +
+                    " dis=" + kdataDis +
+                    " prev=0x" + kdataPrev.ToString("X") +
+                    " next=0x" + kdataNext.ToString("X") +
+                    " ra=0x" + pc0Ra.ToString("X") +
+                    " v0=0x" + pc0V0.ToString("X") +
+                    " t9=0x" + pc0T9.ToString("X") +
+                    (slotWord != 0 ? " rs=" + ((slotWord >> 21) & 31).ToString() : "") +
+                    " (data TLBL bad=0x1DB0 at sec0; useg abs; not I-fetch; do not invent dest)");
             }
         }
 
@@ -22124,6 +22243,10 @@ namespace ProcessorEmulator.Core
             _jalr7eb8Logged = false;
             _jalr7eb8Busy = false;
             _jalr7eb8Done = false;
+            _jalr1db0Kseg = 0;
+            _jalr1db0Logged = false;
+            _jalr1db0Busy = false;
+            _jalr1db0Done = false;
             _ffffFe54SkipLogged = false;
             _bindImpIatSwExpect = false;
             _bindImpIatSwLogged = false;
@@ -28229,6 +28352,10 @@ namespace ProcessorEmulator.Core
         private static bool _jalr7eb8Logged;
         private static bool _jalr7eb8Busy;
         private static bool _jalr7eb8Done;
+        private static uint _jalr1db0Kseg;
+        private static bool _jalr1db0Logged;
+        private static bool _jalr1db0Busy;
+        private static bool _jalr1db0Done;
         private static bool _ffffFe54SkipLogged;
         private static bool _bindImpIatSwExpect;
         private static bool _bindImpIatSwLogged;
