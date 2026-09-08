@@ -1469,21 +1469,24 @@ namespace ProcessorEmulator.Core
         public const uint CoredllDllMainKdataNext3 = 0x27BD0050;
         public const uint CoredllDllMainKdataDumpJr = 0x03E00008;
         public const uint CoredllDllMainKdataWrapRefuse = 0x80086E5C;
-        // Live d660a21: after sb-jr honor ra=
-        // 0x8001552C, TLBS epc=0x80043270
-        // bad=0x2470. Dump nk.exe at EPC is
-        // sw $a2,8($sp) (0xAFA60008). o32
-        // arg-home at 0x8004326C; $sp+8=
-        // 0x2470 so $sp=0x2468. Page 0x2000
-        // is not dump NK (imageStart
-        // 0x80010000). Map only if firmware
-        // PTE dest peeks and phys>=0x10000.
-        // Do not kseg0-identity 0x80002470.
-        // Do not invent zero pages.
+        // Live 8553edf: after sb-jr, TLBS
+        // epc=0x80043270 bad=0x2470
+        // word=0xA0042470 sb $a0,0x2470($0).
+        // Dump nk.exe at EPC is sw $a2,8($sp)
+        // (0xAFA60008). prev=sw $a1,4($sp)
+        // next=sw $a3,12($sp). Live $sp=
+        // 0xFFFFD768 (KData), not 0x2468 —
+        // bad is abs imm with rs=$0. Same
+        // overwrite class as sb-jr. Rewrite
+        // fetch to dump sw. Do not invent
+        // page 0x2000 / kseg0 identity.
         public const uint CoredllDllMainStk2470Epc = 0x80043270;
         public const uint CoredllDllMainStk2470Bad = 0x2470;
         public const uint CoredllDllMainStk2470Page = 0x2000;
         public const uint CoredllDllMainStk2470Insn = 0xAFA60008;
+        public const uint CoredllDllMainStk2470Live = 0xA0042470;
+        public const uint CoredllDllMainStk2470Prev = 0xAFA50004;
+        public const uint CoredllDllMainStk2470Next = 0xAFA7000C;
         // Live f628fa6: after sb-jalr-skip, TLBL
         // epc=0x80341A74 bad=0x7EB8. epc!=bad so
         // data load at jalr dest, not I-fetch
@@ -10463,6 +10466,59 @@ namespace ProcessorEmulator.Core
             return true;
         }
 
+        // Live 8553edf: sb $a0,0x2470($0) at
+        // dump sw $a2,8($sp). After sb-jr only.
+        // Rewrite fetch to dump sw. Live $sp is
+        // KData 0xFFFFD768. Do not invent page
+        // 0x2000. Log once. Do not leftover-hop.
+        public static bool TryFixStk2470SbAsDumpSw(MipsBus bus, uint[] regs,
+            uint pc, ref uint insn)
+        {
+            if (pc != CoredllDllMainStk2470Epc)
+                return false;
+            if (insn != CoredllDllMainStk2470Live)
+                return false;
+            if (!_leftoverWait99O32NkCoredllSawEntry || !_jalrE478JrLogged)
+                return false;
+            uint prev = 0;
+            uint next = 0;
+            if (!TryPeekWord(bus, CoredllDllMainStk2470Epc - 4, out prev)
+                || prev != CoredllDllMainStk2470Prev)
+                return false;
+            if (!TryPeekWord(bus, CoredllDllMainStk2470Epc + 4, out next)
+                || next != CoredllDllMainStk2470Next)
+                return false;
+            uint ra = PeekGpr(regs, 31);
+            if (ra == LeftoverWait99O32RefuseRa
+                || ra == LeftoverWait99GetProcDest
+                || ra == LeftoverWait99O32RefuseDump
+                || ra == CoredllDllMainKdataWrapRefuse
+                || IsLeftoverDestVa(ra)
+                || IsWrapDestSize(ra) || IsWrapDestFp50Va(ra)
+                || IsHdDllImageBase(ra) || ra == WrapDestE32SizeLive
+                || ra == WrapDestFp50FillLive)
+                return false;
+            insn = CoredllDllMainStk2470Insn;
+            _stk2470Done = true;
+            if (!_stk2470SwLogged)
+            {
+                _stk2470SwLogged = true;
+                uint sp = PeekGpr(regs, 29);
+                uint a0 = PeekGpr(regs, 4);
+                BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk stk-2470 sb-sw" +
+                    " epc=0x" + CoredllDllMainStk2470Epc.ToString("X") +
+                    " bad=0x" + CoredllDllMainStk2470Bad.ToString("X") +
+                    " word=0x" + CoredllDllMainStk2470Live.ToString("X") +
+                    " dump=0x" + CoredllDllMainStk2470Insn.ToString("X") +
+                    " ra=0x" + ra.ToString("X") +
+                    " sp=0x" + sp.ToString("X") +
+                    " a0=0x" + a0.ToString("X") +
+                    " via=dump-sw (live sb $a0,0x2470($0) overwrote dump" +
+                    " sw $a2,8($sp); KData $sp; do not invent dest)");
+            }
+            return true;
+        }
+
         public static uint MapStk2470Va(MipsBus bus, uint va)
         {
             if (_stk2470Busy)
@@ -10471,8 +10527,12 @@ namespace ProcessorEmulator.Core
                 return va;
             if ((va & ~0xFFFu) != CoredllDllMainStk2470Page)
                 return va;
+            if (_stk2470SwLogged)
+                return va;
             if (_stk2470Kseg != 0)
                 return _stk2470Kseg | (va & 0xFFFu);
+            if (_stk2470Done)
+                return va;
             TryResolveStk2470(bus, va);
             if (_stk2470Kseg != 0)
                 return _stk2470Kseg | (va & 0xFFFu);
@@ -16384,6 +16444,8 @@ namespace ProcessorEmulator.Core
                     || epc == CoredllDllMainRiEpc - 4);
             bool stk2470 = _leftoverWait99O32NkCoredllSawEntry
                 && _jalrE478JrLogged
+                && !_stk2470ExnLogged
+                && !_stk2470SwLogged
                 && (code == 2 || code == 3)
                 && (epc == CoredllDllMainStk2470Epc
                     || vaddr == CoredllDllMainStk2470Bad
@@ -16589,7 +16651,8 @@ namespace ProcessorEmulator.Core
                     " v0=0x" + pc0V0.ToString("X") +
                     " t9=0x" + pc0T9.ToString("X") +
                     (IsMipsStore(slotWord) ? " store" : "") +
-                    " (dump sw $a2,8($sp); page 0x2000; firmware PTE only; do not invent dest)");
+                    " (live sb $a0,0x2470($0); dump sw $a2,8($sp); once; do not invent dest)");
+                _stk2470ExnLogged = true;
             }
             if (ri)
             {
@@ -22740,6 +22803,8 @@ namespace ProcessorEmulator.Core
             _stk2470Logged = false;
             _stk2470Busy = false;
             _stk2470Done = false;
+            _stk2470SwLogged = false;
+            _stk2470ExnLogged = false;
             _ffffFe54SkipLogged = false;
             _bindImpIatSwExpect = false;
             _bindImpIatSwLogged = false;
@@ -28857,6 +28922,8 @@ namespace ProcessorEmulator.Core
         private static bool _stk2470Logged;
         private static bool _stk2470Busy;
         private static bool _stk2470Done;
+        private static bool _stk2470SwLogged;
+        private static bool _stk2470ExnLogged;
         private static bool _ffffFe54SkipLogged;
         private static bool _bindImpIatSwExpect;
         private static bool _bindImpIatSwLogged;

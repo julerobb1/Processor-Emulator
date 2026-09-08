@@ -500,6 +500,8 @@ namespace ProcessorEmulator.Emulation
             uint instruction = ReadMemory32(programCounter);
             CeRomTocFiles.TryFixE478SbAsDumpJr(_bus, registers, programCounter,
                 ref instruction);
+            CeRomTocFiles.TryFixStk2470SbAsDumpSw(_bus, registers, programCounter,
+                ref instruction);
             programCounter += 4;
             return instruction;
         }
