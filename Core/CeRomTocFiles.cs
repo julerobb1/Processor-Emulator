@@ -1637,6 +1637,16 @@ namespace ProcessorEmulator.Core
         public const uint CoredllDllMainAbs59488Dump = 0x00A84823;
         public const uint CoredllDllMainAbs59488Live = 0xA0058688;
         public const uint CoredllDllMainAbs59488Bad = 0xFFFF8688;
+        // Dump memset after subu:
+        // addu $t2,$a0,$t1. Caller
+        // 0x8002102C lw $v0,284($fp)
+        // after jal 0x800593F0
+        // (memset $sp+80, 0, 80).
+        // Do not invent F000 / 0x9A02.
+        public const uint CoredllDllMainAbs59488Next = 0x8005948C;
+        public const uint CoredllDllMainAbs59488NextDump = 0x00895021;
+        public const uint CoredllDllMainExn15C28JalRet = 0x8002102C;
+        public const uint CoredllDllMainExn15C28JalRetDump = 0x8FC2011C;
         // Live e7f0f37: left wrote=0 frame
         // at 0x80015C30. Observe first
         // I-fetch and first TLBL/TLBS
@@ -12117,14 +12127,24 @@ namespace ProcessorEmulator.Core
                 return;
             if (!_exn15C28JalThrLogged)
                 return;
-            if (pc != CoredllDllMainAbs59488Epc)
+            if (pc != CoredllDllMainAbs59488Epc
+                && pc != CoredllDllMainAbs59488Next)
                 return;
             if (IsDumpMemRefuseVa(pc) || IsDumpMemRefuseVa(pc + 4))
                 return;
             uint dump = 0;
             if (!TryPeekLeftoverWait99DumpOnly(pc, out dump) || dump == 0)
-                dump = CoredllDllMainAbs59488Dump;
-            if (dump != CoredllDllMainAbs59488Dump)
+            {
+                if (pc == CoredllDllMainAbs59488Epc)
+                    dump = CoredllDllMainAbs59488Dump;
+                else
+                    dump = CoredllDllMainAbs59488NextDump;
+            }
+            if (pc == CoredllDllMainAbs59488Epc
+                && dump != CoredllDllMainAbs59488Dump)
+                return;
+            if (pc == CoredllDllMainAbs59488Next
+                && dump != CoredllDllMainAbs59488NextDump)
                 return;
             if (insn == dump)
                 return;
@@ -12133,7 +12153,7 @@ namespace ProcessorEmulator.Core
             uint live = insn;
             insn = dump;
             bool heal = TryHealDumpInsn(bus, pc, live, dump);
-            if (_abs59488Logged)
+            if (_abs59488Logged || pc != CoredllDllMainAbs59488Epc)
                 return;
             _abs59488Logged = true;
             uint ra = PeekGpr(regs, 31);
@@ -12301,6 +12321,65 @@ namespace ProcessorEmulator.Core
                 " via=dump-mem-15c28-thr" +
                 " (dump lw $v1,0(ThreadPtr); honor ra;" +
                 " no invent dest / Thread* / 0x9A02)");
+        }
+
+        // Dump 0x80021024 jal memset 0x800593F0
+        // then 0x8002102C lw $v0,284($fp).
+        // $fp is the wrote=0 frame. Observe
+        // the load; do not invent *fp /
+        // F000 / 0x9A02.
+        public static void TryNoteDumpMem15C28JalRet(MipsBus bus, uint[] regs,
+            uint pc, uint insn)
+        {
+            if (!_leftoverWait99O32NkCoredllSawEntry || !_exn15C28Left)
+                return;
+            if (!_exn15C28JalThrLogged || _exn15C28JalRetLogged)
+                return;
+            if (pc != CoredllDllMainExn15C28JalRet)
+                return;
+            if (IsDumpMemRefuseVa(pc))
+                return;
+            uint retDump = 0;
+            if (!TryPeekLeftoverWait99DumpOnly(pc, out retDump) || retDump == 0)
+                retDump = CoredllDllMainExn15C28JalRetDump;
+            if (insn != retDump && insn != CoredllDllMainExn15C28JalRetDump)
+                return;
+            _exn15C28JalRetLogged = true;
+            uint retFp = PeekGpr(regs, 30);
+            uint retSp = PeekGpr(regs, 29);
+            uint retRa = PeekGpr(regs, 31);
+            uint retV0 = PeekGpr(regs, 2);
+            uint retDest = retFp + 284;
+            uint retPeek = 0;
+            bool retOk = retDest != 0 && (retDest & 3) == 0
+                && (retDest & ~0xFFFu) != 0
+                && !IsDumpMemRefuseVa(retDest)
+                && !IsC000StoreSkipVa(retDest)
+                && TryPeekWord(bus, retDest, out retPeek);
+            _leftoverWait99O32NkChainLast = pc ^ CoredllDllMainVa;
+            _leftoverWait99O32NkChainVia = "dump-mem-15c28-memset-ret";
+            _leftoverWait99O32NkChainName = "coredll.dll";
+            BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-o32-nk-chain pc=0x" +
+                pc.ToString("X8") +
+                " name=coredll.dll" +
+                " startip=0x" + CoredllDllMainVa.ToString("X") +
+                " word=0x" + insn.ToString("X") +
+                " dest=0x" + retDest.ToString("X") +
+                (retOk ? " *fp=0x" + retPeek.ToString("X") : " *fp-miss") +
+                " via=dump-mem-15c28-memset-ret");
+            BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk abs-15c28 memset-ret" +
+                " pc=0x" + pc.ToString("X") +
+                " word=0x" + insn.ToString("X") +
+                " dump=0x" + retDump.ToString("X") +
+                " fp=0x" + retFp.ToString("X") +
+                " dest=0x" + retDest.ToString("X") +
+                (retOk ? " *fp=0x" + retPeek.ToString("X") : " *fp-miss") +
+                " ra=0x" + retRa.ToString("X") +
+                " sp=0x" + retSp.ToString("X") +
+                " v0=0x" + retV0.ToString("X") +
+                " via=dump-mem-15c28-memset-ret" +
+                " (dump lw $v0,284($fp) after memset;" +
+                " honor ra; no invent dest / F000 / 0x9A02)");
         }
 
         private static void PokeGpr(uint[] regs, int i, uint v)
@@ -25027,6 +25106,7 @@ namespace ProcessorEmulator.Core
             _exn15C28JalLogged = false;
             _exn15C28JalDestLogged = false;
             _exn15C28JalThrLogged = false;
+            _exn15C28JalRetLogged = false;
             _abs59488Logged = false;
             _ffffFe54SkipLogged = false;
             _bindImpIatSwExpect = false;
@@ -31191,6 +31271,7 @@ namespace ProcessorEmulator.Core
         private static bool _exn15C28JalLogged;
         private static bool _exn15C28JalDestLogged;
         private static bool _exn15C28JalThrLogged;
+        private static bool _exn15C28JalRetLogged;
         private static bool _abs59488Logged;
         private static bool _ffffFe54SkipLogged;
         private static bool _bindImpIatSwExpect;
