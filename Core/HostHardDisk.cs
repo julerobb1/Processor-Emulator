@@ -563,6 +563,12 @@ namespace ProcessorEmulator.Core
                 CeRomTocFiles.TryFillProcExeStartip(bus);
                 return false;
             }
+            if (pc == CeRomTocFiles.LoadO32WrapStartip)
+            {
+                if (CeRomTocFiles.TryFeedCoredllCallDll(bus, registers, ref programCounter))
+                    return true;
+                return false;
+            }
             if (pc == CeRomTocFiles.CallDllStartip)
             {
                 CeRomTocFiles.NoteDdiNopCallDllPc(bus, registers, pc);

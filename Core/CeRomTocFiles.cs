@@ -6561,6 +6561,18 @@ namespace ProcessorEmulator.Core
                     " dest0=0x" + _nkLoadO32Toc.ToString("X8") +
                     " object+6=" + PeekObj6(bus, _nkLoadO32Obj) +
                     " 0x80028844=False");
+                if (NamesMatchRom(_nkLoadO32Name, "coredll.dll"))
+                {
+                    uint mod = PeekCoredllCallDllModule(bus, regs);
+                    if (mod == 0)
+                        mod = _coredllModule;
+                    if (mod != 0)
+                    {
+                        if (_coredllModule == 0)
+                            _coredllModule = mod;
+                        TryPlantCoredllStartip(bus, mod);
+                    }
+                }
                 ClearNkLoadO32Watch();
                 return;
             }
@@ -13738,23 +13750,36 @@ namespace ProcessorEmulator.Core
             TryFeedCoredllStartipBeforeCallDll(bus, regs, CallDllStartip);
         }
 
-        // Live b52708e keep-imagebase 0x03F50000 is
-        // useg; 0x8001DD6C skips CallDLL. Take the
-        // firmware DLL jal 0x8001DD94 (a1=1) only
-        // when MODULE+0x5C is dump-true 0x03F57A00.
-        // Same useg path as ExtraROM ddi_nop. Do
-        // not leftover-hop dest. Do not land on
-        // addiu a1,0,0.
+        // Live b51fa7d wrap 0x8001E960 via=startip
+        // then hd.dll iat-stub; CallDLL never
+        // entered. $fp at wrap is the frame, $a0
+        // is the MODULE. Plant at LoadO32-ret.
+        // At wrap, CallDLL 0x80018B34 (a1=1) and
+        // resume wrap+8. At 0x8001DD6C, firmware
+        // jal 0x8001DD94 when $fp is coredll.
+        // Do not leftover-hop dest.
         public static bool TryFeedCoredllCallDll(MipsBus bus, uint[] regs,
             ref uint programCounter)
         {
             if (bus == null || regs == null || regs.Length <= 30)
                 return false;
-            if (programCounter != XipCallDllUsegChk)
+            bool atUseg = programCounter == XipCallDllUsegChk;
+            bool atWrap = programCounter == LoadO32WrapStartip;
+            if (!atUseg && !atWrap)
                 return false;
-            uint module = PeekGpr(regs, 30);
-            if (!IsCoredllCallDllModule(bus, module))
-                return false;
+            uint module;
+            if (atUseg)
+            {
+                module = PeekGpr(regs, 30);
+                if (!IsCoredllCallDllModule(bus, module))
+                    return false;
+            }
+            else
+            {
+                module = PeekCoredllCallDllModule(bus, regs);
+                if (module == 0)
+                    return false;
+            }
             TryPlantCoredllStartip(bus, module);
             uint p50 = 0;
             uint ip = 0;
@@ -13772,7 +13797,14 @@ namespace ProcessorEmulator.Core
                 return false;
             regs[4] = module;
             regs[5] = 1;
-            programCounter = XipDllCallDllJal;
+            if (atWrap)
+            {
+                regs[31] = programCounter + 8;
+                programCounter = CallDllEntry;
+            }
+            else
+                programCounter = XipDllCallDllJal;
+            _leftoverWait99O32NkCoredllSawCall = true;
             return true;
         }
 
@@ -13828,9 +13860,32 @@ namespace ProcessorEmulator.Core
         // hop forbidden. Do not hop dest-e32
         // 0x1B0C or dest-fp50 as PC. FILE[26]
         // unchanged. Display ddi_nop.dll.
+        private static void TryNoteCoredllMissCallDll(uint pc)
+        {
+            if (_leftoverWait99O32NkCoredllMissLog)
+                return;
+            if (!_leftoverWait99O32NkCoredllSawStartip
+                || _leftoverWait99O32NkCoredllSawCall)
+                return;
+            if (_leftoverWait99O32NkCoredllStartip == 0)
+                return;
+            _leftoverWait99O32NkCoredllMissLog = true;
+            uint startip = _leftoverWait99O32NkCoredllStartip;
+            _leftoverWait99O32NkChainLast = pc ^ startip;
+            _leftoverWait99O32NkChainVia = "miss-calldll";
+            _leftoverWait99O32NkChainName = "coredll.dll";
+            BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-o32-nk-chain pc=0x" +
+                pc.ToString("X8") +
+                " name=coredll.dll" +
+                " startip=0x" + startip.ToString("X") +
+                " word=0x0" +
+                " via=miss-calldll");
+        }
+
         private static void TryNoteLeftoverWait99O32NkIatStub(MipsBus bus,
             uint[] regs, uint pc)
         {
+            TryNoteCoredllMissCallDll(pc);
             if (!_leftoverWait99O32NkBindLogged)
                 return;
             if (pc == LeftoverWait99O32RefuseRa
@@ -15192,7 +15247,9 @@ namespace ProcessorEmulator.Core
             if (IsChainCallVa(startip) && _leftoverWait99O32NkChainCallVa == 0)
                 _leftoverWait99O32NkChainCallVa = startip;
             string name = PeekNkChainName(bus, regs, pc, mod, p50, startip);
-            if (IsHdDllBindName(name))
+            if (IsHdDllBindName(name)
+                && !(pc == XipCallDllUsegChk
+                    && _leftoverWait99O32NkCoredllStartip != 0))
                 return;
             string fromMod = PeekNkModuleName(bus, mod);
             if (mod != 0 && !IsHdDllImageBase(mod)
@@ -15242,6 +15299,20 @@ namespace ProcessorEmulator.Core
             }
             else if (IsHonestTocMissName(name))
                 why = "toc-miss";
+            else if (pc == XipCallDllUsegChk
+                && (_leftoverWait99O32NkCoredllStartip != 0
+                    || NamesMatchRom(name, "coredll.dll")))
+            {
+                uint fp = PeekGpr(regs, 30);
+                if (!IsCoredllCallDllModule(bus, fp))
+                    why = "fp-miss";
+                else if (IsCallDllSkipUseg(p50))
+                    why = "useg-skip";
+                else if ((s5 & WrapS5CallDll) == 0)
+                    why = "s5-skip";
+                else
+                    why = "useg";
+            }
             else if (pc == XipCallDllUsegChk && mod != 0
                 && IsCallDllSkipUseg(p50))
                 why = "useg-skip";
@@ -15273,8 +15344,12 @@ namespace ProcessorEmulator.Core
                 why = "s5-skip";
             else
                 return;
+            if (why == "fp-miss" || why == "miss-calldll")
+                name = "coredll.dll";
             bool keep = atTarget || why == "calldll" || why == "ret"
                 || why == "entry" || why == "empty" || why == "unmap"
+                || why == "fp-miss" || why == "useg-skip" || why == "s5-skip"
+                || why == "miss-calldll"
                 || NamesMatchRom(name, "coredll.dll")
                 || NamesMatchRom(name, "filesys.exe")
                 || NamesMatchRom(name, "filesys.dll")
@@ -15287,7 +15362,9 @@ namespace ProcessorEmulator.Core
                 return;
             if (!IsNkChainName(name) && !IsHonestTocMissName(name)
                 && !atTarget && why != "calldll" && why != "startip-0"
-                && why != "ret" && why != "startip" && why != "entry")
+                && why != "ret" && why != "startip" && why != "entry"
+                && why != "fp-miss" && why != "useg-skip"
+                && why != "s5-skip" && why != "miss-calldll")
                 return;
             if (name.Length == 0)
                 name = "-";
@@ -15298,6 +15375,10 @@ namespace ProcessorEmulator.Core
                 return;
             if (atTarget)
                 _leftoverWait99O32NkChainSawEntry = true;
+            if (NamesMatchRom(name, "coredll.dll") && why == "startip")
+                _leftoverWait99O32NkCoredllSawStartip = true;
+            if (why == "calldll" || why == "entry" || why == "ret")
+                _leftoverWait99O32NkCoredllSawCall = true;
             _leftoverWait99O32NkChainLast = key;
             _leftoverWait99O32NkChainVia = why;
             _leftoverWait99O32NkChainName = name;
@@ -21052,6 +21133,9 @@ namespace ProcessorEmulator.Core
             _leftoverWait99O32NkChainName = "";
             _leftoverWait99O32NkChainCallVa = 0;
             _leftoverWait99O32NkCoredllStartip = 0;
+            _leftoverWait99O32NkCoredllSawStartip = false;
+            _leftoverWait99O32NkCoredllSawCall = false;
+            _leftoverWait99O32NkCoredllMissLog = false;
             _leftoverWait99O32NkChainSawEntry = false;
             _leftoverWait99O32NkRa = 0;
             _leftoverWait99O32NkA0 = 0;
@@ -27133,6 +27217,9 @@ namespace ProcessorEmulator.Core
         private static string _leftoverWait99O32NkChainName = "";
         private static uint _leftoverWait99O32NkChainCallVa;
         private static uint _leftoverWait99O32NkCoredllStartip;
+        private static bool _leftoverWait99O32NkCoredllSawStartip;
+        private static bool _leftoverWait99O32NkCoredllSawCall;
+        private static bool _leftoverWait99O32NkCoredllMissLog;
         private static bool _leftoverWait99O32NkChainSawEntry;
         private static uint _leftoverWait99O32NkRa;
         private static uint _leftoverWait99O32NkA0;

@@ -216,6 +216,16 @@ namespace ProcessorEmulator.Emulation
                     }
                 }
 
+                if (programCounter == CeRomTocFiles.LoadO32WrapStartip)
+                {
+                    if (CeRomTocFiles.TryFeedCoredllCallDll(_bus, registers, ref programCounter))
+                    {
+                        _cp0.UpdateTimer(1);
+                        _bus.Tick(1);
+                        continue;
+                    }
+                }
+
                 if (programCounter == CeRomTocFiles.CallDllStartip)
                 {
                     CeRomTocFiles.NoteDdiNopCallDllPc(_bus, registers, programCounter);
