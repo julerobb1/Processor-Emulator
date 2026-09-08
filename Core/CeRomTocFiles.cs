@@ -1473,11 +1473,19 @@ namespace ProcessorEmulator.Core
         // leftover-hop / cache hierarchy.
         public const uint CoredllDllMainRiEpc = 0x803426A4;
         // Live 8c5855f: word=0x03C18016
-        // SPECIAL MUL rd=$s0 rs=$fp rt=$at
-        // sa=0 funct=0x16. prev=0xC4000000
-        // next=0xC4002000. Signed GPR
-        // low-32; do not write HI/LO.
+        // SPECIAL rs=$fp rt=$at rd=$s0
+        // sa=0 funct=0x16. Reserved /
+        // vendor-specific — NOT SPECIAL2
+        // opcode 0x1C funct 0x02 MUL.
+        // e2d5b1c MUL implement retracted.
+        // prev=0xC4000000 next=0xC4002000
+        // (data-like LWC1 encoding). ra=
+        // 0x8002F234 jalr return (after
+        // delay of jalr $v0). Not a dump-
+        // true no-op helper. Do not MUL.
+        // Do not ri-nop. Do not leftover-hop.
         public const uint CoredllDllMainRiInsn = 0x03C18016;
+        public const uint CoredllDllMainRiRa = 0x8002F234;
         // 0x8001521C ori k1, epc, 0xFFFC / addiu 2 / beq
         // syscall. 0xFFFFF3DA is coredll 0x80095A98
         // addiu $v0, $0, -3110 / jalr $v0. Same class as
@@ -7880,7 +7888,7 @@ namespace ProcessorEmulator.Core
                 if (fn == 0x0F)
                     return "sync";
                 if (fn == 0x16)
-                    return "mul " + MipsRn(rd) + "," + MipsRn(rs) + "," + MipsRn(rt);
+                    return "spec fn=0x16 " + MipsRn(rd) + "," + MipsRn(rs) + "," + MipsRn(rt);
                 if (fn == 0x21)
                     return "addu " + MipsRn(rd) + "," + MipsRn(rs) + "," + MipsRn(rt);
                 if (fn == 0x23)
@@ -10461,29 +10469,6 @@ namespace ProcessorEmulator.Core
             {
                 _jalr1db0Busy = false;
             }
-        }
-
-        // Live 8c5855f: SPECIAL MUL funct=0x16 at
-        // 0x803426A4 word=0x03C18016. One hive
-        // after jalr-1db0. GPR low-32 only.
-        public static void TryNoteJalrRiMul(uint pc, uint insn, uint rs, uint rt, uint rd)
-        {
-            if (_jalrRiMulLogged)
-                return;
-            if (!_leftoverWait99O32NkCoredllSawEntry || !_jalr1db0Logged)
-                return;
-            if (pc != CoredllDllMainRiEpc && pc != CoredllDllMainRiEpc - 4
-                && pc != CoredllDllMainRiEpc + 4)
-                return;
-            _jalrRiMulLogged = true;
-            BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk jalr-ri mul" +
-                " epc=0x" + pc.ToString("X") +
-                " word=0x" + insn.ToString("X") +
-                " dis=" + FormatMipsOp(pc, insn) +
-                " rs=0x" + rs.ToString("X") +
-                " rt=0x" + rt.ToString("X") +
-                " rd=0x" + rd.ToString("X") +
-                " (SPECIAL funct=0x16 GPR MUL; no HI/LO; no cache; do not invent dest)");
         }
 
         private static void TryArmUserKPageAlias(MipsBus bus)
@@ -16251,15 +16236,28 @@ namespace ProcessorEmulator.Core
             if (ri)
             {
                 _jalrRiLogged = true;
+                uint caller = 0;
+                TryPeekWord(bus, CoredllDllMainRiRa, out caller);
+                uint at = PeekGpr(regs, 1);
+                uint s0 = PeekGpr(regs, 16);
+                uint fp = PeekGpr(regs, 30);
+                uint s2 = PeekGpr(regs, 18);
                 BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk jalr-ri" +
                     " dis=" + kdataDis +
                     " prev=0x" + kdataPrev.ToString("X") +
                     " next=0x" + kdataNext.ToString("X") +
                     " ra=0x" + pc0Ra.ToString("X") +
+                    " caller=0x" + CoredllDllMainRiRa.ToString("X") +
+                    (caller != 0 ? " caller-word=0x" + caller.ToString("X") +
+                        " caller-dis=" + FormatMipsOp(CoredllDllMainRiRa, caller) : "") +
                     " v0=0x" + pc0V0.ToString("X") +
                     " t9=0x" + pc0T9.ToString("X") +
+                    " at=0x" + at.ToString("X") +
+                    " s0=0x" + s0.ToString("X") +
+                    " s2=0x" + s2.ToString("X") +
+                    " fp=0x" + fp.ToString("X") +
                     " cause=ri" +
-                    " (ExcCode 10 at 0x803426A4; peek word; no opcode invent; no cache; do not leftover-hop)");
+                    " (fn=0x16 reserved not MUL; not ri-nop; no cache)");
             }
         }
 
@@ -22347,7 +22345,6 @@ namespace ProcessorEmulator.Core
             _jalr1db0Busy = false;
             _jalr1db0Done = false;
             _jalrRiLogged = false;
-            _jalrRiMulLogged = false;
             _ffffFe54SkipLogged = false;
             _bindImpIatSwExpect = false;
             _bindImpIatSwLogged = false;
@@ -28458,7 +28455,6 @@ namespace ProcessorEmulator.Core
         private static bool _jalr1db0Busy;
         private static bool _jalr1db0Done;
         private static bool _jalrRiLogged;
-        private static bool _jalrRiMulLogged;
         private static bool _ffffFe54SkipLogged;
         private static bool _bindImpIatSwExpect;
         private static bool _bindImpIatSwLogged;

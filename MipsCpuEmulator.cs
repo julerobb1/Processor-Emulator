@@ -909,19 +909,6 @@ namespace ProcessorEmulator.Emulation
                 }
                 return;
             }
-            if (funct == 0x16) // CE MIPS32 MUL — GPR only, no HI/LO
-            {
-                uint dest = 0;
-                if (rd != 0)
-                {
-                    long prod = (long)(int)registers[rs] * (long)(int)registers[rt];
-                    dest = (uint)prod;
-                    registers[rd] = dest;
-                }
-                CeRomTocFiles.TryNoteJalrRiMul(_currentPc, instruction,
-                    registers[rs], registers[rt], dest);
-                return;
-            }
 
             if (rd == 0) return;
 
