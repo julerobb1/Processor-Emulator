@@ -10669,10 +10669,12 @@ namespace ProcessorEmulator.Core
         // EPCs). Rewrite and write dump
         // word back at EPC (self-heal)
         // so the next I-fetch is dump-
-        // true. Log once per EPC. Skip-
-        // log once if abs-6670 does not
-        // apply. Do not invent low useg.
-        // Do not leftover-hop.
+        // true. Healed jal/memop falls
+        // through — no dump-mem-skip.
+        // Skip-log only when an abs
+        // store cannot rewrite. Log
+        // once per EPC. Do not invent
+        // low useg. Do not leftover-hop.
         public static bool TryFixLiveAbsStoreAsDumpMem(MipsBus bus, uint[] regs,
             uint pc, ref uint insn)
         {
@@ -10680,25 +10682,17 @@ namespace ProcessorEmulator.Core
                 return false;
             if ((pc & 3) != 0 || pc < 0x80010000u || pc >= 0x80400000u)
                 return false;
-            bool site6670 = pc == CoredllDllMainAbs6670Epc
-                || (IsMipsStore(insn)
-                    && ((insn >> 21) & 31) == 0
-                    && (insn & 0xFFFF) == CoredllDllMainAbs6670Bad);
-            if (!IsMipsStore(insn))
-            {
-                TryLogDumpMemSkip(pc, insn, 0, regs, "not-a-memop", site6670);
+            // Live 93085c2: after heal=1 at
+            // 0x80057470, word is already
+            // dump jal 0x0C010C9B. Do not
+            // dump-mem-skip / stall — let
+            // normal I-fetch execute.
+            if (IsDumpMemAlreadyTrue(insn))
                 return false;
-            }
-            if (((insn >> 21) & 31) != 0)
-            {
-                TryLogDumpMemSkip(pc, insn, 0, regs, "rs!=0", site6670);
+            if (!IsMipsAbsRs0Store(insn) || (insn & 0x8000u) != 0)
                 return false;
-            }
-            if ((insn & 0x8000u) != 0)
-            {
-                TryLogDumpMemSkip(pc, insn, 0, regs, "e000-class", site6670);
-                return false;
-            }
+            bool site6670 = (insn & 0xFFFF) == CoredllDllMainAbs6670Bad
+                || pc == CoredllDllMainAbs6670Epc;
             uint dump = 0;
             if (!TryPeekLeftoverWait99DumpOnly(pc, out dump) || dump == 0)
             {
@@ -10905,6 +10899,15 @@ namespace ProcessorEmulator.Core
         private static bool IsMipsAbsRs0Store(uint insn)
         {
             return IsMipsStore(insn) && ((insn >> 21) & 31) == 0;
+        }
+
+        private static bool IsDumpMemAlreadyTrue(uint insn)
+        {
+            if (IsMipsJumpOrJr(insn))
+                return true;
+            if (IsMipsLoad(insn) || IsMipsStore(insn))
+                return ((insn >> 21) & 31) != 0;
+            return false;
         }
 
         private static bool IsMipsJumpOrJr(uint insn)
