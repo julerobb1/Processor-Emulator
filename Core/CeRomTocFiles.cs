@@ -1438,6 +1438,20 @@ namespace ProcessorEmulator.Core
         public const uint CoredllDllMainKdataInsn2 = 0xA002E428;
         public const uint CoredllDllMainKdataNext2 = 0x0040F809;
         public const uint CoredllDllMainKdataT9_2 = 0x80057EB8;
+        // Live c4c77e1: after jr+delay skip,
+        // ~1869× TLBS epc=0x8003F888
+        // bad=0xFFFFEA88 word=0xA003EA88
+        // sb $v1,-5496($0). $v1=0x28
+        // nonzero — sb-zero-skip must not
+        // apply. Dump at EPC is sltu
+        // 0x007E102B. Never-wired E000/
+        // F000. Swallow this sb. Continue
+        // dump-true. Do not invent page /
+        // pfn+1 / SUD.
+        public const uint CoredllDllMainKdataStoreEa88 = 0xFFFFEA88;
+        public const uint CoredllDllMainKdataEpcEa88 = 0x8003F888;
+        public const uint CoredllDllMainKdataInsnEa88 = 0xA003EA88;
+        public const uint CoredllDllMainKdataDumpEa88 = 0x007E102B;
         // Dump nk.exe $t9=0x80057EB8 (jalr-table dest):
         // lui 0x8034; addiu $fp,11360 → 0x80342C60
         // (OemCurMSec scale). addiu $s6,-10092 →
@@ -11099,6 +11113,46 @@ namespace ProcessorEmulator.Core
                     " byte=0x" + (value & 0xFFu).ToString("X") +
                     " ra=0x" + CoredllDllMainKdataRa.ToString("X") +
                     " (nonzero sb then jalr $v0; never-wired E000; no page; do not invent dest)");
+            }
+            return true;
+        }
+
+        // Live c4c77e1: sb $v1,-5496($0) at
+        // 0x8003F888 dest 0xFFFFEA88.
+        // Nonzero $v1 — not sb-zero-skip.
+        // Never-wired E000/F000. Swallow
+        // this dump-overlay sb so dump-
+        // true continues. Do not invent
+        // E000 / F000 / SUD / pfn+1.
+        public static bool TrySkipFfffEa88Sb(MipsBus bus, uint va, uint value)
+        {
+            if (va != CoredllDllMainKdataStoreEa88)
+                return false;
+            if (!_leftoverWait99O32NkCoredllSawEntry || !_exn15C28Left)
+                return false;
+            if (_ffffE000Busy)
+                return false;
+            if (_ffffE000Kseg != 0)
+                return false;
+            TryResolveFfffE000(bus, va);
+            if (_ffffE000Kseg != 0)
+                return false;
+            if (!_ffffEa88SkipLogged)
+            {
+                _ffffEa88SkipLogged = true;
+                uint ea88Dump = 0;
+                if (!TryPeekLeftoverWait99DumpOnly(
+                        CoredllDllMainKdataEpcEa88, out ea88Dump)
+                    || ea88Dump == 0)
+                    ea88Dump = CoredllDllMainKdataDumpEa88;
+                BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk ffff-e000 sb-ea88-skip" +
+                    " epc=0x" + CoredllDllMainKdataEpcEa88.ToString("X") +
+                    " bad=0x" + CoredllDllMainKdataStoreEa88.ToString("X") +
+                    " word=0x" + CoredllDllMainKdataInsnEa88.ToString("X") +
+                    " dump=0x" + ea88Dump.ToString("X") +
+                    " byte=0x" + (value & 0xFFu).ToString("X") +
+                    " (nonzero sb $v1,-5496($0); never-wired E000/F000;" +
+                    " dest-miss skip; continue dump-true; no invent dest / SUD)");
             }
             return true;
         }
@@ -37653,6 +37707,7 @@ namespace ProcessorEmulator.Core
             _ffffE000Done = false;
             _ffffE000SkipLogged = false;
             _ffffE428SkipLogged = false;
+            _ffffEa88SkipLogged = false;
             _jalr7eb8Kseg = 0;
             _jalr7eb8Logged = false;
             _jalr7eb8Busy = false;
@@ -43950,6 +44005,7 @@ namespace ProcessorEmulator.Core
         private static bool _ffffE000Done;
         private static bool _ffffE000SkipLogged;
         private static bool _ffffE428SkipLogged;
+        private static bool _ffffEa88SkipLogged;
         private static uint _jalr7eb8Kseg;
         private static bool _jalr7eb8Logged;
         private static bool _jalr7eb8Busy;

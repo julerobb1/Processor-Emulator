@@ -320,6 +320,8 @@ namespace ProcessorEmulator.Emulation
                 return;
             if (CeRomTocFiles.TrySkipFfffE428SbJalr(this, vaddr, value))
                 return;
+            if (CeRomTocFiles.TrySkipFfffEa88Sb(this, vaddr, value))
+                return;
             bool watch = CeRomTocFiles.TryNoteDdiNopDecompStore(vaddr, value);
             try
             {
