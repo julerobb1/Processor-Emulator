@@ -497,6 +497,7 @@ namespace ProcessorEmulator.Emulation
             CeRomTocFiles.TryKeepLeftoverDestLiveDispatch(_bus, programCounter);
             if ((programCounter & 3) != 0)
                 throw new CpuAlignmentException($"Unaligned fetch PC=0x{programCounter:X8}");
+            uint fetchPc = programCounter;
             uint instruction = ReadMemory32(programCounter);
             CeRomTocFiles.TryFixE478SbAsDumpJr(_bus, registers, programCounter,
                 ref instruction);
@@ -506,6 +507,15 @@ namespace ProcessorEmulator.Emulation
                 ref instruction);
             CeRomTocFiles.TryFixLiveAbsStoreAsDumpMem(_bus, registers, programCounter,
                 ref instruction);
+            // Live f9afdbc: fallthrough at 0x80057470
+            // logged dump jal but did not jump.
+            // After heal, CPU jal is preferred;
+            // if live is already dump jal (and not
+            // a delay-slot fetch), execute jal.
+            if (!_inDelaySlot
+                && CeRomTocFiles.TryTakeDumpMemJal(_bus, registers, fetchPc,
+                    instruction, ref programCounter))
+                return 0;
             programCounter += 4;
             return instruction;
         }

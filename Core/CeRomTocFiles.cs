@@ -1533,6 +1533,13 @@ namespace ProcessorEmulator.Core
         public const uint CoredllDllMainAbs6670Dump = 0x0C010C9B;
         public const uint CoredllDllMainAbs6670Dest = 0x8004326C;
         public const uint CoredllDllMainAbs6670Live = 0xA0056670;
+        // Dump delay of jal 0x80057470:
+        // addiu $a0,$v0,13292. Live f9afdbc
+        // fallthrough logged jal then spun
+        // (no c000). Heal delay + execute
+        // jal (set $ra, PC:=dest). Do not
+        // invent dest.
+        public const uint CoredllDllMainAbs6670Delay = 0x244433EC;
         // Live d2ceddd: after ~4 dump-mem
         // ping-pong pairs, TLBS
         // epc=0x800151D0 bad=0xC0000088.
@@ -10777,6 +10784,11 @@ namespace ProcessorEmulator.Core
             uint live = insn;
             insn = dump;
             bool heal = TryHealDumpInsn(bus, pc, live, dump);
+            if (dumpJump && pc == CoredllDllMainAbs6670Epc)
+            {
+                TryHealDumpMemJalDelay(bus, pc);
+                TryClearDumpMemExn(bus, pc);
+            }
             if (TryNoteDumpMemLogPc(pc))
             {
                 uint v0 = PeekGpr(regs, 2);
@@ -11163,6 +11175,106 @@ namespace ProcessorEmulator.Core
                 " ra=0x" + ra.ToString("X") +
                 " via=dump-mem-fallthrough reason=heal-already" +
                 " (execute dump-true; do not invent dest)");
+        }
+
+        // Dump delay at 0x80057474 is addiu
+        // $a0,$v0,13292. Heal if live is the
+        // abs-store overwrite class.
+        private static void TryHealDumpMemJalDelay(MipsBus bus, uint pc)
+        {
+            if (bus == null || pc != CoredllDllMainAbs6670Epc)
+                return;
+            uint delayPc = pc + 4;
+            uint dump = 0;
+            if (!TryPeekLeftoverWait99DumpOnly(delayPc, out dump) || dump == 0)
+                dump = CoredllDllMainAbs6670Delay;
+            if (dump == 0 || IsDumpMemRefuseVa(delayPc))
+                return;
+            uint live = 0;
+            if (!TryPeekWord(bus, delayPc, out live) || live == 0 || live == dump)
+                return;
+            if (!IsMipsAbsRs0Store(live) && live != CoredllDllMainAbs6670Live)
+                return;
+            TryHealDumpInsn(bus, delayPc, live, dump);
+        }
+
+        private static void TryClearDumpMemExn(MipsBus bus, uint pc)
+        {
+            if (bus == null || pc != CoredllDllMainAbs6670Epc)
+                return;
+            if (IsDumpMemRefuseVa(pc) || IsDumpMemRefuseVa(pc + 8))
+                return;
+            bus.ClearExlIfEpc(pc);
+        }
+
+        private static void TryApplyDumpMemJalDelay(MipsBus bus, uint[] regs,
+            uint pc)
+        {
+            TryHealDumpMemJalDelay(bus, pc);
+            uint delay = 0;
+            if (!TryPeekLeftoverWait99DumpOnly(pc + 4, out delay) || delay == 0)
+                delay = CoredllDllMainAbs6670Delay;
+            if ((delay >> 26) != 9)
+                return;
+            int rs = (int)((delay >> 21) & 31);
+            int rt = (int)((delay >> 16) & 31);
+            int imm = (short)(delay & 0xFFFF);
+            PokeGpr(regs, rt, PeekGpr(regs, rs) + (uint)imm);
+        }
+
+        // Live f9afdbc: fallthrough at
+        // 0x80057470 was log-only. Execute
+        // dump jal: $ra=pc+8, delay addiu,
+        // PC:=0x8004326C. Clear EXL when
+        // EPC is this site. Once. Do not
+        // leftover-hop. Do not invent dest.
+        public static bool TryTakeDumpMemJal(MipsBus bus, uint[] regs,
+            uint pc, uint insn, ref uint cpuPc)
+        {
+            if (!_leftoverWait99O32NkCoredllSawEntry || !_stk1670SbLogged)
+                return false;
+            if (pc != CoredllDllMainAbs6670Epc)
+                return false;
+            if (insn != CoredllDllMainAbs6670Dump)
+                return false;
+            uint dest = (pc & 0xF0000000u) | ((insn & 0x03FFFFFFu) << 2);
+            if (dest != CoredllDllMainAbs6670Dest)
+                return false;
+            if (dest == 0 || (dest & 3) != 0 || IsDumpMemRefuseVa(dest))
+                return false;
+            uint ra = pc + 8;
+            if (IsDumpMemRefuseVa(ra))
+                return false;
+            TryClearDumpMemExn(bus, pc);
+            TryApplyDumpMemJalDelay(bus, regs, pc);
+            PokeGpr(regs, 31, ra);
+            cpuPc = dest;
+            if (!_abs6670JalTakenLogged)
+            {
+                _abs6670JalTakenLogged = true;
+                uint v0 = PeekGpr(regs, 2);
+                uint a0 = PeekGpr(regs, 4);
+                uint fp = PeekGpr(regs, 30);
+                BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk abs-6670 jal" +
+                    " epc=0x" + pc.ToString("X") +
+                    " word=0x" + insn.ToString("X") +
+                    " dest=0x" + dest.ToString("X") +
+                    " ra=0x" + ra.ToString("X") +
+                    " v0=0x" + v0.ToString("X") +
+                    " a0=0x" + a0.ToString("X") +
+                    " fp=0x" + fp.ToString("X") +
+                    " via=dump-mem-jal" +
+                    " (execute dump jal; delay addiu; clear exn;" +
+                    " do not invent dest)");
+            }
+            return true;
+        }
+
+        private static void PokeGpr(uint[] regs, int i, uint v)
+        {
+            if (regs == null || i <= 0 || i >= regs.Length)
+                return;
+            regs[i] = v;
         }
 
         private static void TryLogDumpMemSkip(uint pc, uint live, uint dump,
@@ -23692,6 +23804,7 @@ namespace ProcessorEmulator.Core
             _abs1828ExnLogged = false;
             _abs6670DumpSkipLogged = false;
             _abs6670FallthroughLogged = false;
+            _abs6670JalTakenLogged = false;
             _abs6670ExnLogged = false;
             _c000Kseg = 0;
             _c000Logged = false;
@@ -29827,6 +29940,7 @@ namespace ProcessorEmulator.Core
         private static bool _abs1828ExnLogged;
         private static bool _abs6670DumpSkipLogged;
         private static bool _abs6670FallthroughLogged;
+        private static bool _abs6670JalTakenLogged;
         private static bool _abs6670ExnLogged;
         private static uint _c000Kseg;
         private static bool _c000Logged;

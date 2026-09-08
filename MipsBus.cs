@@ -33,6 +33,23 @@ namespace ProcessorEmulator.Emulation
                 _cp0.EPC = epc;
         }
 
+        // Live f9afdbc: after heal=1 at
+        // 0x80057470, EXL left the jal
+        // unexecuted (fallthrough log-only).
+        // Clear EXL/Cause when EPC is that
+        // site so a re-fetch runs dump jal.
+        public void ClearExlIfEpc(uint epc)
+        {
+            if (_cp0 == null || epc == 0 || (epc & 3) != 0)
+                return;
+            uint cur = _cp0.EPC;
+            if (cur != epc && cur != epc + 4)
+                return;
+            _cp0.Status &= ~(1u << 1);
+            _cp0.Cause &= 0x7FFFFF83u;
+            _cp0.EPC = epc;
+        }
+
         public bool TryFindTlbPfn(uint vaddr, out uint pfn, out bool valid)
         {
             return _cp0.TryFindTlbPfn(vaddr, out pfn, out valid);
