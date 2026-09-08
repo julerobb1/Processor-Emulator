@@ -1486,6 +1486,16 @@ namespace ProcessorEmulator.Core
         // Do not ri-nop. Do not leftover-hop.
         public const uint CoredllDllMainRiInsn = 0x03C18016;
         public const uint CoredllDllMainRiRa = 0x8002F234;
+        // Live 5efd98e: s2=0xFFFFDAC0 ThreadPtr
+        // (caller lw $v1,0($s2) after return).
+        // s0=0x86FBE028 kseg RAM (0x86FB8000
+        // proc-info class). fp=0x3140C useg.
+        // at=0 — SPECIAL rs=$fp rt=$at cannot
+        // be MUL (product 0) and is not a
+        // dump-true MMU/ASE no-op. Peek *s2
+        // *s0 *fp. Do not MUL. Do not ri-nop.
+        public const uint CoredllDllMainRiS0Live = 0x86FBE028;
+        public const uint CoredllDllMainRiFpLive = 0x3140C;
         // 0x8001521C ori k1, epc, 0xFFFC / addiu 2 / beq
         // syscall. 0xFFFFF3DA is coredll 0x80095A98
         // addiu $v0, $0, -3110 / jalr $v0. Same class as
@@ -16258,6 +16268,25 @@ namespace ProcessorEmulator.Core
                     " fp=0x" + fp.ToString("X") +
                     " cause=ri" +
                     " (fn=0x16 reserved not MUL; not ri-nop; no cache)");
+                uint thr = 0;
+                uint s0w = 0;
+                uint fpw = 0;
+                bool s2Thr = s2 == ThreadPtr;
+                bool s2ok = TryPeekWord(bus, s2, out thr);
+                bool s0ok = TryPeekWord(bus, s0, out s0w);
+                bool fpok = TryPeekWord(bus, fp, out fpw);
+                uint prev8 = 0;
+                uint next8 = 0;
+                TryPeekWord(bus, epc - 8, out prev8);
+                TryPeekWord(bus, epc + 8, out next8);
+                BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk jalr-ri regs" +
+                    (s2Thr ? " s2=ThreadPtr" : " s2=0x" + s2.ToString("X")) +
+                    (s2ok ? " *s2=0x" + thr.ToString("X") : " *s2-miss") +
+                    (s0ok ? " *s0=0x" + s0w.ToString("X") : " *s0-miss") +
+                    (fpok ? " *fp=0x" + fpw.ToString("X") : " *fp-miss") +
+                    " prev8=0x" + prev8.ToString("X") +
+                    " next8=0x" + next8.ToString("X") +
+                    " (KData thread; s0 kseg-ram; fp useg; at=0; not MUL; not ri-nop)");
             }
         }
 
