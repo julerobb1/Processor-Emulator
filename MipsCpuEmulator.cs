@@ -507,14 +507,12 @@ namespace ProcessorEmulator.Emulation
                 ref instruction);
             CeRomTocFiles.TryFixLiveAbsStoreAsDumpMem(_bus, registers, programCounter,
                 ref instruction);
-            // Live f9afdbc: fallthrough at 0x80057470
-            // logged dump jal but did not jump.
-            // After heal, CPU jal is preferred;
-            // if live is already dump jal (and not
-            // a delay-slot fetch), execute jal.
-            if (!_inDelaySlot
-                && CeRomTocFiles.TryTakeDumpMemJal(_bus, registers, fetchPc,
-                    instruction, ref programCounter))
+            CeRomTocFiles.TryNoteDumpMemJalDest(_bus, registers, fetchPc);
+            // Live 4577e0a: after dump-mem-jal,
+            // fallthrough re-fetch must not
+            // CPU-jal or restore stale $ra.
+            if (CeRomTocFiles.TryTakeDumpMemJal(_bus, registers, fetchPc,
+                    instruction, _inDelaySlot, ref programCounter))
                 return 0;
             programCounter += 4;
             return instruction;
