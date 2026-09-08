@@ -13590,8 +13590,8 @@ namespace ProcessorEmulator.Core
                     return false;
                 _exn15C28StkSwSkipLogged = true;
                 _exn15C28AfterS1AluNextLogged = true;
-                uint t3 = PeekGpr(regs, 11);
-                uint v0 = PeekGpr(regs, 2);
+                uint capT3 = PeekGpr(regs, 11);
+                uint capV0 = PeekGpr(regs, 2);
                 if (_exn15C28StkSwLogN < 8 && _exn15C28StkSwLast != dest)
                 {
                     _exn15C28StkSwLogN++;
@@ -13602,8 +13602,8 @@ namespace ProcessorEmulator.Core
                         " dump=0x" + dump.ToString("X") +
                         " sp=0x" + sp.ToString("X") +
                         " dest=0x" + dest.ToString("X") +
-                        " t3=0x" + t3.ToString("X") +
-                        " v0=0x" + v0.ToString("X") +
+                        " t3=0x" + capT3.ToString("X") +
+                        " v0=0x" + capV0.ToString("X") +
                         " ra=0x" + ra.ToString("X") +
                         " cap=1" +
                         " via=dump-mem-15c28-stk-sw-skip" +
