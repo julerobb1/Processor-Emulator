@@ -10684,16 +10684,27 @@ namespace ProcessorEmulator.Core
         // so the next I-fetch is dump-
         // true. Healed jal/memop falls
         // through — no dump-mem-skip.
-        // Skip-log only when an abs
-        // store cannot rewrite. Log
-        // once per EPC. Do not invent
-        // low useg. Do not leftover-hop.
+        // Live 296037e: nest dump-sb then
+        // dump-mem fallthrough at the SAME
+        // 0x80042470 stalled jal vs 0cb3d43.
+        // Do not double-handle dump-jr /
+        // dump-sw / dump-sb sites. Fallthrough
+        // only at dump-mem EPCs (1828/6670/
+        // 15C28). Skip-log only when an abs
+        // store cannot rewrite. Log once
+        // per EPC. Do not invent low useg.
+        // Do not leftover-hop.
         public static bool TryFixLiveAbsStoreAsDumpMem(MipsBus bus, uint[] regs,
             uint pc, ref uint insn)
         {
             if (!_leftoverWait99O32NkCoredllSawEntry || !_stk1670SbLogged)
                 return false;
             if ((pc & 3) != 0 || pc < 0x80010000u || pc >= 0x80400000u)
+                return false;
+            // Already dump-jr / dump-sw / dump-sb.
+            // Live 296037e nest site must not
+            // consume dump-mem fallthrough.
+            if (IsDumpMemPriorHandledPc(pc))
                 return false;
             // Live 93085c2: after heal=1 at
             // 0x80057470, word is already
@@ -10702,7 +10713,8 @@ namespace ProcessorEmulator.Core
             // normal I-fetch execute.
             if (IsDumpMemAlreadyTrue(insn))
             {
-                TryLogDumpMemFallthrough(pc, insn, regs);
+                if (IsDumpMemFallthroughPc(pc))
+                    TryLogDumpMemFallthrough(pc, insn, regs);
                 return false;
             }
             if (!IsMipsAbsRs0Store(insn) || (insn & 0x8000u) != 0)
@@ -11009,6 +11021,26 @@ namespace ProcessorEmulator.Core
             return false;
         }
 
+        // dump-jr / dump-sw / dump-sb already
+        // rewrote these EPCs. Dump-mem must
+        // not log or rewrite them again.
+        private static bool IsDumpMemPriorHandledPc(uint pc)
+        {
+            return pc == CoredllDllMainKdataEpc3
+                || pc == CoredllDllMainStk2470Epc
+                || pc == CoredllDllMainStk1670Epc;
+        }
+
+        // Fallthrough-execute only at dump-mem
+        // sites. Live 296037e nest 0x80042470
+        // is not one of these.
+        private static bool IsDumpMemFallthroughPc(uint pc)
+        {
+            return pc == CoredllDllMainAbs1828Epc
+                || pc == CoredllDllMainAbs6670Epc
+                || pc == CoredllDllMainExn15C28Epc;
+        }
+
         private static bool IsMipsJumpOrJr(uint insn)
         {
             uint op = insn >> 26;
@@ -11097,14 +11129,16 @@ namespace ProcessorEmulator.Core
             return true;
         }
 
-        // Once per PC: healed jal/memop at a
-        // dump-mem site. Do not skip. Execute.
+        // Once per dump-mem PC: healed jal /
+        // memop. Do not skip. Execute. Nest
+        // 0x80042470 is excluded by caller.
         private static void TryLogDumpMemFallthrough(uint pc, uint live,
             uint[] regs)
         {
-            if (!TryNoteDumpMemFallPc(pc))
+            if (!IsDumpMemFallthroughPc(pc) || !TryNoteDumpMemFallPc(pc))
                 return;
             _abs6670DumpSkipLogged = true;
+            _abs6670FallthroughLogged = true;
             uint dump = 0;
             if (!TryPeekLeftoverWait99DumpOnly(pc, out dump) || dump == 0)
             {
