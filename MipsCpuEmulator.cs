@@ -497,6 +497,9 @@ namespace ProcessorEmulator.Emulation
             CeRomTocFiles.TryKeepLeftoverDestLiveDispatch(_bus, programCounter);
             if ((programCounter & 3) != 0)
                 throw new CpuAlignmentException($"Unaligned fetch PC=0x{programCounter:X8}");
+            if (CeRomTocFiles.TryTakeDumpMem15C28Na02IFetch(_bus, registers,
+                    programCounter, 0, _inDelaySlot, ref programCounter))
+                return 0;
             uint fetchPc = programCounter;
             uint instruction = ReadMemory32(programCounter);
             CeRomTocFiles.TryFixE478SbAsDumpJr(_bus, registers, programCounter,
@@ -544,6 +547,9 @@ namespace ProcessorEmulator.Emulation
             if (CeRomTocFiles.TryTakeDumpMem15C28SpT9(_bus, registers, fetchPc,
                     instruction, _inDelaySlot, ref programCounter))
                 return 0;
+            if (CeRomTocFiles.TryTakeDumpMem15C28JalRaEpi(_bus, registers, fetchPc,
+                    instruction, _inDelaySlot, ref programCounter))
+                return 0;
             if (CeRomTocFiles.TryTakeDumpMem15C28(_bus, registers, fetchPc,
                     instruction, _inDelaySlot, ref programCounter))
                 return 0;
@@ -574,6 +580,8 @@ namespace ProcessorEmulator.Emulation
             CeRomTocFiles.TryNoteDumpMem15C28AfterFpLw(_bus, registers, fetchPc,
                 instruction);
             CeRomTocFiles.TryNoteDumpMem15C28AfterSpT9(_bus, registers, fetchPc,
+                instruction);
+            CeRomTocFiles.TryNoteDumpMem15C28AfterJalRaEpi(_bus, registers, fetchPc,
                 instruction);
             programCounter += 4;
             return instruction;

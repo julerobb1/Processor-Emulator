@@ -1766,6 +1766,13 @@ namespace ProcessorEmulator.Core
         public const uint CoredllDllMainExn15C28EpiDelay = 0x800219AC;
         public const uint CoredllDllMainExn15C28EpiDelayDump = 0x27BD00C8;
         public const uint CoredllDllMainExn15C28JalRaDump = 0x8FB000D0;
+        /// <summary>Dump-true outer jal-ra after list-insert <c>jal 0x800151C0</c>. Do not I-fetch <c>0x9A02</c>.</summary>
+        public const uint CoredllDllMainExn15C28OuterRa = 0x8003F784;
+        public const uint CoredllDllMainExn15C28OuterRaDump = 0x0C01205D;
+        public const uint CoredllDllMainExn15C28JalRaEpiEnd = 0x80015CFC;
+        public const uint CoredllDllMainExn15C28JalRaEpiEndDump = 0x42000018;
+        public const uint CoredllDllMainExn15C28JalRaOr = 0x80015CC4;
+        public const uint CoredllDllMainExn15C28JalRaOrDump = 0x00441025;
         // Live e7f0f37: left wrote=0 frame
         // at 0x80015C30. Observe first
         // I-fetch and first TLBL/TLBS
@@ -12274,6 +12281,8 @@ namespace ProcessorEmulator.Core
                     return false;
                 if (_exn15C28SpT9SkipLogged)
                     return false;
+                if (_exn15C28JalRaEpiSkipLogged)
+                    return false;
                 // Live 71fd3f6: leave-hold
                 // after 59488 re-entry spun
                 // silently. One-shot only;
@@ -12524,6 +12533,12 @@ namespace ProcessorEmulator.Core
                 return CoredllDllMainExn15C28EpiDelayDump;
             if (pc == CoredllDllMainExn15C28JalRa)
                 return CoredllDllMainExn15C28JalRaDump;
+            if (pc == CoredllDllMainExn15C28JalRaOr)
+                return CoredllDllMainExn15C28JalRaOrDump;
+            if (pc == CoredllDllMainExn15C28JalRaEpiEnd)
+                return CoredllDllMainExn15C28JalRaEpiEndDump;
+            if (pc == CoredllDllMainExn15C28OuterRa)
+                return CoredllDllMainExn15C28OuterRaDump;
             return 0;
         }
 
@@ -14272,6 +14287,292 @@ namespace ProcessorEmulator.Core
                 " t9=0x" + afterT9.ToString("X") +
                 " via=dump-mem-15c28-after-sp-t9" +
                 " (first I-fetch after sp-t9-skip leave;" +
+                " honor ra; no invent dest / 0x9A02)");
+        }
+
+        private static bool IsDumpMemCop0(uint insn)
+        {
+            uint op = insn >> 26;
+            return op == 16 || op == 17;
+        }
+
+        private static bool IsExn15C28JalRaEpiRange(uint pc)
+        {
+            return pc >= CoredllDllMainExn15C28JalRa
+                && pc <= CoredllDllMainExn15C28JalRaEpiEnd
+                && (pc & 3) == 0;
+        }
+
+        private static bool TryLeaveDumpMem15C28Outer(MipsBus bus, uint[] regs,
+            uint fromPc, ref uint cpuPc, out uint leave)
+        {
+            leave = CoredllDllMainExn15C28OuterRa;
+            if (leave == 0 || (leave & 3) != 0 || IsDumpMemRefuseVa(leave)
+                || IsDumpMemRefuseVa(fromPc) || IsExn15C28Na02Frame(leave)
+                || IsExn15C28HelperBody(leave) || IsWrapDestSize(leave)
+                || IsWrapDestFp50Va(leave))
+            {
+                leave = 0;
+                return false;
+            }
+            if (bus != null)
+            {
+                uint epc = bus.PeekEpc();
+                if (epc != 0 && (epc & 3) == 0)
+                    bus.ClearExlIfEpc(epc);
+                bus.ClearExlIfEpc(fromPc);
+            }
+            cpuPc = leave;
+            _exn15C28JalRaEpiSkipLogged = true;
+            _exn15C28AfterSpT9Logged = true;
+            return true;
+        }
+
+        // Live 52d67d1: after-sp-t9 named
+        // 0x80015C44 lw $s0,208($sp) then
+        // dump-mem heal 0x80015C78
+        // lw $v1,156($sp). Then AddressError
+        // I-fetch PC=0x9A02BDF8 (= leftover
+        // v0 0x9A023DF8 | 0x8000) from
+        // dump or $v0,$v0,$a0 at 0x80015CC4
+        // after skipped lw $v0,288($sp).
+        // 15C44..15CFC is context-restore +
+        // ERET — do not invent stack / EPC.
+        // Continue-skip dest-miss 0x9A02
+        // memops; do not exec COP0/ERET or
+        // ALU that mixes leftover 0x9A02.
+        // Leave dump-true outer jal-ra
+        // 0x8003F784 (after jal 0x800151C0).
+        public static bool TryTakeDumpMem15C28JalRaEpi(MipsBus bus, uint[] regs,
+            uint pc, uint insn, bool inDelay, ref uint cpuPc)
+        {
+            if (!_leftoverWait99O32NkCoredllSawEntry || !_exn15C28Left)
+                return false;
+            if (!_exn15C28SpT9SkipLogged && !_exn15C28AfterSpT9Logged)
+                return false;
+            if (!IsExn15C28JalRaEpiRange(pc))
+                return false;
+            if (inDelay)
+                return false;
+            if (IsDumpMemRefuseVa(pc)
+                || IsDumpMemRefuseVa(CoredllDllMainExn15C28OuterRa))
+                return false;
+            uint dump = DumpMem15C28AfterWord(pc);
+            if (dump == 0)
+                return false;
+            if (insn != 0 && insn != dump && !IsMipsLoad(insn)
+                && !IsMipsStore(insn) && !IsDumpMemAluInsn(insn)
+                && !IsDumpMemCop0(insn))
+                return false;
+            uint sp = PeekGpr(regs, 29);
+            if (!IsExn15C28Na02Frame(sp)
+                && !IsExn15C28Na02Frame(PeekGpr(regs, 30)))
+                return false;
+            int nSkip = 0;
+            int nAlu = 0;
+            uint walkPc = pc;
+            for (int i = 0; i < 48; i++)
+            {
+                if (!IsExn15C28JalRaEpiRange(walkPc)
+                    || IsDumpMemRefuseVa(walkPc))
+                    break;
+                uint w = DumpMem15C28AfterWord(walkPc);
+                if (w == 0)
+                    break;
+                if (IsDumpMemCop0(w) || w == CoredllDllMainExn15C28JalRaEpiEndDump)
+                    break;
+                uint op = w >> 26;
+                int rs = (int)((w >> 21) & 31);
+                int rt = (int)((w >> 16) & 31);
+                int rd = (int)((w >> 11) & 31);
+                uint fn = w & 63;
+                short imm = (short)(w & 0xFFFF);
+                uint bas = PeekGpr(regs, rs);
+                uint ea = unchecked(bas + (uint)(int)imm);
+                if ((IsMipsLoad(w) || IsMipsStore(w))
+                    && (IsExn15C28Na02Frame(bas) || IsExn15C28Na02Frame(ea)))
+                {
+                    if (IsDumpMemRefuseVa(ea) || IsDumpMemRefuseVa(bas))
+                        break;
+                    nSkip++;
+                    walkPc += 4;
+                    continue;
+                }
+                if (IsDumpMemAluInsn(w))
+                {
+                    uint rsv = PeekGpr(regs, rs);
+                    uint rtv = PeekGpr(regs, rt);
+                    if (IsExn15C28Na02Frame(rsv) || IsExn15C28Na02Frame(rtv))
+                        break;
+                    if (!TryExecDumpMemAlu(regs, w))
+                        break;
+                    nAlu++;
+                    walkPc += 4;
+                    continue;
+                }
+                if (op == 0 && (fn == 17 || fn == 19))
+                {
+                    walkPc += 4;
+                    continue;
+                }
+                if (op == 2 || op == 3)
+                {
+                    uint next = (walkPc & 0xF0000000u) | ((w & 0x03FFFFFFu) << 2);
+                    if (IsDumpMemRefuseVa(next) || IsExn15C28Na02Frame(next)
+                        || IsWrapDestSize(next) || IsWrapDestFp50Va(next))
+                        break;
+                    if (op == 3)
+                        PokeGpr(regs, 31, walkPc + 8);
+                    walkPc = next;
+                    uint leaveJal = 0;
+                    if (!TryLeaveDumpMem15C28Outer(bus, regs, pc, ref cpuPc,
+                            out leaveJal))
+                        return false;
+                    cpuPc = next;
+                    LogDumpMem15C28JalRaEpi(pc, next, dump, nSkip, nAlu, regs,
+                        "jal");
+                    return true;
+                }
+                if (op == 0 && (fn == 8 || fn == 9))
+                {
+                    uint next = PeekGpr(regs, rs);
+                    if (IsDumpMemRefuseVa(next) || IsExn15C28Na02Frame(next)
+                        || IsExn15C28HelperBody(next) || IsWrapDestSize(next)
+                        || IsWrapDestFp50Va(next))
+                        break;
+                    if (fn == 9 && rd != 0)
+                        PokeGpr(regs, rd, walkPc + 8);
+                    walkPc = next;
+                    uint leaveJr = 0;
+                    if (!TryLeaveDumpMem15C28Outer(bus, regs, pc, ref cpuPc,
+                            out leaveJr))
+                        return false;
+                    cpuPc = next;
+                    LogDumpMem15C28JalRaEpi(pc, next, dump, nSkip, nAlu, regs,
+                        "jr");
+                    return true;
+                }
+                break;
+            }
+            if (nSkip == 0 && pc != CoredllDllMainExn15C28JalRa)
+                return false;
+            uint leave = 0;
+            if (!TryLeaveDumpMem15C28Outer(bus, regs, pc, ref cpuPc, out leave))
+                return false;
+            Note15C28Left(sp);
+            LogDumpMem15C28JalRaEpi(pc, leave, dump, nSkip, nAlu, regs, "outer");
+            return true;
+        }
+
+        private static void LogDumpMem15C28JalRaEpi(uint pc, uint next, uint dump,
+            int nSkip, int nAlu, uint[] regs, string how)
+        {
+            uint dest = PeekGpr(regs, 29) + 208;
+            if (_exn15C28JalRaEpiLogN >= 8 && _exn15C28JalRaEpiLast == dest)
+                return;
+            if (_exn15C28JalRaEpiLogN < 8)
+                _exn15C28JalRaEpiLogN++;
+            _exn15C28JalRaEpiLast = dest;
+            uint ra = PeekGpr(regs, 31);
+            uint sp = PeekGpr(regs, 29);
+            uint v0 = PeekGpr(regs, 2);
+            uint fp = PeekGpr(regs, 30);
+            BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk abs-15c28 jal-ra skip" +
+                " pc=0x" + pc.ToString("X") +
+                " next=0x" + next.ToString("X") +
+                " dump=0x" + dump.ToString("X") +
+                " nskip=" + nSkip.ToString() +
+                " nalu=" + nAlu.ToString() +
+                " how=" + how +
+                " fp=0x" + fp.ToString("X") +
+                " v0=0x" + v0.ToString("X") +
+                " ra=0x" + ra.ToString("X") +
+                " sp=0x" + sp.ToString("X") +
+                " via=dump-mem-15c28-jal-ra-skip" +
+                " (dump 15C44 epilogue dest-miss skip;" +
+                " no invent 0x9A02 I-fetch; no ERET;" +
+                " leave dump-true outer jal-ra 0x8003F784)");
+        }
+
+        public static bool TryTakeDumpMem15C28Na02IFetch(MipsBus bus, uint[] regs,
+            uint pc, uint insn, bool inDelay, ref uint cpuPc)
+        {
+            if (!_leftoverWait99O32NkCoredllSawEntry || !_exn15C28Left)
+                return false;
+            if (!_exn15C28SpT9SkipLogged && !_exn15C28AfterSpT9Logged
+                && !_exn15C28JalRaEpiSkipLogged)
+                return false;
+            if (!IsExn15C28Na02Frame(pc))
+                return false;
+            if ((pc & 3) != 0)
+                return false;
+            uint leave = 0;
+            if (!TryLeaveDumpMem15C28Outer(bus, regs, pc, ref cpuPc, out leave))
+                return false;
+            if (_exn15C28Na02IFetchLogN < 8 && _exn15C28Na02IFetchLast != pc)
+            {
+                _exn15C28Na02IFetchLogN++;
+                _exn15C28Na02IFetchLast = pc;
+                uint ra = PeekGpr(regs, 31);
+                uint sp = PeekGpr(regs, 29);
+                uint v0 = PeekGpr(regs, 2);
+                BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk abs-15c28 na02-ifetch" +
+                    " pc=0x" + pc.ToString("X") +
+                    " next=0x" + leave.ToString("X") +
+                    " v0=0x" + v0.ToString("X") +
+                    " ra=0x" + ra.ToString("X") +
+                    " sp=0x" + sp.ToString("X") +
+                    " via=dump-mem-15c28-na02-ifetch" +
+                    " (refuse I-fetch 0x9A02; no invent page;" +
+                    " leave dump-true outer jal-ra; honor ra)");
+            }
+            return true;
+        }
+
+        public static void TryNoteDumpMem15C28AfterJalRaEpi(MipsBus bus,
+            uint[] regs, uint pc, uint insn)
+        {
+            if (!_leftoverWait99O32NkCoredllSawEntry || !_exn15C28Left)
+                return;
+            if (!_exn15C28JalRaEpiSkipLogged || _exn15C28AfterJalRaEpiLogged)
+                return;
+            if (IsExn15C28JalRaEpiRange(pc) || IsExn15C28HelperBody(pc)
+                || IsExn15C28Na02Frame(pc))
+                return;
+            if (IsDumpMemRefuseVa(pc) || IsDumpMemRefuseVa(pc + 4))
+                return;
+            _exn15C28AfterJalRaEpiLogged = true;
+            uint afterDump = DumpMem15C28AfterWord(pc);
+            uint afterRa = PeekGpr(regs, 31);
+            uint afterSp = PeekGpr(regs, 29);
+            uint afterV0 = PeekGpr(regs, 2);
+            string afterDis = insn != 0
+                ? FormatMipsOp(pc, insn)
+                : "peek-miss";
+            string dumpDis = afterDump != 0
+                ? FormatMipsOp(pc, afterDump)
+                : "dump-miss";
+            _leftoverWait99O32NkChainLast = pc ^ CoredllDllMainVa;
+            _leftoverWait99O32NkChainVia = "dump-mem-15c28-after-jal-ra";
+            _leftoverWait99O32NkChainName = "coredll.dll";
+            BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-o32-nk-chain pc=0x" +
+                pc.ToString("X8") +
+                " name=coredll.dll" +
+                " startip=0x" + CoredllDllMainVa.ToString("X") +
+                " word=0x" + insn.ToString("X") +
+                (afterDump != 0 ? " dump=0x" + afterDump.ToString("X") : "") +
+                " via=dump-mem-15c28-after-jal-ra");
+            BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk abs-15c28 after-jal-ra" +
+                " pc=0x" + pc.ToString("X") +
+                " word=0x" + insn.ToString("X") +
+                (afterDump != 0 ? " dump=0x" + afterDump.ToString("X") : "") +
+                " dis=" + afterDis +
+                (afterDump != 0 ? " dump-dis=" + dumpDis : "") +
+                " ra=0x" + afterRa.ToString("X") +
+                " sp=0x" + afterSp.ToString("X") +
+                " v0=0x" + afterV0.ToString("X") +
+                " via=dump-mem-15c28-after-jal-ra" +
+                " (first I-fetch after jal-ra-skip leave;" +
                 " honor ra; no invent dest / 0x9A02)");
         }
 
@@ -27030,6 +27331,12 @@ namespace ProcessorEmulator.Core
             _exn15C28SpT9LogN = 0;
             _exn15C28SpT9Last = 0;
             _exn15C28AfterSpT9Logged = false;
+            _exn15C28JalRaEpiSkipLogged = false;
+            _exn15C28JalRaEpiLogN = 0;
+            _exn15C28JalRaEpiLast = 0;
+            _exn15C28AfterJalRaEpiLogged = false;
+            _exn15C28Na02IFetchLogN = 0;
+            _exn15C28Na02IFetchLast = 0;
             _abs59488Logged = false;
             _abs59488ExecLogged = false;
             _ffffFe54SkipLogged = false;
@@ -33219,6 +33526,12 @@ namespace ProcessorEmulator.Core
         private static int _exn15C28SpT9LogN;
         private static uint _exn15C28SpT9Last;
         private static bool _exn15C28AfterSpT9Logged;
+        private static bool _exn15C28JalRaEpiSkipLogged;
+        private static int _exn15C28JalRaEpiLogN;
+        private static uint _exn15C28JalRaEpiLast;
+        private static bool _exn15C28AfterJalRaEpiLogged;
+        private static int _exn15C28Na02IFetchLogN;
+        private static uint _exn15C28Na02IFetchLast;
         private static bool _exn15C28AfterMemsetLogged;
         private static bool _c000E000SkipLogged;
         private static bool _c000F000SkipLogged;
