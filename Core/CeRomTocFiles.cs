@@ -1379,14 +1379,25 @@ namespace ProcessorEmulator.Core
         // sb $v0,0xE380($zero) (CE $zero+imm
         // absolute). Classic KData window ends at
         // 0xFFFFE000; this byte is the next page.
-        // Map live peek, TLB PFN, or sec0 firmware
-        // PTE dest only. Do not alias KData. Do
-        // not invent/zero-fill. Do not leftover-
-        // hop dest.
+        // Live 9f90c5f: sec0=0x80341BE0
+        // l1=0x86FBCBA0 l2=0 for 0xFFFFE000 and
+        // for KData (kdata-pte-miss l2=0). KData
+        // is wired, not sec0 L2. MIPS TLB pair
+        // 0xFFFFC000/0xFFFFD000 owns KData;
+        // store is pair 0xFFFFE000/0xFFFFF000
+        // (SharedUserData). NK never created that
+        // L2 / never wired that pair. v0=0 is a
+        // zero-byte. t9=0x80000065 is TLB-refill
+        // vector+0x65, not a hop. Map live peek,
+        // TLB PFN, or sec0 firmware PTE dest
+        // only. Do not alias KData. Do not
+        // invent/zero-fill. Do not leftover-hop.
         public const uint FfffE000Page = 0xFFFFE000;
+        public const uint FfffC000Page = 0xFFFFC000;
         public const uint CoredllDllMainKdataStore = 0xFFFFE380;
         public const uint CoredllDllMainKdataEpc = 0x8002F180;
         public const uint CoredllDllMainKdataInsn = 0xA002E380;
+        public const uint CoredllDllMainKdataT9 = 0x80000065;
         // 0x8001521C ori k1, epc, 0xFFFC / addiu 2 / beq
         // syscall. 0xFFFFF3DA is coredll 0x80095A98
         // addiu $v0, $0, -3110 / jalr $v0. Same class as
@@ -9862,12 +9873,12 @@ namespace ProcessorEmulator.Core
                 " (SharedUserData; firmware backing; do not invent dest)");
         }
 
-        // Live 82b0d37: after jalr-0-plant, NK
-        // 0x8002F180 sb $v0,0xE380($0) TLBS on
-        // 0xFFFFE380. pte-miss tlb=none. Same
-        // discipline as MapFfffF000Va: live peek,
-        // TLB PFN, or sec0 firmware PTE dest.
-        // Do not alias KData / UserK /
+        // Live 9f90c5f: l2=0 sec0 l1 live. KData
+        // wired pair 0xFFFFC000/D000; store is
+        // pair 0xFFFFE000/F000. v0=0 zero-byte.
+        // Same discipline as MapFfffF000Va: live
+        // peek, TLB PFN, or sec0 firmware PTE
+        // dest. Do not alias KData / UserK /
         // SharedUserData. Do not invent dest.
         // Do not leftover-hop.
         public static uint MapFfffE000Va(MipsBus bus, uint va)
@@ -9950,6 +9961,10 @@ namespace ProcessorEmulator.Core
                     bool kdPte = sec != 0
                         && WalkFirmwarePte(bus, sec, KDataBase,
                             out kdL1, out kdL2, out kdPfn, out kdKseg);
+                    uint kdTlbPfn = 0;
+                    bool kdTlbValid = false;
+                    bool kdTlb = bus.TryFindTlbPfn(KDataBase & ~0xFFFu,
+                        out kdTlbPfn, out kdTlbValid);
                     uint insn = 0;
                     bool insnOk = TryPeekWord(bus, CoredllDllMainKdataEpc, out insn);
                     string tlbWhy = "none";
@@ -9964,16 +9979,22 @@ namespace ProcessorEmulator.Core
                         " l1=0x" + l1.ToString("X8") +
                         " l2=0x" + l2.ToString("X8") +
                         (kdPte
-                            ? " kdata-pte=0x" + kdKseg.ToString("X8") +
-                              " kdata-l2=0x" + kdL2.ToString("X8")
-                            : " kdata-pte-miss l1=0x" + kdL1.ToString("X8") +
-                              " l2=0x" + kdL2.ToString("X8")) +
-                        (kdOk ? " FFFFD800=0x" + kd.ToString("X8") : " FFFFD800-unmapped") +
+                            ? " kdata-pte=0x" + kdKseg.ToString("X8")
+                            : " kdata-l2=0x" + kdL2.ToString("X8")) +
+                        (kdOk ? " FFFFD800=0x" + kd.ToString("X8") : " FFFFD800-unmapped"));
+                    BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk ffff-e000 why l2=0x" +
+                        l2.ToString("X") +
+                        " pair=0xFFFFE000/F000" +
+                        " kdata-pair=0xFFFFC000/D000" +
+                        (kdTlb
+                            ? " kdata-tlb=pfn=0x" + kdTlbPfn.ToString("X") +
+                              (kdTlbValid ? "-v" : "-inv")
+                            : " kdata-tlb=none") +
                         (insnOk
                             ? " insn=0x" + insn.ToString("X8") +
                               " " + FormatMipsOp(CoredllDllMainKdataEpc, insn)
                             : "") +
-                        " (sb $v0,0xE380($0); KData+0xB80 next page; sec0 firmware walk; not UserK/KData/SharedUserData alias; do not invent dest)");
+                        " (NK wired KData pair; never created E000 L2/TLB; sb $v0,0xE380($0) zero-byte; do not invent dest)");
                 }
             }
             finally
@@ -15652,15 +15673,22 @@ namespace ProcessorEmulator.Core
                 (slot || page || kdata ? " word=0x" + slotWord.ToString("X") : "") +
                 (why == "exn-tlbl-pc0" || kdata
                     ? " v0=0x" + pc0V0.ToString("X") +
-                      " t9=0x" + pc0T9.ToString("X") +
-                      " ra=0x" + pc0Ra.ToString("X")
-                    : "") +
-                (kdata
-                    ? " dis=" + kdataDis +
-                      " prev=0x" + kdataPrev.ToString("X") +
-                      " next=0x" + kdataNext.ToString("X")
+                      " t9=0x" + pc0T9.ToString("X")
                     : "") +
                 " via=" + why);
+            if (kdata)
+            {
+                BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk ffff-e000 sb" +
+                    " dis=" + kdataDis +
+                    " prev=0x" + kdataPrev.ToString("X") +
+                    " next=0x" + kdataNext.ToString("X") +
+                    " ra=0x" + pc0Ra.ToString("X") +
+                    " v0=0x" + pc0V0.ToString("X") +
+                    " t9=0x" + pc0T9.ToString("X") +
+                    (pc0V0 == 0 ? " sb-zero" : "") +
+                    (pc0T9 == CoredllDllMainKdataT9 ? " t9-tlbr" : "") +
+                    " (l2=0; NK wired KData pair C000/D000; never wired E000/F000; do not invent dest)");
+            }
         }
 
         private static void TryNoteLeftoverWait99O32NkCoredllAfter(MipsBus bus,

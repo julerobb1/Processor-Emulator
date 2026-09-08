@@ -75,17 +75,24 @@ namespace ProcessorEmulator.Core
 
         // Hive essays filled boot.log to 579KB in ~70s (484 LoadE32
         // lines, 1-2KB each). One short line per event. Cap so
-        // Launch56 stays under 400KB.
+        // Launch56 stays under 400KB. leftover-wait99-o32-nk /
+        // ffff-e000 lines need dis=/prev=/next=/ra=; 180 cut
+        // those on live 9f90c5f.
         public const int HiveLineMax = 180;
+        public const int HiveLineMaxNk = 320;
 
         public static void Write(string line)
         {
             if (line == null)
                 return;
-            if (line.Length > HiveLineMax
+            int max = HiveLineMax;
+            if (line.IndexOf("leftover-wait99-o32-nk", StringComparison.Ordinal) >= 0
+                || line.IndexOf("ffff-e000", StringComparison.Ordinal) >= 0)
+                max = HiveLineMaxNk;
+            if (line.Length > max
                 && (line.StartsWith("[Hive]", StringComparison.Ordinal)
                     || line.StartsWith("[Rom]", StringComparison.Ordinal)))
-                line = line.Substring(0, HiveLineMax - 3) + "...";
+                line = line.Substring(0, max - 3) + "...";
             Action<string> listener;
             lock (Gate)
             {
