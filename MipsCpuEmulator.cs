@@ -519,6 +519,8 @@ namespace ProcessorEmulator.Emulation
             if (CeRomTocFiles.TryTakeDumpMem15C28(_bus, registers, fetchPc,
                     instruction, _inDelaySlot, ref programCounter))
                 return 0;
+            CeRomTocFiles.TryNoteDumpMem15C28After(_bus, registers, fetchPc,
+                instruction);
             programCounter += 4;
             return instruction;
         }

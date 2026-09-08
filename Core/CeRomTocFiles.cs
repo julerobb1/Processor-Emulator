@@ -1586,6 +1586,12 @@ namespace ProcessorEmulator.Core
         public const uint CoredllDllMainExn15C28NextPc = 0x80015C2C;
         public const uint CoredllDllMainExn15C28NextOff = 144;
         public const uint CoredllDllMainExn15C28After = 0x80015C30;
+        // Live e7f0f37: left wrote=0 frame
+        // at 0x80015C30. Observe first
+        // I-fetch and first TLBL/TLBS
+        // after leave. AfterLog>=2 was
+        // swallowing the next miss.
+        // Do not invent dest / 0x9A02.
         // Live f550bee: after dump-mem-jal-dest
         // land 0x8004326C sw $a1,4($sp)
         // (a1=0x80013440 sp=KData), TLBL
@@ -11882,6 +11888,64 @@ namespace ProcessorEmulator.Core
             return true;
         }
 
+        // Live e7f0f37: PC:=0x80015C30 after
+        // wrote=0 leave. Name dump-true
+        // first I-fetch (word / dump /
+        // $ra / $sp). Continue only if
+        // that insn is already dump-true
+        // LoadO32 / BindImp. Do not
+        // leftover-hop dest 0x03F74DEC.
+        // Do not invent dest / 0x9A02.
+        public static void TryNoteDumpMem15C28After(MipsBus bus, uint[] regs,
+            uint pc, uint insn)
+        {
+            if (!_leftoverWait99O32NkCoredllSawEntry || !_exn15C28Left)
+                return;
+            if (_exn15C28AfterLogged)
+                return;
+            if (pc != CoredllDllMainExn15C28After)
+                return;
+            if (IsDumpMemRefuseVa(pc) || IsDumpMemRefuseVa(pc + 4))
+                return;
+            _exn15C28AfterLogged = true;
+            uint afterDump = 0;
+            if (!TryPeekLeftoverWait99DumpOnly(pc, out afterDump) || afterDump == 0)
+                afterDump = 0;
+            uint afterRa = PeekGpr(regs, 31);
+            uint afterSp = PeekGpr(regs, 29);
+            uint afterV0 = PeekGpr(regs, 2);
+            uint afterT9 = PeekGpr(regs, 25);
+            string afterDis = insn != 0
+                ? FormatMipsOp(pc, insn)
+                : "peek-miss";
+            string dumpDis = afterDump != 0
+                ? FormatMipsOp(pc, afterDump)
+                : "dump-miss";
+            _leftoverWait99O32NkChainLast = pc ^ CoredllDllMainVa;
+            _leftoverWait99O32NkChainVia = "dump-mem-15c28-after";
+            _leftoverWait99O32NkChainName = "coredll.dll";
+            BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-o32-nk-chain pc=0x" +
+                pc.ToString("X8") +
+                " name=coredll.dll" +
+                " startip=0x" + CoredllDllMainVa.ToString("X") +
+                " word=0x" + insn.ToString("X") +
+                (afterDump != 0 ? " dump=0x" + afterDump.ToString("X") : "") +
+                " via=dump-mem-15c28-after");
+            BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk abs-15c28 after" +
+                " pc=0x" + pc.ToString("X") +
+                " word=0x" + insn.ToString("X") +
+                (afterDump != 0 ? " dump=0x" + afterDump.ToString("X") : "") +
+                " dis=" + afterDis +
+                (afterDump != 0 ? " dump-dis=" + dumpDis : "") +
+                " ra=0x" + afterRa.ToString("X") +
+                " sp=0x" + afterSp.ToString("X") +
+                " v0=0x" + afterV0.ToString("X") +
+                " t9=0x" + afterT9.ToString("X") +
+                " via=dump-mem-15c28-after" +
+                " (first I-fetch after leave; honor ra;" +
+                " no invent dest)");
+        }
+
         private static void PokeGpr(uint[] regs, int i, uint v)
         {
             if (regs == null || i <= 0 || i >= regs.Length)
@@ -17873,6 +17937,25 @@ namespace ProcessorEmulator.Core
                 && (code == 2 || code == 3)
                 && (epc == CoredllDllMainBadAEpc
                     || vaddr == CoredllDllMainBadABad);
+            // Live e7f0f37: after 15c28 leave,
+            // AfterLog>=2 dropped the next
+            // unclassified TLBL/TLBS. Name
+            // that miss once. Do not invent
+            // dest / 0x9A02 / ckseg.
+            bool exn15After = _leftoverWait99O32NkCoredllSawEntry
+                && _exn15C28Left
+                && !_exn15C28AfterExnLogged
+                && (code == 2 || code == 3)
+                && !exn15 && !c000 && !bada && !destJal
+                && !kdata && !sud && !jalr && !jalr1db0
+                && !ri && !stk2470 && !stk1670
+                && !abs1828 && !abs6670
+                && !IsDumpMemRefuseVa(epc)
+                && !IsDumpMemRefuseVa(vaddr)
+                && epc != LeftoverWait99O32RefuseRa
+                && epc != LeftoverWait99GetProcDest
+                && vaddr != LeftoverWait99O32RefuseRa
+                && vaddr != LeftoverWait99GetProcDest;
             if (slot)
             {
                 TryResolveDdiNopProcessInfo(bus);
@@ -17903,7 +17986,7 @@ namespace ProcessorEmulator.Core
                 && _leftoverWait99O32NkCoredllAfterLog >= 2
                 && !kdata && !sud && !jalr && !jalr1db0 && !ri && !stk2470
                 && !stk1670 && !abs1828 && !abs6670 && !c000 && !exn15
-                && !destJal && !bada)
+                && !exn15After && !destJal && !bada)
                 return;
             string why = CoredllExnWhy(code);
             uint slotWord = 0;
@@ -17985,6 +18068,12 @@ namespace ProcessorEmulator.Core
                 if (!TryPeekWord(bus, epc, out slotWord) || slotWord == 0)
                     slotWord = CoredllDllMainExn15C28Dump;
             }
+            else if (exn15After)
+            {
+                why = code == 3 ? "exn-tlbs-15c28-after" : "exn-tlbl-15c28-after";
+                if (!TryPeekWord(bus, epc, out slotWord))
+                    slotWord = 0;
+            }
             else if (destJal)
             {
                 why = code == 3 ? "exn-tlbs-4326c" : "exn-tlbl-4326c";
@@ -18012,13 +18101,13 @@ namespace ProcessorEmulator.Core
             uint kdataPrev = 0;
             uint kdataNext = 0;
             string kdataDis = "";
-            if (why == "exn-tlbl-pc0" || kdata || sud || jalr || jalr1db0 || ri || stk2470 || stk1670 || abs1828 || abs6670 || c000 || exn15 || destJal || bada)
+            if (why == "exn-tlbl-pc0" || kdata || sud || jalr || jalr1db0 || ri || stk2470 || stk1670 || abs1828 || abs6670 || c000 || exn15 || exn15After || destJal || bada)
             {
                 pc0V0 = PeekGpr(regs, 2);
                 pc0T9 = PeekGpr(regs, 25);
                 pc0Ra = PeekGpr(regs, 31);
             }
-            if (kdata || sud || jalr || jalr1db0 || ri || stk2470 || stk1670 || abs1828 || abs6670 || c000 || exn15 || destJal || bada)
+            if (kdata || sud || jalr || jalr1db0 || ri || stk2470 || stk1670 || abs1828 || abs6670 || c000 || exn15 || exn15After || destJal || bada)
             {
                 kdataDis = slotWord != 0
                     ? FormatMipsOp(epc, slotWord)
@@ -18045,8 +18134,8 @@ namespace ProcessorEmulator.Core
                 " cause=" + code +
                 " epc=0x" + epc.ToString("X") +
                 " bad=0x" + vaddr.ToString("X") +
-                (slot || page || kdata || sud || jalr || jalr1db0 || ri || stk2470 || stk1670 || abs1828 || abs6670 || c000 || exn15 || destJal || bada ? " word=0x" + slotWord.ToString("X") : "") +
-                ((why == "exn-tlbl-pc0" || kdata || sud || jalr || jalr1db0 || ri || stk2470 || stk1670 || abs1828 || abs6670 || c000 || exn15 || destJal || bada)
+                (slot || page || kdata || sud || jalr || jalr1db0 || ri || stk2470 || stk1670 || abs1828 || abs6670 || c000 || exn15 || exn15After || destJal || bada ? " word=0x" + slotWord.ToString("X") : "") +
+                ((why == "exn-tlbl-pc0" || kdata || sud || jalr || jalr1db0 || ri || stk2470 || stk1670 || abs1828 || abs6670 || c000 || exn15 || exn15After || destJal || bada)
                     ? " v0=0x" + pc0V0.ToString("X") +
                       " t9=0x" + pc0T9.ToString("X")
                     : "") +
@@ -18280,6 +18369,36 @@ namespace ProcessorEmulator.Core
                     " via=exn-tlbs-15c28" +
                     " (dump sw $ra,284($sp); fallthrough; no invent dest)");
                 _exn15C28Logged = true;
+            }
+            if (exn15After)
+            {
+                uint afterDumpW = 0;
+                if (!TryPeekLeftoverWait99DumpOnly(epc, out afterDumpW))
+                    afterDumpW = 0;
+                uint afterSp2 = PeekGpr(regs, 29);
+                uint afterFp = PeekGpr(regs, 30);
+                uint afterRs2 = slotWord != 0 ? ((slotWord >> 21) & 31) : 0;
+                uint afterRt2 = slotWord != 0 ? ((slotWord >> 16) & 31) : 0;
+                int afterOff2 = slotWord != 0 ? (short)(slotWord & 0xFFFF) : 0;
+                uint afterBas2 = PeekGpr(regs, (int)afterRs2);
+                BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk abs-15c28 after-exn" +
+                    " dis=" + kdataDis +
+                    " word=0x" + slotWord.ToString("X") +
+                    (afterDumpW != 0 ? " dump=0x" + afterDumpW.ToString("X") : "") +
+                    (afterDumpW != 0 ? " dump-dis=" + FormatMipsOp(epc, afterDumpW) : "") +
+                    " rs=" + afterRs2.ToString() +
+                    " rt=" + afterRt2.ToString() +
+                    " off=" + afterOff2.ToString() +
+                    " base=0x" + afterBas2.ToString("X") +
+                    " sp=0x" + afterSp2.ToString("X") +
+                    " fp=0x" + afterFp.ToString("X") +
+                    " v0=0x" + pc0V0.ToString("X") +
+                    " ra=0x" + pc0Ra.ToString("X") +
+                    " prev=0x" + kdataPrev.ToString("X") +
+                    " next=0x" + kdataNext.ToString("X") +
+                    " via=" + why +
+                    " (first TLB after leave; honor ra; no invent dest)");
+                _exn15C28AfterExnLogged = true;
             }
             if (destJal)
             {
@@ -24543,6 +24662,8 @@ namespace ProcessorEmulator.Core
             _exn15C28Left = false;
             _exn15C28StkPage = 0;
             _exn15C28StkSkipLogged = false;
+            _exn15C28AfterLogged = false;
+            _exn15C28AfterExnLogged = false;
             _ffffFe54SkipLogged = false;
             _bindImpIatSwExpect = false;
             _bindImpIatSwLogged = false;
@@ -30700,6 +30821,8 @@ namespace ProcessorEmulator.Core
         private static bool _exn15C28Left;
         private static uint _exn15C28StkPage;
         private static bool _exn15C28StkSkipLogged;
+        private static bool _exn15C28AfterLogged;
+        private static bool _exn15C28AfterExnLogged;
         private static bool _ffffFe54SkipLogged;
         private static bool _bindImpIatSwExpect;
         private static bool _bindImpIatSwLogged;
