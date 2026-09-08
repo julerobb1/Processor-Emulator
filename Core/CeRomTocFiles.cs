@@ -1450,6 +1450,25 @@ namespace ProcessorEmulator.Core
         public const uint CoredllDllMainT9LastCount = 0x80339B24;
         public const uint CoredllDllMainT9ReadDelta = 0x80059D68;
         public const uint CoredllDllMainT9ProgCmp = 0x80059D90;
+        // Live 07670a8: after jalr-t9 msec-scale,
+        // TLBS epc=0x8002F278 bad=0xFFFFE478
+        // word=0xA002E478 sb $v0,0xE478($0)
+        // v0=0x7. prev=0x8FBF004C lw $ra,76($sp)
+        // next=0x27BD0050 addiu $sp,80
+        // ra=0x8001552C. Dump nk.exe at that
+        // EPC is jr $ra (0x03E00008). Live
+        // overwrote the epilogue jr. Swallow
+        // sb alone falls through. Execute dump
+        // jr $ra (delay addiu). Never-wired
+        // E000. Do not invent page / pfn+1.
+        // Do not leftover-hop refuse dests.
+        public const uint CoredllDllMainKdataStore3 = 0xFFFFE478;
+        public const uint CoredllDllMainKdataEpc3 = 0x8002F278;
+        public const uint CoredllDllMainKdataInsn3 = 0xA002E478;
+        public const uint CoredllDllMainKdataPrev3 = 0x8FBF004C;
+        public const uint CoredllDllMainKdataNext3 = 0x27BD0050;
+        public const uint CoredllDllMainKdataDumpJr = 0x03E00008;
+        public const uint CoredllDllMainKdataWrapRefuse = 0x80086E5C;
         // Live f628fa6: after sb-jalr-skip, TLBL
         // epc=0x80341A74 bad=0x7EB8. epc!=bad so
         // data load at jalr dest, not I-fetch
@@ -10371,6 +10390,62 @@ namespace ProcessorEmulator.Core
                 (lastOk ? " *last=0x" + last.ToString("X") : " *last-miss") +
                 " via=msec-scale (dump OemCurMSec sibling; ReadCount-delta;" +
                 " do not invent tick)");
+        }
+
+        // Live 07670a8: sb $v0,0xE478($0) at
+        // dump jr $ra. After jalr-t9 only.
+        // Rewrite fetch to dump jr. Honor $ra
+        // when it peeks and is not a refuse
+        // dest. Do not invent E000. Do not
+        // leftover-hop.
+        public static bool TryFixE478SbAsDumpJr(MipsBus bus, uint[] regs,
+            uint pc, ref uint insn)
+        {
+            if (pc != CoredllDllMainKdataEpc3)
+                return false;
+            if (insn != CoredllDllMainKdataInsn3)
+                return false;
+            if (!_leftoverWait99O32NkCoredllSawEntry || !_ffffE428SkipLogged
+                || !_jalrT9MsecLogged)
+                return false;
+            uint prev = 0;
+            uint next = 0;
+            if (!TryPeekWord(bus, CoredllDllMainKdataEpc3 - 4, out prev)
+                || prev != CoredllDllMainKdataPrev3)
+                return false;
+            if (!TryPeekWord(bus, CoredllDllMainKdataEpc3 + 4, out next)
+                || next != CoredllDllMainKdataNext3)
+                return false;
+            uint ra = PeekGpr(regs, 31);
+            if (ra == 0 || (ra & 3) != 0)
+                return false;
+            if (ra == LeftoverWait99O32RefuseRa
+                || ra == LeftoverWait99GetProcDest
+                || ra == LeftoverWait99O32RefuseDump
+                || ra == CoredllDllMainKdataWrapRefuse
+                || IsLeftoverDestVa(ra)
+                || IsWrapDestSize(ra) || IsWrapDestFp50Va(ra)
+                || IsHdDllImageBase(ra) || ra == WrapDestE32SizeLive
+                || ra == WrapDestFp50FillLive)
+                return false;
+            uint raw = 0;
+            if (!TryPeekWord(bus, ra, out raw) || raw == 0)
+                return false;
+            insn = CoredllDllMainKdataDumpJr;
+            if (!_jalrE478JrLogged)
+            {
+                _jalrE478JrLogged = true;
+                BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk ffff-e000 sb-jr" +
+                    " epc=0x" + CoredllDllMainKdataEpc3.ToString("X") +
+                    " bad=0x" + CoredllDllMainKdataStore3.ToString("X") +
+                    " word=0x" + CoredllDllMainKdataInsn3.ToString("X") +
+                    " dump=0x" + CoredllDllMainKdataDumpJr.ToString("X") +
+                    " ra=0x" + ra.ToString("X") +
+                    " ra-word=0x" + raw.ToString("X") +
+                    " via=dump-jr (live sb overwrote dump jr $ra;" +
+                    " never-wired E000; honor ra; do not invent dest)");
+            }
+            return true;
         }
 
         private static bool IsMipsLoadToZero(uint insn)
@@ -22502,6 +22577,7 @@ namespace ProcessorEmulator.Core
             _jalrRiLogged = false;
             _jalrTableFixLogged = false;
             _jalrT9MsecLogged = false;
+            _jalrE478JrLogged = false;
             _ffffFe54SkipLogged = false;
             _bindImpIatSwExpect = false;
             _bindImpIatSwLogged = false;
@@ -28614,6 +28690,7 @@ namespace ProcessorEmulator.Core
         private static bool _jalrRiLogged;
         private static bool _jalrTableFixLogged;
         private static bool _jalrT9MsecLogged;
+        private static bool _jalrE478JrLogged;
         private static bool _ffffFe54SkipLogged;
         private static bool _bindImpIatSwExpect;
         private static bool _bindImpIatSwLogged;

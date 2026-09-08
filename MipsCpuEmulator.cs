@@ -498,6 +498,8 @@ namespace ProcessorEmulator.Emulation
             if ((programCounter & 3) != 0)
                 throw new CpuAlignmentException($"Unaligned fetch PC=0x{programCounter:X8}");
             uint instruction = ReadMemory32(programCounter);
+            CeRomTocFiles.TryFixE478SbAsDumpJr(_bus, registers, programCounter,
+                ref instruction);
             programCounter += 4;
             return instruction;
         }
