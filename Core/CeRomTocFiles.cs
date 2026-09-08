@@ -15309,6 +15309,25 @@ namespace ProcessorEmulator.Core
                 " no invent dest / 0x9A02)");
         }
 
+        private static bool TryPeekExn15C28OuterJalIncDest(MipsBus bus, uint dest,
+            out uint peek)
+        {
+            peek = 0;
+            if (dest == 0 || (dest & 3) != 0)
+                return false;
+            if (dest < 0x00010000u || dest >= CoredllDllMainC000Page)
+                return false;
+            if (IsExn15C28Na02Frame(dest) || IsDumpMemRefuseVa(dest)
+                || dest == FfffF000Page
+                || (dest & ~0xFFFu) == FfffE000Page
+                || IsC000StoreSkipVa(dest))
+                return false;
+            if (dest >= CoredllDllMainExn15C28OuterJalDest
+                && dest <= CoredllDllMainExn15C28OuterJalDestJrDelay)
+                return false;
+            return TryPeekWord(bus, dest, out peek);
+        }
+
         private static bool TryPeekExn15C28OuterJalLhuDest(MipsBus bus, uint dest,
             out uint peek)
         {
