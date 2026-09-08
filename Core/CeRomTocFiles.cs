@@ -1520,20 +1520,19 @@ namespace ProcessorEmulator.Core
         // lw $t4,0($fp), TLBS
         // epc=0x80057470 bad=0x6670.
         // Dump is jal 0x8004326C
-        // (0x0C010C9B), delay addiu
-        // $a0,$v0,13292. Same abs
-        // rs=0 I-fetch overwrite
-        // (live sb $a0,0x6670($0)).
-        // dump-mem missed: dump is
-        // J-type (rs field 0), not
-        // a memop. Generalize to
-        // dump J/JAL/JR/JALR. Do
-        // not invent page 0x6000.
+        // (0x0C010C9B). Live d2ceddd
+        // word=0xA0056670 sb $a1,
+        // 0x6670($0). Jal rewrite
+        // worked but live RAM stayed
+        // corrupt → ping-pong with
+        // 0x80042628. Heal writes
+        // dump word at EPC. Do not
+        // invent page 0x6000.
         public const uint CoredllDllMainAbs6670Epc = 0x80057470;
         public const uint CoredllDllMainAbs6670Bad = 0x6670;
         public const uint CoredllDllMainAbs6670Dump = 0x0C010C9B;
         public const uint CoredllDllMainAbs6670Dest = 0x8004326C;
-        public const uint CoredllDllMainAbs6670Live = 0xA0046670;
+        public const uint CoredllDllMainAbs6670Live = 0xA0056670;
         // Live f628fa6: after sb-jalr-skip, TLBL
         // epc=0x80341A74 bad=0x7EB8. epc!=bad so
         // data load at jalr dest, not I-fetch
@@ -10497,6 +10496,8 @@ namespace ProcessorEmulator.Core
             if (!TryPeekWord(bus, ra, out raw) || raw == 0)
                 return false;
             insn = CoredllDllMainKdataDumpJr;
+            TryHealDumpInsn(bus, pc, CoredllDllMainKdataInsn3,
+                CoredllDllMainKdataDumpJr);
             if (!_jalrE478JrLogged)
             {
                 _jalrE478JrLogged = true;
@@ -10546,6 +10547,8 @@ namespace ProcessorEmulator.Core
                 || ra == WrapDestFp50FillLive)
                 return false;
             insn = CoredllDllMainStk2470Insn;
+            TryHealDumpInsn(bus, pc, CoredllDllMainStk2470Live,
+                CoredllDllMainStk2470Insn);
             _stk2470Done = true;
             if (!_stk2470SwLogged)
             {
@@ -10617,6 +10620,8 @@ namespace ProcessorEmulator.Core
                 || ra == WrapDestFp50FillLive)
                 return false;
             insn = CoredllDllMainStk1670Insn;
+            TryHealDumpInsn(bus, pc, CoredllDllMainStk1670Live,
+                CoredllDllMainStk1670Insn);
             _stk1670Logged = true;
             if (!_stk1670SbLogged)
             {
@@ -10644,9 +10649,11 @@ namespace ProcessorEmulator.Core
         // (rs!=0) or dump J/JAL/JR/JALR
         // (J-type rs field is 0). Peek
         // dump-only nk.bin (fallback known
-        // EPCs). Rewrite. Log once per PC.
-        // Skip-log once if this site is
-        // abs-6670 and dump-mem does not
+        // EPCs). Rewrite and write dump
+        // word back at EPC (self-heal)
+        // so the next I-fetch is dump-
+        // true. Log once per EPC. Skip-
+        // log once if abs-6670 does not
         // apply. Do not invent low useg.
         // Do not leftover-hop.
         public static bool TryFixLiveAbsStoreAsDumpMem(MipsBus bus, uint[] regs,
@@ -10728,10 +10735,9 @@ namespace ProcessorEmulator.Core
             }
             uint live = insn;
             insn = dump;
-            if (_absStoreMemLogN < 8 && _absStoreMemLastPc != pc)
+            bool heal = TryHealDumpInsn(bus, pc, live, dump);
+            if (TryNoteDumpMemLogPc(pc))
             {
-                _absStoreMemLastPc = pc;
-                _absStoreMemLogN++;
                 uint v0 = PeekGpr(regs, 2);
                 uint fp = PeekGpr(regs, 30);
                 uint rt = (live >> 16) & 31;
@@ -10747,8 +10753,9 @@ namespace ProcessorEmulator.Core
                     " v0=0x" + v0.ToString("X") +
                     " fp=0x" + fp.ToString("X") +
                     " ra=0x" + ra.ToString("X") +
+                    (heal ? " heal=1" : " heal=0") +
                     " via=dump-mem (live abs store rs=0; dump memop/jump;" +
-                    " do not invent dest)");
+                    " self-heal EPC; do not invent dest)");
             }
             return true;
         }
@@ -10806,6 +10813,50 @@ namespace ProcessorEmulator.Core
                 || IsWrapDestSize(dest) || IsWrapDestFp50Va(dest)
                 || IsHdDllImageBase(dest) || dest == WrapDestE32SizeLive
                 || dest == WrapDestFp50FillLive;
+        }
+
+        // Write dump-true insn over the live
+        // abs-store overwrite at EPC. Next
+        // I-fetch is dump-true without
+        // rewrite. NK kseg0 only. Do not
+        // leftover-hop. Do not invent useg.
+        private static bool TryHealDumpInsn(MipsBus bus, uint pc, uint live,
+            uint dump)
+        {
+            if (bus == null || dump == 0 || dump == live)
+                return false;
+            if ((pc & 3) != 0 || pc < 0x80010000u || pc >= 0x80400000u)
+                return false;
+            if (IsDumpMemRefuseVa(pc))
+                return false;
+            uint cur = 0;
+            if (!TryPeekWord(bus, pc, out cur) || cur != live)
+                return cur == dump;
+            try { bus.Write32(pc, dump); }
+            catch { return false; }
+            uint after = 0;
+            return TryPeekWord(bus, pc, out after) && after == dump;
+        }
+
+        private static bool TryNoteDumpMemLogPc(uint pc)
+        {
+            if (_dumpMemLoggedPc == null)
+                return false;
+            int n = _absStoreMemLogN;
+            if (n < 0)
+                n = 0;
+            if (n > _dumpMemLoggedPc.Length)
+                n = _dumpMemLoggedPc.Length;
+            for (int i = 0; i < n; i++)
+            {
+                if (_dumpMemLoggedPc[i] == pc)
+                    return false;
+            }
+            if (n >= _dumpMemLoggedPc.Length)
+                return false;
+            _dumpMemLoggedPc[n] = pc;
+            _absStoreMemLogN = n + 1;
+            return true;
         }
 
         private static void TryLogDumpMemSkip(uint pc, uint live, uint dump,
@@ -23232,7 +23283,11 @@ namespace ProcessorEmulator.Core
             _stk1670Logged = false;
             _stk1670SbLogged = false;
             _absStoreMemLogN = 0;
-            _absStoreMemLastPc = 0;
+            if (_dumpMemLoggedPc != null)
+            {
+                for (int i = 0; i < _dumpMemLoggedPc.Length; i++)
+                    _dumpMemLoggedPc[i] = 0;
+            }
             _abs1828ExnLogged = false;
             _abs6670DumpSkipLogged = false;
             _abs6670ExnLogged = false;
@@ -29358,7 +29413,7 @@ namespace ProcessorEmulator.Core
         private static bool _stk1670Logged;
         private static bool _stk1670SbLogged;
         private static int _absStoreMemLogN;
-        private static uint _absStoreMemLastPc;
+        private static readonly uint[] _dumpMemLoggedPc = new uint[8];
         private static bool _abs1828ExnLogged;
         private static bool _abs6670DumpSkipLogged;
         private static bool _abs6670ExnLogged;
