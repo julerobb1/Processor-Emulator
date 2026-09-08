@@ -1422,6 +1422,21 @@ namespace ProcessorEmulator.Core
         public const uint CoredllDllMainSudEpc = 0x8002F188;
         public const uint CoredllDllMainSudInsn = 0x8C430000;
         public const uint CoredllDllMainSudBeq = 0x1060001C;
+        // Live ab4c991: after sud-beq0-skip, TLBS
+        // epc=0x8002F228 bad=0xFFFFE428
+        // word=0xA002E428 sb $v0,0xE428($0)
+        // v0=0x80341A74 (NK data near sec0
+        // 0x80341BE0 / ProcTable). next=0x0040F809
+        // jalr $ra,$v0. t9=0x80057EB8. Nonzero
+        // byte 0x74 — sb-zero-skip must not
+        // apply. No E000 PFN. Swallow this sb
+        // only so jalr $v0 runs (dest peekable
+        // kseg). Do not invent page / pfn+1.
+        public const uint CoredllDllMainKdataStore2 = 0xFFFFE428;
+        public const uint CoredllDllMainKdataEpc2 = 0x8002F228;
+        public const uint CoredllDllMainKdataInsn2 = 0xA002E428;
+        public const uint CoredllDllMainKdataNext2 = 0x0040F809;
+        public const uint CoredllDllMainKdataT9_2 = 0x80057EB8;
         // 0x8001521C ori k1, epc, 0xFFFC / addiu 2 / beq
         // syscall. 0xFFFFF3DA is coredll 0x80095A98
         // addiu $v0, $0, -3110 / jalr $v0. Same class as
@@ -10101,6 +10116,60 @@ namespace ProcessorEmulator.Core
                     " ra=0x" + CoredllDllMainKdataRa.ToString("X") +
                     " v0=0 l2=0" +
                     " (zero-byte to never-wired E000/F000 pair; continue addiu; honor ra; do not invent dest)");
+            }
+            return true;
+        }
+
+        private static bool IsJalrV0(uint insn)
+        {
+            return (insn >> 26) == 0
+                && (insn & 63) == 9
+                && ((insn >> 21) & 31) == 2;
+        }
+
+        // Live ab4c991: sb $v0,0xE428($0) with
+        // v0=0x80341A74 then jalr $v0. Nonzero
+        // store to never-wired E000. Do not use
+        // sb-zero-skip. No pfn+1. Swallow this
+        // dump-true sb so NK jalr's peekable
+        // kseg dest. Do not leftover-hop.
+        public static bool TrySkipFfffE428SbJalr(MipsBus bus, uint va, uint value)
+        {
+            if (va != CoredllDllMainKdataStore2)
+                return false;
+            if ((value & 0xFFu) == 0)
+                return false;
+            if (!_leftoverWait99O32NkCoredllSawEntry)
+                return false;
+            if (_ffffE000Busy)
+                return false;
+            if (_ffffE000Kseg != 0)
+                return false;
+            TryResolveFfffE000(bus, va);
+            if (_ffffE000Kseg != 0)
+                return false;
+            uint insn = 0;
+            if (!TryPeekWord(bus, CoredllDllMainKdataEpc2, out insn) || insn == 0)
+                insn = CoredllDllMainKdataInsn2;
+            if (insn != CoredllDllMainKdataInsn2)
+                return false;
+            uint next = 0;
+            if (!TryPeekWord(bus, CoredllDllMainKdataEpc2 + 4, out next) || next == 0)
+                next = CoredllDllMainKdataNext2;
+            if (!IsJalrV0(next))
+                return false;
+            if (!_ffffE428SkipLogged)
+            {
+                _ffffE428SkipLogged = true;
+                BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk ffff-e000 sb-jalr-skip" +
+                    " epc=0x" + CoredllDllMainKdataEpc2.ToString("X") +
+                    " bad=0x" + CoredllDllMainKdataStore2.ToString("X") +
+                    " word=0x" + insn.ToString("X") +
+                    " dis=" + FormatMipsOp(CoredllDllMainKdataEpc2, insn) +
+                    " next=0x" + next.ToString("X") +
+                    " byte=0x" + (value & 0xFFu).ToString("X") +
+                    " ra=0x" + CoredllDllMainKdataRa.ToString("X") +
+                    " (nonzero sb then jalr $v0; never-wired E000; no page; do not invent dest)");
             }
             return true;
         }
@@ -21933,6 +22002,7 @@ namespace ProcessorEmulator.Core
             _ffffE000Demand = false;
             _ffffE000Done = false;
             _ffffE000SkipLogged = false;
+            _ffffE428SkipLogged = false;
             _ffffFe54SkipLogged = false;
             _bindImpIatSwExpect = false;
             _bindImpIatSwLogged = false;
@@ -28033,6 +28103,7 @@ namespace ProcessorEmulator.Core
         private static bool _ffffE000Demand;
         private static bool _ffffE000Done;
         private static bool _ffffE000SkipLogged;
+        private static bool _ffffE428SkipLogged;
         private static bool _ffffFe54SkipLogged;
         private static bool _bindImpIatSwExpect;
         private static bool _bindImpIatSwLogged;

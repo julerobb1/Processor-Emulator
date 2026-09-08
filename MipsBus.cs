@@ -265,6 +265,8 @@ namespace ProcessorEmulator.Emulation
             vaddr = CeRomTocFiles.MapFfffE000Va(this, vaddr);
             if (CeRomTocFiles.TrySkipFfffE000SbZero(this, vaddr, value))
                 return;
+            if (CeRomTocFiles.TrySkipFfffE428SbJalr(this, vaddr, value))
+                return;
             bool watch = CeRomTocFiles.TryNoteDdiNopDecompStore(vaddr, value);
             try
             {
