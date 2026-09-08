@@ -539,6 +539,8 @@ namespace ProcessorEmulator.Emulation
                 instruction);
             CeRomTocFiles.TryNoteDumpMem15C28JalRet(_bus, registers, fetchPc,
                 instruction);
+            CeRomTocFiles.TryNoteDumpMem15C28AfterMemset(_bus, registers, fetchPc,
+                instruction);
             CeRomTocFiles.TryNoteDumpMem15C28JalS1(_bus, registers, fetchPc,
                 instruction);
             programCounter += 4;
