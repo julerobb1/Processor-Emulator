@@ -1322,6 +1322,16 @@ namespace ProcessorEmulator.Core
         public const uint CoredllDllMainJalLwVa = 0x03F6EE3C;
         public const uint CoredllDllMainJalLwWord = 0x8EC20000;
         public const uint CoredllDllMainJalRaVa = 0x03F6EE5C;
+        // Live f4b2558 FIRST-WIN proc-info map
+        // 0x01FFF000→0x86FB8000; GetProc-cache
+        // TLBL gone. Next I-fetch TLBL
+        // epc==bad=0x03FCEFF4 (slot-1 COREDLL
+        // ImageBase page past 0x03FA0000 cap).
+        // Demand-map via slot-1 firmware PTE
+        // (same as ddi_nop coredll-page after
+        // DllMain). Do not lift MapCoredllSharedVa
+        // cap. Do not leftover-hop dest.
+        public const uint CoredllDllMainPageVa = 0x03FCEFF4;
         public const uint CoredllDumpBase = 0x80074000;
         // Live 147e54f: I-fetch TLBL 0x03FB492C (IAT slot6).
         // ImageBase keep-imagebase=0x03F50000. MapCoredllSharedVa
@@ -15229,6 +15239,8 @@ namespace ProcessorEmulator.Core
                 why = "api";
                 TryResolveDdiNopProcessInfo(bus);
                 TryPlantLeftoverWait99GetProc(bus, regs);
+                _coredllImageDemand = true;
+                TryResolveDdiNopCoredllImage(bus, CoredllDllMainPageVa);
             }
             else if (how == "miss-jal")
                 why = "miss-jal";
@@ -15303,10 +15315,18 @@ namespace ProcessorEmulator.Core
             bool slot = _leftoverWait99O32NkCoredllSawEntry
                 && vaddr >= ProcessInfoPage && vaddr < 0x02000000u
                 && (code == 2 || code == 3);
+            bool page = _leftoverWait99O32NkCoredllSawEntry
+                && code == 2 && epc == vaddr
+                && IsDdiNopCoredllImageVa(epc);
             if (slot)
             {
                 TryResolveDdiNopProcessInfo(bus);
                 TryPlantLeftoverWait99GetProc(bus, regs);
+            }
+            if (page)
+            {
+                _coredllImageDemand = true;
+                TryResolveDdiNopCoredllImage(bus, epc);
             }
             if (_leftoverWait99O32NkCoredllSawEntry
                 && _leftoverWait99O32NkCoredllAfterLog >= 2)
@@ -15319,6 +15339,14 @@ namespace ProcessorEmulator.Core
                 TryPeekCoredllDumpWord(bus, epc, out slotWord);
                 if (slotWord == 0 && epc == CoredllDllMainJalLwVa)
                     slotWord = CoredllDllMainJalLwWord;
+            }
+            else if (page)
+            {
+                why = "exn-tlbl-page";
+                TryPeekCoredllDumpWord(bus, epc, out slotWord);
+                uint kseg = LookupCoredllImageKseg(epc);
+                if (slotWord == 0 && kseg != 0)
+                    TryPeekWord(bus, kseg | (epc & 0xFFFu), out slotWord);
             }
             if (_leftoverWait99O32NkCoredllSawEntry)
                 _leftoverWait99O32NkCoredllAfterLog++;
@@ -15334,7 +15362,7 @@ namespace ProcessorEmulator.Core
                 " cause=" + code +
                 " epc=0x" + epc.ToString("X") +
                 " bad=0x" + vaddr.ToString("X") +
-                (slot ? " word=0x" + slotWord.ToString("X") : "") +
+                (slot || page ? " word=0x" + slotWord.ToString("X") : "") +
                 " via=" + why);
         }
 
@@ -19849,6 +19877,8 @@ namespace ProcessorEmulator.Core
 
         private static bool IsDdiNopCoredllImageArmed()
         {
+            if (_leftoverWait99O32NkCoredllSawEntry)
+                return true;
             if (!_ddiNopAwaitCallDll)
                 return false;
             return _ddiNopDllMainLogged || _coredllImageDemand;
