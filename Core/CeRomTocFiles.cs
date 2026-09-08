@@ -1848,10 +1848,13 @@ namespace ProcessorEmulator.Core
         public const uint CoredllDllMainExn15C28OuterJalLinkSltu = 0x8003F7B0;
         public const uint CoredllDllMainExn15C28OuterJalLinkSltuDump = 0x03C2582B;
         // Dump sltu then beq $t3,$0 ->
-        // 0x8003F748. That dest is MULT
-        // (SPECIAL fn=0x18). Never hop
-        // MUL. Observe beq only. Do not
-        // invent $fp / $v0 / taken.
+        // 0x8003F748. sltu writes $t3
+        // from live $fp/$v0 even if $fp
+        // is 0x9A (compare is 0/1, not
+        // a 0x9A memory op). That dest
+        // is MULT (SPECIAL fn=0x18).
+        // Never hop MUL. Do not invent
+        // $fp / $v0 / taken.
         public const uint CoredllDllMainExn15C28OuterJalLinkBeq = 0x8003F7B4;
         public const uint CoredllDllMainExn15C28OuterJalLinkBeqDump = 0x1160FFE4;
         // beq $t3,$0 delay andi $s4,$t2,7
@@ -16088,6 +16091,27 @@ namespace ProcessorEmulator.Core
             return TryExecDumpMemAlu(regs, insn);
         }
 
+        // Live dd85d76: sltu $t3,$fp,$v0
+        // skipped because $fp is 0x9A and
+        // left stale t3=0x80342658. slt /
+        // sltu / slti / sltiu write 0/1
+        // from known rs/rt even if a
+        // source is 0x9A. Compare is not
+        // a 0x9A memory op. Do not invent
+        // $fp / $v0 / dest.
+        private static bool TryExecDumpMemSltuKnown(uint[] regs, uint insn)
+        {
+            if (!IsDumpMemAluInsn(insn))
+                return false;
+            uint op = insn >> 26;
+            uint fn = insn & 63;
+            if (op == 0 && (fn == 42 || fn == 43))
+                return TryExecDumpMemAlu(regs, insn);
+            if (op == 10 || op == 11)
+                return TryExecDumpMemAlu(regs, insn);
+            return false;
+        }
+
         // Live 2e68147: bne landing is
         // fall 0x8003F7A8 or $s1,$s0,$0
         // or taken 0x8003F7AC addiu
@@ -16233,14 +16257,15 @@ namespace ProcessorEmulator.Core
                 " honor ra; no invent $fp / dest / 0x9A02)");
         }
 
-        // Live 9f5ef29: sltu $t3,$fp,$v0
-        // at 0x8003F7B0. Exec dump sltu
-        // if $fp/$v0 are not 0x9A. Next
-        // is beq $t3,$0 -> 0x8003F748
-        // MULT — refuse. Observe beq.
-        // Do not invent $fp / $v0 /
-        // taken. No MUL. Not LoadO32.
-        // No leftover-hop.
+        // Live 9f5ef29 / dd85d76: sltu
+        // $t3,$fp,$v0 at 0x8003F7B0.
+        // Write dump sltu even if $fp is
+        // 0x9A (result 0/1). Live fp in
+        // 0x9A and v0=0x28 → t3:=0.
+        // Next is beq $t3,$0 -> 0x8003F748
+        // MULT — refuse. Do not invent
+        // $fp / $v0 / taken. No MUL.
+        // Not LoadO32. No leftover-hop.
         public static bool TryTakeDumpMem15C28AfterOuterJalSltu(MipsBus bus,
             uint[] regs, uint pc, uint insn, bool inDelay, ref uint cpuPc)
         {
@@ -16270,6 +16295,8 @@ namespace ProcessorEmulator.Core
             if (insn != sltuDump && insn != 0)
                 TryHealDumpInsn(bus, pc, insn, sltuDump);
             bool sltuOk = TryExecDumpMemAluIfNotNa02(regs, sltuDump);
+            if (!sltuOk)
+                sltuOk = TryExecDumpMemSltuKnown(regs, sltuDump);
             if (bus != null)
             {
                 uint epc = bus.PeekEpc();
@@ -16309,7 +16336,7 @@ namespace ProcessorEmulator.Core
                 " ra=0x" + sltuRa.ToString("X") +
                 " sp=0x" + sltuSp.ToString("X") +
                 " via=" + _leftoverWait99O32NkChainVia +
-                " (dump sltu $t3,$fp,$v0; skip 0x9A ALU;" +
+                " (dump sltu $t3,$fp,$v0; write cmp even if $fp is 0x9A;" +
                 " beq dest is MULT — refuse; honor ra;" +
                 " no invent $fp / $v0 / taken / 0x9A02)");
             return true;
