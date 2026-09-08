@@ -1408,6 +1408,15 @@ namespace ProcessorEmulator.Core
         public const uint CoredllDllMainKdataPrev = 0x02E02025;
         public const uint CoredllDllMainKdataNext = 0x2442FE54;
         public const uint CoredllDllMainKdataRa = 0x8002F124;
+        // Live 9b62569 sb-zero-skip then TLBL
+        // epc=0x8002F188 bad=0xFFFFFE54 (addiu
+        // $v0,-428 formed SharedUserData+0xE54).
+        // Same never-wired E000/F000 pair. Map
+        // live peek / TLB PFN only. Do not alias
+        // KData. Do not invent zero page. Skip
+        // the load only when dest is $zero.
+        public const uint CoredllDllMainSudVa = 0xFFFFFE54;
+        public const uint CoredllDllMainSudEpc = 0x8002F188;
         // 0x8001521C ori k1, epc, 0xFFFC / addiu 2 / beq
         // syscall. 0xFFFFF3DA is coredll 0x80095A98
         // addiu $v0, $0, -3110 / jalr $v0. Same class as
@@ -9805,6 +9814,8 @@ namespace ProcessorEmulator.Core
 
         private static bool IsFfffF000Armed()
         {
+            if (_leftoverWait99O32NkCoredllSawEntry)
+                return true;
             if (!_ddiNopAwaitCallDll)
                 return false;
             return _ddiNopDllMainLogged || _ffffFce1Logged || _ffffF000Demand;
@@ -10070,6 +10081,56 @@ namespace ProcessorEmulator.Core
                     " ra=0x" + CoredllDllMainKdataRa.ToString("X") +
                     " v0=0 l2=0" +
                     " (zero-byte to never-wired E000/F000 pair; continue addiu; honor ra; do not invent dest)");
+            }
+            return true;
+        }
+
+        private static bool IsMipsLoadToZero(uint insn)
+        {
+            uint op = insn >> 26;
+            if (op != 0x20 && op != 0x21 && op != 0x22 && op != 0x23
+                && op != 0x24 && op != 0x25 && op != 0x26)
+                return false;
+            return ((insn >> 16) & 31) == 0;
+        }
+
+        // Live 9b62569: after sb-zero-skip, TLBL
+        // epc=0x8002F188 bad=0xFFFFFE54. Arm F000
+        // map (live peek / TLB PFN). Skip the load
+        // only when dest is $zero (true noop). Do
+        // not invent SharedUserData / zero page.
+        // Do not leftover-hop.
+        public static bool TrySkipFfffFe54LoadZero(MipsBus bus, uint va)
+        {
+            if (va < CoredllDllMainSudVa || va >= CoredllDllMainSudVa + 4)
+                return false;
+            if ((va & ~0xFFFu) != FfffF000Page)
+                return false;
+            if (!_leftoverWait99O32NkCoredllSawEntry)
+                return false;
+            if (_ffffF000Kseg != 0)
+                return false;
+            TryResolveFfffF000(bus, va);
+            if (_ffffF000Kseg != 0)
+                return false;
+            uint insn = 0;
+            if (!TryPeekWord(bus, CoredllDllMainSudEpc, out insn) || insn == 0)
+                return false;
+            if (!IsMipsLoadToZero(insn))
+                return false;
+            if (!_ffffFe54SkipLogged)
+            {
+                _ffffFe54SkipLogged = true;
+                uint next = 0;
+                TryPeekWord(bus, CoredllDllMainSudEpc + 4, out next);
+                BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk ffff-f000 sud-zero-skip" +
+                    " epc=0x" + CoredllDllMainSudEpc.ToString("X") +
+                    " bad=0x" + CoredllDllMainSudVa.ToString("X") +
+                    " word=0x" + insn.ToString("X") +
+                    " dis=" + FormatMipsOp(CoredllDllMainSudEpc, insn) +
+                    " next=0x" + next.ToString("X") +
+                    " ra=0x" + CoredllDllMainKdataRa.ToString("X") +
+                    " (load $0; never-wired F000 pair; noop continue; do not invent dest)");
             }
             return true;
         }
@@ -15645,6 +15706,9 @@ namespace ProcessorEmulator.Core
             bool kdata = _leftoverWait99O32NkCoredllSawEntry
                 && (vaddr & ~0xFFFu) == FfffE000Page
                 && (code == 2 || code == 3);
+            bool sud = _leftoverWait99O32NkCoredllSawEntry
+                && (vaddr & ~0xFFFu) == FfffF000Page
+                && (code == 2 || code == 3);
             if (slot)
             {
                 TryResolveDdiNopProcessInfo(bus);
@@ -15657,9 +15721,11 @@ namespace ProcessorEmulator.Core
             }
             if (kdata)
                 TryResolveFfffE000(bus, vaddr);
+            if (sud)
+                TryResolveFfffF000(bus, vaddr);
             if (_leftoverWait99O32NkCoredllSawEntry
                 && _leftoverWait99O32NkCoredllAfterLog >= 2
-                && !kdata)
+                && !kdata && !sud)
                 return;
             string why = CoredllExnWhy(code);
             uint slotWord = 0;
@@ -15684,6 +15750,11 @@ namespace ProcessorEmulator.Core
                 if (!TryPeekWord(bus, epc, out slotWord) && epc == CoredllDllMainKdataEpc)
                     slotWord = CoredllDllMainKdataInsn;
             }
+            else if (sud)
+            {
+                why = code == 3 ? "exn-tlbs-sud" : "exn-tlbl-sud";
+                TryPeekWord(bus, epc, out slotWord);
+            }
             else if (_leftoverWait99O32NkCoredllSawEntry
                 && code == 2 && epc == 0 && vaddr == 0)
             {
@@ -15695,13 +15766,13 @@ namespace ProcessorEmulator.Core
             uint kdataPrev = 0;
             uint kdataNext = 0;
             string kdataDis = "";
-            if (why == "exn-tlbl-pc0" || kdata)
+            if (why == "exn-tlbl-pc0" || kdata || sud)
             {
                 pc0V0 = PeekGpr(regs, 2);
                 pc0T9 = PeekGpr(regs, 25);
                 pc0Ra = PeekGpr(regs, 31);
             }
-            if (kdata)
+            if (kdata || sud)
             {
                 kdataDis = slotWord != 0
                     ? FormatMipsOp(epc, slotWord)
@@ -15723,8 +15794,8 @@ namespace ProcessorEmulator.Core
                 " cause=" + code +
                 " epc=0x" + epc.ToString("X") +
                 " bad=0x" + vaddr.ToString("X") +
-                (slot || page || kdata ? " word=0x" + slotWord.ToString("X") : "") +
-                (why == "exn-tlbl-pc0" || kdata
+                (slot || page || kdata || sud ? " word=0x" + slotWord.ToString("X") : "") +
+                (why == "exn-tlbl-pc0" || kdata || sud
                     ? " v0=0x" + pc0V0.ToString("X") +
                       " t9=0x" + pc0T9.ToString("X")
                     : "") +
@@ -15741,6 +15812,17 @@ namespace ProcessorEmulator.Core
                     (pc0V0 == 0 ? " sb-zero" : "") +
                     (pc0T9 == CoredllDllMainKdataT9 ? " t9-tlbr" : "") +
                     " (l2=0; NK wired KData pair C000/D000; never wired E000/F000; do not invent dest)");
+            }
+            if (sud)
+            {
+                BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk ffff-f000 load" +
+                    " dis=" + kdataDis +
+                    " prev=0x" + kdataPrev.ToString("X") +
+                    " next=0x" + kdataNext.ToString("X") +
+                    " ra=0x" + pc0Ra.ToString("X") +
+                    " v0=0x" + pc0V0.ToString("X") +
+                    " t9=0x" + pc0T9.ToString("X") +
+                    " (SharedUserData+0xE54; never-wired F000 pair; no alias; do not invent dest)");
             }
         }
 
@@ -21818,6 +21900,7 @@ namespace ProcessorEmulator.Core
             _ffffE000Demand = false;
             _ffffE000Done = false;
             _ffffE000SkipLogged = false;
+            _ffffFe54SkipLogged = false;
             _bindImpIatSwExpect = false;
             _bindImpIatSwLogged = false;
             _bindImpIatSwLog = 0;
@@ -27917,6 +28000,7 @@ namespace ProcessorEmulator.Core
         private static bool _ffffE000Demand;
         private static bool _ffffE000Done;
         private static bool _ffffE000SkipLogged;
+        private static bool _ffffFe54SkipLogged;
         private static bool _bindImpIatSwExpect;
         private static bool _bindImpIatSwLogged;
         private static int _bindImpIatSwLog;

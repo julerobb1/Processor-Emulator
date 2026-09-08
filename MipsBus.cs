@@ -130,6 +130,8 @@ namespace ProcessorEmulator.Emulation
             vaddr = CeRomTocFiles.MapUserKDataVa(vaddr);
             vaddr = CeRomTocFiles.MapFfffF000Va(this, vaddr);
             vaddr = CeRomTocFiles.MapFfffE000Va(this, vaddr);
+            if (CeRomTocFiles.TrySkipFfffFe54LoadZero(this, vaddr))
+                return 0;
             uint paddr = Translate(vaddr, isStore: false);
             IBusDevice device = _lookupTable[paddr >> 16];
 
@@ -220,6 +222,8 @@ namespace ProcessorEmulator.Emulation
             vaddr = CeRomTocFiles.MapUserKDataVa(vaddr);
             vaddr = CeRomTocFiles.MapFfffF000Va(this, vaddr);
             vaddr = CeRomTocFiles.MapFfffE000Va(this, vaddr);
+            if (CeRomTocFiles.TrySkipFfffFe54LoadZero(this, vaddr))
+                return 0;
             uint paddr = Translate(vaddr, isStore: false);
             IBusDevice device = _lookupTable[paddr >> 16];
 
