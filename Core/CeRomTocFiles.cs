@@ -1611,6 +1611,12 @@ namespace ProcessorEmulator.Core
         // NEVER invent/map SUD / E000.
         // Keep sud-beq0 / sb-zero.
         public const uint CoredllDllMainFfffF088 = 0xFFFFF088;
+        // Live 738e467: after f000-store-skip,
+        // list-insert a1=0x70 via=exn-tlbs-c000
+        // dump-match sw $v0,0($a1) v0=0xFFFFF270.
+        // Continue-skip dest-miss on a1<0x1000.
+        // NEVER invent page 0 / 0x80000070.
+        public const uint CoredllDllMainPage0Store = 0x70;
         // Live 0cb3d43: after jal, list-insert
         // TLBS a1=0xC0000088 a0=0x80320254
         // v0=*a0=0xBFFFF288. TLB none.
@@ -1694,6 +1700,17 @@ namespace ProcessorEmulator.Core
         /// <summary>Dump-true after <c>lw $t1,0($s1)</c>: <c>lui $s2,0x8000</c> at <c>0x80021044</c> (<c>0x3C128000</c>).</summary>
         public const uint CoredllDllMainExn15C28JalS1Next = 0x80021044;
         public const uint CoredllDllMainExn15C28JalS1NextDump = 0x3C128000;
+        /// <summary>Dump-true after <c>lui $s2,0x8000</c>: <c>addiu $t4,$v1,6756</c> at <c>0x80021048</c> (<c>0x246C1A64</c>).</summary>
+        public const uint CoredllDllMainExn15C28JalS1After = 0x80021048;
+        public const uint CoredllDllMainExn15C28JalS1AfterDump = 0x246C1A64;
+        public const uint CoredllDllMainExn15C28JalS1After2 = 0x8002104C;
+        public const uint CoredllDllMainExn15C28JalS1After2Dump = 0x36520003;
+        public const uint CoredllDllMainExn15C28JalS1After3 = 0x80021050;
+        public const uint CoredllDllMainExn15C28JalS1After3Dump = 0x24140002;
+        public const uint CoredllDllMainExn15C28JalS1After4 = 0x80021054;
+        public const uint CoredllDllMainExn15C28JalS1After4Dump = 0x312A0001;
+        public const uint CoredllDllMainExn15C28JalS1After5 = 0x80021058;
+        public const uint CoredllDllMainExn15C28JalS1After5Dump = 0x3C108000;
         // Live e7f0f37: left wrote=0 frame
         // at 0x80015C30. Observe first
         // I-fetch and first TLBL/TLBS
@@ -11222,13 +11239,64 @@ namespace ProcessorEmulator.Core
             return true;
         }
 
+        private static bool IsPage0ListInsertSkipVa(uint va)
+        {
+            return va < 0x1000u;
+        }
+
+        // Live 738e467: dump-match
+        // sw $v0,0($a1) a1=0x70 (page 0).
+        // Skip dest-miss like f000/e000
+        // so next sw $a1,0($a0) / jr $ra
+        // can run. Do not map/invent
+        // page 0 / 0x80000070. Zero-byte
+        // stays on sb-zero. One-shot
+        // via=page0-store-skip.
+        public static bool TrySkipPage0ListInsertStore(MipsBus bus, uint va,
+            uint value)
+        {
+            if (!_leftoverWait99O32NkCoredllSawEntry || !_stk1670SbLogged)
+                return false;
+            if (!IsPage0ListInsertSkipVa(va))
+                return false;
+            if ((value & 0xFFu) == 0)
+                return false;
+            if (CanPeekC000StoreDest(bus, va))
+                return false;
+            uint dump = 0;
+            if (!TryPeekLeftoverWait99DumpOnly(CoredllDllMainC000Epc, out dump)
+                || dump == 0)
+                dump = CoredllDllMainC000Dump;
+            if (dump != CoredllDllMainC000Dump)
+                return false;
+            if (!_c000Page0SkipLogged)
+            {
+                _c000Page0SkipLogged = true;
+                uint next = 0;
+                if (!TryPeekLeftoverWait99DumpOnly(CoredllDllMainC000NextPc, out next)
+                    || next == 0)
+                    next = CoredllDllMainC000Next;
+                BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk page0-0070 store-skip" +
+                    " epc=0x" + CoredllDllMainC000Epc.ToString("X") +
+                    " bad=0x" + va.ToString("X") +
+                    " word=0x" + dump.ToString("X") +
+                    " next=0x" + next.ToString("X") +
+                    " next-pc=0x" + CoredllDllMainC000NextPc.ToString("X") +
+                    " val=0x" + value.ToString("X") +
+                    " via=page0-store-skip" +
+                    " (dump sw $v0,0($a1); dest miss; continue" +
+                    " sw $a1,0($a0); no invent page 0 / 0x80000070)");
+            }
+            return true;
+        }
+
         public static uint MapBadAVa(MipsBus bus, uint va)
         {
             if (_badABusy)
                 return va;
             if (!_leftoverWait99O32NkCoredllSawEntry || !_abs6670JalTakenLogged)
                 return va;
-            if (va != CoredllDllMainBadABad && (va & ~0xFFFu) != 0)
+            if (!IsBadAPage0Half(va))
                 return va;
             if (_badAKseg != 0)
                 return _badAKseg | (va & 0xFFFu);
@@ -11247,7 +11315,7 @@ namespace ProcessorEmulator.Core
         {
             if (bus == null || _badABusy || _badADone)
                 return;
-            if (va != CoredllDllMainBadABad && (va & ~0xFFFu) != 0)
+            if (!IsBadAPage0Half(va))
                 return;
             try
             {
@@ -12288,6 +12356,16 @@ namespace ProcessorEmulator.Core
                 return CoredllDllMainExn15C28JalS1Dump;
             if (pc == CoredllDllMainExn15C28JalS1Next)
                 return CoredllDllMainExn15C28JalS1NextDump;
+            if (pc == CoredllDllMainExn15C28JalS1After)
+                return CoredllDllMainExn15C28JalS1AfterDump;
+            if (pc == CoredllDllMainExn15C28JalS1After2)
+                return CoredllDllMainExn15C28JalS1After2Dump;
+            if (pc == CoredllDllMainExn15C28JalS1After3)
+                return CoredllDllMainExn15C28JalS1After3Dump;
+            if (pc == CoredllDllMainExn15C28JalS1After4)
+                return CoredllDllMainExn15C28JalS1After4Dump;
+            if (pc == CoredllDllMainExn15C28JalS1After5)
+                return CoredllDllMainExn15C28JalS1After5Dump;
             return 0;
         }
 
@@ -12314,7 +12392,12 @@ namespace ProcessorEmulator.Core
                 && pc != CoredllDllMainExn15C28JalDest
                 && pc != CoredllDllMainExn15C28JalThr
                 && pc != CoredllDllMainExn15C28JalRetNext
-                && pc != CoredllDllMainExn15C28JalS1Next)
+                && pc != CoredllDllMainExn15C28JalS1Next
+                && pc != CoredllDllMainExn15C28JalS1After
+                && pc != CoredllDllMainExn15C28JalS1After2
+                && pc != CoredllDllMainExn15C28JalS1After3
+                && pc != CoredllDllMainExn15C28JalS1After4
+                && pc != CoredllDllMainExn15C28JalS1After5)
                 return;
             if (IsDumpMemRefuseVa(pc) || IsDumpMemRefuseVa(pc + 4))
                 return;
@@ -12927,6 +13010,7 @@ namespace ProcessorEmulator.Core
                 return;
             if (IsDumpMemRefuseVa(pc) || IsDumpMemRefuseVa(pc + 4))
                 return;
+            TryClearDumpMem15C28AfterS1Exl(bus, pc);
             _exn15C28AfterS1Logged = true;
             uint afterDump = 0;
             if (!TryPeekLeftoverWait99DumpOnly(pc, out afterDump) || afterDump == 0)
@@ -12966,6 +13050,86 @@ namespace ProcessorEmulator.Core
                 " via=dump-mem-15c28-after-s1" +
                 " (first I-fetch after s1-skip;" +
                 " honor ra; no invent dest / SUD / 0x9A02)");
+        }
+
+        // Live 738e467: after-s1 named
+        // lui at 0x80021044 then quiet
+        // spin (EXL left set / no next
+        // log). Clear EXL so dump-true
+        // ALU after lui can run. Name
+        // first I-fetch at 0x80021048
+        // (addiu $t4,$v1,6756). One-shot.
+        // Do not invent dest / page 0 /
+        // 0x9A02.
+        private static void TryClearDumpMem15C28AfterS1Exl(MipsBus bus, uint pc)
+        {
+            if (bus == null)
+                return;
+            if (pc != CoredllDllMainExn15C28JalS1Next
+                && pc != CoredllDllMainExn15C28JalS1After)
+                return;
+            if (IsDumpMemRefuseVa(pc) || IsDumpMemRefuseVa(pc + 4))
+                return;
+            uint epc = bus.PeekEpc();
+            if (epc != 0 && (epc & 3) == 0)
+                bus.ClearExlIfEpc(epc);
+            bus.ClearExlIfEpc(pc);
+            bus.ClearExlIfEpc(CoredllDllMainExn15C28JalS1);
+            bus.ClearExlIfEpc(CoredllDllMainExn15C28JalS1Next);
+            bus.ClearExlIfEpc(CoredllDllMainExn15C28JalS1After);
+        }
+
+        public static void TryNoteDumpMem15C28AfterS1Next(MipsBus bus, uint[] regs,
+            uint pc, uint insn)
+        {
+            if (!_leftoverWait99O32NkCoredllSawEntry || !_exn15C28Left)
+                return;
+            if (!_exn15C28AfterS1Logged || _exn15C28AfterS1NextLogged)
+                return;
+            if (pc != CoredllDllMainExn15C28JalS1After)
+                return;
+            if (IsDumpMemRefuseVa(pc) || IsDumpMemRefuseVa(pc + 4))
+                return;
+            TryClearDumpMem15C28AfterS1Exl(bus, pc);
+            _exn15C28AfterS1NextLogged = true;
+            uint afterDump = 0;
+            if (!TryPeekLeftoverWait99DumpOnly(pc, out afterDump) || afterDump == 0)
+                afterDump = CoredllDllMainExn15C28JalS1AfterDump;
+            uint afterRa = PeekGpr(regs, 31);
+            uint afterSp = PeekGpr(regs, 29);
+            uint afterV0 = PeekGpr(regs, 2);
+            uint afterS1 = PeekGpr(regs, 17);
+            uint afterT1 = PeekGpr(regs, 9);
+            string afterDis = insn != 0
+                ? FormatMipsOp(pc, insn)
+                : "peek-miss";
+            string dumpDis = afterDump != 0
+                ? FormatMipsOp(pc, afterDump)
+                : "dump-miss";
+            _leftoverWait99O32NkChainLast = pc ^ CoredllDllMainVa;
+            _leftoverWait99O32NkChainVia = "dump-mem-15c28-after-s1-next";
+            _leftoverWait99O32NkChainName = "coredll.dll";
+            BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-o32-nk-chain pc=0x" +
+                pc.ToString("X8") +
+                " name=coredll.dll" +
+                " startip=0x" + CoredllDllMainVa.ToString("X") +
+                " word=0x" + insn.ToString("X") +
+                (afterDump != 0 ? " dump=0x" + afterDump.ToString("X") : "") +
+                " via=dump-mem-15c28-after-s1-next");
+            BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk abs-15c28 after-s1-next" +
+                " pc=0x" + pc.ToString("X") +
+                " word=0x" + insn.ToString("X") +
+                (afterDump != 0 ? " dump=0x" + afterDump.ToString("X") : "") +
+                " dis=" + afterDis +
+                (afterDump != 0 ? " dump-dis=" + dumpDis : "") +
+                " ra=0x" + afterRa.ToString("X") +
+                " sp=0x" + afterSp.ToString("X") +
+                " v0=0x" + afterV0.ToString("X") +
+                " s1=0x" + afterS1.ToString("X") +
+                " t1=0x" + afterT1.ToString("X") +
+                " via=dump-mem-15c28-after-s1-next" +
+                " (first I-fetch after after-s1 lui;" +
+                " clear exl; honor ra; no invent dest / page 0 / 0x9A02)");
         }
 
         private static void PokeGpr(uint[] regs, int i, uint v)
@@ -25699,9 +25863,11 @@ namespace ProcessorEmulator.Core
             _exn15C28AfterMemsetLogged = false;
             _c000E000SkipLogged = false;
             _c000F000SkipLogged = false;
+            _c000Page0SkipLogged = false;
             _exn15C28JalS1Logged = false;
             _exn15C28JalS1SkipLogged = false;
             _exn15C28AfterS1Logged = false;
+            _exn15C28AfterS1NextLogged = false;
             _abs59488Logged = false;
             _abs59488ExecLogged = false;
             _ffffFe54SkipLogged = false;
@@ -31872,9 +32038,11 @@ namespace ProcessorEmulator.Core
         private static bool _exn15C28JalS1Logged;
         private static bool _exn15C28JalS1SkipLogged;
         private static bool _exn15C28AfterS1Logged;
+        private static bool _exn15C28AfterS1NextLogged;
         private static bool _exn15C28AfterMemsetLogged;
         private static bool _c000E000SkipLogged;
         private static bool _c000F000SkipLogged;
+        private static bool _c000Page0SkipLogged;
         private static bool _abs59488Logged;
         private static bool _abs59488ExecLogged;
         private static bool _ffffFe54SkipLogged;

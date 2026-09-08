@@ -548,6 +548,8 @@ namespace ProcessorEmulator.Emulation
                 instruction);
             CeRomTocFiles.TryNoteDumpMem15C28AfterS1(_bus, registers, fetchPc,
                 instruction);
+            CeRomTocFiles.TryNoteDumpMem15C28AfterS1Next(_bus, registers, fetchPc,
+                instruction);
             programCounter += 4;
             return instruction;
         }
