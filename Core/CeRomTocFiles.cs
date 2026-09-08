@@ -17081,7 +17081,7 @@ namespace ProcessorEmulator.Core
                 " epc=0x" + epc.ToString("X") +
                 " bad=0x" + vaddr.ToString("X") +
                 (slot || page || kdata || sud || jalr || jalr1db0 || ri || stk2470 || stk1670 || abs1828 || abs6670 || c000 ? " word=0x" + slotWord.ToString("X") : "") +
-                (why == "exn-tlbl-pc0" || kdata || sud || jalr || jalr1db0 || ri || stk2470 || stk1670 || abs1828 || abs6670 || c000)
+                ((why == "exn-tlbl-pc0" || kdata || sud || jalr || jalr1db0 || ri || stk2470 || stk1670 || abs1828 || abs6670 || c000)
                     ? " v0=0x" + pc0V0.ToString("X") +
                       " t9=0x" + pc0T9.ToString("X")
                     : "") +
