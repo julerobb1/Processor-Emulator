@@ -2081,9 +2081,9 @@ namespace ProcessorEmulator.Core
         // leave 0x8003F81C / 0x8003F820
         // until $a1 written. Then
         // 0x8003F820 lhu $a3,0($v0) —
-        // peek-or-skip dest 0x8032024C;
-        // leave $a3 on miss. Next
-        // 0x8003F824 observe only.
+        // live mapped peek dest
+        // 0x8032024C; unbacked $a3:=0.
+        // Next 0x8003F824 observe only.
         // NEVER write SUD 0xFFFFFC74.
         // Never jr hop 0x8003F78C.
         // Never MUL. Do not invent
@@ -22034,11 +22034,14 @@ namespace ProcessorEmulator.Core
 
         // Live e73cf23: lhu $a3,0($v0) at
         // 0x8003F820 named only. Dest
-        // ~0x8032024C — peek dump /
-        // firmware only. Dest-miss skip;
-        // leave $a3. Do not invent
-        // 0x8032 page / *0xFFFFFC74 /
-        // SUD / KData / 0x9A02 / 0x99FF.
+        // ~0x8032024C — live mapped
+        // KSEG0 halfword if already
+        // backed (CopyO32 / kernel
+        // unpack). Unbacked: $a3:=0
+        // (CE zero-fill). Do not invent
+        // firmware / 0x8032 page /
+        // *0xFFFFFC74 / SUD / 0x9A02 /
+        // 0x99FF.
         // PC:=0x8003F824 (sequential
         // dump-true +4; observe only;
         // peek dump, do not invent next
@@ -22139,8 +22142,12 @@ namespace ProcessorEmulator.Core
             uint epiA3LhuPeek = 0;
             bool destOk = TryPeekExn15C28OuterJalLhuDest(bus, epiA3LhuDest,
                 out epiA3LhuPeek);
-            if (destOk)
-                PokeGpr(regs, 7, epiA3LhuPeek);
+            // Live mapped/backed KSEG0 halfword only.
+            // Unbacked / refuse (SUD / 0x9A / 0x99 /
+            // leftover): $a3:=0 (CE zero-fill).
+            // Do not invent firmware / magic struct /
+            // 0x8032 page / SUD.
+            PokeGpr(regs, 7, destOk ? epiA3LhuPeek : 0);
             if (bus != null)
             {
                 uint epc = bus.PeekEpc();
@@ -22162,7 +22169,7 @@ namespace ProcessorEmulator.Core
             _leftoverWait99O32NkChainLast = pc ^ CoredllDllMainVa;
             _leftoverWait99O32NkChainVia = destOk
                 ? "dump-mem-15c28-outer-jal-epi-a3-lhu"
-                : "dump-mem-15c28-outer-jal-epi-a3-lhu-skip";
+                : "dump-mem-15c28-outer-jal-epi-a3-lhu-zero";
             _leftoverWait99O32NkChainName = "coredll.dll";
             BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-o32-nk-chain pc=0x" +
                 pc.ToString("X8") +
@@ -22170,7 +22177,7 @@ namespace ProcessorEmulator.Core
                 " startip=0x" + CoredllDllMainVa.ToString("X") +
                 " word=0x" + epiA3LhuDump.ToString("X") +
                 " dest=0x" + epiA3LhuDest.ToString("X") +
-                (destOk ? "" : " *v0-miss") +
+                (destOk ? "" : " *v0-zero") +
                 " via=" + _leftoverWait99O32NkChainVia);
             BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk abs-15c28 outer-jal-epi-a3-lhu" +
                 " pc=0x" + pc.ToString("X") +
@@ -22178,9 +22185,9 @@ namespace ProcessorEmulator.Core
                 " dump=0x" + epiA3LhuDump.ToString("X") +
                 (insn != 0 && insn != epiA3LhuDump
                     ? " live=0x" + insn.ToString("X") : "") +
-                (destOk ? " lhu=1" : " lhu=0") +
+                (destOk ? " lhu=1" : " lhu=0 zero=1") +
                 " dest=0x" + epiA3LhuDest.ToString("X") +
-                (destOk ? "" : " *v0-miss") +
+                (destOk ? "" : " *v0-zero") +
                 " a1=0x" + epiA3LhuA1.ToString("X") +
                 " a2=0x" + epiA3LhuA2.ToString("X") +
                 " a3=0x" + epiA3LhuA3.ToString("X") +
@@ -22190,8 +22197,8 @@ namespace ProcessorEmulator.Core
                 " ra=0x" + epiA3LhuRa.ToString("X") +
                 " sp=0x" + epiA3LhuSp.ToString("X") +
                 " via=" + _leftoverWait99O32NkChainVia +
-                " (dump lhu $a3,0($v0); dest-miss skip;" +
-                " leave $a3; no invent 0x8032 page / *0xFFFFFC74 / SUD / 0x9A02 / 0x99FF;" +
+                " (dump lhu $a3,0($v0); live mapped peek or $a3:=0;" +
+                " no invent 0x8032 page / firmware / *0xFFFFFC74 / SUD / 0x9A02 / 0x99FF;" +
                 " no jr hop 0x8003F78C)");
             return true;
         }
