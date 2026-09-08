@@ -574,6 +574,9 @@ namespace ProcessorEmulator.Emulation
             if (CeRomTocFiles.TryTakeDumpMem15C28AfterOuterJalLand(_bus, registers, fetchPc,
                     instruction, _inDelaySlot, ref programCounter))
                 return 0;
+            if (CeRomTocFiles.TryTakeDumpMem15C28AfterOuterJalSltu(_bus, registers, fetchPc,
+                    instruction, _inDelaySlot, ref programCounter))
+                return 0;
             if (CeRomTocFiles.TryTakeDumpMem15C28(_bus, registers, fetchPc,
                     instruction, _inDelaySlot, ref programCounter))
                 return 0;
@@ -622,6 +625,8 @@ namespace ProcessorEmulator.Emulation
             CeRomTocFiles.TryNoteDumpMem15C28AfterOuterJalBne(_bus, registers, fetchPc,
                 instruction);
             CeRomTocFiles.TryNoteDumpMem15C28AfterOuterJalLand(_bus, registers, fetchPc,
+                instruction);
+            CeRomTocFiles.TryNoteDumpMem15C28AfterOuterJalSltu(_bus, registers, fetchPc,
                 instruction);
             programCounter += 4;
             return instruction;
