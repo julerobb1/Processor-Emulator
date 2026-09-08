@@ -1398,6 +1398,16 @@ namespace ProcessorEmulator.Core
         public const uint CoredllDllMainKdataEpc = 0x8002F180;
         public const uint CoredllDllMainKdataInsn = 0xA002E380;
         public const uint CoredllDllMainKdataT9 = 0x80000065;
+        // Live 734b895: prev=0x02E02025 or $a0,$s7,$0
+        // next=0x2442FE54 addiu $v0,$v0,-428
+        // (forms 0xFFFFFE54 after v0=0). ra=
+        // 0x8002F124. kdata-tlb pfn=0x345-v.
+        // Firmware still l2=0 / no E000 PFN —
+        // do not wire pfn+1. Continue past
+        // sb-zero when v0=0 and l2=0 only.
+        public const uint CoredllDllMainKdataPrev = 0x02E02025;
+        public const uint CoredllDllMainKdataNext = 0x2442FE54;
+        public const uint CoredllDllMainKdataRa = 0x8002F124;
         // 0x8001521C ori k1, epc, 0xFFFC / addiu 2 / beq
         // syscall. 0xFFFFF3DA is coredll 0x80095A98
         // addiu $v0, $0, -3110 / jalr $v0. Same class as
@@ -9873,9 +9883,9 @@ namespace ProcessorEmulator.Core
                 " (SharedUserData; firmware backing; do not invent dest)");
         }
 
-        // Live 9f90c5f: l2=0 sec0 l1 live. KData
-        // wired pair 0xFFFFC000/D000; store is
-        // pair 0xFFFFE000/F000. v0=0 zero-byte.
+        // Live 734b895: kdata-tlb pfn=0x345-v.
+        // No E000 PFN (do not invent pfn+1).
+        // sb-zero continue when l2=0 / v0=0.
         // Same discipline as MapFfffF000Va: live
         // peek, TLB PFN, or sec0 firmware PTE
         // dest. Do not alias KData / UserK /
@@ -10019,6 +10029,49 @@ namespace ProcessorEmulator.Core
                 " dest-word=0x" + word.ToString("X8") +
                 " via=" + via +
                 " (KData+0xB80 page; firmware backing; not UserK/SharedUserData/KData alias; do not invent dest)");
+        }
+
+        // Live 734b895: firmware l2=0, no E000 PFN
+        // (do not invent kdata pfn+1). sb $v0,0xE380($0)
+        // with v0=0 is a zero-byte to a never-wired
+        // pair. Swallow that store only so NK
+        // continues at addiu 0x2442FE54; leave
+        // ra=0x8002F124. Do not leftover-hop.
+        // Later loads still TLBL (no zero page).
+        public static bool TrySkipFfffE000SbZero(MipsBus bus, uint va, uint value)
+        {
+            if ((va & ~0xFFFu) != FfffE000Page)
+                return false;
+            if ((value & 0xFFu) != 0)
+                return false;
+            if (!IsFfffE000Armed())
+                return false;
+            if (_ffffE000Kseg != 0)
+                return false;
+            TryResolveFfffE000(bus, va);
+            if (_ffffE000Kseg != 0)
+                return false;
+            if (!_ffffE000Done)
+                return false;
+            if (!_ffffE000SkipLogged)
+            {
+                _ffffE000SkipLogged = true;
+                uint epc = va == CoredllDllMainKdataStore
+                    ? CoredllDllMainKdataEpc
+                    : 0;
+                if (epc == 0)
+                    epc = CoredllDllMainKdataEpc;
+                uint next = 0;
+                if (!TryPeekWord(bus, epc + 4, out next) || next == 0)
+                    next = CoredllDllMainKdataNext;
+                BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk ffff-e000 sb-zero-skip" +
+                    " epc=0x" + epc.ToString("X") +
+                    " next=0x" + next.ToString("X") +
+                    " ra=0x" + CoredllDllMainKdataRa.ToString("X") +
+                    " v0=0 l2=0" +
+                    " (zero-byte to never-wired E000/F000 pair; continue addiu; honor ra; do not invent dest)");
+            }
+            return true;
         }
 
         private static void TryArmUserKPageAlias(MipsBus bus)
@@ -21764,6 +21817,7 @@ namespace ProcessorEmulator.Core
             _ffffE000Busy = false;
             _ffffE000Demand = false;
             _ffffE000Done = false;
+            _ffffE000SkipLogged = false;
             _bindImpIatSwExpect = false;
             _bindImpIatSwLogged = false;
             _bindImpIatSwLog = 0;
@@ -27862,6 +27916,7 @@ namespace ProcessorEmulator.Core
         private static bool _ffffE000Busy;
         private static bool _ffffE000Demand;
         private static bool _ffffE000Done;
+        private static bool _ffffE000SkipLogged;
         private static bool _bindImpIatSwExpect;
         private static bool _bindImpIatSwLogged;
         private static int _bindImpIatSwLog;
