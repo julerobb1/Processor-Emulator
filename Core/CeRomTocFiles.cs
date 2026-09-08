@@ -1496,6 +1496,17 @@ namespace ProcessorEmulator.Core
         // *s0 *fp. Do not MUL. Do not ri-nop.
         public const uint CoredllDllMainRiS0Live = 0x86FBE028;
         public const uint CoredllDllMainRiFpLive = 0x3140C;
+        // Live ee912b8: *s2==s0=0x86FBE028
+        // (ThreadPtr → same THREAD). *s0=0x40
+        // first word. *fp-miss (useg 0x31000;
+        // kseg0 0x8003140C is NK text, not
+        // that object — do not map). prev8=0
+        // next8=0xC4002000 data stream. Caller
+        // lw $v1,0($s2) needs *s2 left as that
+        // PTHREAD (already). SPECIAL/0x16 is
+        // I-fetch in dest data, not a helper.
+        // Do not MUL. Do not ri-nop.
+        public const uint CoredllDllMainRiThrW0 = 0x40;
         // 0x8001521C ori k1, epc, 0xFFFC / addiu 2 / beq
         // syscall. 0xFFFFF3DA is coredll 0x80095A98
         // addiu $v0, $0, -3110 / jalr $v0. Same class as
@@ -16270,10 +16281,16 @@ namespace ProcessorEmulator.Core
                     " (fn=0x16 reserved not MUL; not ri-nop; no cache)");
                 uint thr = 0;
                 uint s0w = 0;
+                uint s0w4 = 0;
+                uint s0stk = 0;
                 uint fpw = 0;
+                uint s7 = PeekGpr(regs, 23);
                 bool s2Thr = s2 == ThreadPtr;
                 bool s2ok = TryPeekWord(bus, s2, out thr);
+                bool s2s0 = s2ok && thr == s0 && s0 != 0;
                 bool s0ok = TryPeekWord(bus, s0, out s0w);
+                bool s0ok4 = s0 != 0 && TryPeekWord(bus, s0 + 4, out s0w4);
+                bool s0stkOk = s0 != 0 && TryPeekWord(bus, s0 + ThreadStack, out s0stk);
                 bool fpok = TryPeekWord(bus, fp, out fpw);
                 uint prev8 = 0;
                 uint next8 = 0;
@@ -16281,12 +16298,17 @@ namespace ProcessorEmulator.Core
                 TryPeekWord(bus, epc + 8, out next8);
                 BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk jalr-ri regs" +
                     (s2Thr ? " s2=ThreadPtr" : " s2=0x" + s2.ToString("X")) +
+                    (s2s0 ? " s2=s0-thr" : "") +
                     (s2ok ? " *s2=0x" + thr.ToString("X") : " *s2-miss") +
                     (s0ok ? " *s0=0x" + s0w.ToString("X") : " *s0-miss") +
+                    (s0ok && s0w == CoredllDllMainRiThrW0 ? " thr-w0=0x40" : "") +
+                    (s0ok4 ? " *s0+4=0x" + s0w4.ToString("X") : "") +
+                    (s0stkOk ? " *s0+24=0x" + s0stk.ToString("X") : "") +
                     (fpok ? " *fp=0x" + fpw.ToString("X") : " *fp-miss") +
+                    " s7=0x" + s7.ToString("X") +
                     " prev8=0x" + prev8.ToString("X") +
                     " next8=0x" + next8.ToString("X") +
-                    " (KData thread; s0 kseg-ram; fp useg; at=0; not MUL; not ri-nop)");
+                    " (I-fetch dest-data; caller lw *s2; not helper; not MUL; not ri-nop)");
             }
         }
 
