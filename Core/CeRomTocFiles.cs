@@ -1288,6 +1288,17 @@ namespace ProcessorEmulator.Core
         // Walk the live section. Do not invent 0x03FD0000.
         public const uint CoredllSharedLo = 0x03F50000;
         public const uint CoredllSharedHi = 0x03FE0000;
+        // Live b52708e leftover-wait99-o32-nk-chain
+        // name=coredll.dll startip=0x3F57A00
+        // word=0x27BDFFD8 via=startip. Dump-true
+        // addiu $sp,$sp,-40 at ImageBase+0x7A00.
+        // CallDLL never jalr'd (useg +0x50 skip
+        // and/or MODULE+0x5C still 0 at
+        // 0x80018B34). Feed startip before
+        // CallDLL like Hdstub. Do not leftover-
+        // hop dest.
+        public const uint CoredllDllMainVa = 0x03F57A00;
+        public const uint CoredllDllMainWord = 0x27BDFFD8;
         // Live 147e54f: I-fetch TLBL 0x03FB492C (IAT slot6).
         // ImageBase keep-imagebase=0x03F50000. MapCoredllSharedVa
         // still refuses >=0x03FA0000 until tv2 startip
@@ -11953,6 +11964,7 @@ namespace ProcessorEmulator.Core
         {
             if ((pc & 3) != 0)
                 return;
+            TryFeedCoredllStartipBeforeCallDll(bus, regs, pc);
             TryNoteLeftoverWait99O32NkJalr(bus, regs, pc);
             TryNoteLeftoverWait99O32NkAfter(bus, regs, pc);
             TryNoteLeftoverWait99O32NkChain(bus, regs, pc);
@@ -13298,15 +13310,14 @@ namespace ProcessorEmulator.Core
             return targetVa;
         }
 
-        // Live e65e45c coredll LoadO32-ret then
-        // leftover-wait99-o32-nk-chain name=
-        // coredll.dll startip=0 via=startip-skip-0.
-        // 0x80061CA0 is osaxst0 (MODULE+8), not
-        // coredll. Plant dump-true coredll
-        // e32_entryrva / DllMain into MODULE+0x5C
-        // so CallDLL jalrs ImageBase 0x03F50000.
-        // Do not plant osaxst0. Do not leftover-
-        // hop dest. Do not name entryrva=0x1B0C.
+        // Live b52708e FIRST-WIN plant
+        // startip=0x03F57A00 word=0x27BDFFD8
+        // via=startip at wrap 0x8001E960. No
+        // coredll via=calldll/entry/ret. 0x80061CA0
+        // is osaxst0. Feed MODULE+0x5C before
+        // CallDLL 0x80018B34 like Hdstub. Do not
+        // plant osaxst0. Do not leftover-hop dest.
+        // Do not name entryrva=0x1B0C.
         private static bool IsCoredllStartipVa(uint va)
         {
             if (va == 0 || (va & 3) != 0)
@@ -13318,6 +13329,26 @@ namespace ProcessorEmulator.Core
                 || IsLeftoverBindRefuse(va) || IsLeftoverDestVa(va))
                 return false;
             return va >= CoredllSharedLo && va < CoredllSharedHi;
+        }
+
+        private static bool IsDumpTrueCoredllStartip(MipsBus bus, uint va)
+        {
+            if (!IsCoredllStartipVa(va))
+                return false;
+            if (va == CoredllDllMainVa)
+                return true;
+            if (_leftoverWait99O32NkCoredllStartip != 0
+                && va == _leftoverWait99O32NkCoredllStartip)
+                return true;
+            if (bus == null)
+                return false;
+            bool threw;
+            uint word = PeekDestWordRaw(bus, va, out threw);
+            if (threw || word == 0)
+                return false;
+            if (word == CoredllDllMainWord)
+                return true;
+            return (word & 0xFFFF0000u) == 0x27BD0000u;
         }
 
         private static uint AcceptCoredllEntry(uint vbase, uint entryRva)
@@ -13590,6 +13621,8 @@ namespace ProcessorEmulator.Core
                 toc = PeekTocCoredllStartip(bus, ExtraRomToc(bus));
             if (toc == 0)
                 toc = PeekCoredllPeDllMain(bus);
+            if (toc == 0 && IsDumpTrueCoredllStartip(bus, CoredllDllMainVa))
+                toc = CoredllDllMainVa;
             if (toc != 0)
                 _leftoverWait99O32NkCoredllStartip = toc;
             return toc;
@@ -13641,6 +13674,106 @@ namespace ProcessorEmulator.Core
             if (_leftoverWait99O32NkCoredllStartip == 0)
                 _leftoverWait99O32NkCoredllStartip = want;
             return want;
+        }
+
+        private static bool IsCoredllCallDllModule(MipsBus bus, uint module)
+        {
+            if (bus == null || module == 0 || (module & 3) != 0
+                || IsLeftoverBindRefuse(module) || IsWrapDestSize(module)
+                || IsWrapDestFp50Va(module) || IsHdDllImageBase(module)
+                || IsLeftoverDestVa(module) || module == HdDllEntryVa)
+                return false;
+            if (module == _coredllModule)
+                return true;
+            uint p50 = 0;
+            if (TryPeekWord(bus, module + ProcModule, out p50)
+                && IsCoredllBasePtr(p50))
+                return true;
+            string name = PeekNkModuleName(bus, module);
+            return NamesMatchRom(name, "coredll.dll");
+        }
+
+        private static uint PeekCoredllCallDllModule(MipsBus bus, uint[] regs)
+        {
+            if (bus == null)
+                return 0;
+            uint a0 = PeekGpr(regs, 4);
+            uint fp = PeekGpr(regs, 30);
+            uint s7 = PeekGpr(regs, 23);
+            uint[] mods = new uint[] { a0, fp, s7, _coredllModule };
+            for (int i = 0; i < mods.Length; i++)
+            {
+                if (IsCoredllCallDllModule(bus, mods[i]))
+                    return mods[i];
+            }
+            return 0;
+        }
+
+        // Live b52708e planted 0x03F57A00 at wrap
+        // 0x8001E960 via=startip; CallDLL 0x80018B34
+        // never jalr'd. Same feed as Hdstub:
+        // MODULE+0x5C before CallDLL sites. 32($sp)
+        // is entryrva, not VA — do not write the
+        // startip VA there. Do not leftover-hop.
+        private static void TryFeedCoredllStartipBeforeCallDll(MipsBus bus,
+            uint[] regs, uint pc)
+        {
+            if (pc != CallDllEntry && pc != CallDllStartip
+                && pc != XipDllCallDllJal && pc != XipCallDllUsegChk
+                && pc != LoadO32WrapStartip)
+                return;
+            uint mod = PeekCoredllCallDllModule(bus, regs);
+            if (mod != 0)
+            {
+                if (_coredllModule == 0)
+                    _coredllModule = mod;
+                TryPlantCoredllStartip(bus, mod);
+            }
+            if (_coredllModule != 0 && _coredllModule != mod)
+                TryPlantCoredllStartip(bus, _coredllModule);
+        }
+
+        public static void TryFeedCoredllCallDllStartip(MipsBus bus, uint[] regs)
+        {
+            TryFeedCoredllStartipBeforeCallDll(bus, regs, CallDllStartip);
+        }
+
+        // Live b52708e keep-imagebase 0x03F50000 is
+        // useg; 0x8001DD6C skips CallDLL. Take the
+        // firmware DLL jal 0x8001DD94 (a1=1) only
+        // when MODULE+0x5C is dump-true 0x03F57A00.
+        // Same useg path as ExtraROM ddi_nop. Do
+        // not leftover-hop dest. Do not land on
+        // addiu a1,0,0.
+        public static bool TryFeedCoredllCallDll(MipsBus bus, uint[] regs,
+            ref uint programCounter)
+        {
+            if (bus == null || regs == null || regs.Length <= 30)
+                return false;
+            if (programCounter != XipCallDllUsegChk)
+                return false;
+            uint module = PeekGpr(regs, 30);
+            if (!IsCoredllCallDllModule(bus, module))
+                return false;
+            TryPlantCoredllStartip(bus, module);
+            uint p50 = 0;
+            uint ip = 0;
+            if (!TryPeekWord(bus, module + ProcModule, out p50)
+                || !TryPeekWord(bus, module + ModuleStartip, out ip))
+                return false;
+            if (!IsDumpTrueCoredllStartip(bus, ip))
+                return false;
+            if (!IsCallDllSkipUseg(p50))
+                return false;
+            if (IsLeftoverBindRefuse(ip) || IsWrapDestSize(ip)
+                || IsWrapDestFp50Va(ip) || IsHdDllImageBase(ip)
+                || IsLeftoverDestVa(ip) || ip == HdDllEntryVa
+                || ip == HdDllInitVa || ip == HdDllEntryRva)
+                return false;
+            regs[4] = module;
+            regs[5] = 1;
+            programCounter = XipDllCallDllJal;
+            return true;
         }
 
         // Live 26cbe16 leftover dest 0x03F74DEC /
@@ -14889,13 +15022,12 @@ namespace ProcessorEmulator.Core
         }
 
         // Live e65e45c named 0x80061CA0 osaxst0
-        // (MODULE+8), not coredll. coredll
-        // LoadO32-ret then startip-skip-0.
-        // Plant dump-true coredll e32_entryrva
-        // / DllMain at ImageBase 0x03F50000
-        // into MODULE+0x5C so CallDLL jalrs.
-        // Do not plant osaxst0/osaxst1/kd/kcover.
-        // Do not leftover-hop dest. Keep Hdstub
+        // (MODULE+8), not coredll. Live b52708e
+        // planted 0x03F57A00 via=startip; CallDLL
+        // never jalr'd. Feed MODULE+0x5C before
+        // 0x80018B34 like Hdstub. Do not plant
+        // osaxst0/osaxst1/kd/kcover. Do not
+        // leftover-hop dest. Keep Hdstub
         // jalr+after. Do not reattribute
         // 0x80061CA0.
         private static bool IsNkChainName(string name)
@@ -14928,6 +15060,8 @@ namespace ProcessorEmulator.Core
                 return true;
             if (_leftoverWait99O32NkCoredllStartip != 0
                 && va == _leftoverWait99O32NkCoredllStartip)
+                return true;
+            if (va == CoredllDllMainVa)
                 return true;
             return false;
         }

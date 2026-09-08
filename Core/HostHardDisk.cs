@@ -566,6 +566,7 @@ namespace ProcessorEmulator.Core
             if (pc == CeRomTocFiles.CallDllStartip)
             {
                 CeRomTocFiles.NoteDdiNopCallDllPc(bus, registers, pc);
+                CeRomTocFiles.TryFeedCoredllCallDllStartip(bus, registers);
                 CeRomTocFiles.TryFillTocStartip(bus, registers[23], true);
                 LogCallDllStartip(registers, bus);
                 return false;
@@ -583,6 +584,8 @@ namespace ProcessorEmulator.Core
                 // of dump-XIP / slot0 entry observe, not a
                 // reason to refuse VALLOC CallDLL force.
                 if (CeRomTocFiles.TryForceDdiNopCallDll(bus, registers, ref programCounter))
+                    return true;
+                if (CeRomTocFiles.TryFeedCoredllCallDll(bus, registers, ref programCounter))
                     return true;
                 return false;
             }

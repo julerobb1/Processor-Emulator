@@ -219,6 +219,7 @@ namespace ProcessorEmulator.Emulation
                 if (programCounter == CeRomTocFiles.CallDllStartip)
                 {
                     CeRomTocFiles.NoteDdiNopCallDllPc(_bus, registers, programCounter);
+                    CeRomTocFiles.TryFeedCoredllCallDllStartip(_bus, registers);
                     CeRomTocFiles.TryFillTocStartip(_bus, registers[23], true);
                 }
 
@@ -230,6 +231,12 @@ namespace ProcessorEmulator.Emulation
                 {
                     CeRomTocFiles.NoteDdiNopCallDllPc(_bus, registers, programCounter);
                     if (CeRomTocFiles.TryForceDdiNopCallDll(_bus, registers, ref programCounter))
+                    {
+                        _cp0.UpdateTimer(1);
+                        _bus.Tick(1);
+                        continue;
+                    }
+                    if (CeRomTocFiles.TryFeedCoredllCallDll(_bus, registers, ref programCounter))
                     {
                         _cp0.UpdateTimer(1);
                         _bus.Tick(1);
