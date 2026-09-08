@@ -507,6 +507,8 @@ namespace ProcessorEmulator.Emulation
                 ref instruction);
             CeRomTocFiles.TryFixDumpMem15C28After(_bus, registers, programCounter,
                 ref instruction);
+            CeRomTocFiles.TryFixDumpMem59488(_bus, registers, programCounter,
+                ref instruction);
             CeRomTocFiles.TryFixLiveAbsStoreAsDumpMem(_bus, registers, programCounter,
                 ref instruction);
             CeRomTocFiles.TryNoteDumpMemJalDest(_bus, registers, fetchPc);
