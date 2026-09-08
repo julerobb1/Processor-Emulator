@@ -505,6 +505,8 @@ namespace ProcessorEmulator.Emulation
                 ref instruction);
             CeRomTocFiles.TryFixNest1670SbAsDumpSb(_bus, registers, programCounter,
                 ref instruction);
+            CeRomTocFiles.TryFixDumpMem15C28After(_bus, registers, programCounter,
+                ref instruction);
             CeRomTocFiles.TryFixLiveAbsStoreAsDumpMem(_bus, registers, programCounter,
                 ref instruction);
             CeRomTocFiles.TryNoteDumpMemJalDest(_bus, registers, fetchPc);
@@ -520,6 +522,10 @@ namespace ProcessorEmulator.Emulation
                     instruction, _inDelaySlot, ref programCounter))
                 return 0;
             CeRomTocFiles.TryNoteDumpMem15C28After(_bus, registers, fetchPc,
+                instruction);
+            CeRomTocFiles.TryNoteDumpMem15C28Jal(_bus, registers, fetchPc,
+                instruction);
+            CeRomTocFiles.TryNoteDumpMem15C28JalDest(_bus, registers, fetchPc,
                 instruction);
             programCounter += 4;
             return instruction;
