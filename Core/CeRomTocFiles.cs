@@ -9809,9 +9809,13 @@ namespace ProcessorEmulator.Core
                 return va;
             if ((va & ~0xFFFu) != FfffF000Page)
                 return va;
+            if (_ffffF000Kseg == FfffF000Page)
+                _ffffF000Kseg = 0;
             if (_ffffF000Kseg != 0)
                 return _ffffF000Kseg | (va & 0xFFFu);
             TryResolveFfffF000(bus, va);
+            if (_ffffF000Kseg == FfffF000Page)
+                _ffffF000Kseg = 0;
             if (_ffffF000Kseg != 0)
                 return _ffffF000Kseg | (va & 0xFFFu);
             return va;
@@ -9837,12 +9841,10 @@ namespace ProcessorEmulator.Core
                 _ffffF000Busy = true;
                 _ffffF000Demand = true;
                 uint word = 0;
-                if (TryPeekWord(bus, FfffF000Page | (va & 0xFFFu), out word)
-                    || TryPeekWord(bus, FfffF000Page, out word))
-                {
-                    RememberFfffF000Kseg(bus, FfffF000Page, va, word, "live-peek");
-                    return;
-                }
+                // Live 221208f: peek of 0xFFFFFE54 hit
+                // sud-beq0-skip return 0 and identity-
+                // mapped F000->F000. That is not
+                // backing. Refuse. Only kseg0 TLB PFN.
                 uint pfn = 0;
                 bool valid = false;
                 bool tlbHit = bus.TryFindTlbPfn(FfffF000Page, out pfn, out valid);
@@ -9884,7 +9886,20 @@ namespace ProcessorEmulator.Core
         private static void RememberFfffF000Kseg(MipsBus bus, uint kseg,
             uint va, uint word, string via)
         {
-            _ffffF000Kseg = kseg & ~0xFFFu;
+            kseg &= ~0xFFFu;
+            if (kseg == 0 || kseg == FfffF000Page)
+            {
+                if (!_ffffF000Logged)
+                {
+                    _ffffF000Logged = true;
+                    BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk ffff-f000 refuse identity" +
+                        " via=" + (via ?? "live-peek") +
+                        " dest-word=0x" + word.ToString("X8") +
+                        " (F000->F000 is not backing; do not invent dest)");
+                }
+                return;
+            }
+            _ffffF000Kseg = kseg;
             if (_ffffF000Logged)
                 return;
             _ffffF000Logged = true;
@@ -10099,13 +10114,13 @@ namespace ProcessorEmulator.Core
             return ((insn >> 16) & 31) == 0;
         }
 
-        // Live 76d3299: lw $v1,0($v0) then
-        // beq $v1,$zero,+28. Firmware has no F000
-        // PFN. 0 is NK's empty default (the beq),
-        // not an invented page. Skip that load
-        // (return 0) so the beq takes the zero
-        // path. Also skip load $0. Do not leftover-
-        // hop. Do not invent dest.
+        // Live 221208f: sud-beq0-skip logged during
+        // resolve peek then identity F000->F000
+        // live-peek dest-word=0 blocked the real
+        // lw. Refuse identity. Do not skip while
+        // F000 resolve is busy. Then Read32 returns
+        // 0 so $v1=0 and PC reaches beq $v1,$0.
+        // Do not leftover-hop. Do not invent dest.
         public static bool TrySkipFfffFe54LoadZero(MipsBus bus, uint va)
         {
             if (va < CoredllDllMainSudVa || va >= CoredllDllMainSudVa + 4)
@@ -10114,9 +10129,15 @@ namespace ProcessorEmulator.Core
                 return false;
             if (!_leftoverWait99O32NkCoredllSawEntry)
                 return false;
+            if (_ffffF000Busy)
+                return false;
+            if (_ffffF000Kseg == FfffF000Page)
+                _ffffF000Kseg = 0;
             if (_ffffF000Kseg != 0)
                 return false;
             TryResolveFfffF000(bus, va);
+            if (_ffffF000Kseg == FfffF000Page)
+                _ffffF000Kseg = 0;
             if (_ffffF000Kseg != 0)
                 return false;
             uint insn = 0;
