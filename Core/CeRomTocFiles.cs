@@ -10688,7 +10688,10 @@ namespace ProcessorEmulator.Core
             // dump-mem-skip / stall — let
             // normal I-fetch execute.
             if (IsDumpMemAlreadyTrue(insn))
+            {
+                TryLogDumpMemFallthrough(pc, insn, regs);
                 return false;
+            }
             if (!IsMipsAbsRs0Store(insn) || (insn & 0x8000u) != 0)
                 return false;
             bool site6670 = (insn & 0xFFFF) == CoredllDllMainAbs6670Bad
@@ -10977,10 +10980,43 @@ namespace ProcessorEmulator.Core
             return true;
         }
 
+        // Once: healed jal/memop at a dump-mem
+        // site. Do not skip. Execute.
+        private static void TryLogDumpMemFallthrough(uint pc, uint live,
+            uint[] regs)
+        {
+            if (_abs6670FallthroughLogged)
+                return;
+            _abs6670FallthroughLogged = true;
+            _abs6670DumpSkipLogged = true;
+            uint dump = 0;
+            if (!TryPeekLeftoverWait99DumpOnly(pc, out dump) || dump == 0)
+            {
+                if (pc == CoredllDllMainAbs6670Epc)
+                    dump = CoredllDllMainAbs6670Dump;
+                else if (pc == CoredllDllMainAbs1828Epc)
+                    dump = CoredllDllMainAbs1828Dump;
+            }
+            uint ra = PeekGpr(regs, 31);
+            uint v0 = PeekGpr(regs, 2);
+            uint fp = PeekGpr(regs, 30);
+            BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk abs-store fallthrough" +
+                " epc=0x" + pc.ToString("X") +
+                " word=0x" + live.ToString("X") +
+                (dump != 0 ? " dump=0x" + dump.ToString("X") : "") +
+                " dis=" + FormatMipsOp(pc, live) +
+                (dump != 0 ? " dump-dis=" + FormatMipsOp(pc, dump) : "") +
+                " v0=0x" + v0.ToString("X") +
+                " fp=0x" + fp.ToString("X") +
+                " ra=0x" + ra.ToString("X") +
+                " via=dump-mem-fallthrough reason=heal-already" +
+                " (execute dump-true; do not invent dest)");
+        }
+
         private static void TryLogDumpMemSkip(uint pc, uint live, uint dump,
             uint[] regs, string reason, bool site)
         {
-            if (!site || _abs6670DumpSkipLogged)
+            if (!site || _abs6670DumpSkipLogged || IsDumpMemAlreadyTrue(live))
                 return;
             _abs6670DumpSkipLogged = true;
             uint ra = PeekGpr(regs, 31);
@@ -16923,12 +16959,17 @@ namespace ProcessorEmulator.Core
                 && (code == 2 || code == 3)
                 && (epc == CoredllDllMainAbs1828Epc
                     || vaddr == CoredllDllMainAbs1828Bad);
+            uint live6670 = 0;
+            if (epc == CoredllDllMainAbs6670Epc)
+                TryPeekWord(bus, epc, out live6670);
             bool abs6670 = _leftoverWait99O32NkCoredllSawEntry
                 && _stk1670SbLogged
                 && !_abs6670ExnLogged
                 && (code == 2 || code == 3)
-                && (epc == CoredllDllMainAbs6670Epc
-                    || vaddr == CoredllDllMainAbs6670Bad);
+                && !IsDumpMemAlreadyTrue(live6670)
+                && (vaddr == CoredllDllMainAbs6670Bad
+                    || (epc == CoredllDllMainAbs6670Epc
+                        && IsMipsAbsRs0Store(live6670)));
             bool c000 = _leftoverWait99O32NkCoredllSawEntry
                 && _stk1670SbLogged
                 && !_c000ExnLogged
@@ -23457,6 +23498,7 @@ namespace ProcessorEmulator.Core
             }
             _abs1828ExnLogged = false;
             _abs6670DumpSkipLogged = false;
+            _abs6670FallthroughLogged = false;
             _abs6670ExnLogged = false;
             _c000Kseg = 0;
             _c000Logged = false;
@@ -29588,6 +29630,7 @@ namespace ProcessorEmulator.Core
         private static readonly uint[] _dumpMemLoggedPc = new uint[8];
         private static bool _abs1828ExnLogged;
         private static bool _abs6670DumpSkipLogged;
+        private static bool _abs6670FallthroughLogged;
         private static bool _abs6670ExnLogged;
         private static uint _c000Kseg;
         private static bool _c000Logged;
