@@ -1311,6 +1311,17 @@ namespace ProcessorEmulator.Core
         // hop dest. Do not hop dest-fp50 / 0x1B0C.
         public const uint CoredllDllMainJalVa = 0x03F6EE0C;
         public const uint CoredllDllMainJalWord = 0x27BDFFE0;
+        // Live d6a8de5 via=api then exn-tlbl cause=2
+        // epc=0x03F6EE3C bad=0x01FFFCA4. Same
+        // wrapper offset as leftover dest
+        // 0x03F71720 / dump 0x80095720 lw $v0,
+        // 0($s6) 0x8EC20000. Slot aliases KData
+        // 0xFFFFDCA4. leftover-wait99-halt ra=
+        // 0x03F6EE5C dest=0x80086E5C is wrap $ra
+        // overlay — refuse leftover hop.
+        public const uint CoredllDllMainJalLwVa = 0x03F6EE3C;
+        public const uint CoredllDllMainJalLwWord = 0x8EC20000;
+        public const uint CoredllDllMainJalRaVa = 0x03F6EE5C;
         public const uint CoredllDumpBase = 0x80074000;
         // Live 147e54f: I-fetch TLBL 0x03FB492C (IAT slot6).
         // ImageBase keep-imagebase=0x03F50000. MapCoredllSharedVa
@@ -15210,11 +15221,13 @@ namespace ProcessorEmulator.Core
                 || jalDest == LeftoverWait99GetProcDest)
             {
                 why = "leftover-thunk";
+                TryResolveDdiNopProcessInfo(bus);
                 TryPlantLeftoverWait99GetProc(bus, regs);
             }
             else if (how == "api")
             {
                 why = "api";
+                TryResolveDdiNopProcessInfo(bus);
                 TryPlantLeftoverWait99GetProc(bus, regs);
             }
             else if (how == "miss-jal")
@@ -15264,7 +15277,7 @@ namespace ProcessorEmulator.Core
         }
 
         public static void TryNoteLeftoverWait99O32NkCoredllExn(uint code,
-            uint epc, uint vaddr, uint vector)
+            uint epc, uint vaddr, uint vector, uint[] regs, MipsBus bus)
         {
             if (!_leftoverWait99O32NkJalrSawTarget)
                 return;
@@ -15273,7 +15286,8 @@ namespace ProcessorEmulator.Core
             if (IsWrapDestSize(epc) || epc == HdDllEntryRva
                 || IsWrapDestFp50Va(epc) || IsHdDllImageBase(epc)
                 || IsLeftoverBindRefuse(epc) || epc == LeftoverWait99GetProcDest
-                || epc == LeftoverWait99O32RefuseRa)
+                || epc == LeftoverWait99O32RefuseRa
+                || epc == CoredllDllMainJalRaVa)
                 return;
             // Early e728aa2 via=exn was genex
             // 0x80000180. Do not burn the one
@@ -15286,10 +15300,26 @@ namespace ProcessorEmulator.Core
             if (!_leftoverWait99O32NkCoredllSawEntry
                 && _leftoverWait99O32NkCoredllExnLog)
                 return;
+            bool slot = _leftoverWait99O32NkCoredllSawEntry
+                && vaddr >= ProcessInfoPage && vaddr < 0x02000000u
+                && (code == 2 || code == 3);
+            if (slot)
+            {
+                TryResolveDdiNopProcessInfo(bus);
+                TryPlantLeftoverWait99GetProc(bus, regs);
+            }
             if (_leftoverWait99O32NkCoredllSawEntry
                 && _leftoverWait99O32NkCoredllAfterLog >= 2)
                 return;
             string why = CoredllExnWhy(code);
+            uint slotWord = 0;
+            if (slot)
+            {
+                why = "exn-tlbl-slot";
+                TryPeekCoredllDumpWord(bus, epc, out slotWord);
+                if (slotWord == 0 && epc == CoredllDllMainJalLwVa)
+                    slotWord = CoredllDllMainJalLwWord;
+            }
             if (_leftoverWait99O32NkCoredllSawEntry)
                 _leftoverWait99O32NkCoredllAfterLog++;
             else
@@ -15304,6 +15334,7 @@ namespace ProcessorEmulator.Core
                 " cause=" + code +
                 " epc=0x" + epc.ToString("X") +
                 " bad=0x" + vaddr.ToString("X") +
+                (slot ? " word=0x" + slotWord.ToString("X") : "") +
                 " via=" + why);
         }
 
@@ -18503,6 +18534,8 @@ namespace ProcessorEmulator.Core
 
         private static bool IsDdiNopProcessInfoArmed()
         {
+            if (_leftoverWait99O32NkCoredllSawEntry)
+                return true;
             if (!_ddiNopAwaitCallDll)
                 return false;
             if (_ddiNopInfoDemand || _ddiNopSawCallDllPc)
