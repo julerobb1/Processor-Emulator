@@ -129,6 +129,7 @@ namespace ProcessorEmulator.Emulation
             vaddr = CeRomTocFiles.MapExeXipVa(this, vaddr);
             vaddr = CeRomTocFiles.MapUserKDataVa(vaddr);
             vaddr = CeRomTocFiles.MapFfffF000Va(this, vaddr);
+            vaddr = CeRomTocFiles.MapFfffE000Va(this, vaddr);
             uint paddr = Translate(vaddr, isStore: false);
             IBusDevice device = _lookupTable[paddr >> 16];
 
@@ -167,6 +168,7 @@ namespace ProcessorEmulator.Emulation
             vaddr = CeRomTocFiles.MapExtraRomTocDestVa(vaddr);
             vaddr = CeRomTocFiles.MapUserKDataVa(vaddr);
             vaddr = CeRomTocFiles.MapFfffF000Va(this, vaddr);
+            vaddr = CeRomTocFiles.MapFfffE000Va(this, vaddr);
             CeRomTocFiles.TryNoteDdiNopIatStore(origVa, vaddr, value);
             CeRomTocFiles.TryNoteBindImpIatSw(origVa, value);
             bool watch = CeRomTocFiles.TryNoteDdiNopDecompStore(vaddr, value);
@@ -217,6 +219,7 @@ namespace ProcessorEmulator.Emulation
             vaddr = CeRomTocFiles.MapExeXipVa(this, vaddr);
             vaddr = CeRomTocFiles.MapUserKDataVa(vaddr);
             vaddr = CeRomTocFiles.MapFfffF000Va(this, vaddr);
+            vaddr = CeRomTocFiles.MapFfffE000Va(this, vaddr);
             uint paddr = Translate(vaddr, isStore: false);
             IBusDevice device = _lookupTable[paddr >> 16];
 
@@ -255,6 +258,7 @@ namespace ProcessorEmulator.Emulation
             vaddr = CeRomTocFiles.MapExtraRomTocDestVa(vaddr);
             vaddr = CeRomTocFiles.MapUserKDataVa(vaddr);
             vaddr = CeRomTocFiles.MapFfffF000Va(this, vaddr);
+            vaddr = CeRomTocFiles.MapFfffE000Va(this, vaddr);
             bool watch = CeRomTocFiles.TryNoteDdiNopDecompStore(vaddr, value);
             try
             {

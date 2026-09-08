@@ -1369,6 +1369,19 @@ namespace ProcessorEmulator.Core
         public const uint FfffF000Page = 0xFFFFF000;
         public const uint FfffFce1Fault = 0xFFFFFCE1;
         public const uint FfffFce1Epc = 0x000593C8;
+        // Live e6f670d FIRST-WIN jalr-0-plant then
+        // store TLBS cause=3 epc=0x8002F180
+        // bad=0xFFFFE380. Page 0xFFFFE000 is after
+        // KData page 0xFFFFD000 (KDataBase=
+        // 0xFFFFD800). Offset KDataBase+0xB80.
+        // Not UserK 0xFFFF5800, not SharedUserData
+        // 0xFFFFF000. Map only live firmware peek
+        // or TLB PFN (kseg0). Do not alias KData.
+        // Do not invent/zero-fill. Do not leftover-
+        // hop dest.
+        public const uint FfffE000Page = 0xFFFFE000;
+        public const uint CoredllDllMainKdataStore = 0xFFFFE380;
+        public const uint CoredllDllMainKdataEpc = 0x8002F180;
         // 0x8001521C ori k1, epc, 0xFFFC / addiu 2 / beq
         // syscall. 0xFFFFF3DA is coredll 0x80095A98
         // addiu $v0, $0, -3110 / jalr $v0. Same class as
@@ -9844,6 +9857,107 @@ namespace ProcessorEmulator.Core
                 " (SharedUserData; firmware backing; do not invent dest)");
         }
 
+        // Live e6f670d: after jalr-0-plant, NK
+        // 0x8002F180 store TLBS on 0xFFFFE380.
+        // Same discipline as MapFfffF000Va: live
+        // peek or TLB PFN only. Do not alias
+        // KData / UserK / SharedUserData. Do not
+        // invent dest. Do not leftover-hop.
+        public static uint MapFfffE000Va(MipsBus bus, uint va)
+        {
+            if (_ffffE000Busy)
+                return va;
+            if (!IsFfffE000Armed())
+                return va;
+            if ((va & ~0xFFFu) != FfffE000Page)
+                return va;
+            if (_ffffE000Kseg != 0)
+                return _ffffE000Kseg | (va & 0xFFFu);
+            TryResolveFfffE000(bus, va);
+            if (_ffffE000Kseg != 0)
+                return _ffffE000Kseg | (va & 0xFFFu);
+            return va;
+        }
+
+        private static bool IsFfffE000Armed()
+        {
+            return _leftoverWait99O32NkCoredllSawEntry || _ffffE000Demand;
+        }
+
+        private static void TryResolveFfffE000(MipsBus bus, uint va)
+        {
+            if (bus == null || _ffffE000Busy || _ffffE000Done)
+                return;
+            if ((va & ~0xFFFu) != FfffE000Page)
+                return;
+            try
+            {
+                _ffffE000Busy = true;
+                _ffffE000Demand = true;
+                uint word = 0;
+                if (TryPeekWord(bus, FfffE000Page | (va & 0xFFFu), out word)
+                    || TryPeekWord(bus, CoredllDllMainKdataStore, out word)
+                    || TryPeekWord(bus, FfffE000Page, out word))
+                {
+                    RememberFfffE000Kseg(bus, FfffE000Page, va, word, "live-peek");
+                    return;
+                }
+                uint pfn = 0;
+                bool valid = false;
+                bool tlbHit = bus.TryFindTlbPfn(FfffE000Page, out pfn, out valid);
+                if (tlbHit && valid)
+                {
+                    uint dest = 0x80000000u | ((pfn << 12) & 0x1FFFFFFFu);
+                    if ((dest & 0x1FFFFFFFu) >= 0x00010000u
+                        && (TryPeekWord(bus, dest | (va & 0xFFFu), out word)
+                            || TryPeekWord(bus, dest, out word)))
+                    {
+                        RememberFfffE000Kseg(bus, dest, va, word, "tlb-pfn");
+                        return;
+                    }
+                }
+                if (!_ffffE000Logged)
+                {
+                    _ffffE000Logged = true;
+                    _ffffE000Done = true;
+                    uint kd = 0;
+                    bool kdOk = TryPeekWord(bus, KDataBase, out kd);
+                    string tlbWhy = "none";
+                    if (tlbHit)
+                        tlbWhy = valid
+                            ? "pfn=0x" + pfn.ToString("X") + "-unmapped"
+                            : "inv-pfn=0x" + pfn.ToString("X");
+                    BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk ffff-e000 map va=0x" +
+                        FfffE000Page.ToString("X8") +
+                        " pte-miss tlb=" + tlbWhy +
+                        (kdOk ? " FFFFD800=0x" + kd.ToString("X8") : " FFFFD800-unmapped") +
+                        " (KData+0xB80 page; no dump page; not UserK/KData/SharedUserData alias; do not invent dest)");
+                }
+            }
+            finally
+            {
+                _ffffE000Busy = false;
+            }
+        }
+
+        private static void RememberFfffE000Kseg(MipsBus bus, uint kseg,
+            uint va, uint word, string via)
+        {
+            _ffffE000Kseg = kseg & ~0xFFFu;
+            if (_ffffE000Logged)
+                return;
+            _ffffE000Logged = true;
+            _ffffE000Done = true;
+            if (via == null)
+                via = "firmware";
+            BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk ffff-e000 map va=0x" +
+                FfffE000Page.ToString("X8") +
+                " -> 0x" + _ffffE000Kseg.ToString("X8") +
+                " dest-word=0x" + word.ToString("X8") +
+                " via=" + via +
+                " (KData+0xB80 page; firmware backing; not UserK/SharedUserData/KData alias; do not invent dest)");
+        }
+
         private static void TryArmUserKPageAlias(MipsBus bus)
         {
             if (_userKPageAliasNoted)
@@ -15412,6 +15526,9 @@ namespace ProcessorEmulator.Core
             bool page = _leftoverWait99O32NkCoredllSawEntry
                 && code == 2 && epc == vaddr
                 && IsDdiNopCoredllImageVa(epc);
+            bool kdata = _leftoverWait99O32NkCoredllSawEntry
+                && (vaddr & ~0xFFFu) == FfffE000Page
+                && (code == 2 || code == 3);
             if (slot)
             {
                 TryResolveDdiNopProcessInfo(bus);
@@ -15422,8 +15539,11 @@ namespace ProcessorEmulator.Core
                 _coredllImageDemand = true;
                 TryResolveDdiNopCoredllImage(bus, epc);
             }
+            if (kdata)
+                TryResolveFfffE000(bus, vaddr);
             if (_leftoverWait99O32NkCoredllSawEntry
-                && _leftoverWait99O32NkCoredllAfterLog >= 2)
+                && _leftoverWait99O32NkCoredllAfterLog >= 2
+                && !kdata)
                 return;
             string why = CoredllExnWhy(code);
             uint slotWord = 0;
@@ -15441,6 +15561,11 @@ namespace ProcessorEmulator.Core
                 uint kseg = LookupCoredllImageKseg(epc);
                 if (slotWord == 0 && kseg != 0)
                     TryPeekWord(bus, kseg | (epc & 0xFFFu), out slotWord);
+            }
+            else if (kdata)
+            {
+                why = code == 3 ? "exn-tlbs-kdata" : "exn-tlbl-kdata";
+                TryPeekWord(bus, epc, out slotWord);
             }
             else if (_leftoverWait99O32NkCoredllSawEntry
                 && code == 2 && epc == 0 && vaddr == 0)
@@ -15470,7 +15595,7 @@ namespace ProcessorEmulator.Core
                 " cause=" + code +
                 " epc=0x" + epc.ToString("X") +
                 " bad=0x" + vaddr.ToString("X") +
-                (slot || page ? " word=0x" + slotWord.ToString("X") : "") +
+                (slot || page || kdata ? " word=0x" + slotWord.ToString("X") : "") +
                 (why == "exn-tlbl-pc0"
                     ? " v0=0x" + pc0V0.ToString("X") +
                       " t9=0x" + pc0T9.ToString("X") +
@@ -21547,6 +21672,11 @@ namespace ProcessorEmulator.Core
             _ffffF000Busy = false;
             _ffffF000Demand = false;
             _ffffF000Done = false;
+            _ffffE000Kseg = 0;
+            _ffffE000Logged = false;
+            _ffffE000Busy = false;
+            _ffffE000Demand = false;
+            _ffffE000Done = false;
             _bindImpIatSwExpect = false;
             _bindImpIatSwLogged = false;
             _bindImpIatSwLog = 0;
@@ -27640,6 +27770,11 @@ namespace ProcessorEmulator.Core
         private static bool _ffffF000Busy;
         private static bool _ffffF000Demand;
         private static bool _ffffF000Done;
+        private static uint _ffffE000Kseg;
+        private static bool _ffffE000Logged;
+        private static bool _ffffE000Busy;
+        private static bool _ffffE000Demand;
+        private static bool _ffffE000Done;
         private static bool _bindImpIatSwExpect;
         private static bool _bindImpIatSwLogged;
         private static int _bindImpIatSwLog;
