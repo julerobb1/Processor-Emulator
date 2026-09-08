@@ -133,6 +133,7 @@ namespace ProcessorEmulator.Emulation
             vaddr = CeRomTocFiles.MapJalr7eb8Va(this, vaddr);
             vaddr = CeRomTocFiles.MapJalr1db0Va(this, vaddr);
             vaddr = CeRomTocFiles.MapStk2470Va(this, vaddr);
+            vaddr = CeRomTocFiles.MapC0000088Va(this, vaddr);
             if (CeRomTocFiles.TrySkipFfffFe54LoadZero(this, vaddr))
                 return 0;
             uint paddr = Translate(vaddr, isStore: false);
@@ -177,6 +178,7 @@ namespace ProcessorEmulator.Emulation
             vaddr = CeRomTocFiles.MapJalr7eb8Va(this, vaddr);
             vaddr = CeRomTocFiles.MapJalr1db0Va(this, vaddr);
             vaddr = CeRomTocFiles.MapStk2470Va(this, vaddr);
+            vaddr = CeRomTocFiles.MapC0000088Va(this, vaddr);
             CeRomTocFiles.TryNoteDdiNopIatStore(origVa, vaddr, value);
             CeRomTocFiles.TryNoteBindImpIatSw(origVa, value);
             bool watch = CeRomTocFiles.TryNoteDdiNopDecompStore(vaddr, value);
@@ -231,6 +233,7 @@ namespace ProcessorEmulator.Emulation
             vaddr = CeRomTocFiles.MapJalr7eb8Va(this, vaddr);
             vaddr = CeRomTocFiles.MapJalr1db0Va(this, vaddr);
             vaddr = CeRomTocFiles.MapStk2470Va(this, vaddr);
+            vaddr = CeRomTocFiles.MapC0000088Va(this, vaddr);
             if (CeRomTocFiles.TrySkipFfffFe54LoadZero(this, vaddr))
                 return 0;
             uint paddr = Translate(vaddr, isStore: false);
@@ -275,6 +278,7 @@ namespace ProcessorEmulator.Emulation
             vaddr = CeRomTocFiles.MapJalr7eb8Va(this, vaddr);
             vaddr = CeRomTocFiles.MapJalr1db0Va(this, vaddr);
             vaddr = CeRomTocFiles.MapStk2470Va(this, vaddr);
+            vaddr = CeRomTocFiles.MapC0000088Va(this, vaddr);
             if (CeRomTocFiles.TrySkipFfffE000SbZero(this, vaddr, value))
                 return;
             if (CeRomTocFiles.TrySkipFfffE428SbJalr(this, vaddr, value))
