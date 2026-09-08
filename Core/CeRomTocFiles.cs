@@ -1469,6 +1469,21 @@ namespace ProcessorEmulator.Core
         public const uint CoredllDllMainKdataNext3 = 0x27BD0050;
         public const uint CoredllDllMainKdataDumpJr = 0x03E00008;
         public const uint CoredllDllMainKdataWrapRefuse = 0x80086E5C;
+        // Live d660a21: after sb-jr honor ra=
+        // 0x8001552C, TLBS epc=0x80043270
+        // bad=0x2470. Dump nk.exe at EPC is
+        // sw $a2,8($sp) (0xAFA60008). o32
+        // arg-home at 0x8004326C; $sp+8=
+        // 0x2470 so $sp=0x2468. Page 0x2000
+        // is not dump NK (imageStart
+        // 0x80010000). Map only if firmware
+        // PTE dest peeks and phys>=0x10000.
+        // Do not kseg0-identity 0x80002470.
+        // Do not invent zero pages.
+        public const uint CoredllDllMainStk2470Epc = 0x80043270;
+        public const uint CoredllDllMainStk2470Bad = 0x2470;
+        public const uint CoredllDllMainStk2470Page = 0x2000;
+        public const uint CoredllDllMainStk2470Insn = 0xAFA60008;
         // Live f628fa6: after sb-jalr-skip, TLBL
         // epc=0x80341A74 bad=0x7EB8. epc!=bad so
         // data load at jalr dest, not I-fetch
@@ -10448,6 +10463,109 @@ namespace ProcessorEmulator.Core
             return true;
         }
 
+        public static uint MapStk2470Va(MipsBus bus, uint va)
+        {
+            if (_stk2470Busy)
+                return va;
+            if (!_leftoverWait99O32NkCoredllSawEntry || !_jalrE478JrLogged)
+                return va;
+            if ((va & ~0xFFFu) != CoredllDllMainStk2470Page)
+                return va;
+            if (_stk2470Kseg != 0)
+                return _stk2470Kseg | (va & 0xFFFu);
+            TryResolveStk2470(bus, va);
+            if (_stk2470Kseg != 0)
+                return _stk2470Kseg | (va & 0xFFFu);
+            return va;
+        }
+
+        private static bool IsMipsStore(uint insn)
+        {
+            uint op = insn >> 26;
+            return op == 0x28 || op == 0x29 || op == 0x2A
+                || op == 0x2B || op == 0x2E;
+        }
+
+        private static bool IsStk2470RefuseKseg(uint kseg)
+        {
+            if (kseg == 0 || (kseg & 3) != 0)
+                return true;
+            if ((kseg & 0x1FFFFFFFu) < 0x00010000u)
+                return true;
+            return kseg == LeftoverWait99O32RefuseRa
+                || kseg == LeftoverWait99GetProcDest
+                || kseg == LeftoverWait99O32RefuseDump
+                || kseg == CoredllDllMainKdataWrapRefuse
+                || IsLeftoverDestVa(kseg)
+                || IsWrapDestSize(kseg) || IsWrapDestFp50Va(kseg)
+                || IsHdDllImageBase(kseg) || kseg == WrapDestE32SizeLive
+                || kseg == WrapDestFp50FillLive;
+        }
+
+        private static void TryResolveStk2470(MipsBus bus, uint va)
+        {
+            if (bus == null || _stk2470Busy || _stk2470Done)
+                return;
+            if ((va & ~0xFFFu) != CoredllDllMainStk2470Page)
+                return;
+            try
+            {
+                _stk2470Busy = true;
+                uint sec = PeekSection(bus, 0);
+                uint l1 = 0;
+                uint l2 = 0;
+                uint pfn = 0;
+                uint kseg = 0;
+                bool pte = sec != 0
+                    && WalkFirmwarePte(bus, sec, va, out l1, out l2, out pfn, out kseg)
+                    && !IsStk2470RefuseKseg(kseg);
+                if (!pte)
+                {
+                    uint sec1 = PeekSection(bus, 1);
+                    if (sec1 != 0 && sec1 != sec)
+                        pte = WalkFirmwarePte(bus, sec1, va, out l1, out l2, out pfn, out kseg)
+                            && !IsStk2470RefuseKseg(kseg);
+                }
+                uint destw = 0;
+                bool destOk = pte && TryPeekWord(bus,
+                    (kseg & ~0xFFFu) | (va & 0xFFFu), out destw);
+                if (pte && destOk)
+                {
+                    _stk2470Kseg = kseg & ~0xFFFu;
+                    if (!_stk2470Logged)
+                    {
+                        _stk2470Logged = true;
+                        _stk2470Done = true;
+                        BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk stk-2470 map va=0x" +
+                            CoredllDllMainStk2470Page.ToString("X") +
+                            " -> 0x" + _stk2470Kseg.ToString("X8") +
+                            " l2=0x" + l2.ToString("X8") +
+                            " dest-word=0x" + destw.ToString("X") +
+                            " via=pte (dump sw $a2,8($sp); firmware PTE; do not invent dest)");
+                    }
+                    return;
+                }
+                if (!_stk2470Logged)
+                {
+                    _stk2470Logged = true;
+                    _stk2470Done = true;
+                    uint k0 = 0x80000000u | CoredllDllMainStk2470Bad;
+                    uint k0w = 0;
+                    bool k0ok = TryPeekWord(bus, k0, out k0w);
+                    BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk stk-2470 map va=0x" +
+                        va.ToString("X") +
+                        " pte-miss sec=0x" + sec.ToString("X") +
+                        (k0ok ? " kseg0=0x" + k0w.ToString("X") : " kseg0-miss") +
+                        " (dump sw $a2,8($sp); page 0x2000 not NK image;" +
+                        " do not invent zero page)");
+                }
+            }
+            finally
+            {
+                _stk2470Busy = false;
+            }
+        }
+
         private static bool IsMipsLoadToZero(uint insn)
         {
             uint op = insn >> 26;
@@ -16264,6 +16382,13 @@ namespace ProcessorEmulator.Core
                 && (epc == CoredllDllMainRiEpc
                     || epc == CoredllDllMainRiEpc + 4
                     || epc == CoredllDllMainRiEpc - 4);
+            bool stk2470 = _leftoverWait99O32NkCoredllSawEntry
+                && _jalrE478JrLogged
+                && (code == 2 || code == 3)
+                && (epc == CoredllDllMainStk2470Epc
+                    || vaddr == CoredllDllMainStk2470Bad
+                    || ((vaddr & ~0xFFFu) == CoredllDllMainStk2470Page
+                        && epc == CoredllDllMainStk2470Epc));
             if (slot)
             {
                 TryResolveDdiNopProcessInfo(bus);
@@ -16282,11 +16407,13 @@ namespace ProcessorEmulator.Core
                 TryResolveJalr7eb8(bus, vaddr);
             if (jalr1db0)
                 TryResolveJalr1db0(bus, vaddr);
+            if (stk2470)
+                TryResolveStk2470(bus, vaddr);
             if (ri && _jalrRiLogged)
                 return;
             if (_leftoverWait99O32NkCoredllSawEntry
                 && _leftoverWait99O32NkCoredllAfterLog >= 2
-                && !kdata && !sud && !jalr && !jalr1db0 && !ri)
+                && !kdata && !sud && !jalr && !jalr1db0 && !ri && !stk2470)
                 return;
             string why = CoredllExnWhy(code);
             uint slotWord = 0;
@@ -16332,6 +16459,12 @@ namespace ProcessorEmulator.Core
                 if (!TryPeekWord(bus, epc, out slotWord))
                     TryPeekWord(bus, epc - 4, out slotWord);
             }
+            else if (stk2470)
+            {
+                why = code == 3 ? "exn-tlbs-stk" : "exn-tlbl-stk";
+                if (!TryPeekWord(bus, epc, out slotWord) || slotWord == 0)
+                    slotWord = CoredllDllMainStk2470Insn;
+            }
             else if (_leftoverWait99O32NkCoredllSawEntry
                 && code == 2 && epc == 0 && vaddr == 0)
             {
@@ -16343,13 +16476,13 @@ namespace ProcessorEmulator.Core
             uint kdataPrev = 0;
             uint kdataNext = 0;
             string kdataDis = "";
-            if (why == "exn-tlbl-pc0" || kdata || sud || jalr || jalr1db0 || ri)
+            if (why == "exn-tlbl-pc0" || kdata || sud || jalr || jalr1db0 || ri || stk2470)
             {
                 pc0V0 = PeekGpr(regs, 2);
                 pc0T9 = PeekGpr(regs, 25);
                 pc0Ra = PeekGpr(regs, 31);
             }
-            if (kdata || sud || jalr || jalr1db0 || ri)
+            if (kdata || sud || jalr || jalr1db0 || ri || stk2470)
             {
                 kdataDis = slotWord != 0
                     ? FormatMipsOp(epc, slotWord)
@@ -16376,8 +16509,8 @@ namespace ProcessorEmulator.Core
                 " cause=" + code +
                 " epc=0x" + epc.ToString("X") +
                 " bad=0x" + vaddr.ToString("X") +
-                (slot || page || kdata || sud || jalr || jalr1db0 || ri ? " word=0x" + slotWord.ToString("X") : "") +
-                (why == "exn-tlbl-pc0" || kdata || sud || jalr || jalr1db0 || ri
+                (slot || page || kdata || sud || jalr || jalr1db0 || ri || stk2470 ? " word=0x" + slotWord.ToString("X") : "") +
+                (why == "exn-tlbl-pc0" || kdata || sud || jalr || jalr1db0 || ri || stk2470
                     ? " v0=0x" + pc0V0.ToString("X") +
                       " t9=0x" + pc0T9.ToString("X")
                     : "") +
@@ -16432,6 +16565,31 @@ namespace ProcessorEmulator.Core
                     " t9=0x" + pc0T9.ToString("X") +
                     (slotWord != 0 ? " rs=" + ((slotWord >> 21) & 31).ToString() : "") +
                     " (data TLBL bad=0x1DB0 at sec0; useg abs; not I-fetch; do not invent dest)");
+            }
+            if (stk2470)
+            {
+                uint rs = slotWord != 0 ? ((slotWord >> 21) & 31) : 0;
+                uint rt = slotWord != 0 ? ((slotWord >> 16) & 31) : 0;
+                int off = slotWord != 0 ? (short)(slotWord & 0xFFFF) : 0;
+                uint bas = PeekGpr(regs, (int)rs);
+                uint a2 = PeekGpr(regs, 6);
+                uint sp = PeekGpr(regs, 29);
+                BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk stk-2470 store" +
+                    " dis=" + kdataDis +
+                    " word=0x" + slotWord.ToString("X") +
+                    " rs=" + rs.ToString() +
+                    " rt=" + rt.ToString() +
+                    " off=" + off.ToString() +
+                    " base=0x" + bas.ToString("X") +
+                    " sp=0x" + sp.ToString("X") +
+                    " a2=0x" + a2.ToString("X") +
+                    " prev=0x" + kdataPrev.ToString("X") +
+                    " next=0x" + kdataNext.ToString("X") +
+                    " ra=0x" + pc0Ra.ToString("X") +
+                    " v0=0x" + pc0V0.ToString("X") +
+                    " t9=0x" + pc0T9.ToString("X") +
+                    (IsMipsStore(slotWord) ? " store" : "") +
+                    " (dump sw $a2,8($sp); page 0x2000; firmware PTE only; do not invent dest)");
             }
             if (ri)
             {
@@ -22578,6 +22736,10 @@ namespace ProcessorEmulator.Core
             _jalrTableFixLogged = false;
             _jalrT9MsecLogged = false;
             _jalrE478JrLogged = false;
+            _stk2470Kseg = 0;
+            _stk2470Logged = false;
+            _stk2470Busy = false;
+            _stk2470Done = false;
             _ffffFe54SkipLogged = false;
             _bindImpIatSwExpect = false;
             _bindImpIatSwLogged = false;
@@ -28691,6 +28853,10 @@ namespace ProcessorEmulator.Core
         private static bool _jalrTableFixLogged;
         private static bool _jalrT9MsecLogged;
         private static bool _jalrE478JrLogged;
+        private static uint _stk2470Kseg;
+        private static bool _stk2470Logged;
+        private static bool _stk2470Busy;
+        private static bool _stk2470Done;
         private static bool _ffffFe54SkipLogged;
         private static bool _bindImpIatSwExpect;
         private static bool _bindImpIatSwLogged;
