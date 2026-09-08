@@ -1374,14 +1374,19 @@ namespace ProcessorEmulator.Core
         // bad=0xFFFFE380. Page 0xFFFFE000 is after
         // KData page 0xFFFFD000 (KDataBase=
         // 0xFFFFD800). Offset KDataBase+0xB80.
-        // Not UserK 0xFFFF5800, not SharedUserData
-        // 0xFFFFF000. Map only live firmware peek
-        // or TLB PFN (kseg0). Do not alias KData.
-        // Do not invent/zero-fill. Do not leftover-
+        // Live 82b0d37 pte-miss tlb=none
+        // FFFFD800=0xC201FF00. word=0xA002E380 is
+        // sb $v0,0xE380($zero) (CE $zero+imm
+        // absolute). Classic KData window ends at
+        // 0xFFFFE000; this byte is the next page.
+        // Map live peek, TLB PFN, or sec0 firmware
+        // PTE dest only. Do not alias KData. Do
+        // not invent/zero-fill. Do not leftover-
         // hop dest.
         public const uint FfffE000Page = 0xFFFFE000;
         public const uint CoredllDllMainKdataStore = 0xFFFFE380;
         public const uint CoredllDllMainKdataEpc = 0x8002F180;
+        public const uint CoredllDllMainKdataInsn = 0xA002E380;
         // 0x8001521C ori k1, epc, 0xFFFC / addiu 2 / beq
         // syscall. 0xFFFFF3DA is coredll 0x80095A98
         // addiu $v0, $0, -3110 / jalr $v0. Same class as
@@ -9857,12 +9862,14 @@ namespace ProcessorEmulator.Core
                 " (SharedUserData; firmware backing; do not invent dest)");
         }
 
-        // Live e6f670d: after jalr-0-plant, NK
-        // 0x8002F180 store TLBS on 0xFFFFE380.
-        // Same discipline as MapFfffF000Va: live
-        // peek or TLB PFN only. Do not alias
-        // KData / UserK / SharedUserData. Do not
-        // invent dest. Do not leftover-hop.
+        // Live 82b0d37: after jalr-0-plant, NK
+        // 0x8002F180 sb $v0,0xE380($0) TLBS on
+        // 0xFFFFE380. pte-miss tlb=none. Same
+        // discipline as MapFfffF000Va: live peek,
+        // TLB PFN, or sec0 firmware PTE dest.
+        // Do not alias KData / UserK /
+        // SharedUserData. Do not invent dest.
+        // Do not leftover-hop.
         public static uint MapFfffE000Va(MipsBus bus, uint va)
         {
             if (_ffffE000Busy)
@@ -9916,12 +9923,35 @@ namespace ProcessorEmulator.Core
                         return;
                     }
                 }
+                uint sec = PeekSection(bus, 0);
+                uint l1 = 0;
+                uint l2 = 0;
+                uint pfnWord = 0;
+                uint kseg = 0;
+                bool pte = sec != 0
+                    && WalkFirmwarePte(bus, sec, FfffE000Page | (va & 0xFFFu),
+                        out l1, out l2, out pfnWord, out kseg);
+                if (pte && kseg != 0
+                    && TryPeekWord(bus, kseg | (va & 0xFFFu), out word))
+                {
+                    RememberFfffE000Kseg(bus, kseg, va, word, "fw-pte");
+                    return;
+                }
                 if (!_ffffE000Logged)
                 {
                     _ffffE000Logged = true;
                     _ffffE000Done = true;
                     uint kd = 0;
                     bool kdOk = TryPeekWord(bus, KDataBase, out kd);
+                    uint kdL1 = 0;
+                    uint kdL2 = 0;
+                    uint kdPfn = 0;
+                    uint kdKseg = 0;
+                    bool kdPte = sec != 0
+                        && WalkFirmwarePte(bus, sec, KDataBase,
+                            out kdL1, out kdL2, out kdPfn, out kdKseg);
+                    uint insn = 0;
+                    bool insnOk = TryPeekWord(bus, CoredllDllMainKdataEpc, out insn);
                     string tlbWhy = "none";
                     if (tlbHit)
                         tlbWhy = valid
@@ -9930,8 +9960,20 @@ namespace ProcessorEmulator.Core
                     BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk ffff-e000 map va=0x" +
                         FfffE000Page.ToString("X8") +
                         " pte-miss tlb=" + tlbWhy +
+                        " sec0=0x" + sec.ToString("X8") +
+                        " l1=0x" + l1.ToString("X8") +
+                        " l2=0x" + l2.ToString("X8") +
+                        (kdPte
+                            ? " kdata-pte=0x" + kdKseg.ToString("X8") +
+                              " kdata-l2=0x" + kdL2.ToString("X8")
+                            : " kdata-pte-miss l1=0x" + kdL1.ToString("X8") +
+                              " l2=0x" + kdL2.ToString("X8")) +
                         (kdOk ? " FFFFD800=0x" + kd.ToString("X8") : " FFFFD800-unmapped") +
-                        " (KData+0xB80 page; no dump page; not UserK/KData/SharedUserData alias; do not invent dest)");
+                        (insnOk
+                            ? " insn=0x" + insn.ToString("X8") +
+                              " " + FormatMipsOp(CoredllDllMainKdataEpc, insn)
+                            : "") +
+                        " (sb $v0,0xE380($0); KData+0xB80 next page; sec0 firmware walk; not UserK/KData/SharedUserData alias; do not invent dest)");
                 }
             }
             finally
@@ -15565,7 +15607,8 @@ namespace ProcessorEmulator.Core
             else if (kdata)
             {
                 why = code == 3 ? "exn-tlbs-kdata" : "exn-tlbl-kdata";
-                TryPeekWord(bus, epc, out slotWord);
+                if (!TryPeekWord(bus, epc, out slotWord) && epc == CoredllDllMainKdataEpc)
+                    slotWord = CoredllDllMainKdataInsn;
             }
             else if (_leftoverWait99O32NkCoredllSawEntry
                 && code == 2 && epc == 0 && vaddr == 0)
@@ -15575,11 +15618,22 @@ namespace ProcessorEmulator.Core
             uint pc0V0 = 0;
             uint pc0T9 = 0;
             uint pc0Ra = 0;
-            if (why == "exn-tlbl-pc0")
+            uint kdataPrev = 0;
+            uint kdataNext = 0;
+            string kdataDis = "";
+            if (why == "exn-tlbl-pc0" || kdata)
             {
                 pc0V0 = PeekGpr(regs, 2);
                 pc0T9 = PeekGpr(regs, 25);
                 pc0Ra = PeekGpr(regs, 31);
+            }
+            if (kdata)
+            {
+                kdataDis = slotWord != 0
+                    ? FormatMipsOp(epc, slotWord)
+                    : "peek-miss";
+                TryPeekWord(bus, epc - 4, out kdataPrev);
+                TryPeekWord(bus, epc + 4, out kdataNext);
             }
             if (_leftoverWait99O32NkCoredllSawEntry)
                 _leftoverWait99O32NkCoredllAfterLog++;
@@ -15596,10 +15650,15 @@ namespace ProcessorEmulator.Core
                 " epc=0x" + epc.ToString("X") +
                 " bad=0x" + vaddr.ToString("X") +
                 (slot || page || kdata ? " word=0x" + slotWord.ToString("X") : "") +
-                (why == "exn-tlbl-pc0"
+                (why == "exn-tlbl-pc0" || kdata
                     ? " v0=0x" + pc0V0.ToString("X") +
                       " t9=0x" + pc0T9.ToString("X") +
                       " ra=0x" + pc0Ra.ToString("X")
+                    : "") +
+                (kdata
+                    ? " dis=" + kdataDis +
+                      " prev=0x" + kdataPrev.ToString("X") +
+                      " next=0x" + kdataNext.ToString("X")
                     : "") +
                 " via=" + why);
         }
