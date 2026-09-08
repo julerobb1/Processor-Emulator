@@ -14999,7 +14999,7 @@ namespace ProcessorEmulator.Core
         private static void TryNoteLeftoverWait99O32NkAfter(MipsBus bus,
             uint[] regs, uint pc)
         {
-            if (_leftoverWait99O32NkChainSawEntry && pc == CallDllAfterJalr
+            if (_leftoverWait99O32NkCoredllSawEntry && pc == CallDllAfterJalr
                 && !_leftoverWait99O32NkCoredllRetLog)
             {
                 _leftoverWait99O32NkCoredllRetLog = true;
@@ -15093,18 +15093,80 @@ namespace ProcessorEmulator.Core
                 " via=" + why);
         }
 
-        // Live 0ed7d5c FIRST-WIN coredll CallDLL
-        // 0x80018B34 / 0x80018BAC and entry
-        // pc=0x03F57A00 word=0x27BDFFD8. No
-        // via=ret; process alive until stop.
-        // nk-after only watched Hdstub kseg
-        // 0x80018BB8. Name useg ret / first
-        // DllMain body miss. Do not leftover-
-        // hop dest 0x03F74DEC.
+        // Live e728aa2 FIRST-WIN via=exn at
+        // 0x80000180 word=0x3C1A8001 before
+        // DllMain; nk-after via=ret was early
+        // (osaxst0 ChainSawEntry). Later
+        // CallDLL/entry at 0x03F57A00, no ret.
+        // Latch real coredll entry. Enrich exn
+        // with Cause/EPC/BadVAddr. Observe
+        // body/ret only after 0x03F57A00. Do
+        // not leftover-hop dest 0x03F74DEC.
+        private static string CoredllExnWhy(uint code)
+        {
+            if (code == 2)
+                return "exn-tlbl";
+            if (code == 3)
+                return "exn-tlbs";
+            if (code == 4)
+                return "exn-adel";
+            if (code == 5)
+                return "exn-ades";
+            if (code == 8)
+                return "exn-sys";
+            if (code == 0)
+                return "exn-int";
+            return "exn";
+        }
+
+        public static void TryNoteLeftoverWait99O32NkCoredllExn(uint code,
+            uint epc, uint vaddr, uint vector)
+        {
+            if (!_leftoverWait99O32NkJalrSawTarget)
+                return;
+            if (code == 0)
+                return;
+            if (IsWrapDestSize(epc) || epc == HdDllEntryRva
+                || IsWrapDestFp50Va(epc) || IsHdDllImageBase(epc)
+                || IsLeftoverBindRefuse(epc) || epc == LeftoverWait99GetProcDest
+                || epc == LeftoverWait99O32RefuseRa)
+                return;
+            // Early e728aa2 via=exn was genex
+            // 0x80000180. Do not burn the one
+            // pre-DllMain slot on an unrelated
+            // TLB refill. After entry, any
+            // Cause/EPC (useg TLB/AdEL).
+            if (!_leftoverWait99O32NkCoredllSawEntry
+                && vector != 0x80000180u && vector != 0x80000000u)
+                return;
+            if (!_leftoverWait99O32NkCoredllSawEntry
+                && _leftoverWait99O32NkCoredllExnLog)
+                return;
+            if (_leftoverWait99O32NkCoredllSawEntry
+                && _leftoverWait99O32NkCoredllAfterLog >= 2)
+                return;
+            string why = CoredllExnWhy(code);
+            if (_leftoverWait99O32NkCoredllSawEntry)
+                _leftoverWait99O32NkCoredllAfterLog++;
+            else
+                _leftoverWait99O32NkCoredllExnLog = true;
+            _leftoverWait99O32NkChainLast = vector ^ CoredllDllMainVa;
+            _leftoverWait99O32NkChainVia = why;
+            _leftoverWait99O32NkChainName = "coredll.dll";
+            BootLog.Write("[Hive] ExtraROM ddi_nop leftover-wait99-o32-nk-chain pc=0x" +
+                vector.ToString("X8") +
+                " name=coredll.dll" +
+                " startip=0x" + CoredllDllMainVa.ToString("X") +
+                " cause=" + code +
+                " epc=0x" + epc.ToString("X") +
+                " bad=0x" + vaddr.ToString("X") +
+                " via=" + why);
+        }
+
         private static void TryNoteLeftoverWait99O32NkCoredllAfter(MipsBus bus,
             uint[] regs, uint pc)
         {
-            if (!_leftoverWait99O32NkChainSawEntry)
+            if (!_leftoverWait99O32NkCoredllSawEntry)
                 return;
             if (pc == CallDllAfterJalr)
             {
@@ -15130,8 +15192,6 @@ namespace ProcessorEmulator.Core
             else if (pc == LeftoverWait99O32RefuseRa || IsLeftoverDestVa(pc)
                 || IsLeftoverBindRefuse(pc))
                 why = "leftover-refuse";
-            else if (pc == 0x80000180u || pc == 0x80000000u)
-                why = "exn";
             else if (pc >= CoredllSharedLo && pc < CoredllSharedHi)
             {
                 if (pc == _leftoverWait99O32NkCoredllBodyPc)
@@ -15443,7 +15503,12 @@ namespace ProcessorEmulator.Core
                 why = "startip-0";
             else if (pc == CallDllAfterJalr
                 && (IsChainCallVa(startip) || _leftoverWait99O32NkChainSawEntry))
+            {
+                if (NamesMatchRom(name, "coredll.dll")
+                    && !_leftoverWait99O32NkCoredllSawEntry)
+                    return;
                 why = "ret";
+            }
             else if (atBind && name.Length > 1)
                 why = "bindlib";
             else if ((pc == CallDllStartip || pc == CallDllEntry
@@ -15483,9 +15548,19 @@ namespace ProcessorEmulator.Core
                 return;
             if (atTarget)
                 _leftoverWait99O32NkChainSawEntry = true;
+            if (atTarget && NamesMatchRom(name, "coredll.dll")
+                && IsCoredllStartipVa(pc))
+            {
+                _leftoverWait99O32NkCoredllSawEntry = true;
+                _leftoverWait99O32NkCoredllRetLog = false;
+                _leftoverWait99O32NkCoredllAfterLog = 0;
+                _leftoverWait99O32NkCoredllBodyPc = 0;
+                _leftoverWait99O32NkCoredllSpin = 0;
+            }
             if (NamesMatchRom(name, "coredll.dll") && why == "startip")
                 _leftoverWait99O32NkCoredllSawStartip = true;
-            if (why == "calldll" || why == "entry" || why == "ret")
+            if (why == "calldll" || why == "entry"
+                || (why == "ret" && _leftoverWait99O32NkCoredllSawEntry))
                 _leftoverWait99O32NkCoredllSawCall = true;
             _leftoverWait99O32NkChainLast = key;
             _leftoverWait99O32NkChainVia = why;
@@ -21243,11 +21318,13 @@ namespace ProcessorEmulator.Core
             _leftoverWait99O32NkCoredllStartip = 0;
             _leftoverWait99O32NkCoredllSawStartip = false;
             _leftoverWait99O32NkCoredllSawCall = false;
+            _leftoverWait99O32NkCoredllSawEntry = false;
             _leftoverWait99O32NkCoredllMissLog = false;
             _leftoverWait99O32NkCoredllRetLog = false;
             _leftoverWait99O32NkCoredllAfterLog = 0;
             _leftoverWait99O32NkCoredllBodyPc = 0;
             _leftoverWait99O32NkCoredllSpin = 0;
+            _leftoverWait99O32NkCoredllExnLog = false;
             _leftoverWait99O32NkChainSawEntry = false;
             _leftoverWait99O32NkRa = 0;
             _leftoverWait99O32NkA0 = 0;
@@ -27331,6 +27408,8 @@ namespace ProcessorEmulator.Core
         private static uint _leftoverWait99O32NkCoredllStartip;
         private static bool _leftoverWait99O32NkCoredllSawStartip;
         private static bool _leftoverWait99O32NkCoredllSawCall;
+        private static bool _leftoverWait99O32NkCoredllSawEntry;
+        private static bool _leftoverWait99O32NkCoredllExnLog;
         private static bool _leftoverWait99O32NkCoredllMissLog;
         private static bool _leftoverWait99O32NkCoredllRetLog;
         private static int _leftoverWait99O32NkCoredllAfterLog;
