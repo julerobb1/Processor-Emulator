@@ -17,6 +17,12 @@
     <NoWarn>CS8618;CS8600;CS8602;CS8603;CS8622;CS8625;CA1416</NoWarn>
   </PropertyGroup>
 
+  <!-- 2 GiB RamDevice byte[] is exactly 0x80000000; default
+       2GB object cap is slightly under that. -->
+  <ItemGroup>
+    <RuntimeHostConfigurationOption Include="System.GC.AllowVeryLargeObjects" Value="true" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="SharpCompress" Version="0.50.4" />
     <PackageReference Include="System.Management" Version="8.0.0" />
