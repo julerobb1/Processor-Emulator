@@ -117,15 +117,14 @@ namespace ProcessorEmulator
                 ExtractFirmwareSections(archivePath, outputDir);
                 return;
             }
-            // Try SharpCompress for common archive formats
+            // Try SharpCompress for common archive formats.
+            // 0.50.x: ArchiveFactory.Open → OpenArchive; WriteToDirectory
+            // + ExtractionOptions remain (archive-level or per-entry).
             try
             {
-                using var archive = ArchiveFactory.Open(archivePath);
+                using var archive = ArchiveFactory.OpenArchive(archivePath);
                 var options = new ExtractionOptions { ExtractFullPath = true, Overwrite = true };
-                foreach (var entry in archive.Entries.Where(e => !e.IsDirectory))
-                {
-                    entry.WriteToDirectory(outputDir, options);
-                }
+                archive.WriteToDirectory(outputDir, options);
                 return;
             }
             catch

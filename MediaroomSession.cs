@@ -7,8 +7,11 @@ using ProcessorEmulator.Emulation;
 
 namespace ProcessorEmulator
 {
-    // Honest dump -> NkBinLoader -> MIPS/CE step. No synthetic
-    // firmware, no CreateProcess, no ExtraROM map, no SetEvent.
+    // Honest dump -> NkBinLoader -> MIPS/CE step. Every dump B000FF
+    // next to nk.bin is loaded at that file's imageStart so ExtraROM
+    // XIP is in RAM. Leftover inherit pairs are dropped at SaveList.
+    // No invented 0x81360000 map, no host CreateProcess(tv2clientce),
+    // no SetEvent.
     public sealed class MediaroomSession
     {
         private const uint RamSize = 256u * 1024u * 1024u;
@@ -109,6 +112,7 @@ namespace ProcessorEmulator
             KernelLoaded = true;
             DumpRoot = HostHardDisk.Root;
             GuestVideoWrote = false;
+            _status("display ddi_nop.dll ExtraROM TOC[33] stub; guest screen black until a real DDI writes pixels; GuestVideoWrote=false; no framebuffer blit");
             _cpu.SetRegister(MipsCpuEmulator.Register.PC, (uint)loaded.EntryPoint);
             _cpu.SetRegister(MipsCpuEmulator.Register.SP, 0x80000000u + RamSize - 0x1000u);
             _lastPc = (uint)loaded.EntryPoint;
@@ -175,10 +179,12 @@ namespace ProcessorEmulator
             catch (Exception ex)
             {
                 _lastPc = _cpu != null ? _cpu.ProgramCounter : _lastPc;
+                BootLog.UartFlush();
                 _status("CPU " + ex.GetType().Name + " PC=0x" + _lastPc.ToString("X8"));
                 return KernelLoaded;
             }
 
+            BootLog.UartFlush();
             _status("stopped");
             return true;
         }

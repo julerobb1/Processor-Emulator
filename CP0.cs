@@ -248,6 +248,27 @@ namespace ProcessorEmulator.Emulation
             return TlbTranslateStatus.Miss;
         }
 
+        // Live 674d704: page 0xFFFFF000 TLBL. Scan VPN
+        // even if ASID mismatches. Do not invent a PFN.
+        public bool TryFindTlbPfn(uint vaddr, out uint pfn, out bool valid)
+        {
+            pfn = 0;
+            valid = false;
+            uint vpn2 = (vaddr >> 13) & 0x7FFFF;
+            bool odd = (vaddr & 0x1000) != 0;
+            for (int i = 0; i < TLB_ENTRIES; i++)
+            {
+                uint tlbVpn2 = (_tlb[i].EntryHi >> 13) & 0x7FFFF;
+                if (tlbVpn2 != vpn2)
+                    continue;
+                uint lo = odd ? _tlb[i].EntryLo1 : _tlb[i].EntryLo0;
+                pfn = (lo >> 6) & 0xFFFFF;
+                valid = (lo & 2) != 0;
+                return true;
+            }
+            return false;
+        }
+
         public void PrepareTlbException(uint vaddr)
         {
             BadVAddr = vaddr;

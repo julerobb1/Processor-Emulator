@@ -6,13 +6,10 @@ on:
   pull_request:
     types: [opened, reopened, synchronize, closed]
     branches: [main, dev]
+  workflow_dispatch:
 
 permissions:
   contents: write
-  pull-requests: write
-
-permissions:
-  contents: read
   pull-requests: write
 
 jobs:
