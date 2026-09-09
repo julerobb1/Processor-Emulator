@@ -712,6 +712,9 @@ namespace ProcessorEmulator.Emulation
             if (CeRomTocFiles.TryTakeDumpMem15C28AfterOuterJalEpiRetCallerRaS3(_bus, registers, fetchPc,
                     instruction, _inDelaySlot, ref programCounter))
                 return 0;
+            if (CeRomTocFiles.TryTakeDumpMem15C28AfterOuterJalEpiRetCallerRaT1(_bus, registers, fetchPc,
+                    instruction, _inDelaySlot, ref programCounter))
+                return 0;
             if (CeRomTocFiles.TryTakeDumpMem15C28AfterOuterJalEpiRetCallerNextFn(_bus, registers, fetchPc,
                     instruction, _inDelaySlot, ref programCounter))
                 return 0;
