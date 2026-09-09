@@ -502,6 +502,9 @@ namespace ProcessorEmulator.Emulation
                 return 0;
             uint fetchPc = programCounter;
             uint instruction = ReadMemory32(programCounter);
+            if (CeRomTocFiles.TryTakeDumpMemRomHdrLinkContinue(_bus, registers,
+                    fetchPc, instruction, _inDelaySlot, ref programCounter))
+                return 0;
             CeRomTocFiles.TryFixE478SbAsDumpJr(_bus, registers, programCounter,
                 ref instruction);
             CeRomTocFiles.TryFixStk2470SbAsDumpSw(_bus, registers, programCounter,
