@@ -50,6 +50,17 @@ namespace ProcessorEmulator.Emulation
             _cp0.EPC = epc;
         }
 
+        // Dump-true trampoline 0x80014F40
+        // mtc0 $0,$12 (Status:=0). Do not
+        // invent KSEG / pages.
+        public bool TryExecDumpMemMtc0ZeroStatus(uint insn)
+        {
+            if (insn != 0x40806000u || _cp0 == null)
+                return false;
+            _cp0.WriteRegister(12, 0);
+            return true;
+        }
+
         public bool TryFindTlbPfn(uint vaddr, out uint pfn, out bool valid)
         {
             return _cp0.TryFindTlbPfn(vaddr, out pfn, out valid);
