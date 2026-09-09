@@ -235,6 +235,8 @@ namespace ProcessorEmulator.Emulation
                 return;
             if (CeRomTocFiles.TrySkip15C28StkStore(this, vaddr))
                 return;
+            if (CeRomTocFiles.TrySkipBadABeforeE000DestMissStore(this, vaddr))
+                return;
             CeRomTocFiles.TryNoteDdiNopIatStore(origVa, vaddr, value);
             CeRomTocFiles.TryNoteBindImpIatSw(origVa, value);
             bool watch = CeRomTocFiles.TryNoteDdiNopDecompStore(vaddr, value);

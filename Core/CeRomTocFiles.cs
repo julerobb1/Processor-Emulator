@@ -2568,6 +2568,20 @@ namespace ProcessorEmulator.Core
         public const uint CoredllDllMainBadAJalDump = 0x0C010A48;
         public const uint CoredllDllMainBadAJalDest = 0x80042920;
         public const uint CoredllDllMainBadAJalDelayDump = 0x03C02025;
+        // Dump wrapper after jal 0x80042920:
+        // jal 0x800423F0 delay or $a0,$fp
+        // then lw $fp/$ra / jr $ra /
+        // addiu $sp,+24. Callee epi
+        // 0x8004314C. List-insert
+        // 0x800151C0 sw at 0x800151D0.
+        public const uint CoredllDllMainBadASecondJalPc = 0x80043254;
+        public const uint CoredllDllMainBadASecondJalDump = 0x0C0108FC;
+        public const uint CoredllDllMainBadASecondJalDest = 0x800423F0;
+        public const uint CoredllDllMainBadASecondJalDelayDump = 0x03C02025;
+        public const uint CoredllDllMainBadAWrapperEpi = 0x8004325C;
+        public const uint CoredllDllMainBadACalleeEpi = 0x8004314C;
+        public const uint CoredllDllMainBadAListInsert = 0x800151C0;
+        public const uint CoredllDllMainBadAWrapperCallerRa = 0x8004328C;
         // Live f628fa6: after sb-jalr-skip, TLBL
         // epc=0x80341A74 bad=0x7EB8. epc!=bad so
         // data load at jalr dest, not I-fetch
@@ -12374,6 +12388,7 @@ namespace ProcessorEmulator.Core
             }
             uint a0 = PeekGpr(regs, 4);
             uint src = PeekBadADestA0(bus);
+            TrySaveBadAListInsertGprs(regs);
             if ((a0 & ~0xFFFu) == 0 && src != 0)
             {
                 uint liveA1 = PeekGpr(regs, 5);
@@ -12407,6 +12422,7 @@ namespace ProcessorEmulator.Core
             uint src = PeekBadADestA0(bus);
             if (src == 0)
                 return;
+            TrySaveBadAListInsertGprs(regs);
             PokeGpr(regs, 5, src);
             TryLogBadA1Src(bus, regs, pc, a1, src, "bada-a1-restore");
             _badARestoreLogged = true;
@@ -12525,6 +12541,7 @@ namespace ProcessorEmulator.Core
                 TryHealDumpInsn(bus, pc, insn, orDump);
             if (pc == CoredllDllMainBadAJalPc && insn != jalDump && insn != 0)
                 TryHealDumpInsn(bus, pc, insn, jalDump);
+            TrySaveBadAListInsertGprs(regs);
             if (!TryExecDumpMemAlu(regs, orDump)
                 || !TryExecDumpMemAlu(regs, addiuDump)
                 || !TryExecDumpMemAlu(regs, delayDump))
@@ -12557,6 +12574,427 @@ namespace ProcessorEmulator.Core
                 " (dump addiu $a3 + jal 0x80042920; delay or $a0,$fp;" +
                 " toward e000-0288 0x800151D0; no invent E000/F000/SUD;" +
                 " no leftover-hop)");
+            return true;
+        }
+
+        // Boot 8f64660: jal-continue landed
+        // 0x80042920 then froze (e000=0).
+        // Callee prologue sw / not-% sh
+        // dest-miss 0x9A / 0x80320A40 —
+        // no invent. Dump-true walk ALU +
+        // overlay peek; skip dest-miss
+        // store; shadow $sp slots; skip
+        // helper jals / 0x800423F0; then
+        // leftover list-insert sw at
+        // 0x800151D0 so Hive logs
+        // e000-0288 like 8cae3af.
+        // Refuse ProgressLeave 3F78C+
+        // until e000. Keep RetCallerRa
+        // inDelay once e000 logs.
+        public static bool TryTakeDumpMemBadACalleeContinue(MipsBus bus,
+            uint[] regs, uint pc, uint insn, bool inDelay, ref uint cpuPc)
+        {
+            if (!_leftoverWait99O32NkCoredllSawEntry || !_abs6670JalTakenLogged)
+                return false;
+            if (!_badAJalContinueLogged || _badACalleeContinueLogged)
+                return false;
+            if (_c000E000SkipLogged)
+                return false;
+            if (inDelay)
+                return false;
+            if (pc != CoredllDllMainBadAJalDest)
+                return false;
+            if (IsDumpMemRefuseVa(pc) || IsLeftoverDestVa(pc)
+                || IsWrapDestSize(pc) || IsWrapDestFp50Va(pc))
+                return false;
+            uint first = 0;
+            if (!TryPeekLeftoverWait99DumpOnly(CoredllDllMainBadAJalDest, out first)
+                || first == 0)
+                return false;
+            if (!IsDumpMemAluInsn(first))
+                return false;
+            if (insn != 0 && insn != first && !IsDumpMemAluInsn(insn)
+                && !IsMipsAbsRs0Store(insn) && !IsMipsLoad(insn)
+                && !IsMipsStore(insn) && !IsMipsJumpOrJr(insn))
+                return false;
+            TrySaveBadAListInsertGprs(regs);
+            if (!TryWalkDumpMemBadACallee(bus, regs, pc))
+                return false;
+            if (!TryResumeBadAListInsert(bus, regs, pc, ref cpuPc))
+                return false;
+            _badACalleeContinueLogged = true;
+            _leftoverWait99O32NkChainLast = pc ^ CoredllDllMainVa;
+            _leftoverWait99O32NkChainVia = "bada-callee-continue";
+            _leftoverWait99O32NkChainName = "coredll.dll";
+            BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk bad-a callee-continue" +
+                " pc=0x" + pc.ToString("X") +
+                " next=0x" + cpuPc.ToString("X") +
+                " ra=0x" + PeekGpr(regs, 31).ToString("X") +
+                " a0=0x" + PeekGpr(regs, 4).ToString("X") +
+                " a1=0x" + PeekGpr(regs, 5).ToString("X") +
+                " s6=0x" + PeekGpr(regs, 22).ToString("X") +
+                " v0=0x" + PeekGpr(regs, 2).ToString("X") +
+                " via=bada-callee-continue" +
+                " (dump-true 0x80042920 through list-insert" +
+                " 0x800151D0; skip dest-miss 9A/8032; skip" +
+                " helper jal / 0x800423F0; refuse ProgressLeave" +
+                " 3F78C+ until e000-0288; no invent E000/F000/SUD;" +
+                " no leftover-hop)");
+            return true;
+        }
+
+        public static bool TrySkipBadABeforeE000DestMissStore(MipsBus bus, uint va)
+        {
+            if (!IsExn15C28BadABeforeE000())
+                return false;
+            if (IsFfffE000ListInsertSkipVa(va) || IsFfffF000ListInsertSkipVa(va))
+                return false;
+            if (!IsExn15C28NoInventPage(va) && !IsExn15C28Na02Frame(va))
+                return false;
+            return true;
+        }
+
+        private static void TrySaveBadAListInsertGprs(uint[] regs)
+        {
+            if (regs == null || _badAListSaved)
+                return;
+            uint a1 = PeekGpr(regs, 5);
+            uint s6 = PeekGpr(regs, 22);
+            _badAWrapperRa = PeekGpr(regs, 31);
+            _badAListA0 = PeekGpr(regs, 4);
+            _badAListV0 = PeekGpr(regs, 2);
+            _badAListS6 = s6;
+            if (IsBadAListInsertResumeVa(a1))
+                _badAListA1 = a1;
+            else if (IsBadAListInsertResumeVa(s6))
+                _badAListA1 = s6;
+            _badAListSaved = true;
+        }
+
+        private static bool IsBadAListInsertResumeVa(uint va)
+        {
+            return IsFfffE000ListInsertSkipVa(va)
+                || IsFfffF000ListInsertSkipVa(va)
+                || IsPage0ListInsertSkipVa(va)
+                || IsLowUsegListInsertSkipVa(va);
+        }
+
+        private static bool IsBadACalleeHelperJalDest(uint dest)
+        {
+            return dest == CoredllDllMainBadASecondJalDest
+                || dest == 0x800426E0u || dest == 0x800595CCu
+                || dest == 0x8003A170u || dest == 0x8004280Cu
+                || dest == 0x80042774u || dest == 0x80058764u
+                || dest == 0x80048128u || dest == 0x80048174u
+                || dest == 0x80048198u;
+        }
+
+        private static bool TryPeekLeftoverWait99DumpHalf(uint va, out ushort half)
+        {
+            half = 0;
+            uint word = 0;
+            uint aligned = va & ~3u;
+            if ((va & 1) != 0)
+                return false;
+            if (!TryPeekLeftoverWait99DumpOnly(aligned, out word))
+                return false;
+            half = (ushort)(((va & 2) != 0) ? (word >> 16) : word);
+            return true;
+        }
+
+        private static bool TryWalkDumpMemBadACallee(MipsBus bus, uint[] regs,
+            uint startPc)
+        {
+            if (regs == null || startPc != CoredllDllMainBadAJalDest)
+                return false;
+            uint[] shadow = new uint[32];
+            bool[] shadowHit = new bool[32];
+            uint pc = startPc;
+            PokeGpr(regs, 31, CoredllDllMainBadACallerRa);
+            for (int step = 0; step < 8192; step++)
+            {
+                if ((pc & 3) != 0 || IsDumpMemRefuseVa(pc)
+                    || IsLeftoverDestVa(pc) || IsWrapDestSize(pc)
+                    || IsWrapDestFp50Va(pc) || IsExn15C28NoInventPage(pc))
+                    return true;
+                if (IsExn15C28RetCallerRaCapLeave(pc))
+                    return true;
+                uint insn = 0;
+                if (!TryPeekLeftoverWait99DumpOnly(pc, out insn))
+                    return true;
+                uint op = insn >> 26;
+                uint fn = insn & 63;
+                int rs = (int)((insn >> 21) & 31);
+                int rt = (int)((insn >> 16) & 31);
+                int simm = (short)(insn & 0xFFFF);
+                uint rsv = PeekGpr(regs, rs);
+                uint ea = rsv + (uint)simm;
+                uint sp = PeekGpr(regs, 29);
+                if (op == 3)
+                {
+                    uint dest = (pc & 0xF0000000u) | ((insn & 0x03FFFFFFu) << 2);
+                    uint delay = 0;
+                    TryPeekLeftoverWait99DumpOnly(pc + 4, out delay);
+                    if (delay != 0 && !TryExecBadACalleeMemOrAlu(regs, delay,
+                            shadow, shadowHit, PeekGpr(regs, 29)))
+                        return true;
+                    if (dest == CoredllDllMainBadAListInsert
+                        || dest == CoredllDllMainC000Epc)
+                        return true;
+                    if (IsBadACalleeHelperJalDest(dest)
+                        || dest == CoredllDllMainBadAJalDest)
+                    {
+                        if (dest == CoredllDllMainBadASecondJalDest
+                            || dest == 0x800426E0u)
+                        {
+                            pc = CoredllDllMainBadACalleeEpi;
+                            if (pc == startPc)
+                                return true;
+                            continue;
+                        }
+                        pc += 8;
+                        continue;
+                    }
+                    pc += 8;
+                    continue;
+                }
+                if (op == 0 && fn == 8 && rs == 31)
+                {
+                    uint delay = 0;
+                    TryPeekLeftoverWait99DumpOnly(pc + 4, out delay);
+                    if (delay != 0 && !TryExecBadACalleeMemOrAlu(regs, delay,
+                            shadow, shadowHit, PeekGpr(regs, 29)))
+                        return true;
+                    return true;
+                }
+                if (op == 2)
+                {
+                    uint dest = (pc & 0xF0000000u) | ((insn & 0x03FFFFFFu) << 2);
+                    uint delay = 0;
+                    TryPeekLeftoverWait99DumpOnly(pc + 4, out delay);
+                    if (delay != 0 && !TryExecBadACalleeMemOrAlu(regs, delay,
+                            shadow, shadowHit, PeekGpr(regs, 29)))
+                        return true;
+                    if (dest == 0 || (dest & 3) != 0 || IsDumpMemRefuseVa(dest)
+                        || IsExn15C28NoInventPage(dest)
+                        || IsExn15C28RetCallerRaCapLeave(dest))
+                        return true;
+                    pc = dest;
+                    continue;
+                }
+                if (op == 4 || op == 5 || op == 6 || op == 7)
+                {
+                    uint delay = 0;
+                    TryPeekLeftoverWait99DumpOnly(pc + 4, out delay);
+                    if (delay != 0 && !TryExecBadACalleeMemOrAlu(regs, delay,
+                            shadow, shadowHit, PeekGpr(regs, 29)))
+                        return true;
+                    uint rtv = PeekGpr(regs, rt);
+                    bool take = false;
+                    if (op == 4)
+                        take = rsv == rtv;
+                    else if (op == 5)
+                        take = rsv != rtv;
+                    else if (op == 6)
+                        take = (int)rsv <= 0;
+                    else
+                        take = (int)rsv > 0;
+                    uint target = unchecked(pc + 4u + (uint)(simm * 4));
+                    if (take && (target & 3) == 0
+                        && !IsDumpMemRefuseVa(target)
+                        && !IsExn15C28NoInventPage(target)
+                        && !IsExn15C28RetCallerRaCapLeave(target))
+                        pc = target;
+                    else
+                        pc += 8;
+                    continue;
+                }
+                if (pc == 0x80042994u)
+                {
+                    pc = CoredllDllMainBadACalleeEpi;
+                    continue;
+                }
+                if (!TryExecBadACalleeMemOrAlu(regs, insn, shadow, shadowHit, sp))
+                    return true;
+                pc += 4;
+                if (pc == CoredllDllMainBadASecondJalPc)
+                {
+                    uint delay = CoredllDllMainBadASecondJalDelayDump;
+                    if (IsDumpMemAluInsn(delay))
+                        TryExecDumpMemAlu(regs, delay);
+                    return true;
+                }
+            }
+            return true;
+        }
+
+        private static bool TryExecBadACalleeMemOrAlu(uint[] regs, uint insn,
+            uint[] shadow, bool[] shadowHit, uint sp)
+        {
+            if (insn == 0)
+                return true;
+            if (IsDumpMemAluInsn(insn))
+                return TryExecDumpMemAlu(regs, insn);
+            uint op = insn >> 26;
+            int rs = (int)((insn >> 21) & 31);
+            int rt = (int)((insn >> 16) & 31);
+            int simm = (short)(insn & 0xFFFF);
+            uint ea = PeekGpr(regs, rs) + (uint)simm;
+            if (IsMipsStore(insn))
+            {
+                if (IsFfffE000ListInsertSkipVa(ea)
+                    || IsFfffF000ListInsertSkipVa(ea))
+                    return true;
+                if (IsExn15C28NoInventPage(ea) || IsExn15C28Na02Frame(ea))
+                {
+                    TryShadowBadASpStore(shadow, shadowHit, sp, ea,
+                        PeekGpr(regs, rt));
+                    return true;
+                }
+                TryShadowBadASpStore(shadow, shadowHit, sp, ea,
+                    PeekGpr(regs, rt));
+                return true;
+            }
+            if (IsMipsLoad(insn))
+            {
+                uint word = 0;
+                if (TryLoadBadASpShadow(shadow, shadowHit, sp, ea, out word))
+                {
+                    if (op == 0x25 || op == 0x21)
+                    {
+                        ushort half = (ushort)(((ea & 2) != 0) ? (word >> 16) : word);
+                        if (op == 0x21)
+                            PokeGpr(regs, rt, (uint)(short)half);
+                        else
+                            PokeGpr(regs, rt, half);
+                    }
+                    else
+                        PokeGpr(regs, rt, word);
+                    return true;
+                }
+                if (op == 0x25 || op == 0x21)
+                {
+                    ushort half = 0;
+                    if (TryPeekLeftoverWait99DumpHalf(ea, out half))
+                    {
+                        if (op == 0x21)
+                            PokeGpr(regs, rt, (uint)(short)half);
+                        else
+                            PokeGpr(regs, rt, half);
+                    }
+                    return true;
+                }
+                if (TryPeekLeftoverWait99DumpOnly(ea, out word))
+                    PokeGpr(regs, rt, word);
+                return true;
+            }
+            return true;
+        }
+
+        private static void TryShadowBadASpStore(uint[] shadow, bool[] shadowHit,
+            uint sp, uint ea, uint val)
+        {
+            if (shadow == null || shadowHit == null || ea < sp)
+                return;
+            uint off = ea - sp;
+            if (off > 124 || (off & 3) != 0)
+                return;
+            int i = (int)(off >> 2);
+            shadow[i] = val;
+            shadowHit[i] = true;
+        }
+
+        private static bool TryLoadBadASpShadow(uint[] shadow, bool[] shadowHit,
+            uint sp, uint ea, out uint val)
+        {
+            val = 0;
+            if (shadow == null || shadowHit == null || ea < sp)
+                return false;
+            uint off = ea - sp;
+            if (off > 124 || (off & 3) != 0)
+                return false;
+            int i = (int)(off >> 2);
+            if (!shadowHit[i])
+                return false;
+            val = shadow[i];
+            return true;
+        }
+
+        private static bool TryResumeBadAListInsert(MipsBus bus, uint[] regs,
+            uint fromPc, ref uint cpuPc)
+        {
+            uint a1 = _badAListA1;
+            uint s6 = _badAListS6 != 0 ? _badAListS6 : PeekGpr(regs, 22);
+            if (!IsBadAListInsertResumeVa(a1) && IsBadAListInsertResumeVa(s6))
+                a1 = s6;
+            if (!IsBadAListInsertResumeVa(a1))
+            {
+                uint liveS6 = PeekGpr(regs, 22);
+                if (IsBadAListInsertResumeVa(liveS6))
+                    a1 = liveS6;
+            }
+            uint leave = CoredllDllMainC000Epc;
+            if (IsBadAListInsertResumeVa(a1))
+            {
+                uint v0 = _badAListV0;
+                if ((v0 & 0xFFu) == 0)
+                    v0 = _badAListS6;
+                if ((v0 & 0xFFu) == 0)
+                    v0 = a1;
+                if ((v0 & 0xFFu) == 0)
+                    v0 = PeekGpr(regs, 2);
+                if (_badAListA0 != 0 && !IsExn15C28NoInventPage(_badAListA0)
+                    && (_badAListA0 & ~0xFFFu) != 0)
+                    PokeGpr(regs, 4, _badAListA0);
+                PokeGpr(regs, 5, a1);
+                if ((v0 & 0xFFu) != 0)
+                    PokeGpr(regs, 2, v0);
+                if ((v0 & 0xFFu) != 0 && bus != null)
+                {
+                    if (IsFfffE000ListInsertSkipVa(a1))
+                        TrySkipFfffE000ListInsertStore(bus, a1, v0);
+                    else if (IsFfffF000ListInsertSkipVa(a1))
+                        TrySkipFfffF000ListInsertStore(bus, a1, v0);
+                    else if (IsPage0ListInsertSkipVa(a1))
+                        TrySkipPage0ListInsertStore(bus, a1, v0);
+                    else if (IsLowUsegListInsertSkipVa(a1))
+                        TrySkipLowUsegListInsertStore(bus, a1, v0);
+                }
+                leave = CoredllDllMainC000Epc;
+            }
+            else
+            {
+                uint ra = _badAWrapperRa;
+                if (ra == 0)
+                    ra = PeekGpr(regs, 31);
+                if (RefuseExn15C28BadABeforeE000Yank(fromPc, ra))
+                    ra = 0;
+                if (ra != 0 && (ra & 3) == 0 && !IsDumpMemRefuseVa(ra)
+                    && !IsExn15C28NoInventPage(ra) && !IsLeftoverDestVa(ra)
+                    && !IsWrapDestSize(ra) && !IsWrapDestFp50Va(ra)
+                    && !IsExn15C28RetCallerRaCapLeave(ra)
+                    && ra != CoredllDllMainBadAJalDest
+                    && ra != CoredllDllMainBadACallerRa
+                    && ra != CoredllDllMainBadASecondJalPc
+                    && ra != CoredllDllMainBadAWrapperEpi)
+                    leave = ra;
+                else
+                    leave = CoredllDllMainBadAWrapperCallerRa;
+            }
+            if (leave == 0 || (leave & 3) != 0 || IsDumpMemRefuseVa(leave)
+                || IsLeftoverDestVa(leave) || IsWrapDestSize(leave)
+                || IsWrapDestFp50Va(leave)
+                || IsExn15C28RetCallerRaCapLeave(leave)
+                || leave == CoredllDllMainBadAJalDest)
+                return false;
+            if (bus != null)
+            {
+                uint epc = bus.PeekEpc();
+                if (epc != 0 && (epc & 3) == 0)
+                    bus.ClearExlIfEpc(epc);
+                bus.ClearExlIfEpc(fromPc);
+            }
+            cpuPc = leave;
             return true;
         }
 
@@ -42703,7 +43141,14 @@ namespace ProcessorEmulator.Core
             _badARestoreLogged = false;
             _badASkipLogged = false;
             _badAJalContinueLogged = false;
+            _badACalleeContinueLogged = false;
             _badABeforeE000YankLogged = false;
+            _badAListSaved = false;
+            _badAWrapperRa = 0;
+            _badAListA0 = 0;
+            _badAListA1 = 0;
+            _badAListV0 = 0;
+            _badAListS6 = 0;
             _abs6670ExnLogged = false;
             _c000Kseg = 0;
             _c000Logged = false;
@@ -49028,7 +49473,14 @@ namespace ProcessorEmulator.Core
         private static bool _badARestoreLogged;
         private static bool _badASkipLogged;
         private static bool _badAJalContinueLogged;
+        private static bool _badACalleeContinueLogged;
         private static bool _badABeforeE000YankLogged;
+        private static bool _badAListSaved;
+        private static uint _badAWrapperRa;
+        private static uint _badAListA0;
+        private static uint _badAListA1;
+        private static uint _badAListV0;
+        private static uint _badAListS6;
         private static bool _abs6670ExnLogged;
         private static uint _c000Kseg;
         private static bool _c000Logged;
