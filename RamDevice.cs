@@ -12,7 +12,7 @@ namespace ProcessorEmulator.Emulation
         {
             StartAddress = startAddress;
             Size = size;
-            _memory = new byte[(long)size];
+            _memory = new byte[size];
         }
 
         public uint Read32(uint offset)
