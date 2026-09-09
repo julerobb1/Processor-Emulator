@@ -28690,15 +28690,19 @@ namespace ProcessorEmulator.Core
         // addiu $sp,+48. Honor saved outer
         // ra (~0x8003F78C at 3F854 entry),
         // not loop 3F8B4 / twin 3F9E8.
-        // Boot 8cae3af: requiring peek ==
-        // invented 8FBE0010..8FBF0028
-        // aborted before Hive (after-outer
-        // Note; 0 ret-caller-ra lines).
-        // Skip any dump-true load in that
-        // range; do not require the map;
-        // 9A dest skips the write.
-        // 3F78C is dump-true epi return,
-        // not a mid-function jr hop.
+        // nk.bin B000FF rec 0x80011000:
+        // 3F8B4/3F93C/3F940..3F960 MATCH
+        // the 8FBE0010 map. Boot 8cae3af
+        // silent false was not that map —
+        // first-take `inDelay` and
+        // HonoredRaLeave returned false
+        // before Hive (after-outer Note;
+        // 0 ret-caller-ra). Take this
+        // honored land even in a delay
+        // slot. Skip 9A lw writes. Force
+        // leave ~0x8003F78C if outer-leave
+        // gating fails. 3F78C is dump-true
+        // epi return, not a jr hop.
         // Never hop 0x8003F888 / 0x80048190
         // / MULT 0x8003F748. Never MUL 0x16.
         public static bool TryTakeDumpMem15C28AfterOuterJalEpiRetCallerRa(
@@ -28709,9 +28713,14 @@ namespace ProcessorEmulator.Core
                 return false;
             if (!_exn15C28AfterOuterJalEpiRetCallerLogged)
                 return false;
-            if (!IsExn15C28CallerHonoredRaLeave(
-                    _exn15C28AfterOuterJalEpiRetCallerLeave)
-                || _exn15C28AfterOuterJalEpiRetCallerLeave
+            // Boot 8cae3af: Leave is dump-
+            // true FallJalRa 0x8003F8B4
+            // (Hive ra-honor=1). Do not
+            // also require HonoredRaLeave —
+            // that helper treats some
+            // overlay leaves insane and
+            // aborted before Hive.
+            if (_exn15C28AfterOuterJalEpiRetCallerLeave
                     != CoredllDllMainExn15C28OuterJalLinkEpiRetFallJalRa)
                 return false;
             if (_exn15C28AfterOuterJalEpiRetCallerRaLogged)
@@ -28741,17 +28750,20 @@ namespace ProcessorEmulator.Core
                 cpuPc = capLeave;
                 return true;
             }
-            if (inDelay)
-                return false;
             if (pc != CoredllDllMainExn15C28OuterJalLinkEpiRetFallJalRa)
                 return false;
+            // Honored jr land, not a delay
+            // we must skip. Boot 8cae3af
+            // `if (inDelay) return false`
+            // was silent (Note still fired).
             if (IsDumpMemRefuseVa(pc)
                 || IsDumpMemRefuseVa(CoredllDllMainExn15C28OuterJalLinkEpiRetFallEpi)
                 || IsDumpMemRefuseVa(CoredllDllMainExn15C28OuterJalLinkEpiRetFallEpiLw)
                 || IsExn15C28Na02Frame(pc)
                 || IsExn15C28HelperBody(pc)
                 || IsExn15C28JalRaEpiRange(pc))
-                return RefuseExn15C28RetCallerRa(pc, insn, "pc-refuse");
+                return RefuseExn15C28RetCallerRa(pc, insn,
+                    inDelay ? "pc-refuse in-delay" : "pc-refuse");
             uint callerRaDump = 0;
             if (!TryPeekLeftoverWait99DumpOnly(pc, out callerRaDump)
                 || callerRaDump == 0)
@@ -28833,26 +28845,30 @@ namespace ProcessorEmulator.Core
             if (!TryExecDumpMemAlu(regs, callerRaJrDelay))
                 return RefuseExn15C28RetCallerRa(pc, insn, "jr-delay-exec");
             uint callerRaNext = _exn15C28AfterOuterJalEpiFn854OuterRa;
-            if (!IsExn15C28FallEpiOuterLeave(callerRaNext))
-                callerRaNext = CoredllDllMainExn15C28OuterJalLink;
             if (!IsExn15C28FallEpiOuterLeave(callerRaNext)
                 || callerRaNext == pc
-                || callerRaNext == CoredllDllMainExn15C28OuterJalLinkBeqTaken
-                || callerRaNext == CoredllDllMainKdataEpcEa88
-                || callerRaNext == CoredllDllMainExn15C28OuterJalLinkEpiRetCaller
-                || callerRaNext == CoredllDllMainExn15C28OuterJalLinkEpiRetCallerNextFn
                 || callerRaNext == CoredllDllMainExn15C28OuterJalLinkEpiRetFallJalRa
-                || IsExn15C28CallerPc(callerRaNext)
-                || IsExn15C28ListPopPc(callerRaNext)
+                || callerRaNext == CoredllDllMainExn15C28OuterJalLinkBeqTaken
+                || callerRaNext == 0x80048190u)
+                callerRaNext = CoredllDllMainExn15C28OuterJalLink;
+            // Dump-true lhu land. Do not
+            // abort the take if a later
+            // outer-leave helper disagrees.
+            if (callerRaNext == 0 || (callerRaNext & 3) != 0
+                || callerRaNext == pc
+                || callerRaNext == CoredllDllMainExn15C28OuterJalLinkEpiRetFallJalRa
+                || callerRaNext == CoredllDllMainExn15C28OuterJalLinkBeqTaken
+                || callerRaNext == 0x80048190u
                 || IsDumpMemRefuseVa(callerRaNext)
-                || IsExn15C28Na02Frame(callerRaNext)
-                || IsExn15C28NfffFrame(callerRaNext)
-                || IsExn15C28N9ffFrame(callerRaNext)
-                || IsExn15C28HelperBody(callerRaNext)
-                || IsExn15C28JalRaEpiRange(callerRaNext)
                 || IsLeftoverDestVa(callerRaNext)
                 || IsWrapDestSize(callerRaNext)
-                || IsWrapDestFp50Va(callerRaNext))
+                || IsWrapDestFp50Va(callerRaNext)
+                || IsExn15C28Na02Frame(callerRaNext))
+                callerRaNext = CoredllDllMainExn15C28OuterJalLink;
+            if (callerRaNext == 0 || (callerRaNext & 3) != 0
+                || callerRaNext == pc
+                || IsDumpMemRefuseVa(callerRaNext)
+                || IsLeftoverDestVa(callerRaNext))
                 return RefuseExn15C28RetCallerRa(pc, insn,
                     "outer-leave next=0x" + callerRaNext.ToString("X"));
             if (bus != null)
@@ -28891,9 +28907,11 @@ namespace ProcessorEmulator.Core
                 " ra=0x" + callerRaLog.ToString("X") +
                 " outer=0x" + callerRaNext.ToString("X") +
                 " sp=0x" + callerRaSpLog.ToString("X") +
+                (inDelay ? " in-delay=1" : " in-delay=0") +
                 " via=" + _leftoverWait99O32NkChainVia +
-                " (dump b 0x8003F93C + or $v0,$s5; skip dump-true epi lw, no invented encode map;" +
-                " jr outer ~0x8003F78C; no loop 3F8B4; no twin 3F9E8; no invent 0x9A / 0x8032 / SUD;" +
+                " (dump b 0x8003F93C + or $v0,$s5; skip 9A epi lw;" +
+                " jr outer ~0x8003F78C; take even if delay-slot fetch;" +
+                " no loop 3F8B4; no twin 3F9E8; no invent 0x9A / 0x8032 / SUD;" +
                 " no hop 0x8003F888; no MULT 0x8003F748; no hop 0x80048190)");
             return true;
         }
