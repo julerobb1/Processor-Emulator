@@ -4337,6 +4337,8 @@ namespace ProcessorEmulator.Core
             // Live c710c07: dest-word 0 at dest0/dest6;
             // dest10 word 0x806F0000 is a kseg pointer, not MZ.
             // Count host stores from this jal until ret.
+            if (bus == null)
+                return;
             BeginDdiNopDecompStoreWatch(bus);
             TryHuntDdiNopModuleFromRegs(bus, regs);
         }
@@ -4436,7 +4438,7 @@ namespace ProcessorEmulator.Core
             catch
             {
             }
-            if (dest == 0x01981000u)
+            if (dest == 0x01981000u && bus != null && regs != null)
             {
                 TryMeasureDdiNopDestAfterDecomp(bus, hdr, v0);
                 TryServeDdiNopAtDecompRet(bus, regs);
@@ -42079,7 +42081,8 @@ namespace ProcessorEmulator.Core
             if (slot.Data != null && slot.Data.Length > 0
                 && slot.Data[0] != null && slot.Data[0].Length > 0)
                 hdr = slot.Data[0][0];
-            if (NamesMatchRom(slot.Name, "ddi_nop.dll") && dest0 == 0x01981000u)
+            if (NamesMatchRom(slot.Name, "ddi_nop.dll") && dest0 == 0x01981000u
+                && bus != null)
                 TryMeasureDdiNopDestAfterDecomp(bus, hdr, _ddiNopDecompVsize);
             uint wordDump = PeekDestWordRaw(bus, destDump, out _);
             uint word0 = PeekDestWordRaw(bus, dest0, out _);
