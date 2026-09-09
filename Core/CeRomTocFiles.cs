@@ -2400,9 +2400,12 @@ namespace ProcessorEmulator.Core
         // zero (empty → v0=0); skip
         // re-enter 0x8003F854 (FALL
         // already logged); skip 9A epi;
-        // honor sane ra else leave
-        // 0x8003F9E8. No MUL 0x16. No
-        // hop 0x80048190 / 0x8003F78C.
+        // jr $ra + delay addiu $sp,32;
+        // honor sane 0x800xxxxx ra
+        // (Boot 90d6470 live 0x8003F8B4)
+        // else leave 0x8003F9E8. No MUL
+        // 0x16. No hop 0x80048190 /
+        // 0x8003F78C.
         public const uint CoredllDllMainExn15C28OuterJalLinkEpiRetCaller = 0x8003F964;
         public const uint CoredllDllMainExn15C28OuterJalLinkEpiRetCallerDump = 0x27BDFFE0;
         public const uint CoredllDllMainExn15C28OuterJalLinkEpiRetCallerSwRa = 0x8003F968;
@@ -14767,9 +14770,11 @@ namespace ProcessorEmulator.Core
                         || nfffLeave != CoredllDllMainExn15C28OuterJalLinkEpiA2Sw)
                     && (!_exn15C28AfterOuterJalEpiRetCallerNextFnLogged
                         || nfffLeave != CoredllDllMainExn15C28OuterJalLinkEpiRetCallerNextFn)
+                    && (!IsExn15C28CallerHonoredRaLeave(
+                            _exn15C28AfterOuterJalEpiRetCallerLeave)
+                        || nfffLeave != CoredllDllMainExn15C28OuterJalLinkEpiRetCallerNextFn)
                     && (!_exn15C28AfterOuterJalEpiRetCallerLogged
                         || (nfffLeave != CoredllDllMainExn15C28OuterJalLinkEpiRetCaller
-                            && nfffLeave != CoredllDllMainExn15C28OuterJalLinkEpiRetFallJalRa
                             && nfffLeave != CoredllDllMainExn15C28OuterJalLinkEpiRetCallerJalRa
                             && nfffLeave != CoredllDllMainExn15C28OuterJalLinkEpiRetCallerListPop
                             && nfffLeave != CoredllDllMainExn15C28OuterJalLinkEpiRetCallerListPopLw
@@ -14778,7 +14783,8 @@ namespace ProcessorEmulator.Core
                     && (!_exn15C28AfterOuterJalEpiRetFallLogged
                         || (nfffLeave != CoredllDllMainExn15C28OuterJalLinkEpiRetBneFall
                             && nfffLeave != CoredllDllMainExn15C28OuterJalLinkEpiRetBneFallNext
-                            && nfffLeave != CoredllDllMainExn15C28OuterJalLinkEpiRetFallJalRa
+                            && (nfffLeave != CoredllDllMainExn15C28OuterJalLinkEpiRetFallJalRa
+                                || _exn15C28AfterOuterJalEpiRetCallerLogged)
                             && (!_exn15C28AfterOuterJalEpiRetCallerLogged
                                 || nfffLeave != CoredllDllMainExn15C28OuterJalLinkEpiRetCaller)))
                     && (!_exn15C28AfterOuterJalEpiRetBneLogged
@@ -15681,6 +15687,13 @@ namespace ProcessorEmulator.Core
         // progress.
         private static uint DumpMem15C28OuterJalProgressLeave()
         {
+            // Boot 90d6470: fat caller jr $ra honored
+            // 0x8003F8B4. Cap after-stk / twin
+            // 0x8003F9E8 must re-enter that ra,
+            // not fall through into the next fn.
+            if (IsExn15C28CallerHonoredRaLeave(
+                    _exn15C28AfterOuterJalEpiRetCallerLeave))
+                return _exn15C28AfterOuterJalEpiRetCallerLeave;
             if (_exn15C28AfterOuterJalEpiRetCallerNextFnLogged
                 || _exn15C28AfterOuterJalEpiRetCallerNextFnNextLogged)
             {
@@ -27837,11 +27850,15 @@ namespace ProcessorEmulator.Core
                 || IsDumpMemRefuseVa(a0) || (a0 & 3) != 0 || a0 >= 0x10000u;
         }
 
+        // Boot 90d6470: live $ra 0x8003F8B4
+        // (FALL jal-link / dump b 0x8003F93C)
+        // is sane. Do not treat it as insane
+        // (that forced fall-through leave at
+        // twin 0x8003F9E8 and TLBS 0x800151D0).
         private static bool IsExn15C28CallerInsaneLeave(uint leave)
         {
             return leave == 0 || (leave & 3) != 0
                 || leave == CoredllDllMainExn15C28OuterJalLinkEpiRetCaller
-                || leave == CoredllDllMainExn15C28OuterJalLinkEpiRetFallJalRa
                 || leave == CoredllDllMainExn15C28OuterJalLink
                 || leave == CoredllDllMainExn15C28OuterJalLinkBeqTaken
                 || leave == CoredllDllMainExn15C28JalS1AluNext
@@ -27852,12 +27869,23 @@ namespace ProcessorEmulator.Core
                 || leave == CoredllDllMainExn15C28OuterJalLinkEpiBeqBneFallJrNext
                 || leave == CoredllDllMainExn15C28OuterJalLinkEpiRetCallerJalRa
                 || IsExn15C28CallerPc(leave) || IsExn15C28ListPopPc(leave)
-                || IsExn15C28RetFallPc(leave) || IsExn15C28TrampolinePc(leave)
+                || (IsExn15C28RetFallPc(leave)
+                    && leave != CoredllDllMainExn15C28OuterJalLinkEpiRetFallJalRa)
+                || IsExn15C28TrampolinePc(leave)
                 || IsDumpMemRefuseVa(leave) || IsExn15C28Na02Frame(leave)
                 || IsExn15C28NfffFrame(leave) || IsExn15C28N9ffFrame(leave)
                 || IsExn15C28HelperBody(leave) || IsExn15C28JalRaEpiRange(leave)
                 || IsLeftoverDestVa(leave) || IsWrapDestSize(leave)
                 || IsWrapDestFp50Va(leave);
+        }
+
+        private static bool IsExn15C28CallerHonoredRaLeave(uint leave)
+        {
+            return leave != 0 && (leave & 3) == 0
+                && leave != CoredllDllMainExn15C28OuterJalLinkEpiRetCaller
+                && leave != CoredllDllMainExn15C28OuterJalLinkEpiRetCallerNextFn
+                && leave >= 0x80011000u && leave < 0x8005AB44u
+                && !IsExn15C28CallerInsaneLeave(leave);
         }
 
         private static bool TryExecDumpMem15C28CallerListPop(uint[] regs,
@@ -28004,10 +28032,14 @@ namespace ProcessorEmulator.Core
         // delay a0:=s7+8 then list-pop
         // peek-or-zero; skip 3F854
         // re-enter (FALL already logged);
-        // honor sane ra else 0x8003F9E8.
-        // Break after-stk 3F964 loop. No
-        // invent 0x8032 / 0x9A / 0x99FF.
-        // No MUL 0x16. No hop 0x80048190.
+        // jr $ra + delay addiu $sp,+32;
+        // honor sane ra (0x8003F8B4) else
+        // 0x8003F9E8. Do not fall through
+        // into twin 0x8003F9E8 when ra is
+        // sane (TLBS 0x800151D0). Break
+        // after-stk 3F964 loop. No invent
+        // 0x8032 / 0x9A / 0x99FF. No MUL
+        // 0x16. No hop 0x80048190.
         public static bool TryTakeDumpMem15C28AfterOuterJalEpiRetCaller(MipsBus bus,
             uint[] regs, uint pc, uint insn, bool inDelay, ref uint cpuPc)
         {
@@ -28028,10 +28060,11 @@ namespace ProcessorEmulator.Core
                     || IsExn15C28CallerPc(capLeave) || IsExn15C28ListPopPc(capLeave)
                     || capLeave == CoredllDllMainExn15C28OuterJalLinkEpiRetBneFall
                     || capLeave == CoredllDllMainExn15C28OuterJalLinkEpiRetBneFallNext
-                    || capLeave == CoredllDllMainExn15C28OuterJalLinkEpiRetFallJalRa
                     || capLeave == CoredllDllMainKdataEpcEa88
                     || (capLeave == CoredllDllMainExn15C28OuterJalLinkEpiRetCallerNextFn
-                        && _exn15C28AfterOuterJalEpiRetCallerNextFnLogged))
+                        && (_exn15C28AfterOuterJalEpiRetCallerNextFnLogged
+                            || IsExn15C28CallerHonoredRaLeave(
+                                _exn15C28AfterOuterJalEpiRetCallerLeave))))
                     return false;
                 cpuPc = capLeave;
                 return true;
@@ -28298,14 +28331,13 @@ namespace ProcessorEmulator.Core
             if (!TryExecDumpMemAlu(regs, callerEpiJrDelay))
                 return false;
             uint callerRa = PeekGpr(regs, 31);
-            uint callerLeave = CoredllDllMainExn15C28OuterJalLinkEpiRetCallerNextFn;
-            bool callerRaHonor = !IsExn15C28CallerInsaneLeave(callerRa);
-            if (callerRaHonor)
-                callerLeave = callerRa;
-            if (IsExn15C28CallerInsaneLeave(callerLeave))
-                callerLeave = CoredllDllMainExn15C28OuterJalLinkEpiRetCallerNextFn;
-            if (IsExn15C28CallerInsaneLeave(callerLeave)
-                || callerLeave == CoredllDllMainExn15C28OuterJalLinkEpiRetCaller)
+            bool callerRaHonor = IsExn15C28CallerHonoredRaLeave(callerRa);
+            uint callerLeave = callerRaHonor
+                ? callerRa
+                : CoredllDllMainExn15C28OuterJalLinkEpiRetCallerNextFn;
+            if (!callerRaHonor && IsExn15C28CallerInsaneLeave(callerLeave))
+                return false;
+            if (callerLeave == CoredllDllMainExn15C28OuterJalLinkEpiRetCaller)
                 return false;
             if (bus != null)
             {
@@ -28421,18 +28453,17 @@ namespace ProcessorEmulator.Core
                 " no jr hop 0x8003F78C; no hop 0x80048190; no invent 0x8032 / 0x9A / 0x99FF / SUD)");
         }
 
-        // Live 749ad1b: addiu $sp,$sp,-24
-        // at 0x8003F9E8 named only. Exec
-        // dump-true ALU $sp:=$sp-24. $sp
-        // may stay 0x9A (ALU write only;
-        // do not invent 0x9A page).
-        // PC:=0x8003F9EC observe. Refuse
-        // leftover / MULT 0x8003F748 /
-        // jr hop 0x8003F78C / hop
-        // 0x8003F888 / 0x80048190 /
-        // SPECIAL 0x16. After addiu, cap
-        // leaves >=0x8003F9EC. Not
-        // LoadO32. No leftover-hop.
+        // Live 749ad1b / d75e3fd: addiu
+        // $sp,$sp,-24 at 0x8003F9E8 only
+        // when fat caller did not honor
+        // jr $ra. Boot 90d6470 honored
+        // ra 0x8003F8B4: yank off twin,
+        // do not exec addiu / jal 151C0.
+        // Else exec dump-true ALU
+        // $sp:=$sp-24; PC:=0x8003F9EC.
+        // Refuse leftover / MULT 0x8003F748
+        // / jr hop 0x8003F78C / hop
+        // 0x80048190 / SPECIAL 0x16.
         public static bool TryTakeDumpMem15C28AfterOuterJalEpiRetCallerNextFn(
             MipsBus bus, uint[] regs, uint pc, uint insn, bool inDelay,
             ref uint cpuPc)
@@ -28441,6 +28472,22 @@ namespace ProcessorEmulator.Core
                 return false;
             if (!_exn15C28AfterOuterJalEpiRetCallerLogged)
                 return false;
+            // Boot 90d6470: honored jr $ra
+            // 0x8003F8B4. Accidental twin
+            // 0x8003F9E8 (jal 0x800151C0 /
+            // 0x80048198) ran with a1=0 →
+            // TLBS 0x800151D0. Yank to ra;
+            // do not exec twin addiu.
+            if (IsExn15C28CallerHonoredRaLeave(
+                    _exn15C28AfterOuterJalEpiRetCallerLeave))
+            {
+                if (inDelay)
+                    return false;
+                if (pc != CoredllDllMainExn15C28OuterJalLinkEpiRetCallerNextFn)
+                    return false;
+                cpuPc = _exn15C28AfterOuterJalEpiRetCallerLeave;
+                return true;
+            }
             if (_exn15C28AfterOuterJalEpiRetCallerNextFnLogged)
             {
                 if (inDelay)
