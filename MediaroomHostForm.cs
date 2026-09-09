@@ -16,10 +16,12 @@ namespace ProcessorEmulator
         private readonly Button _folder;
         private readonly Button _start;
         private readonly Button _stop;
-        private readonly Label _status;
+        private readonly TextBox _status;
         private readonly PictureBox _frame;
         private MediaroomSession _session;
         private Thread _worker;
+        private string _statusFull = "Stopped";
+        private const int StatusDisplayMax = 400;
 
         public string DiskFolder
         {
@@ -58,13 +60,25 @@ namespace ProcessorEmulator
                 _stop.Left = top.ClientSize.Width - 64;
             };
 
-            _status = new Label
+            _status = new TextBox
             {
                 Dock = DockStyle.Bottom,
-                Height = 22,
+                Height = 24,
+                ReadOnly = true,
+                Multiline = false,
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor = SystemColors.Control,
+                ForeColor = SystemColors.ControlText,
                 Text = "Stopped",
-                TextAlign = ContentAlignment.MiddleLeft
+                TabStop = true,
+                ShortcutsEnabled = true,
+                Cursor = Cursors.IBeam
             };
+            var statusCopy = new ToolStripMenuItem("Copy");
+            statusCopy.Click += (_, __) => CopyFullStatus();
+            _status.ContextMenuStrip = new ContextMenuStrip();
+            _status.ContextMenuStrip.Items.Add(statusCopy);
+            _status.DoubleClick += (_, __) => CopyFullStatus();
 
             _frame = new PictureBox
             {
@@ -124,13 +138,29 @@ namespace ProcessorEmulator
                 BootLog.Write("Stopped");
         }
 
+        private void CopyFullStatus()
+        {
+            try
+            {
+                string text = _statusFull;
+                if (!string.IsNullOrEmpty(text))
+                    Clipboard.SetText(text);
+            }
+            catch
+            {
+            }
+        }
+
         private void ShowStatus(string line)
         {
             if (string.IsNullOrEmpty(line))
                 return;
             void apply()
             {
-                _status.Text = line.Length > 140 ? line.Substring(0, 140) : line;
+                _statusFull = line;
+                _status.Text = line.Length > StatusDisplayMax
+                    ? line.Substring(0, StatusDisplayMax - 3) + "..."
+                    : line;
             }
             try
             {
