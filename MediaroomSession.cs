@@ -14,7 +14,8 @@ namespace ProcessorEmulator
     // no SetEvent.
     public sealed class MediaroomSession
     {
-        private const uint RamSize = 2u * 1024u * 1024u * 1024u; // ~2 GiB guest RAM
+        // Just under 2 GiB — .NET byte[] max length is int.MaxValue
+        private const uint RamSize = 2047u * 1024u * 1024u;
         private const uint UartBase = 0xB0000000;
         private const uint UartSize = 0x1000;
         private const int HuntDepth = 3;
@@ -114,10 +115,10 @@ namespace ProcessorEmulator
             GuestVideoWrote = false;
             _status("display ddi_nop.dll ExtraROM TOC[33] stub; guest screen black until a real DDI writes pixels; GuestVideoWrote=false; no framebuffer blit");
             _cpu.SetRegister(MipsCpuEmulator.Register.PC, (uint)loaded.EntryPoint);
-            // 0x80000000+RamSize-0x1000 overflows uint at 2 GiB
-            // and exceeds the 512 MiB KSEG0 window. Keep the
-            // RamDevice at full 2 GiB from phys 0; SP stays at
-            // the top of KSEG0-usable RAM (0x9FFFF000).
+            // 0x80000000+RamSize-0x1000 overflows uint at ~2 GiB
+            // and exceeds the 512 MiB KSEG0 window. RamDevice is
+            // 2047 MiB from phys 0; SP stays at the top of
+            // KSEG0-usable RAM (0x9FFFF000).
             uint kseg0Ram = RamSize > 0x20000000u ? 0x20000000u : RamSize;
             _cpu.SetRegister(MipsCpuEmulator.Register.SP, 0x80000000u + kseg0Ram - 0x1000u);
             _lastPc = (uint)loaded.EntryPoint;

@@ -211,8 +211,9 @@ namespace ProcessorEmulator
                 {
                     _session.Run(feed);
                 }
-                catch
+                catch (Exception ex)
                 {
+                    BootLog.Write("Start: " + ex.GetType().Name + ": " + ex.Message);
                 }
                 finally
                 {
