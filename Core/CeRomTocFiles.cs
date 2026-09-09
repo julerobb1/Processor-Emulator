@@ -12094,9 +12094,26 @@ namespace ProcessorEmulator.Core
         // Do not invent those pages /
         // page 0 / SUD 0xFFFFF000 /
         // 0xFFFFE000.
+        // Boot 0e9d76d: leftover chain /
+        // coredll-page maps hit list-insert
+        // 0x800151D0 a1=0xC0002BC8 TLBS
+        // before nest-1670. Arm dest-miss
+        // skip from leftover entry or that
+        // EPC. Do not invent 0xC0002000.
+        private static bool IsDumpMemListInsertStoreSkipArmed(MipsBus bus)
+        {
+            if (_leftoverWait99O32NkCoredllSawEntry)
+                return true;
+            if (bus == null)
+                return false;
+            uint epc = bus.PeekEpc();
+            return epc == CoredllDllMainC000Epc
+                || epc == CoredllDllMainC000NextPc;
+        }
+
         public static bool TrySkipC0000088Store(MipsBus bus, uint va, uint value)
         {
-            if (!_leftoverWait99O32NkCoredllSawEntry || !_stk1670SbLogged)
+            if (!IsDumpMemListInsertStoreSkipArmed(bus))
                 return false;
             if (!IsC000StoreSkipVa(va))
                 return false;
@@ -12153,7 +12170,7 @@ namespace ProcessorEmulator.Core
         public static bool TrySkipFfffE000ListInsertStore(MipsBus bus, uint va,
             uint value)
         {
-            if (!_leftoverWait99O32NkCoredllSawEntry || !_stk1670SbLogged)
+            if (!IsDumpMemListInsertStoreSkipArmed(bus))
                 return false;
             if (!IsFfffE000ListInsertSkipVa(va))
                 return false;
@@ -12216,7 +12233,7 @@ namespace ProcessorEmulator.Core
         public static bool TrySkipFfffF000ListInsertStore(MipsBus bus, uint va,
             uint value)
         {
-            if (!_leftoverWait99O32NkCoredllSawEntry || !_stk1670SbLogged)
+            if (!IsDumpMemListInsertStoreSkipArmed(bus))
                 return false;
             if (!IsFfffF000ListInsertSkipVa(va))
                 return false;
@@ -12273,7 +12290,7 @@ namespace ProcessorEmulator.Core
         public static bool TrySkipPage0ListInsertStore(MipsBus bus, uint va,
             uint value)
         {
-            if (!_leftoverWait99O32NkCoredllSawEntry || !_stk1670SbLogged)
+            if (!IsDumpMemListInsertStoreSkipArmed(bus))
                 return false;
             if (!IsPage0ListInsertSkipVa(va))
                 return false;
@@ -12325,7 +12342,7 @@ namespace ProcessorEmulator.Core
         public static bool TrySkipLowUsegListInsertStore(MipsBus bus, uint va,
             uint value)
         {
-            if (!_leftoverWait99O32NkCoredllSawEntry || !_stk1670SbLogged)
+            if (!IsDumpMemListInsertStoreSkipArmed(bus))
                 return false;
             if (!IsLowUsegListInsertSkipVa(va))
                 return false;
@@ -12357,6 +12374,100 @@ namespace ProcessorEmulator.Core
                     " (dump sw $v0,0($a1); dest miss; continue" +
                     " sw $a1,0($a0); no invent 0x1000-0xFFFF)");
             }
+            return true;
+        }
+
+        // Boot 0e9d76d: I-fetch 0x800151D0
+        // dump sw $v0,0($a1) a1=0xC0002BC8
+        // TLBS (cause=3) before nest-1670
+        // armed Write32 skip. Dump-true:
+        // dest-miss skip; PC:=0x800151D4
+        // sw $a1,0($a0). Do not invent
+        // C000/E000/F000/SUD/9A. No hop
+        // 0x8003F8B4.
+        public static bool TryTakeDumpMemListInsertDestMiss(MipsBus bus,
+            uint[] regs, uint pc, uint insn, bool inDelay, ref uint cpuPc)
+        {
+            if (pc != CoredllDllMainC000Epc)
+                return false;
+            if (inDelay)
+                return false;
+            if (IsDumpMemRefuseVa(pc)
+                || IsDumpMemRefuseVa(CoredllDllMainC000NextPc))
+                return false;
+            uint dump = 0;
+            if (!TryPeekLeftoverWait99DumpOnly(pc, out dump) || dump == 0)
+                dump = CoredllDllMainC000Dump;
+            if (dump != CoredllDllMainC000Dump)
+                return false;
+            if (insn != 0 && insn != dump && !IsMipsStore(insn)
+                && !IsMipsAbsRs0Store(insn))
+                return false;
+            uint a1 = PeekGpr(regs, 5);
+            uint v0 = PeekGpr(regs, 2);
+            if (a1 == 0 || (a1 & 3) != 0 || IsDumpMemRefuseVa(a1)
+                || IsLeftoverDestVa(a1) || IsWrapDestSize(a1)
+                || IsWrapDestFp50Va(a1))
+                return false;
+            bool list = IsC000StoreSkipVa(a1)
+                || IsFfffE000ListInsertSkipVa(a1)
+                || IsFfffF000ListInsertSkipVa(a1)
+                || IsPage0ListInsertSkipVa(a1)
+                || IsLowUsegListInsertSkipVa(a1);
+            if (!list)
+                return false;
+            if (CanPeekC000StoreDest(bus, a1))
+                return false;
+            bool skipped = false;
+            if (IsFfffE000ListInsertSkipVa(a1))
+                skipped = TrySkipFfffE000ListInsertStore(bus, a1, v0);
+            else if (IsFfffF000ListInsertSkipVa(a1))
+                skipped = TrySkipFfffF000ListInsertStore(bus, a1, v0);
+            else if (IsPage0ListInsertSkipVa(a1))
+                skipped = TrySkipPage0ListInsertStore(bus, a1, v0);
+            else if (IsLowUsegListInsertSkipVa(a1))
+                skipped = TrySkipLowUsegListInsertStore(bus, a1, v0);
+            else
+                skipped = TrySkipC0000088Store(bus, a1, v0);
+            if (!skipped)
+            {
+                uint next = 0;
+                if (!TryPeekLeftoverWait99DumpOnly(CoredllDllMainC000NextPc, out next)
+                    || next == 0)
+                    next = CoredllDllMainC000Next;
+                string via = IsFfffE000ListInsertSkipVa(a1)
+                    ? "e000-store-skip"
+                    : "c000-store-skip";
+                string hive = IsFfffE000ListInsertSkipVa(a1)
+                    ? "e000-0288 store-skip"
+                    : "c000-0088 store-skip";
+                if (IsFfffE000ListInsertSkipVa(a1))
+                    _c000E000SkipLogged = true;
+                else
+                {
+                    _c000SkipLogged = true;
+                    _c000SkipN++;
+                    _c000SkipLast = a1;
+                }
+                BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk " + hive +
+                    " epc=0x" + pc.ToString("X") +
+                    " bad=0x" + a1.ToString("X") +
+                    " word=0x" + dump.ToString("X") +
+                    " next=0x" + next.ToString("X") +
+                    " next-pc=0x" + CoredllDllMainC000NextPc.ToString("X") +
+                    " val=0x" + v0.ToString("X") +
+                    " via=" + via +
+                    " (dump sw $v0,0($a1); dest miss; continue" +
+                    " sw $a1,0($a0); no invent C000/E000/F000/SUD/9A)");
+            }
+            if (bus != null)
+            {
+                uint epc = bus.PeekEpc();
+                if (epc != 0 && (epc & 3) == 0)
+                    bus.ClearExlIfEpc(epc);
+                bus.ClearExlIfEpc(pc);
+            }
+            cpuPc = CoredllDllMainC000NextPc;
             return true;
         }
 
