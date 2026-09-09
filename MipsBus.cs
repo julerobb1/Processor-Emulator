@@ -61,6 +61,18 @@ namespace ProcessorEmulator.Emulation
             return true;
         }
 
+        // Dump-true 0x80014F2C mtc0 $t0,$12
+        // (Status:=rt). Do not invent
+        // KSEG / KData / pages.
+        public bool TryExecDumpMemMtc0Status(uint insn, uint value)
+        {
+            if ((insn >> 26) != 16 || ((insn >> 21) & 31) != 4
+                || ((insn >> 11) & 31) != 12 || _cp0 == null)
+                return false;
+            _cp0.WriteRegister(12, value);
+            return true;
+        }
+
         public bool TryFindTlbPfn(uint vaddr, out uint pfn, out bool valid)
         {
             return _cp0.TryFindTlbPfn(vaddr, out pfn, out valid);
