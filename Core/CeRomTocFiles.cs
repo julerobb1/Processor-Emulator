@@ -1608,6 +1608,21 @@ namespace ProcessorEmulator.Core
         public const uint CoredllDllMainFfff0288 = 0xFFFF0288;
         public const uint CoredllDllMainFfffKdataLo = 0xFFFF0000;
         public const uint CoredllDllMainFfffKdataHi = 0xFFFFDFFF;
+        // Boot c3e1614: after c000-store-skip
+        // ×40 unique dests C000→C005
+        // (climb, not same-VA spin),
+        // list-insert a1=0x14E88
+        // via=exn-tlbs. Same dump
+        // sw $v0,0($a1). Low KUSEG
+        // above 0xFFFF (old 0x1028
+        // cap). Skip dest-miss
+        // 0x1000–0x1FFFF when dest
+        // cannot peek. Do not invent
+        // / map useg / page 0 / E000
+        // / F000 / SUD / 9A. No hop
+        // 0x8003F8B4.
+        public const uint CoredllDllMainLowUseg14E88 = 0x14E88;
+        public const uint CoredllDllMainLowUsegHi = 0x1FFFF;
         // Live 20f3972: after C000 peeks
         // (tlb map 0xC0000000->0x80345000),
         // list-insert a1=0xFFFFE288
@@ -12327,18 +12342,22 @@ namespace ProcessorEmulator.Core
 
         private static bool IsLowUsegListInsertSkipVa(uint va)
         {
-            return va >= 0x1000u && va <= 0xFFFFu;
+            return va >= 0x1000u && va <= CoredllDllMainLowUsegHi;
         }
 
         // Live fe74462: dump-match
         // sw $v0,0($a1) a1=0x1028 (low
-        // useg above page 0). Skip dest-
-        // miss like page0-store-skip so
+        // useg above page 0). Boot
+        // c3e1614: same site a1=0x14E88
+        // (page 0x14000, above 0xFFFF).
+        // Skip dest-miss like page0 so
         // next sw $a1,0($a0) / jr $ra
         // can run. Do not map/invent
-        // 0x1000–0xFFFF. No WalkFirmwarePte.
+        // 0x1000–0x1FFFF. No WalkFirmwarePte.
         // Zero-byte stays on sb-zero.
-        // One-shot via=lowuseg-store-skip.
+        // Unique-dest log (cap 16) so
+        // 14E88 climb is visible; not a
+        // C000-style 40-line storm.
         public static bool TrySkipLowUsegListInsertStore(MipsBus bus, uint va,
             uint value)
         {
@@ -12356,14 +12375,19 @@ namespace ProcessorEmulator.Core
                 dump = CoredllDllMainC000Dump;
             if (dump != CoredllDllMainC000Dump)
                 return false;
-            if (!_c000LowUsegSkipLogged)
+            if (_c000LowUsegSkipN < 16 && _c000LowUsegSkipLast != va)
             {
+                _c000LowUsegSkipLast = va;
+                _c000LowUsegSkipN++;
                 _c000LowUsegSkipLogged = true;
                 uint next = 0;
                 if (!TryPeekLeftoverWait99DumpOnly(CoredllDllMainC000NextPc, out next)
                     || next == 0)
                     next = CoredllDllMainC000Next;
-                BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk lowuseg-1028 store-skip" +
+                string hive = va > 0xFFFFu
+                    ? "lowuseg-14e88 store-skip"
+                    : "lowuseg-1028 store-skip";
+                BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk " + hive +
                     " epc=0x" + CoredllDllMainC000Epc.ToString("X") +
                     " bad=0x" + va.ToString("X") +
                     " word=0x" + dump.ToString("X") +
@@ -12372,7 +12396,7 @@ namespace ProcessorEmulator.Core
                     " val=0x" + value.ToString("X") +
                     " via=lowuseg-store-skip" +
                     " (dump sw $v0,0($a1); dest miss; continue" +
-                    " sw $a1,0($a0); no invent 0x1000-0xFFFF)");
+                    " sw $a1,0($a0); no invent 0x1000-0x1FFFF)");
             }
             return true;
         }
@@ -12380,11 +12404,14 @@ namespace ProcessorEmulator.Core
         // Boot 0e9d76d: I-fetch 0x800151D0
         // dump sw $v0,0($a1) a1=0xC0002BC8
         // TLBS (cause=3) before nest-1670
-        // armed Write32 skip. Dump-true:
-        // dest-miss skip; PC:=0x800151D4
+        // armed Write32 skip. Boot
+        // c3e1614: same site a1=0x14E88
+        // after C000→C005 dest-miss
+        // climb. Dump-true: dest-miss
+        // skip; PC:=0x800151D4
         // sw $a1,0($a0). Do not invent
-        // C000/E000/F000/SUD/9A. No hop
-        // 0x8003F8B4.
+        // C000/E000/F000/SUD/9A/useg.
+        // No hop 0x8003F8B4.
         public static bool TryTakeDumpMemListInsertDestMiss(MipsBus bus,
             uint[] regs, uint pc, uint insn, bool inDelay, ref uint cpuPc)
         {
@@ -12435,16 +12462,28 @@ namespace ProcessorEmulator.Core
                 if (!TryPeekLeftoverWait99DumpOnly(CoredllDllMainC000NextPc, out next)
                     || next == 0)
                     next = CoredllDllMainC000Next;
-                string via = IsFfffE000ListInsertSkipVa(a1)
-                    ? "e000-store-skip"
-                    : "c000-store-skip";
-                string hive = IsFfffE000ListInsertSkipVa(a1)
-                    ? "e000-0288 store-skip"
-                    : "c000-0088 store-skip";
+                string via;
+                string hive;
                 if (IsFfffE000ListInsertSkipVa(a1))
+                {
+                    via = "e000-store-skip";
+                    hive = "e000-0288 store-skip";
                     _c000E000SkipLogged = true;
+                }
+                else if (IsLowUsegListInsertSkipVa(a1))
+                {
+                    via = "lowuseg-store-skip";
+                    hive = a1 > 0xFFFFu
+                        ? "lowuseg-14e88 store-skip"
+                        : "lowuseg-1028 store-skip";
+                    _c000LowUsegSkipLogged = true;
+                    _c000LowUsegSkipN++;
+                    _c000LowUsegSkipLast = a1;
+                }
                 else
                 {
+                    via = "c000-store-skip";
+                    hive = "c000-0088 store-skip";
                     _c000SkipLogged = true;
                     _c000SkipN++;
                     _c000SkipLast = a1;
@@ -43234,6 +43273,8 @@ namespace ProcessorEmulator.Core
             _c000SkipLogged = false;
             _c000SkipN = 0;
             _c000SkipLast = 0;
+            _c000LowUsegSkipN = 0;
+            _c000LowUsegSkipLast = 0;
             _exn15C28Logged = false;
             _exn15C28TakenLogged = false;
             _exn15C28Wrote = false;
@@ -49735,6 +49776,8 @@ namespace ProcessorEmulator.Core
         private static bool _c000F000SkipLogged;
         private static bool _c000Page0SkipLogged;
         private static bool _c000LowUsegSkipLogged;
+        private static int _c000LowUsegSkipN;
+        private static uint _c000LowUsegSkipLast;
         private static bool _abs59488Logged;
         private static bool _abs59488ExecLogged;
         private static bool _ffffFe54SkipLogged;
