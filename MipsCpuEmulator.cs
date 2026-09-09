@@ -517,6 +517,9 @@ namespace ProcessorEmulator.Emulation
             CeRomTocFiles.TryNoteDumpMemJalDest(_bus, registers, fetchPc);
             CeRomTocFiles.TryFixBadA1Source(_bus, registers, fetchPc,
                 ref instruction);
+            if (CeRomTocFiles.TryTakeDumpMemBadAAfterRestore(_bus, registers,
+                    fetchPc, instruction, _inDelaySlot, ref programCounter))
+                return 0;
             // Live 4577e0a: after dump-mem-jal,
             // fallthrough re-fetch must not
             // CPU-jal or restore stale $ra.

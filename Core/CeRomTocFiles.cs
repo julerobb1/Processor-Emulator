@@ -2555,6 +2555,19 @@ namespace ProcessorEmulator.Core
         public const uint CoredllDllMainBadABeqDump = 0x106001FA;
         public const uint CoredllDllMainBadACallerRa = 0x80043254;
         public const uint CoredllDllMainBadADestA0 = 0x800133EC;
+        // Dump after or $a1,$a0: addiu $a3,$0,384
+        // then jal 0x80042920 (0x0C010A48)
+        // delay or $a0,$fp (0x03C02025).
+        // Boot 8cae3af then list-insert
+        // sw at 0x800151D0. Tip ProgressLeave
+        // yank / e000 kseg-busy aborted
+        // that next. Dump-true continue only.
+        public const uint CoredllDllMainBadAAddiuPc = 0x80043248;
+        public const uint CoredllDllMainBadAAddiuDump = 0x24070180;
+        public const uint CoredllDllMainBadAJalPc = 0x8004324C;
+        public const uint CoredllDllMainBadAJalDump = 0x0C010A48;
+        public const uint CoredllDllMainBadAJalDest = 0x80042920;
+        public const uint CoredllDllMainBadAJalDelayDump = 0x03C02025;
         // Live f628fa6: after sb-jalr-skip, TLBL
         // epc=0x80341A74 bad=0x7EB8. epc!=bad so
         // data load at jalr dest, not I-fetch
@@ -11995,7 +12008,12 @@ namespace ProcessorEmulator.Core
                 return false;
             if ((value & 0xFFu) == 0)
                 return false;
-            if (_ffffE000Kseg != 0 || _ffffE000Busy)
+            // Boot 07cb2b3: after bada-a0-restore
+            // kseg/busy returned false with no
+            // Hive — last line stayed bad-a.
+            // Dest-miss still skip. Do not
+            // write / invent E000.
+            if ((_ffffE000Kseg != 0 || _ffffE000Busy) && !_badASrcLogged)
                 return false;
             if (CanPeekC000StoreDest(bus, va))
                 return false;
@@ -12363,6 +12381,7 @@ namespace ProcessorEmulator.Core
                 PokeGpr(regs, 5, src);
                 TryLogBadA1Src(bus, regs, pc, liveA1, src,
                     "bada-a0-restore");
+                _badARestoreLogged = true;
             }
         }
 
@@ -12391,6 +12410,154 @@ namespace ProcessorEmulator.Core
             PokeGpr(regs, 5, src);
             TryLogBadA1Src(bus, regs, pc, a1, src, "bada-a1-restore");
             _badARestoreLogged = true;
+        }
+
+        private static bool IsExn15C28BadABeforeE000()
+        {
+            return _badASrcLogged && !_c000E000SkipLogged;
+        }
+
+        private static bool IsExn15C28RetCallerRaCapLeave(uint leave)
+        {
+            return leave == CoredllDllMainExn15C28OuterJalLink
+                || leave == CoredllDllMainExn15C28OuterJalLinkAfter
+                || leave == CoredllDllMainExn15C28OuterJalLinkT1
+                || leave == CoredllDllMainExn15C28OuterJalLinkBne
+                || leave == CoredllDllMainExn15C28OuterJalLinkBneFall
+                || leave == CoredllDllMainExn15C28OuterJalLinkBneTaken
+                || leave == CoredllDllMainExn15C28OuterJalLinkEpiRetFallJalRa
+                || leave == CoredllDllMainExn15C28OuterJalLinkEpiRetFallEpi
+                || IsExn15C28FallEpiLwPc(leave)
+                || leave == CoredllDllMainExn15C28OuterJalLinkEpiRetCaller
+                || leave == CoredllDllMainExn15C28OuterJalLinkEpiRetCallerNextFn;
+        }
+
+        // Boot 07cb2b3 / 5a2878a: after
+        // bada-a0-restore, ProgressLeave
+        // yank to 3F78C+ never fetched
+        // 0x800151D0. Refuse that cap
+        // until e000-0288 store-skip.
+        // Keep RetCallerRa inDelay land
+        // once e000 has logged.
+        private static bool RefuseExn15C28BadABeforeE000Yank(uint pc, uint leave)
+        {
+            if (!IsExn15C28BadABeforeE000())
+                return false;
+            if (!IsExn15C28RetCallerRaCapLeave(leave))
+                return false;
+            if (!_badABeforeE000YankLogged)
+            {
+                _badABeforeE000YankLogged = true;
+                BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk bad-a before-e000 cap-refuse" +
+                    " pc=0x" + pc.ToString("X") +
+                    " leave=0x" + leave.ToString("X") +
+                    " via=bada-before-e000" +
+                    " (ProgressLeave yank after bada-a0-restore aborted" +
+                    " list-insert 0x800151D0; keep dump-true jal 0x80042920;" +
+                    " no invent E000/F000/SUD; no leftover-hop)");
+            }
+            return true;
+        }
+
+        // Live 8cae3af: after bada-a0-restore
+        // at 0x80043244, next is addiu $a3
+        // + jal 0x80042920 then e000-0288
+        // at 0x800151D0. Tip silent Take /
+        // ProgressLeave yanked off that
+        // I-fetch. Dump-true continue only.
+        // Do not leftover-hop. Do not invent
+        // E000 / F000 / SUD / 0x9A.
+        public static bool TryTakeDumpMemBadAAfterRestore(MipsBus bus,
+            uint[] regs, uint pc, uint insn, bool inDelay, ref uint cpuPc)
+        {
+            if (!_leftoverWait99O32NkCoredllSawEntry || !_abs6670JalTakenLogged)
+                return false;
+            if (!_badASrcLogged || _badAJalContinueLogged)
+                return false;
+            if (inDelay)
+                return false;
+            if (pc != CoredllDllMainBadAOrA1Pc
+                && pc != CoredllDllMainBadAJalPc)
+                return false;
+            uint orDump = 0;
+            if (!TryPeekLeftoverWait99DumpOnly(CoredllDllMainBadAOrA1Pc, out orDump)
+                || orDump == 0)
+                orDump = CoredllDllMainBadAOrA1Dump;
+            uint addiuDump = 0;
+            if (!TryPeekLeftoverWait99DumpOnly(CoredllDllMainBadAAddiuPc, out addiuDump)
+                || addiuDump == 0)
+                addiuDump = CoredllDllMainBadAAddiuDump;
+            uint jalDump = 0;
+            if (!TryPeekLeftoverWait99DumpOnly(CoredllDllMainBadAJalPc, out jalDump)
+                || jalDump == 0)
+                jalDump = CoredllDllMainBadAJalDump;
+            uint delayDump = 0;
+            if (!TryPeekLeftoverWait99DumpOnly(CoredllDllMainBadAJalPc + 4, out delayDump)
+                || delayDump == 0)
+                delayDump = CoredllDllMainBadAJalDelayDump;
+            if (orDump != CoredllDllMainBadAOrA1Dump
+                || addiuDump != CoredllDllMainBadAAddiuDump
+                || jalDump != CoredllDllMainBadAJalDump
+                || delayDump != CoredllDllMainBadAJalDelayDump)
+                return false;
+            if ((jalDump >> 26) != 3)
+                return false;
+            uint dest = (CoredllDllMainBadAJalPc & 0xF0000000u)
+                | ((jalDump & 0x03FFFFFFu) << 2);
+            if (dest != CoredllDllMainBadAJalDest)
+                return false;
+            if (IsDumpMemRefuseVa(dest) || IsLeftoverDestVa(dest)
+                || dest == LeftoverWait99GetProcDest
+                || IsWrapDestSize(dest) || IsWrapDestFp50Va(dest))
+                return false;
+            if (!IsDumpMemAluInsn(orDump) || !IsDumpMemAluInsn(addiuDump)
+                || !IsDumpMemAluInsn(delayDump))
+                return false;
+            if (pc == CoredllDllMainBadAOrA1Pc
+                && insn != 0 && insn != orDump && !IsDumpMemAluInsn(insn)
+                && !IsMipsAbsRs0Store(insn))
+                return false;
+            if (pc == CoredllDllMainBadAJalPc
+                && insn != 0 && insn != jalDump && !IsMipsJumpOrJr(insn)
+                && !IsMipsAbsRs0Store(insn))
+                return false;
+            if (pc == CoredllDllMainBadAOrA1Pc && insn != orDump && insn != 0)
+                TryHealDumpInsn(bus, pc, insn, orDump);
+            if (pc == CoredllDllMainBadAJalPc && insn != jalDump && insn != 0)
+                TryHealDumpInsn(bus, pc, insn, jalDump);
+            if (!TryExecDumpMemAlu(regs, orDump)
+                || !TryExecDumpMemAlu(regs, addiuDump)
+                || !TryExecDumpMemAlu(regs, delayDump))
+                return false;
+            PokeGpr(regs, 31, CoredllDllMainBadACallerRa);
+            if (bus != null)
+            {
+                uint epc = bus.PeekEpc();
+                if (epc != 0 && (epc & 3) == 0)
+                    bus.ClearExlIfEpc(epc);
+                bus.ClearExlIfEpc(pc);
+            }
+            cpuPc = dest;
+            _badAJalContinueLogged = true;
+            uint a0 = PeekGpr(regs, 4);
+            uint a1 = PeekGpr(regs, 5);
+            uint ra = PeekGpr(regs, 31);
+            uint fp = PeekGpr(regs, 30);
+            _leftoverWait99O32NkChainLast = pc ^ CoredllDllMainVa;
+            _leftoverWait99O32NkChainVia = "bada-jal-continue";
+            _leftoverWait99O32NkChainName = "coredll.dll";
+            BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk bad-a jal-continue" +
+                " pc=0x" + pc.ToString("X") +
+                " next=0x" + dest.ToString("X") +
+                " ra=0x" + ra.ToString("X") +
+                " a0=0x" + a0.ToString("X") +
+                " a1=0x" + a1.ToString("X") +
+                " fp=0x" + fp.ToString("X") +
+                " via=bada-jal-continue" +
+                " (dump addiu $a3 + jal 0x80042920; delay or $a0,$fp;" +
+                " toward e000-0288 0x800151D0; no invent E000/F000/SUD;" +
+                " no leftover-hop)");
+            return true;
         }
 
         // Dump 0x80042960 beq $v1,$0,+506
@@ -14783,7 +14950,8 @@ namespace ProcessorEmulator.Core
             {
                 uint nfffSp = PeekGpr(regs, 29);
                 uint nfffLeave = DumpMem15C28OuterJalProgressLeave();
-                if (IsExn15C28StkRecurseFrame(nfffSp)
+                if (!RefuseExn15C28BadABeforeE000Yank(pc, nfffLeave)
+                    && IsExn15C28StkRecurseFrame(nfffSp)
                     && nfffLeave != 0 && (nfffLeave & 3) == 0
                     && nfffLeave != CoredllDllMainExn15C28JalS1AluNext
                     && nfffLeave != CoredllDllMainExn15C28StkSwNext
@@ -16001,6 +16169,11 @@ namespace ProcessorEmulator.Core
             if (_exn15C28OuterJalTakenLogged)
             {
                 leave = DumpMem15C28OuterJalProgressLeave();
+                if (RefuseExn15C28BadABeforeE000Yank(fromPc, leave))
+                {
+                    leave = 0;
+                    return false;
+                }
                 if (leave == 0 || (leave & 3) != 0 || IsDumpMemRefuseVa(leave)
                     || IsExn15C28Na02Frame(leave) || IsExn15C28HelperBody(leave)
                     || IsWrapDestSize(leave) || IsWrapDestFp50Va(leave)
@@ -28723,6 +28896,8 @@ namespace ProcessorEmulator.Core
             if (_exn15C28AfterOuterJalEpiRetCallerLeave
                     != CoredllDllMainExn15C28OuterJalLinkEpiRetFallJalRa)
                 return false;
+            if (IsExn15C28BadABeforeE000())
+                return RefuseExn15C28RetCallerRa(pc, insn, "bada-before-e000");
             if (_exn15C28AfterOuterJalEpiRetCallerRaLogged)
             {
                 if (inDelay)
@@ -28935,6 +29110,8 @@ namespace ProcessorEmulator.Core
             if (!_leftoverWait99O32NkCoredllSawEntry || !_exn15C28Left)
                 return false;
             if (!_exn15C28AfterOuterJalEpiRetCallerRaLogged)
+                return false;
+            if (IsExn15C28BadABeforeE000())
                 return false;
             if (_exn15C28AfterOuterJalEpiRetCallerRaLhuLogged)
             {
@@ -42525,6 +42702,8 @@ namespace ProcessorEmulator.Core
             _badASrcLogged = false;
             _badARestoreLogged = false;
             _badASkipLogged = false;
+            _badAJalContinueLogged = false;
+            _badABeforeE000YankLogged = false;
             _abs6670ExnLogged = false;
             _c000Kseg = 0;
             _c000Logged = false;
@@ -48848,6 +49027,8 @@ namespace ProcessorEmulator.Core
         private static bool _badASrcLogged;
         private static bool _badARestoreLogged;
         private static bool _badASkipLogged;
+        private static bool _badAJalContinueLogged;
+        private static bool _badABeforeE000YankLogged;
         private static bool _abs6670ExnLogged;
         private static uint _c000Kseg;
         private static bool _c000Logged;
