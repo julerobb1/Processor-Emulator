@@ -1349,7 +1349,10 @@ namespace ProcessorEmulator.Core
         // cause=2 epc=0x800467E4 badvaddr=0x03FE135C
         // (page 0x03FE1000, rel 0x01FE1000) sat one
         // page past the old 0x01FE0000 hi.
-        public const int CoredllImagePageCap = 32;
+        // Initial map table size only. ClaimCoredllImageSlot
+        // grows past this — never hard-stop resolve on Cap.
+        // SizeOfImage 0x9E000 ≈ 158 pages; Cap 32 aborted TOC.
+        public const int CoredllImagePageCap = 256;
         public const uint CoredllImageRelLo = 0x01F50000;
         public const uint CoredllImageRelHi = 0x01FF0000;
         public const uint BindImpNameWalk = 0x80018580;
@@ -41771,6 +41774,20 @@ namespace ProcessorEmulator.Core
             _coredllImageTlbl = new bool[CoredllImagePageCap];
         }
 
+        private static void GrowCoredllImageMaps(int need)
+        {
+            EnsureCoredllImageMaps();
+            if (need <= _coredllImagePage.Length)
+                return;
+            int n = _coredllImagePage.Length;
+            while (n < need)
+                n = n * 2;
+            System.Array.Resize(ref _coredllImagePage, n);
+            System.Array.Resize(ref _coredllImageKseg, n);
+            System.Array.Resize(ref _coredllImageDone, n);
+            System.Array.Resize(ref _coredllImageTlbl, n);
+        }
+
         private static int FindCoredllImageSlot(uint page)
         {
             EnsureCoredllImageMaps();
@@ -41787,8 +41804,8 @@ namespace ProcessorEmulator.Core
             int i = FindCoredllImageSlot(page);
             if (i >= 0)
                 return i;
-            if (_coredllImageN >= CoredllImagePageCap)
-                return -1;
+            // Never Cap-abort. Grow table; ImageBase has ~158 pages.
+            GrowCoredllImageMaps(_coredllImageN + 1);
             i = _coredllImageN;
             _coredllImageN++;
             _coredllImagePage[i] = page;
@@ -41859,16 +41876,40 @@ namespace ProcessorEmulator.Core
                 slot = ClaimCoredllImageSlot(page);
                 if (slot < 0)
                     return;
+                uint word = 0;
+                uint rom = 0;
+                uint romWord = 0;
+                uint o32Index = 0;
+                bool tocCompressed = false;
                 if (sec != 0
                     && WalkFirmwarePte(bus, sec, use, out l1, out l2, out pfn, out kseg)
                     && (kseg & 0x1FFFFFFFu) >= 0x00010000u)
                 {
+                    TryPeekWord(bus, (kseg & ~0xFFFu) | (va & 0xFFFu), out word);
+                    // Mirror gwes: dest-word=0 .text prefer TOC o32-rom.
+                    if (TryCoredllO32RomDest(bus, use, word, out rom, out romWord,
+                            out o32Index, out tocCompressed)
+                        && rom != 0 && !tocCompressed)
+                    {
+                        _coredllImageKseg[slot] = rom;
+                        if (!_coredllImageDone[slot])
+                        {
+                            _coredllImageDone[slot] = true;
+                            BootLog.Write("[Hive] ExtraROM ddi_nop coredll-page map va=0x" +
+                                page.ToString("X8") +
+                                " -> 0x" + rom.ToString("X8") +
+                                " l2=0x" + l2.ToString("X8") +
+                                " dest-word=0x" + romWord.ToString("X8") +
+                                " via=o32-rom was=0x" + (kseg & ~0xFFFu).ToString("X8") +
+                                " (dest-word=0; TOC coredll o32[" + o32Index.ToString() +
+                                "]; do not invent dest)");
+                        }
+                        return;
+                    }
                     _coredllImageKseg[slot] = kseg & ~0xFFFu;
                     if (!_coredllImageDone[slot])
                     {
                         _coredllImageDone[slot] = true;
-                        uint word = 0;
-                        TryPeekWord(bus, _coredllImageKseg[slot] | (va & 0xFFFu), out word);
                         BootLog.Write("[Hive] ExtraROM ddi_nop coredll-page map va=0x" +
                             page.ToString("X8") +
                             " -> 0x" + _coredllImageKseg[slot].ToString("X8") +
@@ -41878,19 +41919,182 @@ namespace ProcessorEmulator.Core
                     }
                     return;
                 }
+                // pte-miss / l2=0: TOC o32-rom fallback (gwes pattern).
+                if (TryCoredllO32RomDest(bus, use, 0, out rom, out romWord,
+                        out o32Index, out tocCompressed))
+                {
+                    if (tocCompressed)
+                    {
+                        // Dump: 0x03FDB000 is coredll .data compressed
+                        // (flags 0xC0002040, psize < vsize). Do not map
+                        // dataptr blob. Do not Done — wait firmware PTE.
+                        if (!_coredllImageTlbl[slot])
+                        {
+                            _coredllImageTlbl[slot] = true;
+                            BootLog.Write("[Hive] ExtraROM ddi_nop coredll-page map va=0x" +
+                                page.ToString("X8") +
+                                " pte-miss sec=0x" + sec.ToString("X8") +
+                                " via=o32-rom-compressed o32[" + o32Index.ToString() +
+                                "] (TOC coredll compressed .data; wait firmware PTE; do not invent dest)");
+                        }
+                        return;
+                    }
+                    if (rom != 0)
+                    {
+                        _coredllImageKseg[slot] = rom;
+                        if (!_coredllImageDone[slot])
+                        {
+                            _coredllImageDone[slot] = true;
+                            BootLog.Write("[Hive] ExtraROM ddi_nop coredll-page map va=0x" +
+                                page.ToString("X8") +
+                                " -> 0x" + rom.ToString("X8") +
+                                " dest-word=0x" + romWord.ToString("X8") +
+                                " via=o32-rom (pte-miss; TOC coredll o32[" +
+                                o32Index.ToString() + "]; do not invent dest)");
+                        }
+                        return;
+                    }
+                }
                 if (!_coredllImageDone[slot])
                 {
                     _coredllImageDone[slot] = true;
                     BootLog.Write("[Hive] ExtraROM ddi_nop coredll-page map va=0x" +
                         page.ToString("X8") +
                         " pte-miss sec=0x" + sec.ToString("X8") +
-                        " (COREDLL image TLBL; do not invent dest)");
+                        " (COREDLL image TLBL; TOC miss; do not invent dest)");
                 }
             }
             finally
             {
                 _coredllImageBusy = false;
             }
+        }
+
+        private static bool TryFindCoredllTocEntry(MipsBus bus, out uint tocEntry)
+        {
+            tocEntry = 0;
+            if (bus == null)
+                return false;
+            try
+            {
+                ExtraRomTocMod cached = FindCachedExtraRomToc("coredll.dll");
+                if (cached != null && cached.Entry != 0)
+                {
+                    tocEntry = cached.Entry;
+                    return true;
+                }
+                uint attr = 0;
+                if (TryFindTocModule(bus, 0, 80, "coredll.dll", out tocEntry, out attr)
+                    && tocEntry != 0)
+                    return true;
+                uint extra = ExtraRomToc(bus);
+                if (extra != 0
+                    && TryFindTocModule(bus, extra, 128, "coredll.dll", out tocEntry, out attr)
+                    && tocEntry != 0)
+                    return true;
+            }
+            catch
+            {
+            }
+            tocEntry = 0;
+            return false;
+        }
+
+        // Dump-true TOC o32 for coredll ImageBase pages.
+        // Mirror TryGwesO32SectionDest / gwes via=o32-rom:
+        // map only when TOC gives real rom dataptr and the
+        // section is not compressed. e32_vbase + o32_rva
+        // span; dest = dataptr + (page - startPage).
+        // Live dump: .text dataptr 0x80075000 real 0x03F51000;
+        // neighbor 0x03FD8000 -> 0x800FC000. Page 0x03FDB000
+        // is .data compressed — tocCompressed=true, no map.
+        private static bool TryCoredllO32RomDest(MipsBus bus, uint va,
+            uint destWord, out uint rom, out uint romWord,
+            out uint o32Index, out bool tocCompressed)
+        {
+            rom = 0;
+            romWord = 0;
+            o32Index = 0;
+            tocCompressed = false;
+            if (destWord != 0 || bus == null)
+                return false;
+            uint tocEntry = 0;
+            if (!TryFindCoredllTocEntry(bus, out tocEntry))
+                return false;
+            try
+            {
+                uint e32 = bus.Read32(tocEntry + 0x14);
+                uint o32 = bus.Read32(tocEntry + 0x18);
+                if (e32 == 0 || o32 == 0)
+                    return false;
+                uint vbase = bus.Read32(e32 + 8);
+                if (vbase == 0)
+                    return false;
+                uint objcnt = bus.Read32(e32) & 0xFFFF;
+                if (objcnt == 0 || objcnt > 16)
+                    return false;
+                uint page = va & ~0xFFFu;
+                for (uint s = 0; s < objcnt; s++)
+                {
+                    uint src = o32 + s * O32RomSize;
+                    uint vsize = bus.Read32(src);
+                    uint rva = bus.Read32(src + 4);
+                    uint psize = bus.Read32(src + 8);
+                    uint dataptr = bus.Read32(src + 0xC);
+                    uint real = bus.Read32(src + 0x10);
+                    uint flags = bus.Read32(src + 0x14);
+                    if (vsize == 0)
+                        continue;
+                    uint start = vbase + rva;
+                    if (va < start || va >= start + vsize)
+                    {
+                        if (real == 0)
+                            continue;
+                        // Split-address: match slot-relative.
+                        uint want = page & 0x01FFFFFFu;
+                        uint real0 = real & 0x01FFFFFFu;
+                        if (want < real0 || want >= real0 + vsize)
+                            continue;
+                        start = (page & ~0x01FFFFFFu) | real0;
+                    }
+                    // Compressed: PE 0x2000 + psize < vsize, or
+                    // O32Compressed 0x4000. Do not map dataptr blob.
+                    bool compressed = (flags & O32Compressed) != 0
+                        || ((flags & 0x2000u) != 0 && psize < vsize);
+                    if (compressed)
+                    {
+                        tocCompressed = true;
+                        o32Index = s;
+                        rom = 0;
+                        return true;
+                    }
+                    if (psize == 0)
+                        continue;
+                    if (dataptr < 0x80000000u || dataptr >= 0xA0000000u)
+                        continue;
+                    uint startPage = start & ~0xFFFu;
+                    if (page < startPage)
+                        continue;
+                    uint rel = page - startPage;
+                    if (rel >= psize)
+                        continue;
+                    uint dest = (dataptr + rel) & ~0xFFFu;
+                    if (dest == 0)
+                        continue;
+                    uint off = va & 0xFFFu;
+                    if (!TryPeekWord(bus, dest | off, out romWord)
+                        && !TryPeekWord(bus, dest, out romWord))
+                        continue;
+                    rom = dest;
+                    o32Index = s;
+                    tocCompressed = false;
+                    return true;
+                }
+            }
+            catch
+            {
+            }
+            return false;
         }
 
         // Live 1bba9df: first process-slot view of an
