@@ -41925,9 +41925,32 @@ namespace ProcessorEmulator.Core
                 {
                     if (tocCompressed)
                     {
-                        // Dump: 0x03FDB000 is coredll .data compressed
-                        // (flags 0xC0002040, psize < vsize). Do not map
-                        // dataptr blob. Do not Done — wait firmware PTE.
+                        // Dump: o32[1] .data flags 0xC0002040 psize 0x578
+                        // vsize 0xFE4 dataptr 0x801FB8E0. LZX of that blob
+                        // matches extract coredll.dll .data (sha256
+                        // 38f95929…63426c1). Do not map compressed dataptr.
+                        // Sibling .pdata 0x03FDC000 got firmware PTE; .data
+                        // L2 stays empty (Gemini). Host one VallocHost page
+                        // with dump LZX bytes — via=o32-lzx-dump.
+                        uint lzxKseg = 0;
+                        uint lzxWord = 0;
+                        if (TryCoredllO32LzxDumpDest(bus, page, out lzxKseg, out lzxWord)
+                            && lzxKseg != 0)
+                        {
+                            _coredllImageKseg[slot] = lzxKseg;
+                            if (!_coredllImageDone[slot])
+                            {
+                                _coredllImageDone[slot] = true;
+                                BootLog.Write("[Hive] ExtraROM ddi_nop coredll-page map va=0x" +
+                                    page.ToString("X8") +
+                                    " -> 0x" + lzxKseg.ToString("X8") +
+                                    " dest-word=0x" + lzxWord.ToString("X8") +
+                                    " via=o32-lzx-dump o32[" + o32Index.ToString() +
+                                    "] (TOC coredll compressed .data; dump LZX==extract; do not invent bytes)");
+                            }
+                            return;
+                        }
+                        // Fallback: wait firmware PTE (gwes B9 mirror).
                         if (!_coredllImageTlbl[slot])
                         {
                             _coredllImageTlbl[slot] = true;
@@ -42095,6 +42118,48 @@ namespace ProcessorEmulator.Core
             {
             }
             return false;
+        }
+
+        // Dump-true host page for coredll TOC o32[1] compressed
+        // .data covering ImageBase 0x03FDB000. Bytes = CE LZX of
+        // ROM dataptr 0x801FB8E0 (psize 0x578) → vsize 0xFE4,
+        // zero-pad 4K; verified == extract coredll.dll .data.
+        // Dest = one page from VallocHostKseg pool (same class as
+        // process-info host-back). Not dataptr. Not invented PE.
+        private static bool TryCoredllO32LzxDumpDest(MipsBus bus, uint page,
+            out uint kseg, out uint word0)
+        {
+            kseg = 0;
+            word0 = 0;
+            if (bus == null || (page & ~0xFFFu) != 0x03FDB000u)
+                return false;
+            if (_coredllDataLzxKseg != 0)
+            {
+                kseg = _coredllDataLzxKseg;
+                TryPeekWord(bus, kseg, out word0);
+                return true;
+            }
+            if (_vallocHostPool < VallocHostKseg
+                || _vallocHostPool + 0x1000u > VallocHostKsegLim)
+                return false;
+            uint dest = _vallocHostPool;
+            _vallocHostPool += 0x1000u;
+            try
+            {
+                uint[] words = CoredllDataLzxPage.Words;
+                if (words == null || words.Length < 1024)
+                    return false;
+                for (int i = 0; i < 1024; i++)
+                    bus.Write32(dest + (uint)(i * 4), words[i]);
+                word0 = words[0];
+                _coredllDataLzxKseg = dest;
+                kseg = dest;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         // Live 1bba9df: first process-slot view of an
@@ -43929,6 +43994,7 @@ namespace ProcessorEmulator.Core
             _coredllImageN = 0;
             _coredllSlotViewLogged = false;
             _coredllSlotViewTlbl = false;
+            _coredllDataLzxKseg = 0;
             if (_coredllImagePage != null)
             {
                 for (int i = 0; i < _coredllImagePage.Length; i++)
@@ -50263,6 +50329,9 @@ namespace ProcessorEmulator.Core
         private static bool _coredllImageBusy;
         private static bool _coredllSlotViewLogged;
         private static bool _coredllSlotViewTlbl;
+        // Dump-true LZX host page for coredll o32[1] .data (0x03FDB000).
+        // VallocHostKseg pool; phys = kseg & 0x1FFFFFFF inside 256MiB RAM.
+        private static uint _coredllDataLzxKseg;
         private static uint _filesysSlot2Kseg;
         private static bool _filesysSlot2Logged;
         private static bool _filesysSlot2Busy;
