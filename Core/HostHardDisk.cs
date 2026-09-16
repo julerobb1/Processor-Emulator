@@ -707,6 +707,11 @@ namespace ProcessorEmulator.Core
                 return true;
             CeRomTocFiles.TryNotePastRamAfterJalLink(bus, registers, pc);
             CeRomTocFiles.TryNotePastRamAfterFn964Leave(bus, registers, pc);
+            if (CeRomTocFiles.TryContinuePastRamListInsertHeadTlbl(bus, registers, ref programCounter))
+                return true;
+            if (CeRomTocFiles.TryContinuePastRamFn9E8Twin(bus, registers, ref programCounter))
+                return true;
+            CeRomTocFiles.TryNotePastRamAfter9E8Leave(bus, registers, pc);
             if (CeRomTocFiles.TryRefuseLeftoverWait99Wrap(bus, registers, ref programCounter))
                 return true;
             if (CeRomTocFiles.TryFixWait99PlantRa(bus, registers, ref programCounter))

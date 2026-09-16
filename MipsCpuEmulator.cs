@@ -507,6 +507,9 @@ namespace ProcessorEmulator.Emulation
             if (CeRomTocFiles.TryTakeDumpMemRomHdrLinkContinue(_bus, registers,
                     fetchPc, instruction, _inDelaySlot, ref programCounter))
                 return 0;
+            if (CeRomTocFiles.TryTakeDumpMemListInsertHeadMiss(_bus, registers,
+                    fetchPc, instruction, _inDelaySlot, ref programCounter))
+                return 0;
             if (CeRomTocFiles.TryTakeDumpMemListInsertDestMiss(_bus, registers,
                     fetchPc, instruction, _inDelaySlot, ref programCounter))
                 return 0;

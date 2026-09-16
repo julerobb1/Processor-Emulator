@@ -1680,6 +1680,27 @@ namespace ProcessorEmulator.Core
         public const uint ListInsert3F964Epi = 0x8003F9D4;
         public const uint ListInsert3F964EpiJr = 0x8003F9E0;
         public const uint ListInsert3F964NextFn = 0x8003F9E8;
+        // Live 5dbe993 out-fn964-epi FIRST-WIN: after fallthrough
+        // NextFn 0x8003F9E8, twin body jal 0x800151C0 @ FA14 then
+        // TLBL epc=0x800151CC bad=0xC0469FD4 (lw $v0,0($a0)).
+        // pc=0x80000000 in chain log = TLB refill vector (cause=2);
+        // real fault is EPC. Dump: NextFn frame=24 ra@20 fp@16;
+        // epi FA24..FA30; sequential after twin = 0x8003FA34.
+        // bad page 0xC0469000 — zero dump evidence (nk.exe/nk.bin);
+        // do NOT invent map. Boot 90d6470 yanked twin when ra sane;
+        // past-RAM fallthrough has no sane ra — refuse twin body.
+        public const uint ListInsert3F9E8Fn = 0x8003F9E8;
+        public const uint ListInsert3F9E8Frame = 24;
+        public const uint ListInsert3F9E8RaSlot = 20;
+        public const uint ListInsert3F9E8Jal151C0 = 0x8003FA14;
+        public const uint ListInsert3F9E8JalLink = 0x8003FA1C;
+        public const uint ListInsert3F9E8Epi = 0x8003FA24;
+        public const uint ListInsert3F9E8EpiJr = 0x8003FA2C;
+        public const uint ListInsert3F9E8NextFn = 0x8003FA34;
+        public const uint CoredllDllMainListInsertHeadEpc = 0x800151CC;
+        public const uint CoredllDllMainListInsertHeadDump = 0x8C820000;
+        // FIRST-WIN evidence only — not a planted map.
+        public const uint CoredllDllMainListInsertHeadBadLive = 0xC0469FD4;
         // Live 98276c7: skip 0xC0000088 then
         // sibling list-insert a1=0xC0001070
         // (page 0xC0001000). Live faf00f3:
@@ -12672,6 +12693,96 @@ namespace ProcessorEmulator.Core
                 return false;
             TryLogListInsertDestMissOnce(va, value, dump);
             TryNotePostApi52ListInsertSkip(bus, null, va);
+            return true;
+        }
+
+        // Live 5dbe993: TLBL at list-insert HEAD load
+        // epc=0x800151CC lw $v0,0($a0) bad=0xC0469FD4 (ckseg).
+        // Prior dest-miss only armed the STORE at 151D0. When $a0
+        // itself cannot peek, skip the whole insert (no invent map);
+        // past-ram fn964 latch → fall through past twin to FA34.
+        public static bool TryTakeDumpMemListInsertHeadMiss(MipsBus bus,
+            uint[] regs, uint pc, uint insn, bool inDelay, ref uint cpuPc)
+        {
+            if (pc != CoredllDllMainListInsertHeadEpc)
+                return false;
+            if (inDelay)
+                return false;
+            if (regs == null || regs.Length < 32 || bus == null)
+                return false;
+            if (IsDumpMemRefuseVa(pc))
+                return false;
+            uint dump = 0;
+            if (!TryPeekLeftoverWait99DumpOnly(pc, out dump) || dump == 0)
+                dump = CoredllDllMainListInsertHeadDump;
+            if (dump != CoredllDllMainListInsertHeadDump
+                && dump != CoredllDllMainC000Prev)
+                return false;
+            if (insn != 0 && insn != dump && !IsMipsLoad(insn))
+                return false;
+            uint a0 = PeekGpr(regs, 4);
+            uint a1 = PeekGpr(regs, 5);
+            if (IsListInsertDestRefuseVa(a0))
+                return false;
+            if (CanPeekC000StoreDest(bus, a0))
+                return false;
+            // Only skip classified miss heads (c000/e000/f000/useg/9a/…).
+            int cls = ListInsertDestClassId(a0);
+            if (cls < 1)
+                return false;
+            uint ra = PeekGpr(regs, 31);
+            uint sp = PeekGpr(regs, 29);
+            uint leave;
+            string via;
+            if (_postApi52PastRamFn964ContLogged
+                && IsKseg0PastGuestRam(sp))
+            {
+                leave = ListInsert3F9E8NextFn;
+                via = "list-insert-head-miss-past-ram-twin";
+            }
+            else if (ra != 0 && (ra & 3) == 0
+                && !IsDumpMemRefuseVa(ra)
+                && ra != pc
+                && ra != CoredllDllMainListInsertHeadEpc
+                && ra != CoredllDllMainC000Epc)
+            {
+                leave = ra;
+                via = "list-insert-head-miss-ra";
+            }
+            else
+            {
+                leave = ListInsert3F9E8NextFn;
+                via = "list-insert-head-miss-fallthrough";
+            }
+            if (IsDumpMemRefuseVa(leave))
+                return false;
+            if (!_listInsertHeadMissLogged)
+            {
+                _listInsertHeadMissLogged = true;
+                BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk list-insert head-miss" +
+                    " epc=0x" + CoredllDllMainListInsertHeadEpc.ToString("X") +
+                    " bad=0x" + a0.ToString("X") +
+                    " class=" + ListInsertDestClassName(cls) +
+                    " a1=0x" + a1.ToString("X") +
+                    " word=0x" + dump.ToString("X") +
+                    " leave=0x" + leave.ToString("X8") +
+                    " ra=0x" + ra.ToString("X8") +
+                    " sp=0x" + sp.ToString("X8") +
+                    " via=" + via +
+                    " (dump lw $v0,0($a0); head miss; no invent" +
+                    " 0xC0469000/ckseg map; skip insert; past-RAM twin" +
+                    " → FA34; four toc-miss honest)");
+            }
+            uint epc = bus.PeekEpc();
+            if (epc != 0 && (epc & 3) == 0)
+                bus.ClearExlIfEpc(epc);
+            bus.ClearExlIfEpc(pc);
+            bus.ClearExlIfEpc(CoredllDllMainListInsertHeadEpc);
+            PokeGpr(regs, 2, 0);
+            PokeGpr(regs, 31, leave);
+            cpuPc = leave;
+            if (_postApi52PastRamFn964ContLogged)
+                _postApi52PastRamFn9E8ContLogged = true;
             return true;
         }
 
@@ -40242,6 +40353,162 @@ namespace ProcessorEmulator.Core
                 " no invent maps)");
         }
 
+        private static bool IsPastRamFn9E8BodyPc(uint pc)
+        {
+            return pc >= ListInsert3F9E8Fn && pc < ListInsert3F9E8NextFn;
+        }
+
+        private static bool IsPastRamFn9E8EpiPc(uint pc)
+        {
+            return pc >= ListInsert3F9E8Epi && pc < ListInsert3F9E8NextFn;
+        }
+
+        private static bool IsListInsertHeadTlblVectorPc(uint pc)
+        {
+            return pc == 0x80000000u || pc == 0x80000180u;
+        }
+
+        // Live 5dbe993: fallthrough into twin 9E8 with past-RAM sp
+        // then jal 151C0 → TLBL head bad=0xC0469FD4. Dump-true:
+        // refuse twin body (Boot 90d6470 yank pattern); known
+        // sequential fall-through NextNextFn 0x8003FA34. No invent
+        // 3F8B4 / 9001 / C046 map / unique caller.
+        public static bool TryContinuePastRamFn9E8Twin(MipsBus bus, uint[] regs,
+            ref uint cpuPc)
+        {
+            if (!_postApi52PastRamFn964ContLogged)
+                return false;
+            if (_postApi52PastRamFn9E8ContLogged)
+                return false;
+            if (regs == null || regs.Length < 32 || bus == null)
+                return false;
+            uint pc = cpuPc;
+            if (!IsPastRamFn9E8BodyPc(pc)
+                && pc != CoredllDllMainListInsertHeadEpc
+                && pc != ListInsert3F9E8Jal151C0
+                && pc != ListInsert3F9E8JalLink)
+                return false;
+            uint sp = PeekGpr(regs, 29);
+            if (!IsKseg0PastGuestRam(sp))
+                return false;
+            uint leave = ListInsert3F9E8NextFn;
+            if (IsDumpMemRefuseVa(leave))
+                return false;
+            _postApi52PastRamFn9E8ContLogged = true;
+            uint ra = PeekGpr(regs, 31);
+            uint a0 = PeekGpr(regs, 4);
+            uint a1 = PeekGpr(regs, 5);
+            uint epc = bus.PeekEpc();
+            if (epc != 0 && (epc & 3) == 0)
+                bus.ClearExlIfEpc(epc);
+            bus.ClearExlIfEpc(CoredllDllMainListInsertHeadEpc);
+            bus.ClearExlIfEpc(CoredllDllMainC000Epc);
+            PokeGpr(regs, 31, leave);
+            cpuPc = leave;
+            BootLog.Write("[Hive] ExtraROM ddi_nop past-ram-fn9e8-twin-refuse" +
+                " was=0x" + pc.ToString("X8") +
+                " leave=0x" + leave.ToString("X8") +
+                " sp=0x" + sp.ToString("X8") +
+                " raWas=0x" + ra.ToString("X8") +
+                " a0=0x" + a0.ToString("X8") +
+                " a1=0x" + a1.ToString("X8") +
+                " via=fn9e8-twin-refuse-past-ram" +
+                " (5dbe993 twin 9E8→jal 151C0 TLBL head" +
+                " bad=0xC0469FD4; no dump map; refuse twin body;" +
+                " fall-through FA34; no invent 3F8B4/9001/C046;" +
+                " ProgressLeave latched; hb flat)");
+            return true;
+        }
+
+        // Resume if TLBL already took refill vector before Take ran.
+        public static bool TryContinuePastRamListInsertHeadTlbl(MipsBus bus,
+            uint[] regs, ref uint cpuPc)
+        {
+            if (!_postApi52PastRamFn964ContLogged)
+                return false;
+            if (_postApi52PastRamFn9E8ContLogged
+                && !IsListInsertHeadTlblVectorPc(cpuPc))
+                return false;
+            if (regs == null || regs.Length < 32 || bus == null)
+                return false;
+            uint pc = cpuPc;
+            uint epc = bus.PeekEpc();
+            bool atVec = IsListInsertHeadTlblVectorPc(pc);
+            bool atHead = pc == CoredllDllMainListInsertHeadEpc;
+            if (!atVec && !atHead)
+                return false;
+            if (epc != CoredllDllMainListInsertHeadEpc
+                && epc != CoredllDllMainC000Epc
+                && !atHead)
+                return false;
+            uint a0 = PeekGpr(regs, 4);
+            if (a0 == 0)
+                a0 = CoredllDllMainListInsertHeadBadLive;
+            if (CanPeekC000StoreDest(bus, a0) && !atVec)
+                return false;
+            uint sp = PeekGpr(regs, 29);
+            uint leave = ListInsert3F9E8NextFn;
+            if (IsDumpMemRefuseVa(leave))
+                return false;
+            if (!_listInsertHeadMissLogged)
+            {
+                _listInsertHeadMissLogged = true;
+                int cls = ListInsertDestClassId(a0);
+                BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk list-insert head-miss" +
+                    " epc=0x" + CoredllDllMainListInsertHeadEpc.ToString("X") +
+                    " bad=0x" + a0.ToString("X") +
+                    " class=" + ListInsertDestClassName(cls) +
+                    " vec=0x" + pc.ToString("X8") +
+                    " leave=0x" + leave.ToString("X8") +
+                    " sp=0x" + sp.ToString("X8") +
+                    " via=exn-tlbl-head-miss-past-ram" +
+                    " (pc=0x80000000 was refill vector; real EPC;" +
+                    " no invent C046 map; skip insert → FA34)");
+            }
+            _postApi52PastRamFn9E8ContLogged = true;
+            if (epc != 0 && (epc & 3) == 0)
+                bus.ClearExlIfEpc(epc);
+            bus.ClearExlIfEpc(CoredllDllMainListInsertHeadEpc);
+            bus.ClearExlIfEpc(0x80000000u);
+            bus.ClearExlIfEpc(0x80000180u);
+            PokeGpr(regs, 2, 0);
+            PokeGpr(regs, 31, leave);
+            cpuPc = leave;
+            return true;
+        }
+
+        // One-shot sample after twin refuse / head-miss leave past 9E8.
+        public static void TryNotePastRamAfter9E8Leave(MipsBus bus, uint[] regs,
+            uint pc)
+        {
+            if (!_postApi52PastRamFn9E8ContLogged || pc == 0)
+                return;
+            if (_postApi52PastRamAfter9E8SampleLogged)
+                return;
+            if (IsPastRamFn9E8BodyPc(pc)
+                || pc == CoredllDllMainListInsertHeadEpc
+                || IsListInsertHeadTlblVectorPc(pc))
+                return;
+            _postApi52PastRamAfter9E8SampleLogged = true;
+            uint sp = regs != null && regs.Length > 29 ? PeekGpr(regs, 29) : 0;
+            uint ra = regs != null && regs.Length > 31 ? PeekGpr(regs, 31) : 0;
+            uint v0 = regs != null && regs.Length > 2 ? PeekGpr(regs, 2) : 0;
+            uint word = 0;
+            TryPeekWord(bus, pc, out word);
+            string via = pc == ListInsert3F9E8NextFn
+                ? "fn9e8-nextfn-after-refuse"
+                : "post-fn9e8-leave";
+            BootLog.Write("[Hive] ExtraROM ddi_nop past-ram-after-9e8-leave" +
+                " pc=0x" + pc.ToString("X8") +
+                " sp=0x" + sp.ToString("X8") +
+                " ra=0x" + ra.ToString("X8") +
+                " v0=0x" + v0.ToString("X8") +
+                " word=0x" + word.ToString("X8") +
+                " via=" + via +
+                " (one-shot next-PC sample after twin 9E8 refuse/" +
+                " head-miss; harvest named next stall; no invent maps)");
+        }
+
         private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
             uint index, string tag, uint off, ref bool plantLogged)
         {
@@ -44725,6 +44992,9 @@ namespace ProcessorEmulator.Core
             _postApi52PastRamOuterContLogged = false;
             _postApi52PastRamFn964ContLogged = false;
             _postApi52PastRamAfterFn964SampleLogged = false;
+            _postApi52PastRamFn9E8ContLogged = false;
+            _postApi52PastRamAfter9E8SampleLogged = false;
+            _listInsertHeadMissLogged = false;
             _wait99PlantFixLogged = false;
             _leftoverWait99WrapLogged = false;
             _leftoverWait99WrapContLogged = false;
@@ -51073,6 +51343,9 @@ namespace ProcessorEmulator.Core
         private static bool _postApi52PastRamOuterContLogged;
         private static bool _postApi52PastRamFn964ContLogged;
         private static bool _postApi52PastRamAfterFn964SampleLogged;
+        private static bool _postApi52PastRamFn9E8ContLogged;
+        private static bool _postApi52PastRamAfter9E8SampleLogged;
+        private static bool _listInsertHeadMissLogged;
         private static bool _wait99PlantFixLogged;
         private static bool _leftoverWait99WrapLogged;
         private static bool _leftoverWait99WrapContLogged;
