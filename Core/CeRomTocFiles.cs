@@ -1860,6 +1860,29 @@ namespace ProcessorEmulator.Core
         public const uint ListInsert3FD00Epi = 0x8003FD70;
         public const uint ListInsert3FD00EpiJr = 0x8003FD74;
         public const uint ListInsert3FD00NextFn = 0x8003FD7C;
+        // Live 20fb70b/742ed23 out-after-fd00 FIRST-WIN: FD00 refuse
+        // leave 0x8003FD7C word=0x3C028032 via=fn-fd00-nextfn-after-refuse;
+        // bytes=51788; Process alive; hbMax=1; no C046. Quiet after land
+        // @FD7C: past-RAM sp (0x9A024028) + ProgressLeave mute. Dump-true
+        // FD7C (Uverse Drive E nk.exe/.bin): first word 0x3C028032 lui
+        // v0,0x8032 — NOT addiu sp,-N. Leaf / no-frame; Frame=0 Ra=0 Fp=0;
+        // no jal in body; range/table lookup on a0 via mapped 0x80320A24 +
+        // 0x803429B0 only; epi jr @FDFC delay nop @FE00; unique sequential
+        // NextFn 0x8003FE04 word=0x27BDFFE0. 8 direct jal xrefs — no invent
+        // caller. Live after FD00 refuse: ra poked to leave=FD7C so
+        // ra==pc==FD7C; leaf jr $ra self-loops forever under past-RAM mute
+        // (dump-true leave-mechanism observation). Refuse body → FE04.
+        // No invent 3F8B4/9001/C046/page0/FFFFD808/1FFF000 maps; four
+        // toc-miss honest. Note-only TLBS epc=0x80058B90 bad=0x1FFF000 —
+        // ignore as after-FD7C stall. FE04 itself frames past-RAM + lw
+        // FFFFDAC0 — next stall after this hop, not invented here.
+        public const uint ListInsert3FD7CFn = 0x8003FD7C;
+        public const uint ListInsert3FD7CFrame = 0;
+        public const uint ListInsert3FD7CRaSlot = 0; // dump: leaf, no ra save
+        public const uint ListInsert3FD7CFpSlot = 0; // dump: no fp save
+        public const uint ListInsert3FD7CEpi = 0x8003FDFC;
+        public const uint ListInsert3FD7CEpiJr = 0x8003FDFC;
+        public const uint ListInsert3FD7CNextFn = 0x8003FE04;
 
         // Live 98276c7: skip 0xC0000088 then
         // sibling list-insert a1=0xC0001070
@@ -41376,6 +41399,94 @@ namespace ProcessorEmulator.Core
                 " harvest named next stall past FD7C; no invent maps)");
         }
 
+
+        private static bool IsPastRamFnFD7CBodyPc(uint pc)
+        {
+            return pc >= ListInsert3FD7CFn && pc < ListInsert3FD7CNextFn;
+        }
+
+        // Live 20fb70b/742ed23: after FD00 refuse land @FD7C with
+        // past-RAM sp and ra poked to leave=FD7C (ra==pc). Dump: FD7C is
+        // leaf jr $ra — self-loops under ProgressLeave mute. Body only
+        // touches mapped 0x80320A24/0x803429B0 (no frame, no unmapped),
+        // but poisoned ra jam is dump-true leave-mechanism warrant.
+        // Refuse body → unique sequential NextFn 0x8003FE04. 8 jal xrefs
+        // — no invent caller. No invent FFFFD808/page0/3F8B4/9001/C046/
+        // 1FFF000 maps. Four toc-miss honest.
+        public static bool TryContinuePastRamFnFD7C(MipsBus bus, uint[] regs,
+            ref uint cpuPc)
+        {
+            if (!_postApi52PastRamFnFD00ContLogged)
+                return false;
+            if (_postApi52PastRamFnFD7CContLogged)
+                return false;
+            if (regs == null || regs.Length < 32 || bus == null)
+                return false;
+            uint pc = cpuPc;
+            if (!IsPastRamFnFD7CBodyPc(pc))
+                return false;
+            uint sp = PeekGpr(regs, 29);
+            if (!IsKseg0PastGuestRam(sp))
+                return false;
+            uint leave = ListInsert3FD7CNextFn;
+            if (IsDumpMemRefuseVa(leave))
+                return false;
+            _postApi52PastRamFnFD7CContLogged = true;
+            uint ra = PeekGpr(regs, 31);
+            uint a0 = PeekGpr(regs, 4);
+            uint epc = bus.PeekEpc();
+            if (epc != 0 && (epc & 3) == 0)
+                bus.ClearExlIfEpc(epc);
+            bus.ClearExlIfEpc(CoredllDllMainListInsertHeadEpc);
+            bus.ClearExlIfEpc(CoredllDllMainC000Epc);
+            bus.ClearExlIfEpc(Memset59560Epc);
+            PokeGpr(regs, 31, leave);
+            cpuPc = leave;
+            BootLog.Write("[Hive] ExtraROM ddi_nop past-ram-fn-fd7c-refuse" +
+                " was=0x" + pc.ToString("X8") +
+                " leave=0x" + leave.ToString("X8") +
+                " sp=0x" + sp.ToString("X8") +
+                " raWas=0x" + ra.ToString("X8") +
+                " a0=0x" + a0.ToString("X8") +
+                " via=fn-fd7c-refuse-past-ram" +
+                " (20fb70b FD7C after FD00 refuse; past-RAM sp;" +
+                " leaf Frame=0; jr $ra self-loop under ra==pc poison;" +
+                " refuse → FE04; 8 jal xrefs; no invent" +
+                " FFFFD808/page0/3F8B4/9001/C046/1FFF000/caller;" +
+                " ProgressLeave latched; hb flat; four toc-miss honest)");
+            return true;
+        }
+
+        // One-shot sample after FD7C refuse leave past FE04.
+        public static void TryNotePastRamAfterFD7CLeave(MipsBus bus, uint[] regs,
+            uint pc)
+        {
+            if (!_postApi52PastRamFnFD7CContLogged || pc == 0)
+                return;
+            if (_postApi52PastRamAfterFD7CSampleLogged)
+                return;
+            if (IsPastRamFnFD7CBodyPc(pc))
+                return;
+            _postApi52PastRamAfterFD7CSampleLogged = true;
+            uint sp = regs != null && regs.Length > 29 ? PeekGpr(regs, 29) : 0;
+            uint ra = regs != null && regs.Length > 31 ? PeekGpr(regs, 31) : 0;
+            uint v0 = regs != null && regs.Length > 2 ? PeekGpr(regs, 2) : 0;
+            uint word = 0;
+            TryPeekWord(bus, pc, out word);
+            string via = pc == ListInsert3FD7CNextFn
+                ? "fn-fd7c-nextfn-after-refuse"
+                : "post-fd7c-leave";
+            BootLog.Write("[Hive] ExtraROM ddi_nop past-ram-after-fd7c-leave" +
+                " pc=0x" + pc.ToString("X8") +
+                " sp=0x" + sp.ToString("X8") +
+                " ra=0x" + ra.ToString("X8") +
+                " v0=0x" + v0.ToString("X8") +
+                " word=0x" + word.ToString("X8") +
+                " via=" + via +
+                " (one-shot next-PC sample after FD7C refuse;" +
+                " harvest named next stall past FE04; no invent maps)");
+        }
+
         private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
             uint index, string tag, uint off, ref bool plantLogged)
         {
@@ -45876,6 +45987,8 @@ namespace ProcessorEmulator.Core
             _postApi52PastRamAfterFC8CSampleLogged = false;
             _postApi52PastRamFnFD00ContLogged = false;
             _postApi52PastRamAfterFD00SampleLogged = false;
+            _postApi52PastRamFnFD7CContLogged = false;
+            _postApi52PastRamAfterFD7CSampleLogged = false;
             _listInsertHeadMissLogged = false;
             _wait99PlantFixLogged = false;
             _leftoverWait99WrapLogged = false;
@@ -52242,6 +52355,8 @@ namespace ProcessorEmulator.Core
         private static bool _postApi52PastRamAfterFC8CSampleLogged;
         private static bool _postApi52PastRamFnFD00ContLogged;
         private static bool _postApi52PastRamAfterFD00SampleLogged;
+        private static bool _postApi52PastRamFnFD7CContLogged;
+        private static bool _postApi52PastRamAfterFD7CSampleLogged;
         private static bool _listInsertHeadMissLogged;
         private static bool _wait99PlantFixLogged;
         private static bool _leftoverWait99WrapLogged;
