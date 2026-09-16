@@ -1632,13 +1632,12 @@ namespace ProcessorEmulator.Core
         // Do NOT invent map for 9001/9a/9f/c000.
         // Live 27f7cf8 out-past-ram: leave to
         // 0x8003F7BC logged n=1 then hb climbed
-        // same ra — 15c28 AfterOuterJalAddiu
-        // already-logged cap-leave ProgressLeave
-        // yanks to 3F694 loop (0x8003F7A0).
-        // Dump-true leave: unwind 3F694+3F854
-        // frames via epi stack slots; PC:= outer
-        // saved $ra. Refuse ProgressLeave yank
-        // while past-ram leave latched. No invent.
+        // — ProgressLeave yank to 3F7A0. Live
+        // 2f45013/22b48c1: double-unwind peeks
+        // failed silent. Prefer unwind when peeks
+        // OK; else beq-fall 0x8003F7BC fallback
+        // with ProgressLeave→0 latched. Log refuse
+        // why once. No invent.
         public const uint GuestRamSize = 0x10000000;
         public const uint Kseg0PastRamLo = 0x90000000;
         public const uint ListInsert3F694RaEarly = 0x8003F714;
@@ -39653,15 +39652,14 @@ namespace ProcessorEmulator.Core
         // idle=NO. a1 KSEG0 past GuestRamSize with
         // ra=0x8003F784|0x8003F714 (fn 0x8003F694).
         // Live 27f7cf8: leave 0x8003F7BC fired
-        // n=1 then hb n=2..32768 same ra — PC
-        // hopped but 15c28 Addiu cap-leave
-        // ProgressLeave re-entered 3F694 loop;
-        // once-latch blocked re-leave. Dump-true
-        // fix: unwind 3F694 (sp+56, ra@+52=
-        // 0x8003F938) then 3F854 (sp+48, ra@+40);
-        // PC:= outer saved $ra. Re-leave if
-        // past-ram returns (log once). No invent
-        // 9001/9a/9f/c000 maps. No hop 0x8003F7BC.
+        // n=1 then hb climbed — ProgressLeave yank.
+        // Live 2f45013/22b48c1: double-unwind peeks
+        // failed silent (no leave line); hb climbed.
+        // Dump-true: prefer unwind 3F694+3F854 when
+        // peeks succeed; else beq-fall 0x8003F7BC
+        // fallback WITH ProgressLeave→0 latched so
+        // leave sticks. Log refuse why once. Re-leave
+        // if past-ram returns. No invent maps.
         private static bool IsKseg0PastGuestRam(uint va)
         {
             if (va < Kseg0PastRamLo || va > 0x9FFFFFFFu)
@@ -39704,30 +39702,124 @@ namespace ProcessorEmulator.Core
                 return false;
             if (regs == null || regs.Length < 32 || bus == null)
                 return false;
+
             uint sp = PeekGpr(regs, 29);
-            if (sp == 0 || (sp & 3) != 0)
-                return false;
+            string refuseWhy = null;
+            uint refusePeek = 0;
+            uint refuseExpect = 0;
             uint savedRa3F694 = 0;
-            if (!TryPeekWord(bus, sp + ListInsert3F694RaSlot, out savedRa3F694)
+            uint savedRaOuter = 0;
+            uint spDone = 0;
+            bool unwindOk = false;
+
+            if (sp == 0 || (sp & 3) != 0)
+            {
+                refuseWhy = "sp-bad";
+                refusePeek = sp;
+                refuseExpect = ListInsert3F694JalLink;
+            }
+            else if (!TryPeekWord(bus, sp + ListInsert3F694RaSlot, out savedRa3F694)
                 || savedRa3F694 == 0)
-                return false;
-            // Dump-true jal link of jal 0x8003F694
-            // @ 0x8003F934; allow any sane slot in
-            // outer 3F854 body if link drifts.
-            if (savedRa3F694 != ListInsert3F694JalLink
+            {
+                refuseWhy = "peek-ra";
+                refusePeek = savedRa3F694;
+                refuseExpect = ListInsert3F694JalLink;
+            }
+            else if (savedRa3F694 != ListInsert3F694JalLink
                 && (savedRa3F694 < CoredllDllMainExn15C28OuterJalLinkEpiBeqBneFallJrNext
                     || savedRa3F694 > CoredllDllMainExn15C28OuterJalLinkEpiRetFallEpiJrDelay))
-                return false;
-            uint spOuter = sp + ListInsert3F694Frame;
-            uint savedRaOuter = 0;
-            if (!TryPeekWord(bus, spOuter + ListInsert3F854RaSlot, out savedRaOuter)
-                || savedRaOuter == 0)
-                return false;
-            if (!IsSanePastRamOuterLeave(savedRaOuter))
-                return false;
-            uint spDone = spOuter + ListInsert3F854Frame;
-            if ((spDone & 3) != 0)
-                return false;
+            {
+                refuseWhy = "link-mismatch";
+                refusePeek = savedRa3F694;
+                refuseExpect = ListInsert3F694JalLink;
+            }
+            else
+            {
+                uint spOuter = sp + ListInsert3F694Frame;
+                if (!TryPeekWord(bus, spOuter + ListInsert3F854RaSlot, out savedRaOuter)
+                    || savedRaOuter == 0)
+                {
+                    refuseWhy = "outer-insane";
+                    refusePeek = savedRaOuter;
+                    refuseExpect = ListInsert3F694JalLink;
+                }
+                else if (!IsSanePastRamOuterLeave(savedRaOuter))
+                {
+                    refuseWhy = "outer-insane";
+                    refusePeek = savedRaOuter;
+                    refuseExpect = ListInsert3F694JalLink;
+                }
+                else
+                {
+                    spDone = spOuter + ListInsert3F854Frame;
+                    if ((spDone & 3) != 0)
+                    {
+                        refuseWhy = "sp-bad";
+                        refusePeek = spDone;
+                        refuseExpect = ListInsert3F694JalLink;
+                    }
+                    else
+                        unwindOk = true;
+                }
+            }
+
+            if (!unwindOk)
+            {
+                if (!_postApi52PastRamLeaveRefuseLogged)
+                {
+                    _postApi52PastRamLeaveRefuseLogged = true;
+                    BootLog.Write("[Hive] ExtraROM ddi_nop past-ram-leave-refuse why=" +
+                        (refuseWhy ?? "unknown") +
+                        " sp=0x" + sp.ToString("X8") +
+                        " peek=0x" + refusePeek.ToString("X8") +
+                        " expect=0x" + refuseExpect.ToString("X8") +
+                        " ra=0x" + ra.ToString("X8") +
+                        " a1=0x" + a1.ToString("X8") +
+                        " n=" + _postApi52ListInsertN.ToString() +
+                        " (double-unwind peeks failed; fallback beq-fall)");
+                }
+                // Dump-true fallback: 27f7cf8 beq-fall epi.
+                // Stick via ProgressLeave→0 while latched.
+                uint leave = CoredllDllMainExn15C28OuterJalLinkBeqFall;
+                uint leaveDump = 0;
+                if (!TryPeekLeftoverWait99DumpOnly(leave, out leaveDump)
+                    || leaveDump == 0)
+                    leaveDump = CoredllDllMainExn15C28OuterJalLinkBeqFallDump;
+                if (leaveDump != CoredllDllMainExn15C28OuterJalLinkBeqFallDump)
+                    return false;
+                if (IsDumpMemRefuseVa(leave))
+                    return false;
+                bool firstFb = !_postApi52PastRamLeaveLogged;
+                _postApi52PastRamLeaveLogged = true;
+                uint epcFb = bus.PeekEpc();
+                if (epcFb != 0 && (epcFb & 3) == 0)
+                    bus.ClearExlIfEpc(epcFb);
+                bus.ClearExlIfEpc(CoredllDllMainC000Epc);
+                uint a0Fb = PeekGpr(regs, 4);
+                uint v0Fb = PeekGpr(regs, 2);
+                uint fpFb = PeekGpr(regs, 30);
+                cpuPc = leave;
+                if (firstFb)
+                {
+                    BootLog.Write("[Hive] ExtraROM ddi_nop post-api52-list-insert-past-ram-leave" +
+                        " a1=0x" + a1.ToString("X8") +
+                        " class=" + ListInsertDestClassName(ListInsertDestClassId(a1)) +
+                        " a0=0x" + a0Fb.ToString("X8") +
+                        " v0=0x" + v0Fb.ToString("X8") +
+                        " fp=0x" + fpFb.ToString("X8") +
+                        " ra=0x" + ra.ToString("X8") +
+                        " sp=0x" + sp.ToString("X8") +
+                        " leave=0x" + leave.ToString("X8") +
+                        " via=beq-fall-fallback" +
+                        " refuse=" + (refuseWhy ?? "unknown") +
+                        " n=" + _postApi52ListInsertN.ToString() +
+                        " (KSEG0 phys past GuestRamSize 256MiB;" +
+                        " dump-true beq-fall epi; refuse ProgressLeave yank;" +
+                        " no invent 9001/9a/9f/c000 map)");
+                }
+                return true;
+            }
+
             bool first = !_postApi52PastRamLeaveLogged;
             _postApi52PastRamLeaveLogged = true;
             uint epc = bus.PeekEpc();
@@ -39752,6 +39844,7 @@ namespace ProcessorEmulator.Core
                     " sp=0x" + sp.ToString("X8") +
                     " link=0x" + savedRa3F694.ToString("X8") +
                     " leave=0x" + savedRaOuter.ToString("X8") +
+                    " via=double-unwind" +
                     " n=" + _postApi52ListInsertN.ToString() +
                     " (KSEG0 phys past GuestRamSize 256MiB;" +
                     " unwind 3F694+3F854 dump-true stack;" +
@@ -44271,6 +44364,7 @@ namespace ProcessorEmulator.Core
             _postApi52ListInsertN = 0;
             _postApi52IdleLogged = false;
             _postApi52PastRamLeaveLogged = false;
+            _postApi52PastRamLeaveRefuseLogged = false;
             _wait99PlantFixLogged = false;
             _leftoverWait99WrapLogged = false;
             _leftoverWait99WrapContLogged = false;
@@ -50614,6 +50708,7 @@ namespace ProcessorEmulator.Core
         private static uint _postApi52ListInsertN;
         private static bool _postApi52IdleLogged;
         private static bool _postApi52PastRamLeaveLogged;
+        private static bool _postApi52PastRamLeaveRefuseLogged;
         private static bool _wait99PlantFixLogged;
         private static bool _leftoverWait99WrapLogged;
         private static bool _leftoverWait99WrapContLogged;
