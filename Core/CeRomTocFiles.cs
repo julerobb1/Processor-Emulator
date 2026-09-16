@@ -1045,6 +1045,34 @@ namespace ProcessorEmulator.Core
         public const uint LeftoverApi54Ec = 0x8005950C;
         public const uint LeftoverApi54MethLive = 0x8005A6D0;
         public const uint LeftoverApi54Ret = 0x80095EBC;
+        // Live 79a48fe leftover-wait99-o32-nk-chain
+        // pc=0x80000180 cause=4 epc=bad=0xFFFFFB32
+        // via=exn-adel. Not a SUD load: I-fetch
+        // ADEL is leftover-syscall -1230 /
+        // methods[52]. Dump Int_CreateEventW
+        // 0x03F6B728 addiu $v0,$0,-1230; jalr
+        // $v0 when *0x01FFFCA4==0. Cache-hit
+        // lw $v0,208($v0) is ppfnMethods+0xD0.
+        // Dump nk.bin methods[52]=0x8003DBE0
+        // dest-live (addiu $v0,1 / jr $ra).
+        // ROM leftover dest stub 0x8008F728
+        // jalr+8 0x8008F730 — refuse leftover
+        // hop. (EPC|0xFFFC)+2==0 is the
+        // 0x8001521C jalr trap. Stale $k1
+        // skips syscall decode. Do not map
+        // 0xFFFFF000 / invent SUD. Do not
+        // leftover hop.
+        public const uint LeftoverApi52 = 0xFFFFFFCC;
+        public const int LeftoverApi52Imm = -1230;
+        public const uint LeftoverApi52Meth = 52;
+        public const uint LeftoverApi52Off = 0xD0;
+        public const uint LeftoverApi52MethLive = 0x8003DBE0;
+        public const uint LeftoverApi52Ret = 0x8008F730;
+        public const uint LeftoverApi52Stub = 0x03F6B728;
+        public const uint LeftoverApi52StubWord = 0x2402FB32;
+        public const uint LeftoverApi52Jalr = 0x03F6B72C;
+        public const uint LeftoverApi52Adel = 0xFFFFFB32;
+        public const uint LeftoverApi52JalrRa = 0x03F6B734;
         // Live 8741ab2 plant-fix +EC=0x800397B8
         // then silent freeze. Dump leftover
         // 0x800397B0 addiu $sp,-48; 0x800397B8
@@ -1432,8 +1460,11 @@ namespace ProcessorEmulator.Core
         // is $v1 not $0. Firmware pte-miss tlb=none
         // — no dump word at +0xE54. NK's own beq
         // is the empty default. Do not invent F000
-        // / pfn+1. Early adel 0xFFFFFB32 is the
-        // same SUD page (observe-only).
+        // / pfn+1. Early adel 0xFFFFFB32 is
+        // leftover-syscall -1230 / methods[52]
+        // (Int_CreateEventW jalr trap), not a
+        // SUD load. Observe + dest-live
+        // 0x8003DBE0. Do not map F000.
         public const uint CoredllDllMainSudVa = 0xFFFFFE54;
         public const uint CoredllDllMainSudEpc = 0x8002F188;
         public const uint CoredllDllMainSudInsn = 0x8C430000;
@@ -36817,7 +36848,11 @@ namespace ProcessorEmulator.Core
             uint kdataPrev = 0;
             uint kdataNext = 0;
             string kdataDis = "";
-            if (why == "exn-tlbl-pc0" || kdata || sud || jalr || jalr1db0 || ri || stk2470 || stk1670 || abs1828 || abs6670 || c000 || exn15 || exn15After || destJal || bada)
+            bool adelSys = code == 4 && (IsFirmwareImplicitApi(epc)
+                || epc == LeftoverApi52Adel);
+            if (adelSys)
+                why = "exn-adel-syscall";
+            if (why == "exn-tlbl-pc0" || kdata || sud || jalr || jalr1db0 || ri || stk2470 || stk1670 || abs1828 || abs6670 || c000 || exn15 || exn15After || destJal || bada || adelSys)
             {
                 pc0V0 = PeekGpr(regs, 2);
                 pc0T9 = PeekGpr(regs, 25);
@@ -36851,9 +36886,10 @@ namespace ProcessorEmulator.Core
                 " epc=0x" + epc.ToString("X") +
                 " bad=0x" + vaddr.ToString("X") +
                 (slot || page || kdata || sud || jalr || jalr1db0 || ri || stk2470 || stk1670 || abs1828 || abs6670 || c000 || exn15 || exn15After || destJal || bada ? " word=0x" + slotWord.ToString("X") : "") +
-                ((why == "exn-tlbl-pc0" || kdata || sud || jalr || jalr1db0 || ri || stk2470 || stk1670 || abs1828 || abs6670 || c000 || exn15 || exn15After || destJal || bada)
+                ((why == "exn-tlbl-pc0" || kdata || sud || jalr || jalr1db0 || ri || stk2470 || stk1670 || abs1828 || abs6670 || c000 || exn15 || exn15After || destJal || bada || adelSys)
                     ? " v0=0x" + pc0V0.ToString("X") +
-                      " t9=0x" + pc0T9.ToString("X")
+                      " t9=0x" + pc0T9.ToString("X") +
+                      " ra=0x" + pc0Ra.ToString("X")
                     : "") +
                 (jalr1db0 && slotWord != 0
                     ? " rs=" + ((slotWord >> 21) & 31).ToString()
@@ -38403,7 +38439,8 @@ namespace ProcessorEmulator.Core
         {
             if ((va & 3) != 0 || va == 0 || va == 0xFFFFFFFFu)
                 return false;
-            if (va == 0xFFFFF9A2u || va == LeftoverWait99GetProcDest)
+            if (va == 0xFFFFF9A2u || va == LeftoverApi52Adel
+                || va == LeftoverWait99GetProcDest)
                 return false;
             if (va == ProcessInfoFaultVa)
                 return false;
@@ -38488,6 +38525,7 @@ namespace ProcessorEmulator.Core
             }
             TryPlantLeftoverApi78Method(bus);
             TryPlantLeftoverApi54Method(bus);
+            TryPlantLeftoverApi52Method(bus);
         }
 
         private static bool TryResolveLeftoverWait99GetProcTable(MipsBus bus,
@@ -39412,6 +39450,114 @@ namespace ProcessorEmulator.Core
         {
             return TryPlantLeftoverWait99ApiMethod(bus, LeftoverApi54Meth,
                 "54", LeftoverApi54Off, ref _leftoverApi54PlantLogged);
+        }
+
+        private static bool TryPlantLeftoverApi52Method(MipsBus bus)
+        {
+            return TryPlantLeftoverWait99ApiMethod(bus, LeftoverApi52Meth,
+                "52", LeftoverApi52Off, ref _leftoverApi52PlantLogged);
+        }
+
+        // Live 79a48fe: I-fetch ADEL 0xFFFFFB32
+        // during coredll Int_CreateEventW. Dump-
+        // true dest is methods[52] 0x8003DBE0.
+        // Rewrite $v0 at jalr so dest-wrapper
+        // success runs. If the jalr already
+        // trapped, hop PC to dest-live and
+        // leave $ra=jalr+8. Refuse leftover
+        // hop 0x8008F730. Never map SUD.
+        public static bool TryContinueLeftoverApi52(MipsBus bus, uint[] regs,
+            ref uint pc)
+        {
+            if (regs == null || regs.Length <= 2)
+                return false;
+            uint epc = 0;
+            if (bus != null)
+                epc = bus.PeekEpc();
+            bool atJalr = pc == LeftoverApi52Jalr;
+            bool atAddiu = pc == LeftoverApi52Stub;
+            bool atAdel = pc == LeftoverApi52Adel
+                || (pc == 0x80000180u && epc == LeftoverApi52Adel);
+            if (!atJalr && !atAddiu && !atAdel)
+                return false;
+            TryPlantLeftoverWait99GetProc(bus, regs);
+            TryPlantLeftoverApi52Method(bus);
+            uint dest = 0;
+            if (!TryResolveLeftoverApi52Dest(bus, out dest))
+                return false;
+            if (atAddiu)
+                return false;
+            if (atJalr)
+            {
+                PokeGpr(regs, 2, dest);
+                TryNoteLeftoverApi52Cont(bus, pc, dest, "jalr-v0");
+                return false;
+            }
+            if (regs.Length > 31)
+            {
+                uint ra = PeekGpr(regs, 31);
+                if (ra == 0 || (ra & 3) != 0 || IsLeftoverDestVa(ra)
+                    || ra == LeftoverApi52Ret || ra == LeftoverApi52Adel)
+                    PokeGpr(regs, 31, LeftoverApi52JalrRa);
+            }
+            if (bus != null)
+            {
+                bus.PokeEpc(dest);
+                bus.ClearExlIfEpc(dest);
+            }
+            pc = dest;
+            TryNoteLeftoverApi52Cont(bus, epc != 0 ? epc : LeftoverApi52Adel,
+                dest, "adel-ifetch");
+            return true;
+        }
+
+        private static bool TryResolveLeftoverApi52Dest(MipsBus bus, out uint dest)
+        {
+            dest = 0;
+            uint live = 0;
+            if (TryPeekLeftoverWait99Method(bus, LeftoverApi52Meth, out live)
+                && IsLeftoverApi52DestLive(live))
+            {
+                dest = live;
+                return true;
+            }
+            if (IsLeftoverApi52DestLive(LeftoverApi52MethLive))
+            {
+                dest = LeftoverApi52MethLive;
+                return true;
+            }
+            return false;
+        }
+
+        private static bool IsLeftoverApi52DestLive(uint dest)
+        {
+            if (!IsDumpWait99GetProcDest(dest) || !IsSanePlantResumePc(dest))
+                return false;
+            if (dest == LeftoverWait99GetProcDest || dest == LeftoverApi52Ret
+                || dest == LeftoverApi52Adel || IsLeftoverDestVa(dest)
+                || IsPoisonMidPlantResume(dest))
+                return false;
+            return dest >= 0x80010000u && dest < NkImageEnd;
+        }
+
+        private static void TryNoteLeftoverApi52Cont(MipsBus bus, uint was,
+            uint dest, string via)
+        {
+            if (_leftoverApi52ContLogged)
+                return;
+            _leftoverApi52ContLogged = true;
+            uint m52 = 0;
+            TryPeekLeftoverWait99Method(bus, LeftoverApi52Meth, out m52);
+            BootLog.Write("[Hive] ExtraROM ddi_nop leftover-api-52-cont api=0x" +
+                LeftoverApi52.ToString("X8") +
+                " imm=" + LeftoverApi52Imm +
+                " was=0x" + was.ToString("X8") +
+                " m52=0x" + m52.ToString("X8") +
+                " dest=0x" + dest.ToString("X8") +
+                " via=" + via +
+                " (Int_CreateEventW leftover-syscall -1230 methods[52];" +
+                " dump dest-live 0x8003DBE0; refuse leftover hop 0x8008F730;" +
+                " do not map F000 / invent SUD)");
         }
 
         private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
@@ -43887,6 +44033,8 @@ namespace ProcessorEmulator.Core
             _leftoverApi54PlantLogged = false;
             _leftoverApi54ContLogged = false;
             _leftoverApi54HaltLogged = false;
+            _leftoverApi52PlantLogged = false;
+            _leftoverApi52ContLogged = false;
             _wait99PlantFixLogged = false;
             _leftoverWait99WrapLogged = false;
             _leftoverWait99WrapContLogged = false;
@@ -48097,7 +48245,9 @@ namespace ProcessorEmulator.Core
         // AdEL. Do not poke CurProc.
         public static bool TryClearImplicitApiK1(uint[] regs, uint vaddr)
         {
-            if (!_tv2FetchLogged || regs == null || regs.Length <= 27)
+            if (regs == null || regs.Length <= 27)
+                return false;
+            if (!_tv2FetchLogged && !_leftoverWait99O32NkJalrSawTarget)
                 return false;
             if (!IsFirmwareImplicitApi(vaddr))
                 return false;
@@ -50223,6 +50373,8 @@ namespace ProcessorEmulator.Core
         private static bool _leftoverApi54PlantLogged;
         private static bool _leftoverApi54ContLogged;
         private static bool _leftoverApi54HaltLogged;
+        private static bool _leftoverApi52PlantLogged;
+        private static bool _leftoverApi52ContLogged;
         private static bool _wait99PlantFixLogged;
         private static bool _leftoverWait99WrapLogged;
         private static bool _leftoverWait99WrapContLogged;
