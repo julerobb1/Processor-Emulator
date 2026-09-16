@@ -17,7 +17,7 @@ namespace ProcessorEmulator.Core
     // sitting next to nk.bin. NkBinLoader maps each file's records
     // at THAT file's imageStart so ExtraROM XIP (tv2clientce.exe
     // and the rest) is in RAM. A Dumps\etc.bin\ extract folder is
-    // that same tree unpacked â€” log it, do not pack it into a fake
+    // that same tree unpacked Ã¢â‚¬â€ log it, do not pack it into a fake
     // B000FF. Firmware CreateFile of ETC.bin / BOOT.PRF / sec.bin
     // is the Hard Disk path, not a second XIP. Firmware has no skip
     // for the missing 0x81360000 image. Do not invent that map.
@@ -40,7 +40,7 @@ namespace ProcessorEmulator.Core
     // Launch record +4 is the ready slot. RunApps writes +4=1
     // only on CreateProcess fail or the device.exe / BootPhase2
     // miss. Success leaves +4=0. filesys 0x000177EC (coredll
-    // SignalStarted ordinal 639 â†’ FILESYS API table 0x000111A8)
+    // SignalStarted ordinal 639 Ã¢â€ â€™ FILESYS API table 0x000111A8)
     // matches a0 to record+0, writes +4=1, then EventModify
     // (a1=3 SET) the unnamed event at 0x00059468 so the Depend
     // WaitForMultipleObjects INFINITE at 0x000180A4 returns.
@@ -130,7 +130,7 @@ namespace ProcessorEmulator.Core
         public const uint LaunchTablePtr = 0x0005946C;
         public const uint LaunchRecordSize = 0x250;
         // gwes preferred 0x00010000; lives in a CE 32MB slot.
-        // Slot 0 is filesys â€” do not treat 0x0001634C there as gwes.
+        // Slot 0 is filesys Ã¢â‚¬â€ do not treat 0x0001634C there as gwes.
         public const uint GwesSignalStarted = 0x0001634C;
         public const uint GwesGweApiReady = 0x00016354;
         public const uint GwesVaEntry = 0x000163C8;
@@ -200,7 +200,7 @@ namespace ProcessorEmulator.Core
         public const uint GwesDispObj = 0x000BA954;
         public const uint GwesDispC8Off = 0xC8;
         // 0x0005D24C addiu a0, 584; jal 0x000B4D20 (IAT 0x000B60D0).
-        // wait42: ExtraROM dest host-back [v0, dest+size] â€” LoadDriver
+        // wait42: ExtraROM dest host-back [v0, dest+size] Ã¢â‚¬â€ LoadDriver
         // v0=0x86F36EA0. DllMain dest+0x520 TLB $fp=0x080E1970
         // (slot-4 view of the GDI object). Do not invent 0x000E0000.
         public const uint GwesVaDispAlloc = 0x0005D250;
@@ -698,6 +698,8 @@ namespace ProcessorEmulator.Core
             CeRomTocFiles.TryNoteTv2LeftoverPast(bus, pc);
             CeRomTocFiles.TryNoteTv2LeftoverPastCae8(bus, registers, pc);
             CeRomTocFiles.TryNoteTv2LeftoverPastCaf0(bus, pc);
+            if (CeRomTocFiles.TryContinueLeftoverApi52(bus, registers, ref programCounter))
+                return true;
             CeRomTocFiles.TryNotePostApi52Silence(bus, registers, pc);
             if (CeRomTocFiles.TryRefuseLeftoverWait99Wrap(bus, registers, ref programCounter))
                 return true;
@@ -1076,7 +1078,7 @@ namespace ProcessorEmulator.Core
             isDword = false;
             // FSDMGR queries the filter child default (lpValueName
             // NULL / "") for the DLL. Named Dll stays valid too.
-            // Do not serve "" on FATFS â€” that miss is honest.
+            // Do not serve "" on FATFS Ã¢â‚¬â€ that miss is honest.
             if (hKey == HkSigCheck)
             {
                 if (string.IsNullOrEmpty(name) || EqualsIgnore(name, "Dll"))
@@ -1801,7 +1803,7 @@ namespace ProcessorEmulator.Core
         }
 
         // filesys 0x000177EC: the only success-path writer of
-        // launch record+4. a0 is the Launch number (20, 30, â€¦).
+        // launch record+4. a0 is the Launch number (20, 30, Ã¢â‚¬Â¦).
         // a0==0 pulses 0x00059468 and does not set any +4.
         private static void LogSignalStarted(uint[] registers, MipsBus bus)
         {
@@ -3258,7 +3260,7 @@ namespace ProcessorEmulator.Core
         }
 
         // gwes image_base 0x00010000; SYSTEM/GweApiSetReady at +0x11020.
-        // Also walk 4KB pages in low RAM â€” CreateProcess v0=1 does not
+        // Also walk 4KB pages in low RAM Ã¢â‚¬â€ CreateProcess v0=1 does not
         // mean the PE was placed in a CE slot.
         private static void LogGwesMappedSlots(MipsBus bus)
         {

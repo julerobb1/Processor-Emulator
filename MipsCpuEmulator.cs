@@ -392,7 +392,9 @@ namespace ProcessorEmulator.Emulation
                 }
                 catch (CpuAlignmentException)
                 {
-                    TriggerAddressError(_currentPc);
+                    if (!ProcessorEmulator.Core.CeRomTocFiles.TryContinueLeftoverApi52(_bus, registers,
+                        ref programCounter))
+                        TriggerAddressError(_currentPc);
                 }
 
                 // Advance the internal timer by one cycle per instruction.
@@ -1074,7 +1076,7 @@ namespace ProcessorEmulator.Emulation
                     case 0x07: // bgtz
                         ExecuteBranchVsZero(instruction, greaterThan: true);
                         break;
-                    case 0x2F: // cache — no data cache in this interpreter
+                    case 0x2F: // cache â€” no data cache in this interpreter
                         break;
                     default:
                         TriggerException(10); // 10 is Reserved Instruction exception
@@ -1256,7 +1258,7 @@ namespace ProcessorEmulator.Emulation
                 _lo = registers[rs];
                 return;
             }
-            if (funct == 0x18) // mult — HI/LO write; rd is always $zero
+            if (funct == 0x18) // mult â€” HI/LO write; rd is always $zero
             {
                 long result = (long)(int)registers[rs] * (long)(int)registers[rt];
                 _lo = (uint)result;
