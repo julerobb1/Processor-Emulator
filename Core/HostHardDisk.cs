@@ -831,6 +831,9 @@ namespace ProcessorEmulator.Core
             if (CeRomTocFiles.TryContinuePastRamFn41AC4(bus, registers, ref programCounter))
                 return true;
             CeRomTocFiles.TryNotePastRamAfter41AC4Leave(bus, registers, pc);
+            // NON-REFUSE: poke $ra only; do NOT return true (native 41BBC body).
+            CeRomTocFiles.TryRestorePastRamFn41BBCRa(bus, registers, programCounter);
+            CeRomTocFiles.TryNotePastRamAfter41BBCLeave(bus, registers, pc);
             if (CeRomTocFiles.TryRefuseLeftoverWait99Wrap(bus, registers, ref programCounter))
                 return true;
             if (CeRomTocFiles.TryFixWait99PlantRa(bus, registers, ref programCounter))

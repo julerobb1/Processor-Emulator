@@ -2556,6 +2556,29 @@ namespace ProcessorEmulator.Core
         public const uint ListInsert341AC4EpiJr = 0x80041BB4;
         public const uint ListInsert341AC4NextFn = 0x80041BBC;
 
+        // Dump-true 41BBC (Refuse NO — stackless mapped-only after 41AC4
+        // leave): first word 0x3C028032 = lui v0,0x8032 — NOT addiu sp,-N.
+        // Frame=0 RaSlot=0 FpSlot=0; no sw to $sp. Body: mapped
+        // 0x80320A30 / 0x80320A34 + runtime list nodes via *(0x80320A34)
+        // (do NOT invent maps). No FFFF* / page0. No jal in body. Epi
+        // jr $ra @41C20 delay nop @41C24; unique sequential NextFn
+        // 0x80041C28 word=0x3C028032. 1 jal xref @0x800422C8 (named; do
+        // NOT invent caller/yank). Live leave after 41AC4: ra==pc==
+        // 0x80041BBC → jr $ra self-loop under ProgressLeave. NON-REFUSE
+        // ProgressLeave: poke $ra=0x80041C28 only; leave cpuPc in body
+        // so native mapped body runs (via=fn-41bbc-ra-restore-fallthrough).
+        // Do NOT invent FFFF* / page0 / 3F8B4 / 9001 / C046 / 1FFF000 /
+        // 0x20000000 / 0x6F6B / 0x10022B8C / 0xA0000000 / past-RAM stack.
+        // Four toc-miss honest. Note-only TLBS 0x1FFF000 ignore.
+        public const uint ListInsert341BBCFn = 0x80041BBC;
+        public const uint ListInsert341BBCFrame = 0;
+        public const uint ListInsert341BBCRaSlot = 0; // dump: leaf, no ra save
+        public const uint ListInsert341BBCFpSlot = 0; // dump: no fp save
+        public const uint ListInsert341BBCEpi = 0x80041C20;
+        public const uint ListInsert341BBCEpiJr = 0x80041C20;
+        public const uint ListInsert341BBCNextFn = 0x80041C28;
+
+
 
 
         // Live 98276c7: skip 0xC0000088 then
@@ -44963,6 +44986,102 @@ namespace ProcessorEmulator.Core
         }
 
 
+        private static bool IsPastRamFn41BBCBodyPc(uint pc)
+        {
+            return pc >= ListInsert341BBCFn && pc < ListInsert341BBCNextFn;
+        }
+
+        // Live 6681367 after 41AC4 refuse: land @41BBC with ra=pc=41BBC;
+        // stackless mapped-only (0x80320A30/0x80320A34; no FFFF*). Refuse
+        // NO — do NOT skip body. NON-REFUSE ProgressLeave: one-shot poke
+        // $ra = NextFn 0x80041C28 only; leave cpuPc in body so native
+        // executes; epi jr $ra then fallthrough to NextFn. Require prior
+        // 41AC4 hop. Poisoned ra==Fn or ra==pc. Do NOT invent caller/
+        // yank / FFFF* / page0 / 3F8B4 / 9001 / C046 / 1FFF000 /
+        // 0x20000000 / 0x6F6B / 0x10022B8C / 0xA0000000 / past-RAM stack
+        // / runtime nodes. Four toc-miss honest.
+        public static bool TryRestorePastRamFn41BBCRa(MipsBus bus, uint[] regs,
+            uint cpuPc)
+        {
+            if (!_postApi52PastRamFn41AC4ContLogged)
+                return false;
+            if (_postApi52PastRamFn41BBCRaRestored)
+                return false;
+            if (regs == null || regs.Length < 32 || bus == null)
+                return false;
+            uint pc = cpuPc;
+            if (!IsPastRamFn41BBCBodyPc(pc))
+                return false;
+            uint sp = PeekGpr(regs, 29);
+            if (!IsKseg0PastGuestRam(sp))
+                return false;
+            uint ra = PeekGpr(regs, 31);
+            // Typical ProgressLeave poison after 41AC4 leave poke.
+            if (ra != ListInsert341BBCFn && ra != pc)
+                return false;
+            uint leave = ListInsert341BBCNextFn;
+            if (IsDumpMemRefuseVa(leave))
+                return false;
+            _postApi52PastRamFn41BBCRaRestored = true;
+            uint a0 = PeekGpr(regs, 4);
+            uint epc = bus.PeekEpc();
+            if (epc != 0 && (epc & 3) == 0)
+                bus.ClearExlIfEpc(epc);
+            bus.ClearExlIfEpc(CoredllDllMainListInsertHeadEpc);
+            bus.ClearExlIfEpc(CoredllDllMainC000Epc);
+            bus.ClearExlIfEpc(Memset59560Epc);
+            // NON-REFUSE: poke $ra only — do NOT set cpuPc (native body).
+            PokeGpr(regs, 31, leave);
+            BootLog.Write("[Hive] ExtraROM ddi_nop past-ram-fn-41bbc-ra-restore" +
+                " was=0x" + pc.ToString("X8") +
+                " ra=0x" + leave.ToString("X8") +
+                " sp=0x" + sp.ToString("X8") +
+                " raWas=0x" + ra.ToString("X8") +
+                " a0=0x" + a0.ToString("X8") +
+                " via=fn-41bbc-ra-restore-fallthrough" +
+                " (6681367 41BBC after 41AC4; past-RAM sp; stackless" +
+                " mapped-only 0x80320A30/A34; no FFFF*; poisoned-ra" +
+                " self-loop broken by ra→0x80041C28; cpuPc stays in body;" +
+                " NOT refuse; 1 jal @0x800422C8 named only;" +
+                " no invent 0x10022B8C/0x6F6B/0x20000000/FFFF*/" +
+                "page0/3F8B4/9001/C046/1FFF000/0xA0000000;" +
+                " ProgressLeave; hb flat; four toc-miss honest)");
+            return true;
+        }
+
+        // One-shot sample after 41BBC ra-restore when PC leaves body
+        // (esp. land @0x80041C28 after native epi jr $ra).
+        public static void TryNotePastRamAfter41BBCLeave(MipsBus bus, uint[] regs,
+            uint pc)
+        {
+            if (!_postApi52PastRamFn41BBCRaRestored || pc == 0)
+                return;
+            if (_postApi52PastRamAfter41BBCSampleLogged)
+                return;
+            if (IsPastRamFn41BBCBodyPc(pc))
+                return;
+            _postApi52PastRamAfter41BBCSampleLogged = true;
+            uint sp = regs != null && regs.Length > 29 ? PeekGpr(regs, 29) : 0;
+            uint ra = regs != null && regs.Length > 31 ? PeekGpr(regs, 31) : 0;
+            uint v0 = regs != null && regs.Length > 2 ? PeekGpr(regs, 2) : 0;
+            uint word = 0;
+            TryPeekWord(bus, pc, out word);
+            string via = pc == ListInsert341BBCNextFn
+                ? "fn-41bbc-nextfn-after-ra-restore"
+                : "post-41bbc-leave";
+            BootLog.Write("[Hive] ExtraROM ddi_nop past-ram-after-41bbc-leave" +
+                " pc=0x" + pc.ToString("X8") +
+                " sp=0x" + sp.ToString("X8") +
+                " ra=0x" + ra.ToString("X8") +
+                " v0=0x" + v0.ToString("X8") +
+                " word=0x" + word.ToString("X8") +
+                " via=" + via +
+                " (one-shot next-PC sample after 41BBC ra-restore;" +
+                " harvest named next stall past 0x80041C28; no invent maps;" +
+                " runtime list-node TLB = honest stall)");
+        }
+
+
 private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
             uint index, string tag, uint off, ref bool plantLogged)
         {
@@ -49527,6 +49646,8 @@ private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
             _postApi52PastRamAfter41968SampleLogged = false;
             _postApi52PastRamFn41AC4ContLogged = false;
             _postApi52PastRamAfter41AC4SampleLogged = false;
+            _postApi52PastRamFn41BBCRaRestored = false;
+            _postApi52PastRamAfter41BBCSampleLogged = false;
             _listInsertHeadMissLogged = false;
             _wait99PlantFixLogged = false;
             _leftoverWait99WrapLogged = false;
@@ -55957,6 +56078,8 @@ private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
         private static bool _postApi52PastRamAfter41968SampleLogged;
         private static bool _postApi52PastRamFn41AC4ContLogged;
         private static bool _postApi52PastRamAfter41AC4SampleLogged;
+        private static bool _postApi52PastRamFn41BBCRaRestored;
+        private static bool _postApi52PastRamAfter41BBCSampleLogged;
         private static bool _listInsertHeadMissLogged;
         private static bool _wait99PlantFixLogged;
         private static bool _leftoverWait99WrapLogged;
