@@ -1630,12 +1630,23 @@ namespace ProcessorEmulator.Core
         // 0x8003F854→0x8003F934→0x8003F694 registers
         // pool/150ac buffer into table 0x8032024C.
         // Do NOT invent map for 9001/9a/9f/c000.
-        // Dump-true leave: no-op list-insert (skip
-        // both stores) + PC:=0x8003F7BC (named
-        // 3F694 loop-exit / beq-fall epi).
+        // Live 27f7cf8 out-past-ram: leave to
+        // 0x8003F7BC logged n=1 then hb climbed
+        // same ra — 15c28 AfterOuterJalAddiu
+        // already-logged cap-leave ProgressLeave
+        // yanks to 3F694 loop (0x8003F7A0).
+        // Dump-true leave: unwind 3F694+3F854
+        // frames via epi stack slots; PC:= outer
+        // saved $ra. Refuse ProgressLeave yank
+        // while past-ram leave latched. No invent.
         public const uint GuestRamSize = 0x10000000;
         public const uint Kseg0PastRamLo = 0x90000000;
         public const uint ListInsert3F694RaEarly = 0x8003F714;
+        public const uint ListInsert3F694Frame = 56;
+        public const uint ListInsert3F694RaSlot = 52;
+        public const uint ListInsert3F694JalLink = 0x8003F938;
+        public const uint ListInsert3F854Frame = 48;
+        public const uint ListInsert3F854RaSlot = 40;
         // Live 98276c7: skip 0xC0000088 then
         // sibling list-insert a1=0xC0001070
         // (page 0xC0001000). Live faf00f3:
@@ -16583,6 +16594,15 @@ namespace ProcessorEmulator.Core
         // progress.
         private static uint DumpMem15C28OuterJalProgressLeave()
         {
+            // Live 27f7cf8: past-ram leave to
+            // 0x8003F7BC was yanked by Addiu
+            // already-logged cap into 3F7A0
+            // loop. Refuse all ProgressLeave
+            // yanks once past-ram leave latched
+            // so native / double-unwind exit
+            // can stick. No invent maps.
+            if (_postApi52PastRamLeaveLogged)
+                return 0;
             uint leave = DumpMem15C28OuterJalProgressLeaveCore();
             if (leave == CoredllDllMainExn15C28OuterJalLinkEpiRetFallJalRa)
                 return 0;
@@ -39632,12 +39652,16 @@ namespace ProcessorEmulator.Core
         // Live f923a91: hb n=1..32768 proved skip-spin;
         // idle=NO. a1 KSEG0 past GuestRamSize with
         // ra=0x8003F784|0x8003F714 (fn 0x8003F694).
-        // Firmware should NOT need host maps for
-        // 0x900xxxxx — phys past 256MiB RamDevice.
-        // Break spin: leave 3F694 at dump-true
-        // 0x8003F7BC (beq-fall / loop-exit epi).
-        // Skip both list-insert stores (no corrupt
-        // head with past-ram a1). No invent maps.
+        // Live 27f7cf8: leave 0x8003F7BC fired
+        // n=1 then hb n=2..32768 same ra — PC
+        // hopped but 15c28 Addiu cap-leave
+        // ProgressLeave re-entered 3F694 loop;
+        // once-latch blocked re-leave. Dump-true
+        // fix: unwind 3F694 (sp+56, ra@+52=
+        // 0x8003F938) then 3F854 (sp+48, ra@+40);
+        // PC:= outer saved $ra. Re-leave if
+        // past-ram returns (log once). No invent
+        // 9001/9a/9f/c000 maps. No hop 0x8003F7BC.
         private static bool IsKseg0PastGuestRam(uint va)
         {
             if (va < Kseg0PastRamLo || va > 0x9FFFFFFFu)
@@ -39651,48 +39675,88 @@ namespace ProcessorEmulator.Core
                 || ra == ListInsert3F694RaEarly;
         }
 
+        private static bool IsSanePastRamOuterLeave(uint leave)
+        {
+            if (leave == 0 || (leave & 3) != 0)
+                return false;
+            if (leave < 0x80010000u || leave >= 0x80400000u)
+                return false;
+            if (IsDumpMemRefuseVa(leave))
+                return false;
+            // Never re-enter 3F694 body / beq-fall
+            // (ProgressLeave-poisoned) or list-insert.
+            if (leave >= 0x8003F694u && leave < 0x8003F854u)
+                return false;
+            if (leave == CoredllDllMainC000Epc
+                || leave == CoredllDllMainC000NextPc)
+                return false;
+            return true;
+        }
+
         public static bool TryLeavePostApi52ListInsertPastRam(MipsBus bus,
             uint[] regs, uint a1, uint ra, ref uint cpuPc)
         {
-            if (!_leftoverApi52ContLogged || _postApi52PastRamLeaveLogged)
+            if (!_leftoverApi52ContLogged)
                 return false;
             if (!IsKseg0PastGuestRam(a1))
                 return false;
             if (!Is3F694ListInsertRa(ra))
                 return false;
-            uint leave = CoredllDllMainExn15C28OuterJalLinkBeqFall;
-            uint leaveDump = 0;
-            if (!TryPeekLeftoverWait99DumpOnly(leave, out leaveDump)
-                || leaveDump == 0)
-                leaveDump = CoredllDllMainExn15C28OuterJalLinkBeqFallDump;
-            if (leaveDump != CoredllDllMainExn15C28OuterJalLinkBeqFallDump)
+            if (regs == null || regs.Length < 32 || bus == null)
                 return false;
-            if (IsDumpMemRefuseVa(leave))
+            uint sp = PeekGpr(regs, 29);
+            if (sp == 0 || (sp & 3) != 0)
                 return false;
+            uint savedRa3F694 = 0;
+            if (!TryPeekWord(bus, sp + ListInsert3F694RaSlot, out savedRa3F694)
+                || savedRa3F694 == 0)
+                return false;
+            // Dump-true jal link of jal 0x8003F694
+            // @ 0x8003F934; allow any sane slot in
+            // outer 3F854 body if link drifts.
+            if (savedRa3F694 != ListInsert3F694JalLink
+                && (savedRa3F694 < CoredllDllMainExn15C28OuterJalLinkEpiBeqBneFallJrNext
+                    || savedRa3F694 > CoredllDllMainExn15C28OuterJalLinkEpiRetFallEpiJrDelay))
+                return false;
+            uint spOuter = sp + ListInsert3F694Frame;
+            uint savedRaOuter = 0;
+            if (!TryPeekWord(bus, spOuter + ListInsert3F854RaSlot, out savedRaOuter)
+                || savedRaOuter == 0)
+                return false;
+            if (!IsSanePastRamOuterLeave(savedRaOuter))
+                return false;
+            uint spDone = spOuter + ListInsert3F854Frame;
+            if ((spDone & 3) != 0)
+                return false;
+            bool first = !_postApi52PastRamLeaveLogged;
             _postApi52PastRamLeaveLogged = true;
-            if (bus != null)
+            uint epc = bus.PeekEpc();
+            if (epc != 0 && (epc & 3) == 0)
+                bus.ClearExlIfEpc(epc);
+            bus.ClearExlIfEpc(CoredllDllMainC000Epc);
+            uint a0 = PeekGpr(regs, 4);
+            uint v0 = PeekGpr(regs, 2);
+            uint fp = PeekGpr(regs, 30);
+            PokeGpr(regs, 29, spDone);
+            PokeGpr(regs, 31, savedRaOuter);
+            cpuPc = savedRaOuter;
+            if (first)
             {
-                uint epc = bus.PeekEpc();
-                if (epc != 0 && (epc & 3) == 0)
-                    bus.ClearExlIfEpc(epc);
-                bus.ClearExlIfEpc(CoredllDllMainC000Epc);
+                BootLog.Write("[Hive] ExtraROM ddi_nop post-api52-list-insert-past-ram-leave" +
+                    " a1=0x" + a1.ToString("X8") +
+                    " class=" + ListInsertDestClassName(ListInsertDestClassId(a1)) +
+                    " a0=0x" + a0.ToString("X8") +
+                    " v0=0x" + v0.ToString("X8") +
+                    " fp=0x" + fp.ToString("X8") +
+                    " ra=0x" + ra.ToString("X8") +
+                    " sp=0x" + sp.ToString("X8") +
+                    " link=0x" + savedRa3F694.ToString("X8") +
+                    " leave=0x" + savedRaOuter.ToString("X8") +
+                    " n=" + _postApi52ListInsertN.ToString() +
+                    " (KSEG0 phys past GuestRamSize 256MiB;" +
+                    " unwind 3F694+3F854 dump-true stack;" +
+                    " refuse ProgressLeave yank; no invent 9001/9a/9f/c000 map)");
             }
-            uint a0 = regs != null && regs.Length > 4 ? PeekGpr(regs, 4) : 0;
-            uint v0 = regs != null && regs.Length > 2 ? PeekGpr(regs, 2) : 0;
-            uint fp = regs != null && regs.Length > 30 ? PeekGpr(regs, 30) : 0;
-            cpuPc = leave;
-            BootLog.Write("[Hive] ExtraROM ddi_nop post-api52-list-insert-past-ram-leave" +
-                " a1=0x" + a1.ToString("X8") +
-                " class=" + ListInsertDestClassName(ListInsertDestClassId(a1)) +
-                " a0=0x" + a0.ToString("X8") +
-                " v0=0x" + v0.ToString("X8") +
-                " fp=0x" + fp.ToString("X8") +
-                " ra=0x" + ra.ToString("X8") +
-                " leave=0x" + leave.ToString("X8") +
-                " n=" + _postApi52ListInsertN.ToString() +
-                " (KSEG0 phys past GuestRamSize 256MiB;" +
-                " fn 0x8003F694 list-insert skip-spin;" +
-                " dump-true beq-fall epi; no invent 9001/9a/9f/c000 map)");
             return true;
         }
 
