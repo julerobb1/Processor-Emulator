@@ -783,6 +783,9 @@ namespace ProcessorEmulator.Core
             if (CeRomTocFiles.TryContinuePastRamFn409F4(bus, registers, ref programCounter))
                 return true;
             CeRomTocFiles.TryNotePastRamAfter409F4Leave(bus, registers, pc);
+            if (CeRomTocFiles.TryContinuePastRamFn40A40(bus, registers, ref programCounter))
+                return true;
+            CeRomTocFiles.TryNotePastRamAfter40A40Leave(bus, registers, pc);
             if (CeRomTocFiles.TryRefuseLeftoverWait99Wrap(bus, registers, ref programCounter))
                 return true;
             if (CeRomTocFiles.TryFixWait99PlantRa(bus, registers, ref programCounter))
