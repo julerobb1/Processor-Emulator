@@ -839,6 +839,10 @@ namespace ProcessorEmulator.Core
             if (CeRomTocFiles.TryContinuePastRamFn41C28(bus, registers, ref programCounter))
                 return true;
             CeRomTocFiles.TryNotePastRamAfter41C28Leave(bus, registers, pc);
+            // REFUSE: 41C8C framed past-RAM + FFFF* lw DB28/D8C8; leave NextFn.
+            if (CeRomTocFiles.TryContinuePastRamFn41C8C(bus, registers, ref programCounter))
+                return true;
+            CeRomTocFiles.TryNotePastRamAfter41C8CLeave(bus, registers, pc);
             if (CeRomTocFiles.TryRefuseLeftoverWait99Wrap(bus, registers, ref programCounter))
                 return true;
             if (CeRomTocFiles.TryFixWait99PlantRa(bus, registers, ref programCounter))
