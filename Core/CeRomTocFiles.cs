@@ -1289,6 +1289,18 @@ namespace ProcessorEmulator.Core
         // Walk the live section. Do not invent 0x03FD0000.
         public const uint CoredllSharedLo = 0x03F50000;
         public const uint CoredllSharedHi = 0x03FE0000;
+        // Dump-true coredll PE/TOC (nk .cerom / extract):
+        // ImageBase=0x03F50000 SizeOfImage=0x9E000 → end 0x03FEE000.
+        // TOC o32[0..3] only; .cerom PE section is NOT an o32.
+        // o32[0] .text  [0x03F51000,0x03FDA611) XIP
+        // o32[1] .data  [0x03FDB000,0x03FDBFE4) compressed (LZX page only)
+        // o32[2] .pdata [0x03FDC000,0x03FE66E0) compressed
+        // o32[3] .rsrc  [0x03FE7000,0x03FECFD4) XIP
+        public const uint CoredllSizeOfImage = 0x0009E000;
+        public const uint CoredllImageEnd = CoredllSharedLo + CoredllSizeOfImage; // 0x03FEE000
+        public const uint CoredllO32TextStart = 0x03F51000;
+        public const uint CoredllO32RsrcEnd = 0x03FECFD4;
+        public const uint CoredllCeromPage = 0x03FED000;
         // Live b52708e leftover-wait99-o32-nk-chain
         // name=coredll.dll startip=0x3F57A00
         // word=0x27BDFFD8 via=startip. Dump-true
@@ -12159,14 +12171,16 @@ namespace ProcessorEmulator.Core
                     next = CoredllDllMainC000Next;
                 BootLog.Write("[Hive] ExtraROM leftover-wait99-o32-nk c000-0088 store-skip" +
                     " epc=0x" + CoredllDllMainC000Epc.ToString("X") +
+                    " inst=0x" + dump.ToString("X") +
+                    " target=0x" + va.ToString("X") +
                     " bad=0x" + va.ToString("X") +
                     " word=0x" + dump.ToString("X") +
                     " next=0x" + next.ToString("X") +
                     " next-pc=0x" + CoredllDllMainC000NextPc.ToString("X") +
                     " val=0x" + value.ToString("X") +
                     " via=c000-store-skip" +
-                    " (dump sw $v0,0($a1); dest miss; continue" +
-                    " sw $a1,0($a0); no invent 0xFFFF0288/E000/SUD)");
+                    " (dump-true list-insert sw $v0,0($a1); dest miss; continue" +
+                    " sw $a1,0($a0); no invent dest/0xFFFF0288/E000/SUD)");
             }
             return true;
         }
@@ -41978,19 +41992,44 @@ namespace ProcessorEmulator.Core
                         return;
                     }
                 }
-                if (!_coredllImageDone[slot])
+                // Honest TOC-miss: none of 0x03FEE/03FEF/03F50/03FED
+                // have dump-true o32 dest or LZX==extract page.
+                // Do NOT extend via=o32-lzx-dump. Do NOT invent
+                // ImageBase/header dest (MZ in ROM is at 0x800740F0,
+                // not page-aligned 0x80074000). Keep Done false so
+                // firmware PTE can still win later (compressed mirror).
+                if (!_coredllImageTlbl[slot])
                 {
-                    _coredllImageDone[slot] = true;
+                    _coredllImageTlbl[slot] = true;
                     BootLog.Write("[Hive] ExtraROM ddi_nop coredll-page map va=0x" +
                         page.ToString("X8") +
                         " pte-miss sec=0x" + sec.ToString("X8") +
-                        " (COREDLL image TLBL; TOC miss; do not invent dest)");
+                        " via=toc-miss why=" + CoredllTocMissWhy(page) +
+                        " (COREDLL image TLBL; dump TOC o32[] no dest; do not invent dest)");
                 }
             }
             finally
             {
                 _coredllImageBusy = false;
             }
+        }
+
+        // Dump-true classifier for coredll ImageBase TOC misses.
+        // Evidence from nk .cerom o32[0..3] + PE SizeOfImage only.
+        private static string CoredllTocMissWhy(uint page)
+        {
+            page &= ~0xFFFu;
+            if (page >= CoredllImageEnd)
+                return "past-SizeOfImage end=0x" + CoredllImageEnd.ToString("X8");
+            if (page == (CoredllSharedLo & ~0xFFFu))
+                return "header-no-o32 ImageBase (o32[0] starts 0x" +
+                    CoredllO32TextStart.ToString("X8") + ")";
+            if (page == CoredllCeromPage)
+                return "cerom-not-in-o32 (PE .cerom in SizeOfImage; TOC objcnt=4 ends o32[3] 0x" +
+                    CoredllO32RsrcEnd.ToString("X8") + ")";
+            if (page > CoredllO32RsrcEnd && page < CoredllImageEnd)
+                return "gap-after-o32[3] before-SizeOfImage-end";
+            return "outside-all-o32";
         }
 
         private static bool TryFindCoredllTocEntry(MipsBus bus, out uint tocEntry)
