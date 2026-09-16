@@ -12609,6 +12609,7 @@ namespace ProcessorEmulator.Core
             if (dump != CoredllDllMainC000Dump)
                 return false;
             TryLogListInsertDestMissOnce(va, value, dump);
+            TryNotePostApi52ListInsertSkip(bus, null, va);
             return true;
         }
 
@@ -12638,6 +12639,7 @@ namespace ProcessorEmulator.Core
                 return false;
             if (!TrySkipListInsertClassStore(bus, a1, v0))
                 TryLogListInsertDestMissOnce(a1, v0, dump);
+            TryNotePostApi52ListInsertSkip(bus, regs, a1);
             if (bus != null)
             {
                 uint epc = bus.PeekEpc();
@@ -39558,6 +39560,84 @@ namespace ProcessorEmulator.Core
                 " (Int_CreateEventW leftover-syscall -1230 methods[52];" +
                 " dump dest-live 0x8003DBE0; refuse leftover hop 0x8008F730;" +
                 " do not map F000 / invent SUD)");
+            // Live 0199c30 FIRST-WIN then boot.log freeze
+            // ~48644B: list-insert dest-miss class
+            // logs once each then mute; coredll-page
+            // maps; silence. Arm post-api52 observe.
+            // was=0x80036F10 is stale EPC near
+            // RomHdrListLoad3 0x80036F6C (adel-ifetch
+            // pc==FFFFFB32 before PeekEpc updates).
+            // m52=0 plant miss — hop still dump-true.
+            // No invent toc-miss / C000 / 9001 maps.
+        }
+
+        // Live 0199c30 out-api52: after leftover-api-
+        // 52-cont dest=0x8003DBE0 via=adel-ifetch,
+        // list-insert 0x800151D0 dest-miss classes
+        // (900107E0/9a/9f/c000) log once then mute;
+        // coredll-page maps; boot.log grows 0 over
+        // 60s+. Guest alive. Cap once-per-class hid
+        // skip-spin. Heartbeat at 2^n skips + idle
+        // PC once. Observe only; no invent maps.
+        public static void TryNotePostApi52ListInsertSkip(MipsBus bus,
+            uint[] regs, uint a1)
+        {
+            if (!_leftoverApi52ContLogged)
+                return;
+            _postApi52ListInsertN++;
+            uint n = _postApi52ListInsertN;
+            // 1, 2, 4, ... and also 4096 boundaries already covered
+            if (n < 1 || (n & (n - 1)) != 0)
+                return;
+            if (n > 1048576u)
+                return;
+            uint ra = regs != null && regs.Length > 31 ? PeekGpr(regs, 31) : 0;
+            uint v0 = regs != null && regs.Length > 2 ? PeekGpr(regs, 2) : 0;
+            uint a0 = regs != null && regs.Length > 4 ? PeekGpr(regs, 4) : 0;
+            string cls = ListInsertDestClassName(ListInsertDestClassId(a1));
+            BootLog.Write("[Hive] ExtraROM ddi_nop post-api52-list-insert-hb n=" +
+                n.ToString() +
+                " a1=0x" + a1.ToString("X8") +
+                " class=" + cls +
+                " a0=0x" + a0.ToString("X8") +
+                " v0=0x" + v0.ToString("X8") +
+                " ra=0x" + ra.ToString("X8") +
+                " epc=0x" + CoredllDllMainC000Epc.ToString("X") +
+                " (after CreateEvent stub returns 1; once-per-class" +
+                " dest-miss was mute; observe skip-spin; no invent dest)");
+        }
+
+        // Live 0199c30: if silence is OEM/NK idle
+        // after CreateEvent handle=1, name it once.
+        // Dump OemIdle 0x80059E98 / OemIdleLoop
+        // 0x80059D20 / NkIdleStart 0x800356FC.
+        public static void TryNotePostApi52Silence(MipsBus bus, uint[] regs,
+            uint pc)
+        {
+            if (!_leftoverApi52ContLogged || pc == 0)
+                return;
+            if (_postApi52IdleLogged)
+                return;
+            bool idle = pc == 0x80059E98u || pc == 0x80059D20u
+                || pc == NkIdleStart || pc == NkIdleJal
+                || (pc >= NkIdleStart && pc < NkIdleStart + 0x80u);
+            if (!idle)
+                return;
+            _postApi52IdleLogged = true;
+            uint ra = regs != null && regs.Length > 31 ? PeekGpr(regs, 31) : 0;
+            uint v0 = regs != null && regs.Length > 2 ? PeekGpr(regs, 2) : 0;
+            uint a0 = regs != null && regs.Length > 4 ? PeekGpr(regs, 4) : 0;
+            uint word = 0;
+            TryPeekWord(bus, pc, out word);
+            BootLog.Write("[Hive] ExtraROM ddi_nop post-api52-idle pc=0x" +
+                pc.ToString("X8") +
+                " v0=0x" + v0.ToString("X8") +
+                " a0=0x" + a0.ToString("X8") +
+                " ra=0x" + ra.ToString("X8") +
+                " word=0x" + word.ToString("X8") +
+                " list-insert-n=" + _postApi52ListInsertN.ToString() +
+                " (after leftover-api-52-cont CreateEvent returns 1;" +
+                " silence may be idle/wait not toc-miss; no invent maps)");
         }
 
         private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
@@ -44035,6 +44115,8 @@ namespace ProcessorEmulator.Core
             _leftoverApi54HaltLogged = false;
             _leftoverApi52PlantLogged = false;
             _leftoverApi52ContLogged = false;
+            _postApi52ListInsertN = 0;
+            _postApi52IdleLogged = false;
             _wait99PlantFixLogged = false;
             _leftoverWait99WrapLogged = false;
             _leftoverWait99WrapContLogged = false;
@@ -50375,6 +50457,8 @@ namespace ProcessorEmulator.Core
         private static bool _leftoverApi54HaltLogged;
         private static bool _leftoverApi52PlantLogged;
         private static bool _leftoverApi52ContLogged;
+        private static uint _postApi52ListInsertN;
+        private static bool _postApi52IdleLogged;
         private static bool _wait99PlantFixLogged;
         private static bool _leftoverWait99WrapLogged;
         private static bool _leftoverWait99WrapContLogged;
