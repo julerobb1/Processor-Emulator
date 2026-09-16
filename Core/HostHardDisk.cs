@@ -851,6 +851,10 @@ namespace ProcessorEmulator.Core
             if (CeRomTocFiles.TryContinuePastRamFn42104(bus, registers, ref programCounter))
                 return true;
             CeRomTocFiles.TryNotePastRamAfter42104Leave(bus, registers, pc);
+            // REFUSE: 421CC body TLBS@421E4 bad=0x03202582 (a0<<4 wrap); leave NextFn.
+            if (CeRomTocFiles.TryContinuePastRamFn421CC(bus, registers, ref programCounter))
+                return true;
+            CeRomTocFiles.TryNotePastRamAfter421CCLeave(bus, registers, pc);
             if (CeRomTocFiles.TryRefuseLeftoverWait99Wrap(bus, registers, ref programCounter))
                 return true;
             if (CeRomTocFiles.TryFixWait99PlantRa(bus, registers, ref programCounter))
