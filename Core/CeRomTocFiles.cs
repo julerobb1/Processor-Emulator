@@ -1640,10 +1640,18 @@ namespace ProcessorEmulator.Core
         // epi lw $ra,52($sp) on past-RAM sp keeps
         // ra=0x8003F784 → re-enter 3F694; hb climbs.
         // Dump-true: prefer double-unwind when peeks
-        // OK; on peek-ra / sp-past-ram do NOT beq-fall;
-        // one-frame jal-link leave PC:=0x8003F938
-        // sp+=56 (no stack invent). ProgressLeave→0
-        // latched. Log refuse why once. No invent.
+        // OK; on peek-ra / sp-past-ram do NOT beq-fall.
+        // Live f2924a0 out-past-ram-jal-link: one-frame
+        // PC:=0x8003F938 stuck — 3F938 falls into 3F854
+        // epi lw $ra,40($sp)/jr $ra; sp still past-RAM
+        // so ra stays 3F938 → silent self-loop (hbMax=1,
+        // log freeze, Process alive, no further Hive).
+        // Dump-true sole jal of 3F854 @ 0x8003F9A4
+        // link=0x8003F9AC (EpiRetCallerOrFp). Two-frame
+        // leave: sp+=56+48, PC/ra:=0x8003F9AC,
+        // via=outer-jal-link-no-stack. ProgressLeave→0
+        // latched. One post-leave pc-sample. No invent
+        // 3F964 caller (many xrefs) / 9001 maps.
         public const uint GuestRamSize = 0x10000000;
         public const uint Kseg0PastRamLo = 0x90000000;
         public const uint ListInsert3F694RaEarly = 0x8003F714;
@@ -1652,6 +1660,13 @@ namespace ProcessorEmulator.Core
         public const uint ListInsert3F694JalLink = 0x8003F938;
         public const uint ListInsert3F854Frame = 48;
         public const uint ListInsert3F854RaSlot = 40;
+        // Dump-true sole jal 0x8003F854 @ 0x8003F9A4.
+        public const uint ListInsert3F854JalSite = 0x8003F9A4;
+        public const uint ListInsert3F854JalLink = 0x8003F9AC;
+        // Fn 0x8003F964 epi after outer leave (named stall).
+        public const uint ListInsert3F964Epi = 0x8003F9D4;
+        public const uint ListInsert3F964EpiJr = 0x8003F9E0;
+        public const uint ListInsert3F964NextFn = 0x8003F9E8;
         // Live 98276c7: skip 0xC0000088 then
         // sibling list-insert a1=0xC0001070
         // (page 0xC0001000). Live faf00f3:
@@ -39666,11 +39681,12 @@ namespace ProcessorEmulator.Core
         // beq-fall 0x8003F7BC cannot stick — epi
         // lw $ra,52($sp) peeks 0, ra stays 3F784.
         // Dump-true: prefer double-unwind when peeks
-        // OK; on peek-ra|sp-past-ram synthetic
-        // one-frame exit: sp+=56, PC:=0x8003F938
-        // (ListInsert3F694JalLink), via=jal-link-no-stack.
-        // ProgressLeave→0 latched. Re-leave allowed.
-        // No invent outer ra / 9001/9a/9f/c000 maps.
+        // OK; on peek-ra|sp-past-ram two-frame exit:
+        // sp+=56+48, PC:=0x8003F9AC (ListInsert3F854JalLink),
+        // via=outer-jal-link-no-stack. Live f2924a0 proved
+        // one-frame 3F938 falls into poisoned 3F854 epi.
+        // ProgressLeave→0 latched. Re-leave / post-leave
+        // sample allowed. No invent 3F964 caller / 9001 maps.
         private static bool IsKseg0PastGuestRam(uint va)
         {
             if (va < Kseg0PastRamLo || va > 0x9FFFFFFFu)
@@ -39805,15 +39821,21 @@ namespace ProcessorEmulator.Core
                 }
                 if (useJalLinkNoStack)
                 {
-                    // Dump-true one-frame exit: no stack peek invent.
-                    // jal 0x8003F694 @ 0x8003F934 link = 0x8003F938.
-                    // Do NOT leave to 0x8003F7BC — epi lw $ra,52($sp)
-                    // poisoned when sp past-RAM / peek==0.
-                    uint leave = ListInsert3F694JalLink;
-                    if (IsDumpMemRefuseVa(leave))
+                    // Dump-true two-frame exit: no stack peek invent.
+                    // jal 0x8003F694 @ 0x8003F934 link=0x8003F938 falls
+                    // into 3F854 epi (lw $ra,40($sp)/jr $ra). Live
+                    // f2924a0: leave@3F938 + past-RAM sp → ra stays
+                    // 3F938 silent self-loop. Sole dump-true jal of
+                    // 3F854 @ 0x8003F9A4 link=0x8003F9AC. Do NOT
+                    // beq-fall 0x8003F7BC. Do NOT invent 3F964 caller.
+                    uint leaveJl = ListInsert3F854JalLink;
+                    if (leaveJl != CoredllDllMainExn15C28OuterJalLinkEpiRetCallerOrFp)
+                        return false;
+                    if (IsDumpMemRefuseVa(leaveJl)
+                        || IsDumpMemRefuseVa(ListInsert3F854JalSite))
                         return false;
                     uint spWas = sp;
-                    uint spNow = sp + ListInsert3F694Frame;
+                    uint spNow = sp + ListInsert3F694Frame + ListInsert3F854Frame;
                     if ((spNow & 3) != 0)
                         return false;
                     bool firstJl = !_postApi52PastRamLeaveLogged;
@@ -39823,11 +39845,14 @@ namespace ProcessorEmulator.Core
                         bus.ClearExlIfEpc(epcJl);
                     bus.ClearExlIfEpc(CoredllDllMainC000Epc);
                     uint a0Jl = PeekGpr(regs, 4);
-                    uint v0Jl = PeekGpr(regs, 2);
+                    uint s5Jl = PeekGpr(regs, 21);
+                    // Native 3F93C: or $v0,$s5,$0 before epi.
+                    uint v0Jl = s5Jl;
                     uint fpJl = PeekGpr(regs, 30);
+                    PokeGpr(regs, 2, v0Jl);
                     PokeGpr(regs, 29, spNow);
-                    PokeGpr(regs, 31, leave);
-                    cpuPc = leave;
+                    PokeGpr(regs, 31, leaveJl);
+                    cpuPc = leaveJl;
                     if (firstJl)
                     {
                         BootLog.Write("[Hive] ExtraROM ddi_nop post-api52-list-insert-past-ram-leave" +
@@ -39835,17 +39860,21 @@ namespace ProcessorEmulator.Core
                             " class=" + ListInsertDestClassName(ListInsertDestClassId(a1)) +
                             " a0=0x" + a0Jl.ToString("X8") +
                             " v0=0x" + v0Jl.ToString("X8") +
+                            " s5=0x" + s5Jl.ToString("X8") +
                             " fp=0x" + fpJl.ToString("X8") +
                             " ra=0x" + ra.ToString("X8") +
-                            " leave=0x" + leave.ToString("X8") +
-                            " via=jal-link-no-stack" +
+                            " leave=0x" + leaveJl.ToString("X8") +
+                            " via=outer-jal-link-no-stack" +
+                            " jalSite=0x" + ListInsert3F854JalSite.ToString("X8") +
                             " spWas=0x" + spWas.ToString("X8") +
                             " spNow=0x" + spNow.ToString("X8") +
                             " refuse=" + (refuseWhy ?? "unknown") +
                             " n=" + _postApi52ListInsertN.ToString() +
                             " (KSEG0 phys past GuestRamSize 256MiB;" +
-                            " dump-true jal-link one-frame; no stack invent;" +
-                            " refuse ProgressLeave yank; no invent 9001/9a/9f/c000 map)");
+                            " dump-true 3F694+3F854 jal-link two-frame;" +
+                            " 3F938 epi poisoned when sp past-RAM;" +
+                            " refuse ProgressLeave yank; no invent 3F964" +
+                            " caller / 9001/9a/9f/c000 map)");
                     }
                     return true;
                 }
@@ -39955,6 +39984,111 @@ namespace ProcessorEmulator.Core
                 " list-insert-n=" + _postApi52ListInsertN.ToString() +
                 " (after leftover-api-52-cont CreateEvent returns 1;" +
                 " silence may be idle/wait not toc-miss; no invent maps)");
+        }
+
+        // Live f2924a0: after jal-link leave@3F938, boot.log
+        // froze ~48344B, Process alive, no further [Hive].
+        // Root: 3F938→3F854 epi with sp past-RAM self-loop.
+        // One-shot pc-sample so silence is never mute; name
+        // 3F964 epi after outer leave without inventing caller.
+        private static bool IsPastRamOuterEpiPc(uint pc)
+        {
+            // 3F938 jal-link delay through 3F854 epi jr delay.
+            return pc >= ListInsert3F694JalLink && pc < 0x8003F964u;
+        }
+
+        private static bool IsPastRamFn964EpiPc(uint pc)
+        {
+            return pc >= ListInsert3F964Epi
+                && pc < ListInsert3F964NextFn;
+        }
+
+        public static void TryNotePastRamAfterJalLink(MipsBus bus, uint[] regs,
+            uint pc)
+        {
+            if (!_postApi52PastRamLeaveLogged || pc == 0)
+                return;
+            if (_postApi52PastRamAfterLeaveSampleLogged)
+                return;
+            uint sp = regs != null && regs.Length > 29 ? PeekGpr(regs, 29) : 0;
+            bool epi854 = IsPastRamOuterEpiPc(pc);
+            bool epi964 = IsPastRamFn964EpiPc(pc);
+            if (!epi854 && !epi964)
+                return;
+            // Prefer sample when sp still past-RAM (poisoned epi).
+            if (sp != 0 && !IsKseg0PastGuestRam(sp) && !epi964)
+                return;
+            _postApi52PastRamAfterLeaveSampleLogged = true;
+            uint ra = regs != null && regs.Length > 31 ? PeekGpr(regs, 31) : 0;
+            uint v0 = regs != null && regs.Length > 2 ? PeekGpr(regs, 2) : 0;
+            uint word = 0;
+            TryPeekWord(bus, pc, out word);
+            string via = epi964
+                ? "fn964-epi-sp-past-ram"
+                : "outer-epi-sp-past-ram";
+            BootLog.Write("[Hive] ExtraROM ddi_nop past-ram-after-jal-link" +
+                " pc=0x" + pc.ToString("X8") +
+                " sp=0x" + sp.ToString("X8") +
+                " ra=0x" + ra.ToString("X8") +
+                " v0=0x" + v0.ToString("X8") +
+                " word=0x" + word.ToString("X8") +
+                " via=" + via +
+                " (post-leave pc-sample once; 3F854 epi self-loop when" +
+                " sp past-RAM; 3F964 has many jal xrefs — no invent" +
+                " caller leave; harvest named next stall)");
+        }
+
+        // If an older tip left only to 3F938, continue to dump-true
+        // 3F9AC. Idempotent with outer-jal-link leave.
+        public static bool TryContinuePastRamOuterEpi(MipsBus bus, uint[] regs,
+            ref uint cpuPc)
+        {
+            if (!_postApi52PastRamLeaveLogged)
+                return false;
+            if (regs == null || regs.Length < 32 || bus == null)
+                return false;
+            uint pc = cpuPc;
+            // Only 3F854 epi / jal-link delay (3F938..3F960).
+            // Never re-leave after landing at 3F9AC+.
+            if (pc < ListInsert3F694JalLink || pc >= 0x8003F964u)
+                return false;
+            uint sp = PeekGpr(regs, 29);
+            if (!IsKseg0PastGuestRam(sp))
+                return false;
+            uint leaveCont = ListInsert3F854JalLink;
+            if (leaveCont != CoredllDllMainExn15C28OuterJalLinkEpiRetCallerOrFp)
+                return false;
+            if (IsDumpMemRefuseVa(leaveCont))
+                return false;
+            uint spNow = sp + ListInsert3F854Frame;
+            // If already two-framed (sp was +56 only from old tip),
+            // +48 completes. If somehow still inside 3F694 frame
+            // (shouldn't after leave), refuse invent.
+            if ((spNow & 3) != 0)
+                return false;
+            if (_postApi52PastRamOuterContLogged)
+                return false;
+            _postApi52PastRamOuterContLogged = true;
+            TryNotePastRamAfterJalLink(bus, regs, pc);
+            uint epc = bus.PeekEpc();
+            if (epc != 0 && (epc & 3) == 0)
+                bus.ClearExlIfEpc(epc);
+            bus.ClearExlIfEpc(CoredllDllMainC000Epc);
+            uint s5 = PeekGpr(regs, 21);
+            PokeGpr(regs, 2, s5);
+            PokeGpr(regs, 29, spNow);
+            PokeGpr(regs, 31, leaveCont);
+            cpuPc = leaveCont;
+            BootLog.Write("[Hive] ExtraROM ddi_nop past-ram-outer-epi-cont" +
+                " was=0x" + pc.ToString("X8") +
+                " leave=0x" + leaveCont.ToString("X8") +
+                " spWas=0x" + sp.ToString("X8") +
+                " spNow=0x" + spNow.ToString("X8") +
+                " s5=0x" + s5.ToString("X8") +
+                " via=outer-jal-link-no-stack" +
+                " (3F938..3F960 epi poisoned; dump-true sole" +
+                " 3F854 jal-link 0x8003F9AC; no invent 3F964 caller)");
+            return true;
         }
 
         private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
@@ -44436,6 +44570,8 @@ namespace ProcessorEmulator.Core
             _postApi52IdleLogged = false;
             _postApi52PastRamLeaveLogged = false;
             _postApi52PastRamLeaveRefuseLogged = false;
+            _postApi52PastRamAfterLeaveSampleLogged = false;
+            _postApi52PastRamOuterContLogged = false;
             _wait99PlantFixLogged = false;
             _leftoverWait99WrapLogged = false;
             _leftoverWait99WrapContLogged = false;
@@ -50780,6 +50916,8 @@ namespace ProcessorEmulator.Core
         private static bool _postApi52IdleLogged;
         private static bool _postApi52PastRamLeaveLogged;
         private static bool _postApi52PastRamLeaveRefuseLogged;
+        private static bool _postApi52PastRamAfterLeaveSampleLogged;
+        private static bool _postApi52PastRamOuterContLogged;
         private static bool _wait99PlantFixLogged;
         private static bool _leftoverWait99WrapLogged;
         private static bool _leftoverWait99WrapContLogged;
