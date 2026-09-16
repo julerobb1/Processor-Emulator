@@ -1907,6 +1907,29 @@ namespace ProcessorEmulator.Core
         public const uint ListInsert3FE04Epi = 0x8003FE54;
         public const uint ListInsert3FE04EpiJr = 0x8003FE64;
         public const uint ListInsert3FE04NextFn = 0x8003FE6C;
+        // Live 6a19b0b/b6d4111 out-after-fe04 FIRST-WIN: FE04 refuse
+        // leave 0x8003FE6C word=0x2402DAC4 via=fn-fe04-nextfn-after-refuse;
+        // bytes=52516; Process alive; hbMax=1; no C046. Quiet after land
+        // @FE6C: past-RAM sp (0x9A024028) + ProgressLeave mute. Dump-true
+        // FE6C (Uverse Drive E nk.exe/.bin; XIP match idx=192620/192203):
+        // first word 0x2402DAC4 addiu v0,-0x253c → v0=0xFFFFDAC4. No
+        // frame (Frame/Ra/Fp=0). Immediate unmapped lw (v0)=FFFFDAC4;
+        // else-path unmapped lw FFFFDAC0; lw 0x10($sp) past-RAM. No jal
+        // in body. jr @FEDC delay nop @FEE0; unique sequential NextFn
+        // 0x8003FEE4 word=0x3C062000. 0 direct jal xrefs — no invent
+        // caller. Live ra poked to FE6C by FE04 refuse → jr $ra
+        // self-loop. Unmapped FFFFDAC4/DAC0 + poisoned-ra. Refuse body
+        // → FEE4. No invent 3F8B4/9001/C046/page0/FFFFD808/FFFFDAC0/
+        // FFFFD89C/FFFFDAC4/1FFF000 maps; four toc-miss honest.
+        // Note-only TLBS epc=0x80058B90 bad=0x1FFF000 — ignore.
+        public const uint ListInsert3FE6CFn = 0x8003FE6C;
+        public const uint ListInsert3FE6CFrame = 0;
+        public const uint ListInsert3FE6CRaSlot = 0; // dump: no-frame, no ra save
+        public const uint ListInsert3FE6CFpSlot = 0; // dump: no fp save
+        // unmapped FFFFDAC4 (lw @FE70) / FFFFDAC0 (lw @FE88): comments only, no maps
+        public const uint ListInsert3FE6CEpi = 0x8003FEDC;
+        public const uint ListInsert3FE6CEpiJr = 0x8003FEDC;
+        public const uint ListInsert3FE6CNextFn = 0x8003FEE4;
 
         // Live 98276c7: skip 0xC0000088 then
         // sibling list-insert a1=0xC0001070
@@ -41604,6 +41627,95 @@ namespace ProcessorEmulator.Core
                 " harvest named next stall past FE6C; no invent maps)");
         }
 
+        private static bool IsPastRamFnFE6CBodyPc(uint pc)
+        {
+            return pc >= ListInsert3FE6CFn && pc < ListInsert3FE6CNextFn;
+        }
+
+        // Live 6a19b0b/b6d4111: after FE04 refuse land @FE6C with
+        // past-RAM sp and ra poked to leave=FE6C (ra==pc). Dump: FE6C
+        // is no-frame helper; immediate lw from 0xFFFFDAC4 (unmapped);
+        // else-path lw 0xFFFFDAC0; lw 0x10($sp) past-RAM; jr $ra would
+        // self-loop under ProgressLeave mute. Refuse body → unique
+        // sequential NextFn 0x8003FEE4. 0 jal xrefs — no invent
+        // caller. No jal-callee window. No invent FFFFD808/FFFFDAC0/
+        // FFFFD89C/FFFFDAC4/page0/3F8B4/9001/C046/1FFF000 maps. Four
+        // toc-miss honest.
+        public static bool TryContinuePastRamFnFE6C(MipsBus bus, uint[] regs,
+            ref uint cpuPc)
+        {
+            if (!_postApi52PastRamFnFE04ContLogged)
+                return false;
+            if (_postApi52PastRamFnFE6CContLogged)
+                return false;
+            if (regs == null || regs.Length < 32 || bus == null)
+                return false;
+            uint pc = cpuPc;
+            if (!IsPastRamFnFE6CBodyPc(pc))
+                return false;
+            uint sp = PeekGpr(regs, 29);
+            if (!IsKseg0PastGuestRam(sp))
+                return false;
+            uint leave = ListInsert3FE6CNextFn;
+            if (IsDumpMemRefuseVa(leave))
+                return false;
+            _postApi52PastRamFnFE6CContLogged = true;
+            uint ra = PeekGpr(regs, 31);
+            uint a0 = PeekGpr(regs, 4);
+            uint epc = bus.PeekEpc();
+            if (epc != 0 && (epc & 3) == 0)
+                bus.ClearExlIfEpc(epc);
+            bus.ClearExlIfEpc(CoredllDllMainListInsertHeadEpc);
+            bus.ClearExlIfEpc(CoredllDllMainC000Epc);
+            bus.ClearExlIfEpc(Memset59560Epc);
+            PokeGpr(regs, 31, leave);
+            cpuPc = leave;
+            BootLog.Write("[Hive] ExtraROM ddi_nop past-ram-fn-fe6c-refuse" +
+                " was=0x" + pc.ToString("X8") +
+                " leave=0x" + leave.ToString("X8") +
+                " sp=0x" + sp.ToString("X8") +
+                " raWas=0x" + ra.ToString("X8") +
+                " a0=0x" + a0.ToString("X8") +
+                " via=fn-fe6c-refuse-past-ram" +
+                " (6a19b0b FE6C after FE04 refuse; past-RAM sp;" +
+                " no-frame; lw 0xFFFFDAC4/FFFFDAC0; poisoned-ra" +
+                " self-loop; refuse → FEE4; 0 jal xrefs; no invent" +
+                " FFFFD808/FFFFDAC0/FFFFD89C/FFFFDAC4/page0/3F8B4/" +
+                "9001/C046/1FFF000/caller; ProgressLeave latched;" +
+                " hb flat; four toc-miss honest)");
+            return true;
+        }
+
+        // One-shot sample after FE6C refuse leave past FEE4.
+        public static void TryNotePastRamAfterFE6CLeave(MipsBus bus, uint[] regs,
+            uint pc)
+        {
+            if (!_postApi52PastRamFnFE6CContLogged || pc == 0)
+                return;
+            if (_postApi52PastRamAfterFE6CSampleLogged)
+                return;
+            if (IsPastRamFnFE6CBodyPc(pc))
+                return;
+            _postApi52PastRamAfterFE6CSampleLogged = true;
+            uint sp = regs != null && regs.Length > 29 ? PeekGpr(regs, 29) : 0;
+            uint ra = regs != null && regs.Length > 31 ? PeekGpr(regs, 31) : 0;
+            uint v0 = regs != null && regs.Length > 2 ? PeekGpr(regs, 2) : 0;
+            uint word = 0;
+            TryPeekWord(bus, pc, out word);
+            string via = pc == ListInsert3FE6CNextFn
+                ? "fn-fe6c-nextfn-after-refuse"
+                : "post-fe6c-leave";
+            BootLog.Write("[Hive] ExtraROM ddi_nop past-ram-after-fe6c-leave" +
+                " pc=0x" + pc.ToString("X8") +
+                " sp=0x" + sp.ToString("X8") +
+                " ra=0x" + ra.ToString("X8") +
+                " v0=0x" + v0.ToString("X8") +
+                " word=0x" + word.ToString("X8") +
+                " via=" + via +
+                " (one-shot next-PC sample after FE6C refuse;" +
+                " harvest named next stall past FEE4; no invent maps)");
+        }
+
         private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
             uint index, string tag, uint off, ref bool plantLogged)
         {
@@ -46108,6 +46220,8 @@ namespace ProcessorEmulator.Core
             _postApi52PastRamAfterFD7CSampleLogged = false;
             _postApi52PastRamFnFE04ContLogged = false;
             _postApi52PastRamAfterFE04SampleLogged = false;
+            _postApi52PastRamFnFE6CContLogged = false;
+            _postApi52PastRamAfterFE6CSampleLogged = false;
             _listInsertHeadMissLogged = false;
             _wait99PlantFixLogged = false;
             _leftoverWait99WrapLogged = false;
@@ -52478,6 +52592,8 @@ namespace ProcessorEmulator.Core
         private static bool _postApi52PastRamAfterFD7CSampleLogged;
         private static bool _postApi52PastRamFnFE04ContLogged;
         private static bool _postApi52PastRamAfterFE04SampleLogged;
+        private static bool _postApi52PastRamFnFE6CContLogged;
+        private static bool _postApi52PastRamAfterFE6CSampleLogged;
         private static bool _listInsertHeadMissLogged;
         private static bool _wait99PlantFixLogged;
         private static bool _leftoverWait99WrapLogged;
