@@ -2276,6 +2276,25 @@ namespace ProcessorEmulator.Core
         public const uint ListInsert340AA8EpiJr = 0x80040ABC;
         public const uint ListInsert340AA8NextFn = 0x80040AC4;
 
+        // Live ad7a229≈640e597: after 40AA8 refuse land @40AC4 with
+        // ra=pc=40AC4; framed prologue addiu sp,-0x18; sw ra @+0x14 +
+        // sw fp @+0x10 to past-RAM sp 0x9A024028. Body: jal 0x8003fc8c
+        // @40AD8 a0=fp=0x8033FD60; also jal 0x8003f9e8 / 0x80015198 on
+        // path. Dump: frame=0x18 ra@+0x14 fp@+0x10; epi @40B18 jr
+        // @40B20 delay addiu sp,+0x18; unique sequential NextFn
+        // 0x80040B28 word=0x27BDFFC8. 8 jal xrefs (0 j; do NOT invent
+        // caller/yank). Refuse body → 0x80040B28. Do NOT invent FFFF*
+        // / page0 / 3F8B4 / 9001 / C046 / 1FFF000 / 0x20000000 / 0x6F6B
+        // / 0x10022B8C. Four toc-miss honest. Note-only earlier TLBS
+        // 0x1FFF000 ignore as after-40B28 / neighbor-body stall.
+        public const uint ListInsert340AC4Fn = 0x80040AC4;
+        public const uint ListInsert340AC4Frame = 0x18;
+        public const uint ListInsert340AC4RaSlot = 0x14;
+        public const uint ListInsert340AC4FpSlot = 0x10;
+        public const uint ListInsert340AC4Epi = 0x80040B18;
+        public const uint ListInsert340AC4EpiJr = 0x80040B20;
+        public const uint ListInsert340AC4NextFn = 0x80040B28;
+
 
         // Live 98276c7: skip 0xC0000088 then
         // sibling list-insert a1=0xC0001070
@@ -43499,6 +43518,96 @@ namespace ProcessorEmulator.Core
         }
 
 
+        private static bool IsPastRamFn40AC4BodyPc(uint pc)
+        {
+            return pc >= ListInsert340AC4Fn && pc < ListInsert340AC4NextFn;
+        }
+
+        // Live ad7a229≈640e597: after 40AA8 refuse land @40AC4 with
+        // ra=pc=40AC4; framed prologue sw ra @+0x14 + sw fp @+0x10 to
+        // past-RAM sp 0x9A024028. Body jal 0x8003fc8c @40AD8
+        // a0=fp=0x8033FD60; also jal 0x8003f9e8 / 0x80015198 on path.
+        // Dump: frame=0x18; epi jr @40B20; unique sequential NextFn
+        // 0x80040B28 word=0x27BDFFC8. 8 jal xrefs (do NOT invent
+        // caller/yank). Refuse body → 0x80040B28. Do NOT invent
+        // 0x10022B8C/0x6F6B/0x20000000/FFFF*/page0/3F8B4/9001/
+        // C046/1FFF000 maps. Four toc-miss honest.
+        public static bool TryContinuePastRamFn40AC4(MipsBus bus, uint[] regs,
+            ref uint cpuPc)
+        {
+            if (!_postApi52PastRamFn40AA8ContLogged)
+                return false;
+            if (_postApi52PastRamFn40AC4ContLogged)
+                return false;
+            if (regs == null || regs.Length < 32 || bus == null)
+                return false;
+            uint pc = cpuPc;
+            if (!IsPastRamFn40AC4BodyPc(pc))
+                return false;
+            uint sp = PeekGpr(regs, 29);
+            if (!IsKseg0PastGuestRam(sp))
+                return false;
+            uint leave = ListInsert340AC4NextFn;
+            if (IsDumpMemRefuseVa(leave))
+                return false;
+            _postApi52PastRamFn40AC4ContLogged = true;
+            uint ra = PeekGpr(regs, 31);
+            uint a0 = PeekGpr(regs, 4);
+            uint epc = bus.PeekEpc();
+            if (epc != 0 && (epc & 3) == 0)
+                bus.ClearExlIfEpc(epc);
+            bus.ClearExlIfEpc(CoredllDllMainListInsertHeadEpc);
+            bus.ClearExlIfEpc(CoredllDllMainC000Epc);
+            bus.ClearExlIfEpc(Memset59560Epc);
+            PokeGpr(regs, 31, leave);
+            cpuPc = leave;
+            BootLog.Write("[Hive] ExtraROM ddi_nop past-ram-fn-40ac4-refuse" +
+                " was=0x" + pc.ToString("X8") +
+                " leave=0x" + leave.ToString("X8") +
+                " sp=0x" + sp.ToString("X8") +
+                " raWas=0x" + ra.ToString("X8") +
+                " a0=0x" + a0.ToString("X8") +
+                " via=fn-40ac4-refuse-past-ram" +
+                " (ad7a229 40AC4 after 40AA8; past-RAM sp; frame=0x18;" +
+                " ra@+0x14 fp@+0x10; jal 0x8003fc8c a0=fp;" +
+                " refuse → 0x80040B28; 8 jal xref;" +
+                " no invent 0x10022B8C/0x6F6B/0x20000000/FFFF*/" +
+                "page0/3F8B4/9001/C046/1FFF000;" +
+                " ProgressLeave; hb flat; four toc-miss honest)");
+            return true;
+        }
+
+        // One-shot sample after 40AC4 refuse leave past 0x80040B28.
+        public static void TryNotePastRamAfter40AC4Leave(MipsBus bus, uint[] regs,
+            uint pc)
+        {
+            if (!_postApi52PastRamFn40AC4ContLogged || pc == 0)
+                return;
+            if (_postApi52PastRamAfter40AC4SampleLogged)
+                return;
+            if (IsPastRamFn40AC4BodyPc(pc))
+                return;
+            _postApi52PastRamAfter40AC4SampleLogged = true;
+            uint sp = regs != null && regs.Length > 29 ? PeekGpr(regs, 29) : 0;
+            uint ra = regs != null && regs.Length > 31 ? PeekGpr(regs, 31) : 0;
+            uint v0 = regs != null && regs.Length > 2 ? PeekGpr(regs, 2) : 0;
+            uint word = 0;
+            TryPeekWord(bus, pc, out word);
+            string via = pc == ListInsert340AC4NextFn
+                ? "fn-40ac4-nextfn-after-refuse"
+                : "post-40ac4-leave";
+            BootLog.Write("[Hive] ExtraROM ddi_nop past-ram-after-40ac4-leave" +
+                " pc=0x" + pc.ToString("X8") +
+                " sp=0x" + sp.ToString("X8") +
+                " ra=0x" + ra.ToString("X8") +
+                " v0=0x" + v0.ToString("X8") +
+                " word=0x" + word.ToString("X8") +
+                " via=" + via +
+                " (one-shot next-PC sample after 40AC4 refuse;" +
+                " harvest named next stall past 0x80040B28; no invent maps)");
+        }
+
+
 
         private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
             uint index, string tag, uint off, ref bool plantLogged)
@@ -48038,6 +48147,8 @@ namespace ProcessorEmulator.Core
             _postApi52PastRamAfter40A8CSampleLogged = false;
             _postApi52PastRamFn40AA8ContLogged = false;
             _postApi52PastRamAfter40AA8SampleLogged = false;
+            _postApi52PastRamFn40AC4ContLogged = false;
+            _postApi52PastRamAfter40AC4SampleLogged = false;
             _listInsertHeadMissLogged = false;
             _wait99PlantFixLogged = false;
             _leftoverWait99WrapLogged = false;
@@ -54442,6 +54553,8 @@ namespace ProcessorEmulator.Core
         private static bool _postApi52PastRamAfter40A8CSampleLogged;
         private static bool _postApi52PastRamFn40AA8ContLogged;
         private static bool _postApi52PastRamAfter40AA8SampleLogged;
+        private static bool _postApi52PastRamFn40AC4ContLogged;
+        private static bool _postApi52PastRamAfter40AC4SampleLogged;
         private static bool _listInsertHeadMissLogged;
         private static bool _wait99PlantFixLogged;
         private static bool _leftoverWait99WrapLogged;
