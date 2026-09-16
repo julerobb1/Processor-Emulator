@@ -703,7 +703,10 @@ namespace ProcessorEmulator.Core
             CeRomTocFiles.TryNotePostApi52Silence(bus, registers, pc);
             if (CeRomTocFiles.TryContinuePastRamOuterEpi(bus, registers, ref programCounter))
                 return true;
+            if (CeRomTocFiles.TryContinuePastRamFn964Epi(bus, registers, ref programCounter))
+                return true;
             CeRomTocFiles.TryNotePastRamAfterJalLink(bus, registers, pc);
+            CeRomTocFiles.TryNotePastRamAfterFn964Leave(bus, registers, pc);
             if (CeRomTocFiles.TryRefuseLeftoverWait99Wrap(bus, registers, ref programCounter))
                 return true;
             if (CeRomTocFiles.TryFixWait99PlantRa(bus, registers, ref programCounter))
