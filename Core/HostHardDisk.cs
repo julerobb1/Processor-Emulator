@@ -871,6 +871,9 @@ namespace ProcessorEmulator.Core
             if (CeRomTocFiles.TryContinuePastRamFn4266C(bus, registers, ref programCounter))
                 return true;
             CeRomTocFiles.TryNotePastRamAfter4266CLeave(bus, registers, pc);
+            // STOP: stackless 426E0 leaf (self-ra → TLBL bad=0x2A). No leave-hop.
+            if (CeRomTocFiles.TryStopPastRamFn426E0(bus, registers, ref programCounter))
+                return true;
             if (CeRomTocFiles.TryRefuseLeftoverWait99Wrap(bus, registers, ref programCounter))
                 return true;
             if (CeRomTocFiles.TryFixWait99PlantRa(bus, registers, ref programCounter))

@@ -2775,6 +2775,16 @@ namespace ProcessorEmulator.Core
         public const uint ListInsert34266CEpiJr = 0x800426D8;
         public const uint ListInsert34266CNextFn = 0x800426E0;
 
+        // Dump-true stackless leaf @0x800426E0 (NextFn after 4266C refuse).
+        // Body: move $v0,$a0; lhu $v1,0($v0); li $a0,42 ('*'); ... jr $ra.
+        // Refuse leave sets ra=pc=426E0. Leaf then addiu $a0,0,42 and jr $ra
+        // re-enters with a0=0x2A → TLBL bad=0x2A at 426E4. No jal xrefs.
+        // STOP here (no further leave-hop; no invent page0/KData/FFFF*).
+        public const uint ListInsert3426E0Fn = 0x800426E0;
+        public const uint ListInsert3426E0Lhu = 0x800426E4;
+        public const uint ListInsert3426E0Jr = 0x8004276C;
+        public const uint ListInsert3426E0End = 0x80042774;
+
 
 
         // Live 98276c7: skip 0xC0000088 then
@@ -40925,9 +40935,49 @@ namespace ProcessorEmulator.Core
                 return false;
             if (!IsKseg0PastGuestRam(a1))
                 return false;
-            if (!Is3F694ListInsertRa(ra))
-                return false;
             if (regs == null || regs.Length < 32 || bus == null)
+                return false;
+
+            // Dump-true third jal of list-insert: 0x8003FA14 link=0x8003FA1C
+            // inside twin 0x8003F9E8. Same past-RAM $a1 class as 3F694 sites.
+            // Leave to sequential NextFn 0x8003FA34 (same target as twin refuse).
+            // No invent 9001/9a/9f/c000 maps; no 3F694 frame unwind here.
+            if (ra == ListInsert3F9E8JalLink)
+            {
+                uint leave98 = ListInsert3F9E8NextFn;
+                if (IsDumpMemRefuseVa(leave98))
+                    return false;
+                uint sp98 = PeekGpr(regs, 29);
+                uint a098 = PeekGpr(regs, 4);
+                uint v098 = PeekGpr(regs, 2);
+                uint epc98 = bus.PeekEpc();
+                if (epc98 != 0 && (epc98 & 3) == 0)
+                    bus.ClearExlIfEpc(epc98);
+                bus.ClearExlIfEpc(CoredllDllMainC000Epc);
+                bus.ClearExlIfEpc(CoredllDllMainListInsertHeadEpc);
+                PokeGpr(regs, 31, leave98);
+                cpuPc = leave98;
+                if (!_postApi52PastRamLeaveLogged)
+                {
+                    _postApi52PastRamLeaveLogged = true;
+                    BootLog.Write("[Hive] ExtraROM ddi_nop post-api52-list-insert-past-ram-leave" +
+                        " a1=0x" + a1.ToString("X8") +
+                        " class=" + ListInsertDestClassName(ListInsertDestClassId(a1)) +
+                        " a0=0x" + a098.ToString("X8") +
+                        " v0=0x" + v098.ToString("X8") +
+                        " ra=0x" + ra.ToString("X8") +
+                        " sp=0x" + sp98.ToString("X8") +
+                        " leave=0x" + leave98.ToString("X8") +
+                        " via=twin-3f9e8-jal-link-nextfn" +
+                        " n=" + _postApi52ListInsertN.ToString() +
+                        " (dump-true jal @FA14 link FA1C; past-RAM $a1;" +
+                        " leave sequential FA34; no invent 9001/9a/9f/c000;" +
+                        " covers third list-insert call site)");
+                }
+                return true;
+            }
+
+            if (!Is3F694ListInsertRa(ra))
                 return false;
 
             uint sp = PeekGpr(regs, 29);
@@ -46083,6 +46133,73 @@ namespace ProcessorEmulator.Core
                 " harvest named next stall past 0x800426E0; no invent maps)");
         }
 
+        private static bool IsPastRamFn426E0BodyPc(uint pc)
+        {
+            return pc >= ListInsert3426E0Fn && pc < ListInsert3426E0End;
+        }
+
+        // Dump-true STOP at stackless leaf 0x800426E0 after 4266C refuse.
+        // Evidence (out-after-4266c boot.log): leave pc=ra=0x800426E0 then
+        // leftover-wait99-o32-nk-chain cause=2 epc=0x800426E4 bad=0x2A.
+        // Leaf addiu $a0,$0,42 then jr $ra (ra was self) re-enters with
+        // a0=0x2A → lhu TLBL. No jal xrefs; no invent page0/KData/FFFF*.
+        // Do NOT resume leave-hop spam past this leaf.
+        // Sticky: while PC stays in leaf with past-RAM $sp, skip body so
+        // list-insert 0x800151D0 dest-miss spin stays unblocked without
+        // inventing the next hop.
+        public static bool TryStopPastRamFn426E0(MipsBus bus, uint[] regs,
+            ref uint cpuPc)
+        {
+            if (!_postApi52PastRamFn4266CContLogged)
+                return false;
+            if (regs == null || regs.Length < 32 || bus == null)
+                return false;
+            uint pc = cpuPc;
+            if (!IsPastRamFn426E0BodyPc(pc))
+                return false;
+            uint sp = PeekGpr(regs, 29);
+            if (!IsKseg0PastGuestRam(sp))
+                return false;
+            uint ra = PeekGpr(regs, 31);
+            uint a0 = PeekGpr(regs, 4);
+            if (!_postApi52PastRamFn426E0StopLogged)
+            {
+                _postApi52PastRamFn426E0StopLogged = true;
+                uint epc = bus.PeekEpc();
+                if (epc != 0 && (epc & 3) == 0)
+                    bus.ClearExlIfEpc(epc);
+                bus.ClearExlIfEpc(CoredllDllMainC000Epc);
+                bus.ClearExlIfEpc(ListInsert3426E0Lhu);
+                uint word = 0;
+                TryPeekWord(bus, ListInsert3426E0Fn, out word);
+                BootLog.Write("[Hive] ExtraROM ddi_nop past-ram-fn-426e0-stop" +
+                    " pc=0x" + pc.ToString("X8") +
+                    " sp=0x" + sp.ToString("X8") +
+                    " ra=0x" + ra.ToString("X8") +
+                    " a0=0x" + a0.ToString("X8") +
+                    " word=0x" + word.ToString("X8") +
+                    " via=fn-426e0-stop-stackless-leaf" +
+                    " (dump-true stackless leaf after 4266C refuse;" +
+                    " ra==self leave would addiu a0:=0x2A then jr $ra →" +
+                    " TLBL bad=0x2A at 426E4; no jal xrefs; STOP;" +
+                    " no invent page0/KData/FFFF*/next leave-hop;" +
+                    " list-insert 0x800151D0 past-RAM dest-miss already" +
+                    " left; four toc-miss honest)");
+            }
+            // Sticky skip of leaf body — park on Fn entry, do not execute lhu.
+            if (pc != ListInsert3426E0Fn)
+                cpuPc = ListInsert3426E0Fn;
+            if (ra == ListInsert3426E0Fn || ra == pc || IsPastRamFn426E0BodyPc(ra))
+            {
+                // Break self-ra poison without inventing a caller.
+                // Keep ra at Fn so sticky stop continues to match.
+                PokeGpr(regs, 31, ListInsert3426E0Fn);
+            }
+            return true;
+        }
+
+
+
 
 
 private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
@@ -50669,6 +50786,7 @@ private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
             _postApi52PastRamAfter423F0SampleLogged = false;
             _postApi52PastRamFn4266CContLogged = false;
             _postApi52PastRamAfter4266CSampleLogged = false;
+            _postApi52PastRamFn426E0StopLogged = false;
             _listInsertHeadMissLogged = false;
             _wait99PlantFixLogged = false;
             _leftoverWait99WrapLogged = false;
@@ -57119,6 +57237,7 @@ private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
         private static bool _postApi52PastRamAfter423F0SampleLogged;
         private static bool _postApi52PastRamFn4266CContLogged;
         private static bool _postApi52PastRamAfter4266CSampleLogged;
+        private static bool _postApi52PastRamFn426E0StopLogged;
         private static bool _listInsertHeadMissLogged;
         private static bool _wait99PlantFixLogged;
         private static bool _leftoverWait99WrapLogged;
