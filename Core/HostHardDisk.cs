@@ -412,6 +412,8 @@ namespace ProcessorEmulator.Core
             CeRomTocFiles.TryKeepLeftoverDestLiveDispatch(bus, programCounter);
             pc = programCounter;
             CeRomTocFiles.TryWatchExtraRomLoadE32(bus, registers, pc);
+            V1Trace.Step(bus, registers, ref programCounter);
+            pc = programCounter;
             if (pc == BinfsInheritFill)
             {
                 uint plus14 = registers[12];

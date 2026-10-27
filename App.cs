@@ -1,3 +1,5 @@
+using ProcessorEmulator.Core;
+using ProcessorEmulator.Core;
 using System;
 using System.Diagnostics;
 using System.Windows;
@@ -19,6 +21,32 @@ namespace ProcessorEmulator
                 return;
             }
 
+            if (e.Args != null && e.Args.Length >= 2 && e.Args[0] == "--headless-boot")
+            {
+                // Headless Boot: --headless-boot <folder> [capSeconds]
+                string hf = e.Args[1];
+                int cap = 120;
+                if (e.Args.Length >= 3) int.TryParse(e.Args[2], out cap);
+                BootLog.Open(hf);
+                BootLog.Write("headless start folder=" + hf + " cap=" + cap + "s log=" + BootLog.FilePath);
+                var hs = new MediaroomSession(BootLog.Write);
+                var ht = new System.Threading.Thread(() =>
+                {
+                    try { hs.Run(hf); }
+                    catch (Exception ex) { BootLog.Write("headless: " + ex.GetType().Name + ": " + ex.Message); }
+                }) { IsBackground = true };
+                ht.Start();
+                if (!ht.Join(TimeSpan.FromSeconds(cap)))
+                {
+                    BootLog.Write("headless cap reached; RequestStop");
+                    hs.RequestStop();
+                    ht.Join(TimeSpan.FromSeconds(10));
+                }
+                BootLog.Write("headless end");
+                BootLog.UartFlush();
+                Shutdown();
+                return;
+            }
             string feed = "";
             if (e.Args != null)
             {
