@@ -42,9 +42,52 @@ namespace ProcessorEmulator
             " a1=0x" + r[5].ToString("X") + " ra=0x" + r[31].ToString("X8") +
             " sp=0x" + r[29].ToString("X8");
 
+        // Call ring: last guest jal/jalr sites + last non-sequential PC hops.
+        struct CallRec { public uint Src, Tgt, Ra, Sp, A0, A1, A2, A3; public bool Jalr; }
+        static readonly CallRec[] _cr = new CallRec[24];
+        static int _crN;
+        static readonly uint[] _hopFrom = new uint[24], _hopTo = new uint[24];
+        static int _hopN;
+        static uint _prevPc;
+        static int _ringDumps;
+        static void Ring(MipsBus bus, uint[] r, uint pc)
+        {
+            if (_prevPc != 0 && pc != _prevPc + 4 && pc != _prevPc + 8)
+            { _hopFrom[_hopN % 24] = _prevPc; _hopTo[_hopN % 24] = pc; _hopN++; }
+            _prevPc = pc;
+            if (bus != null)
+            {
+                uint w = 0;
+                try { w = bus.Read32(pc); } catch { }
+                bool jal = (w >> 26) == 3;
+                bool jalr = (w >> 26) == 0 && (w & 0x3F) == 9;
+                if (jal || jalr)
+                {
+                    uint tgt = jal ? (((pc + 4) & 0xF0000000u) | ((w & 0x03FFFFFFu) << 2)) : r[(int)((w >> 21) & 31)];
+                    _cr[_crN % 24] = new CallRec { Src = pc, Tgt = tgt, Ra = r[31], Sp = r[29], A0 = r[4], A1 = r[5], A2 = r[6], A3 = r[7], Jalr = jalr };
+                    _crN++;
+                }
+            }
+            if ((pc == 0x8003FA34 || pc == 0x8004266C || pc == 0x800426E0) && r[29] >= 0x90000000u && _ringDumps < 4)
+            {
+                _ringDumps++;
+                BootLog.Write("[CallRing] at pc=0x" + pc.ToString("X8") + " ra=0x" + r[31].ToString("X8") + " sp=0x" + r[29].ToString("X8") + " calls=" + _crN + " hops=" + _hopN);
+                int s = Math.Max(0, _crN - 24);
+                for (int i = s; i < _crN; i++)
+                {
+                    var c = _cr[i % 24];
+                    BootLog.Write("[CallRing] " + (c.Jalr ? "jalr" : "jal ") + " src=0x" + c.Src.ToString("X8") + " tgt=0x" + c.Tgt.ToString("X8") + " ra=0x" + c.Ra.ToString("X8") + " sp=0x" + c.Sp.ToString("X8") + " a0=0x" + c.A0.ToString("X") + " a1=0x" + c.A1.ToString("X") + " a2=0x" + c.A2.ToString("X") + " a3=0x" + c.A3.ToString("X"));
+                }
+                s = Math.Max(0, _hopN - 24);
+                for (int i = s; i < _hopN; i++)
+                    BootLog.Write("[CallRing] hop 0x" + _hopFrom[i % 24].ToString("X8") + " -> 0x" + _hopTo[i % 24].ToString("X8"));
+            }
+        }
+
         public static void Step(MipsBus bus, uint[] r, ref uint pc)
         {
             if (r == null || r.Length < 32) return;
+            Ring(bus, r, pc);
             uint v1 = r[3];
             if (!_init) { _init = true; Log("armed keepv1=" + (KeepV1 ? "1" : "0")); }
             else if (v1 != _lastV1 && v1 == 1 && _seen.Add(_lastPc))
