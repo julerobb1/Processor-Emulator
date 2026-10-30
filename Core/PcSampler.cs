@@ -20,10 +20,10 @@ namespace ProcessorEmulator
         static readonly int Sec = int.TryParse(Environment.GetEnvironmentVariable("EXTRAROM_PCSAMPLE_SEC"), out var s) && s > 0 ? s : 5;
         static readonly System.Diagnostics.Stopwatch _sw = System.Diagnostics.Stopwatch.StartNew();
         static long _next, _steps;
-        static readonly Dictionary<uint, int> _pages = new Dictionary<uint, int>();
+        static readonly Dictionary<uint, int> _pages = new Dictionary<uint, int>(); static readonly Dictionary<uint, int> _pcs = new Dictionary<uint, int>();
         static uint _k0, _k1; static bool _kInit; static int _sw_n;
         static readonly HashSet<uint> _hit = new HashSet<uint>(); static int _ckt, _api, _exn, _gpa;
-        static readonly uint[] Marks = { 0x8003EABC, 0x80034D2C, 0x8003EB48, 0x8003EB74, 0x80030604, 0x8003EB80, 0x800143E8, 0x80014408, 0x80014440, 0x80054F8C, 0x80020B98, 0x80055F90, 0x8005688C, 0x80015B64, 0x80014424, 0x80014428, 0x80014438, 0x800151E0, 0x8001728C, 0x80023500, 0x80037338, 0x80037340, 0x80037360, 0x80037368, 0x80037370, 0x80037380, 0x80037388, 0x800373C0, 0x800356FC, 0x80040CA8, 0x80030664, 0x80030688, 0x800306A4, 0x800306D8, 0x8002FF98 };
+        static readonly uint[] Marks = { 0x8003EABC, 0x80034D2C, 0x8003EB48, 0x8003EB74, 0x80030604, 0x8003EB80, 0x800143E8, 0x80014408, 0x80014440, 0x80054F8C, 0x80020B98, 0x80055F90, 0x8005688C, 0x80015B64, 0x80014424, 0x80014428, 0x80014438, 0x800151E0, 0x8001728C, 0x80023500, 0x80037338, 0x80037340, 0x80037360, 0x80037368, 0x80037370, 0x80037380, 0x80037388, 0x800373C0, 0x800356FC, 0x80040CA8, 0x80030664, 0x80030688, 0x800306A4, 0x800306D8, 0x8002FF98, 0x8003EAF8, 0x8003EB10, 0x80034D30, 0x8001597C, 0x80015980 };
 
         static uint P(MipsBus bus, uint va) { uint w; return CeRomTocFiles.PeekWordForSampler(bus, va, out w) ? w : 0xDEADDEADu; }
 
@@ -59,7 +59,7 @@ namespace ProcessorEmulator
             if (!On || r == null || r.Length < 32) return;
             _steps++;
             uint pg = pc >> 12;
-            _pages.TryGetValue(pg, out int c); _pages[pg] = c + 1;
+            _pages.TryGetValue(pg, out int c); _pages[pg] = c + 1; _pcs.TryGetValue(pc, out int pcn); _pcs[pc] = pcn + 1;
             for (int i = 0; i < Marks.Length; i++)
                 if (pc == Marks[i] && (_hit.Add(pc) || ((pc == 0x80030604u || pc == 0x80030664u || pc == 0x80030688u || pc == 0x800306A4u || pc == 0x800306D8u || pc == 0x8002FF98u) && _ckt++ < 60)))
                     BootLog.Write("[PcSample] mark pc=0x" + pc.ToString("X8") + " a0=0x" + r[4].ToString("X8") + " a1=0x" + r[5].ToString("X8") + " v0=0x" + r[2].ToString("X8") + " ra=0x" + r[31].ToString("X8") + " sp=0x" + r[29].ToString("X8") + " tmplD890=0x" + P(bus, 0xFFFFD890).ToString("X8") + " " + bus.Cp0Snapshot() + " step=" + _steps);
@@ -94,7 +94,7 @@ namespace ProcessorEmulator
                     top.Sort((a, b) => b.Value.CompareTo(a.Value));
                     string hot = "";
                     for (int i = 0; i < top.Count && i < 4; i++) hot += " 0x" + (top[i].Key << 12).ToString("X8") + ":" + top[i].Value;
-                    _pages.Clear();
+                    _pages.Clear(); var tp = new List<KeyValuePair<uint, int>>(_pcs); tp.Sort((a, b) => b.Value.CompareTo(a.Value)); for (int i = 0; i < tp.Count && i < 10; i++) hot += " pc0x" + tp[i].Key.ToString("X8") + ":" + tp[i].Value; _pcs.Clear();
                     BootLog.Write("[PcSample] t=" + (ms / 1000) + "s step=" + _steps + " pc=0x" + pc.ToString("X8") + " sp=0x" + r[29].ToString("X8") + " ra=0x" + r[31].ToString("X8") + " v0=0x" + r[2].ToString("X8") + " a0=0x" + r[4].ToString("X8") + " DAC0=0x" + k0.ToString("X8") + " DAC4=0x" + k1.ToString("X8") + " C800=0x" + P(bus, 0xFFFFC800).ToString("X8") + " " + bus.Cp0Snapshot() + " flag2C4C=0x" + P(bus, 0x80342C4C).ToString("X8") + " hot:" + hot);
                 }
             }

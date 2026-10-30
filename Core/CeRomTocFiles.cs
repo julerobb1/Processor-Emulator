@@ -33805,10 +33805,20 @@ namespace ProcessorEmulator.Core
         // leftover dest GetProc dest leftover hop
         // forbidden. Do not leftover hop. Do not
         // invent dest.
+        // EXTRAROM_FW_API=1: turn OFF three old host hooks so the firmware's own
+        // API dispatch (0x8001597C -> jal ObjectCall 0x80015980) and coredll
+        // thread start run untouched: wait99-halt (API 90 from 0x03F70B94 parked),
+        // o32 RaSrc incl. bind-refuse-wrap @0x03F74DE4 (resume 0x8001F7D0 ra=0 ->
+        // C0000005), and wait99 tick-halt spin at 0x800557F4.
+        internal static readonly bool FwApiOn =
+            System.Environment.GetEnvironmentVariable("EXTRAROM_FW_API") == "1";
+
         public static bool TryFixWait99PlantRa(MipsBus bus, uint[] regs,
             ref uint programCounter)
         {
             if (programCounter != LeftoverWait99RaSw)
+                return false;
+            if (FwApiOn)
                 return false;
             if (regs == null || regs.Length <= 31)
                 return false;
@@ -34172,6 +34182,8 @@ namespace ProcessorEmulator.Core
         private static bool TryLeftoverWait99O32RaSrc(MipsBus bus,
             uint[] regs, ref uint pc)
         {
+            if (FwApiOn)
+                return false;
             if (_leftoverWait99O32RaSrcLogged)
             {
                 if (_leftoverWait99O32HaltLogged
@@ -46809,6 +46821,8 @@ private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
         public static bool TryNoteLeftoverWait99Spin(MipsBus bus, uint[] regs,
             uint pc)
         {
+            if (FwApiOn)
+                return false;
             if (!_wait99PlantFixLogged || _leftoverHaltLogged)
                 return false;
             if (pc == 0 || pc == LeftoverWait99RaSw)
