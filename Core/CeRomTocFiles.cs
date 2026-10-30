@@ -13240,6 +13240,7 @@ namespace ProcessorEmulator.Core
 
         public static uint MapStk2470Va(MipsBus bus, uint va)
         {
+            if (FwApiOn) return va; // FW_API: no HOST-ASSISTED store-skip/stack remap; firmware TLB-miss path handles it
             if (_stk2470Busy)
                 return va;
             if (!_leftoverWait99O32NkCoredllSawEntry || !_jalrE478JrLogged)
@@ -13260,6 +13261,7 @@ namespace ProcessorEmulator.Core
 
         public static uint MapC0000088Va(MipsBus bus, uint va)
         {
+            if (FwApiOn) return va; // FW_API: no HOST-ASSISTED store-skip/stack remap; firmware TLB-miss path handles it
             if (_c000Busy)
                 return va;
             if (!_leftoverWait99O32NkCoredllSawEntry || !_stk1670SbLogged)
@@ -13343,6 +13345,7 @@ namespace ProcessorEmulator.Core
 
         public static bool TrySkipC0000088Store(MipsBus bus, uint va, uint value)
         {
+            if (FwApiOn) return false; // FW_API: no HOST-ASSISTED store-skip/stack remap; firmware TLB-miss path handles it
             if (!IsDumpMemListInsertStoreSkipArmed(bus))
                 return false;
             if (!IsC000StoreSkipVa(va))
@@ -13761,6 +13764,7 @@ namespace ProcessorEmulator.Core
         public static bool TrySkipListInsertAnyDestMiss(MipsBus bus, uint va,
             uint value)
         {
+            if (FwApiOn) return false; // FW_API: no HOST-ASSISTED store-skip/stack remap; firmware TLB-miss path handles it
             if (bus == null)
                 return false;
             uint epc = bus.PeekEpc();
@@ -15269,6 +15273,7 @@ namespace ProcessorEmulator.Core
         // 0x9A02 / 0xC6FB stack.
         public static bool TrySkip15C28StkStore(MipsBus bus, uint va)
         {
+            if (FwApiOn) return false; // FW_API: no HOST-ASSISTED store-skip/stack remap; firmware TLB-miss path handles it
             if (!_exn15C28Left || _exn15C28StkPage == 0)
                 return false;
             if ((va & ~0xFFFu) != _exn15C28StkPage)
