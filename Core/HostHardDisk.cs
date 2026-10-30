@@ -413,6 +413,7 @@ namespace ProcessorEmulator.Core
             pc = programCounter;
             CeRomTocFiles.TryWatchExtraRomLoadE32(bus, registers, pc);
             V1Trace.Step(bus, registers, ref programCounter);
+            PcSampler.Step(bus, registers, programCounter);
             pc = programCounter;
             if (pc == BinfsInheritFill)
             {

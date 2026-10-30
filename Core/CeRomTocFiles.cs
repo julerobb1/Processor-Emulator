@@ -54491,6 +54491,8 @@ private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
             }
         }
 
+        internal static bool PeekWordForSampler(MipsBus bus, uint va, out uint word) => TryPeekWord(bus, va, out word);
+
         private static bool TryPeekWord(MipsBus bus, uint va, out uint word)
         {
             word = 0;
