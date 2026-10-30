@@ -1860,8 +1860,14 @@ namespace ProcessorEmulator.Core
                 }
                 if ((code == BinBlkMedia.DiskIoctlRead || code == IoctlDiskReadEx) && buf != 0)
                     return TryReadSg(bus, buf);
+                if (code == BinBlkMedia.DiskIoctlWrite && HdRamWriteOn && buf != 0)
+                    return TryWriteSgRam(bus, buf);
                 if (code == BinBlkMedia.DiskIoctlWrite)
+                {
+                    if (buf != 0 && _logged.Add("wp:" + bus.Read32(buf)))
+                        System.Console.WriteLine("[HardDisk] DISK_WRITE refused (write-protect 19) lba=" + bus.Read32(buf) + " n=" + bus.Read32(buf + 4) + " " + DescribeLba(bus.Read32(buf)) + " step=" + PcSampler.Steps);
                     return 19;
+                }
             }
             catch (TlbMissException)
             {
@@ -1874,6 +1880,133 @@ namespace ProcessorEmulator.Core
             return 50;
         }
 
+        // EXTRAROM_HD_RAMWRITE (HOST-ASSISTED, approved by Julian): DISK_IOCTL_WRITE lands
+        // in the in-memory FAT image only (_image is built in RAM from the read-only
+        // folder; the D: source files are never opened for write). Every write is logged
+        // with LBA, byte offset, region, cluster and the owning file (dir/FAT walk).
+        public static readonly bool HdRamWriteOn = System.Environment.GetEnvironmentVariable("EXTRAROM_HD_RAMWRITE") == "1";
+        private static int _wrN;
+
+        private static uint TryWriteSgRam(MipsBus bus, uint sg)
+        {
+            uint start = bus.Read32(sg + 0);
+            uint num = bus.Read32(sg + 4);
+            uint nsg = bus.Read32(sg + 8);
+            if (nsg == 0 || num == 0 || nsg > 16)
+                return 87;
+            ulong off = (ulong)start * SectorSize;
+            ulong want = (ulong)num * SectorSize;
+            if (off + want > (ulong)_image.Length)
+                return 87;
+            byte[] before = new byte[want];
+            Buffer.BlockCopy(_image, (int)off, before, 0, (int)want);
+            ulong pos = off;
+            for (uint i = 0; i < nsg && pos < off + want; i++)
+            {
+                uint src = bus.Read32(sg + 20 + i * 8);
+                uint len = bus.Read32(sg + 24 + i * 8);
+                if (src == 0)
+                    return 87;
+                uint at = KusegAlias(src, sg);
+                for (uint k = 0; k < len && pos < off + want; k++, pos++)
+                {
+                    byte b;
+                    try { b = bus.Read8(at + k); }
+                    catch (TlbMissException) { if (at == src) throw; b = bus.Read8(src + k); }
+                    _image[(int)pos] = b;
+                }
+            }
+            bus.Write32(sg + 12, 0);
+            _wrN++;
+            string names = NewDirNames(before, (int)off, (int)want);
+            System.Console.WriteLine("[HardDisk] HOST-ASSISTED RAM DISK_WRITE #" + _wrN + " lba=" + start + " n=" + num +
+                " off=0x" + off.ToString("X") + " " + DescribeLba(start) + (names.Length > 0 ? " dirent+=" + names : "") +
+                " (RAM image only; D: untouched) step=" + PcSampler.Steps);
+            return 0;
+        }
+
+        private static string NewDirNames(byte[] before, int off, int len)
+        {
+            var sb = new System.Text.StringBuilder();
+            for (int e = 0; e + 32 <= len; e += 32)
+            {
+                byte attr = _image[off + e + 11];
+                byte c0 = _image[off + e];
+                if (c0 == 0 || c0 == 0xE5 || attr == 0x0F)
+                    continue;
+                bool changed = false;
+                for (int k = 0; k < 32; k++)
+                    if (_image[off + e + k] != before[e + k]) { changed = true; break; }
+                if (!changed)
+                    continue;
+                string n = System.Text.Encoding.ASCII.GetString(_image, off + e, 11);
+                uint cl = (uint)(_image[off + e + 26] | (_image[off + e + 27] << 8));
+                uint sz = (uint)(_image[off + e + 28] | (_image[off + e + 29] << 8) | (_image[off + e + 30] << 16) | (_image[off + e + 31] << 24));
+                sb.Append("[" + n.TrimEnd() + " cl=" + cl + " size=" + sz + "]");
+                if (sb.Length > 300) break;
+            }
+            return sb.ToString();
+        }
+
+        private static string DescribeLba(uint lba)
+        {
+            try
+            {
+                const int pre = 63;
+                int b0 = pre * 512;
+                int fatSec = _image[b0 + 22] | (_image[b0 + 23] << 8);
+                int rootEnt = _image[b0 + 17] | (_image[b0 + 18] << 8);
+                int fat1 = pre + 1, fat2 = fat1 + fatSec, root = fat2 + fatSec, data = root + rootEnt * 32 / 512;
+                if (lba < pre) return "region=MBR";
+                if (lba == pre) return "region=BOOT";
+                if (lba < fat2) return "region=FAT1 idx=" + (lba - fat1);
+                if (lba < root) return "region=FAT2 idx=" + (lba - fat2);
+                if (lba < data) return "region=ROOTDIR idx=" + (lba - root);
+                uint cl = (uint)((lba - data) / 8 + 2);
+                return "region=DATA cl=" + cl + " file=" + OwnerOfCluster(cl, pre, fatSec, root, data);
+            }
+            catch { return "region=?"; }
+        }
+
+        private static string OwnerOfCluster(uint target, int pre, int fatSec, int root, int data)
+        {
+            var q = new System.Collections.Generic.Queue<System.Tuple<string, uint>>();
+            q.Enqueue(System.Tuple.Create("", 0u));
+            int guard = 0;
+            while (q.Count > 0 && guard++ < 4000)
+            {
+                var d = q.Dequeue();
+                var secs = new System.Collections.Generic.List<int>();
+                if (d.Item2 == 0)
+                    for (int s = root; s < data; s++) secs.Add(s);
+                else
+                    foreach (uint c in Chain(d.Item2, pre)) for (int s = 0; s < 8; s++) secs.Add(data + (int)(c - 2) * 8 + s);
+                foreach (int s in secs)
+                    for (int e = 0; e < 512; e += 32)
+                    {
+                        int at = s * 512 + e;
+                        if (at + 32 > _image.Length) continue;
+                        byte c0 = _image[at], attr = _image[at + 11];
+                        if (c0 == 0 || c0 == 0xE5 || c0 == (byte)'.' || attr == 0x0F || (attr & 0x08) != 0) continue;
+                        uint cl = (uint)(_image[at + 26] | (_image[at + 27] << 8));
+                        string n = d.Item1 + "\\" + System.Text.Encoding.ASCII.GetString(_image, at, 11).TrimEnd();
+                        if (cl < 2) continue;
+                        foreach (uint c in Chain(cl, pre)) if (c == target) return n + ((attr & 0x10) != 0 ? "\\(dir)" : "");
+                        if ((attr & 0x10) != 0) q.Enqueue(System.Tuple.Create(n, cl));
+                    }
+            }
+            return "(unowned/new)";
+        }
+
+        private static System.Collections.Generic.IEnumerable<uint> Chain(uint cl, int pre)
+        {
+            int fat = (pre + 1) * 512;
+            for (int i = 0; i < 70000 && cl >= 2 && cl < 0xFFF8; i++)
+            {
+                yield return cl;
+                cl = (uint)(_image[fat + (int)cl * 2] | (_image[fat + (int)cl * 2 + 1] << 8));
+            }
+        }
         private static uint TryReadSg(MipsBus bus, uint sg)
         {
             uint start = bus.Read32(sg + 0);
