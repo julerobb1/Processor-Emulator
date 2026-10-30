@@ -1563,6 +1563,27 @@ namespace ProcessorEmulator.Core
             return true;
         }
 
+        // Observe-only: find a UTF-16 store/profile name inside a guest object.
+        private static string ScanNames(MipsBus bus, uint obj)
+        {
+            var sb = new System.Text.StringBuilder();
+            try
+            {
+                for (uint off = 0; off < 0xA00; off += 2)
+                {
+                    string s = ReadUtf16(bus, obj + off);
+                    if (s.Length >= 4 && (s.StartsWith("HD") || s.StartsWith("BIN") || s.StartsWith("Hard") || s.StartsWith("DSK")))
+                    {
+                        sb.Append("+0x" + off.ToString("X") + "=" + s + ";");
+                        off += (uint)(s.Length * 2);
+                        if (sb.Length > 200) break;
+                    }
+                }
+            }
+            catch { }
+            return sb.ToString();
+        }
+
         private static bool TryStoreIoctl2(uint[] registers, MipsBus bus, ref uint programCounter)
         {
             uint store = registers[4];
@@ -1575,7 +1596,7 @@ namespace ProcessorEmulator.Core
             if (!ours)
             {
                 if (_logged.Add("i2:" + store.ToString("X")))
-                    System.Console.WriteLine($"[HardDisk] StoreIoctl2 miss a0=0x{store:X8} a1=0x{a1:X} a2=0x{a2:X} a3=0x{a3:X}");
+                    System.Console.WriteLine($"[HardDisk] StoreIoctl2 miss a0=0x{store:X8} a1=0x{a1:X} a2=0x{a2:X} a3=0x{a3:X} ra=0x{registers[31]:X8} names={ScanNames(bus, store)}");
                 return false;
             }
             uint code = a2;
@@ -1654,7 +1675,7 @@ namespace ProcessorEmulator.Core
             if (info == 0)
             {
                 if (_logged.Add("gdi"))
-                    System.Console.WriteLine($"[HardDisk] GetDiskInfo miss a0=0x{a0:X8} a1=0x{a1:X8}");
+                    System.Console.WriteLine($"[HardDisk] GetDiskInfo miss a0=0x{a0:X8} a1=0x{a1:X8} ra=0x{registers[31]:X8} names={ScanNames(bus, a0)}");
                 return false;
             }
             uint err = ServeIoctl(bus, BinBlkMedia.DiskIoctlGetInfo, info, 24, registers[29]);
