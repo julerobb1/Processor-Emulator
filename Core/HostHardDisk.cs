@@ -1330,7 +1330,7 @@ namespace ProcessorEmulator.Core
                 return true;
             try
             {
-                return NameIsOurs(bus, hdsk) || NameIsOurs(bus, hdsk + 16);
+                return NameIsOurs(bus, hdsk) || NameIsOurs(bus, hdsk + 16) || StoreProfileIsOurs(bus, hdsk);
             }
             catch
             {
@@ -1563,6 +1563,24 @@ namespace ProcessorEmulator.Core
             return true;
         }
 
+        // EXTRAROM_HD_AFTER_DEVMGR: fsdmgr's own store object for the HDProf arrival keeps
+        // the profile name "HDProfile" at +0x336 (and +0x9A0), not at +0/+16. mspart's first
+        // DISK_IOCTL_READ (code 2, SG_REQ 0x1C) at 0x03E833CC passes that object. Recognise it
+        // so the HOST-ASSISTED disk serves the real read-only FAT image bytes.
+        private static bool StoreProfileIsOurs(MipsBus bus, uint store)
+        {
+            if (!HdAfterDevmgrOn || store == 0)
+                return false;
+            try
+            {
+                return string.Equals(ReadUtf16(bus, store + 0x336), ProfileName, System.StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         // Observe-only: find a UTF-16 store/profile name inside a guest object.
         private static string ScanNames(MipsBus bus, uint obj)
         {
@@ -1589,7 +1607,7 @@ namespace ProcessorEmulator.Core
             uint store = registers[4];
             if (!_opened || store == 0)
                 return false;
-            bool ours = store == Handle || NameIsOurs(bus, store) || NameIsOurs(bus, store + 16);
+            bool ours = store == Handle || NameIsOurs(bus, store) || NameIsOurs(bus, store + 16) || StoreProfileIsOurs(bus, store);
             uint a1 = registers[5];
             uint a2 = registers[6];
             uint a3 = registers[7];
