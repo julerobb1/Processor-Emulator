@@ -22,6 +22,7 @@ namespace ProcessorEmulator
     {
         public const uint ImagePhys = 0x0A000000; // HOST-ASSISTED load address
         public const uint EntryOff = 0x44;
+        public const uint BoardInfoPhys = 0x09F00000; // HOST-ASSISTED zero block (CFE a2)
         public const uint KernLo = 0x80001000, KernHi = 0x8086B260, KernEntry = 0x806608C0;
 
         sealed class HogMmio : IBusDevice
@@ -86,7 +87,7 @@ namespace ProcessorEmulator
             Log($"PACE_HOG image={image} len={img.Length} cap={capSeconds}s");
             if (img.Length < 0x200 || Encoding.ASCII.GetString(img, 0, 4) != "Pace" || Encoding.ASCII.GetString(img, 0x28, 4) != "Pimg")
             { Log("not a Pace/Pimg image"); return 2; }
-            Log($"HOST-ASSISTED: image at phys 0x{ImagePhys:X8}; entry 0x{0x80000000 + ImagePhys + EntryOff:X8}; a0..a3=0; sticky MMIO; UART 0x10406B40");
+            Log($"HOST-ASSISTED: image at phys 0x{ImagePhys:X8}; entry 0x{0x80000000 + ImagePhys + EntryOff:X8}; a0=a1=a3=0, a2=zero board-info @0x{0x80000000 + BoardInfoPhys:X8}; sticky MMIO; UART 0x10406B40");
 
             MipsCpuEmulator.Mips32Ext = true;
             CP0.HonorPageMask = true;
@@ -102,10 +103,14 @@ namespace ProcessorEmulator
             var cpu = new MipsCpuEmulator(bus, cp0);
             for (int r = 1; r < 32; r++) cpu.SetRegister(r, 0);
             cpu.SetRegister(MipsCpuEmulator.Register.PC, 0x80000000 + ImagePhys + EntryOff);
+            // HOST-ASSISTED: CFE a2 = board-info block. hog_in_c keeps it at sp+0x8c and
+            // reads MAC bytes at +5..+9 and a u16 at +0x4E. Real CFE fills it from
+            // flash nonvol; we pass an all-zero 4 KB block (MACs 00:00:..). Not firmware data.
+            cpu.SetRegister(6, 0x80000000 + BoardInfoPhys);
             cp0.Status = 0x10000000; // CU0, BEV=0, EXL=0, IE=0
 
             var sw = Stopwatch.StartNew();
-            long steps = 0; int uartSeen = 0; long stopAt = -1; string why = "cap";
+            long steps = 0, delaySkips = 0; int uartSeen = 0; long stopAt = -1; string why = "cap";
             long nextStatus = 5000;
             const int batch = 20000;
             while (sw.Elapsed.TotalSeconds < capSeconds)
@@ -113,6 +118,9 @@ namespace ProcessorEmulator
                 try { cpu.Step(batch); }
                 catch (Exception ex) { why = $"host exception {ex.GetType().Name}: {ex.Message} lastFetch=0x{PcSampler.LastFetchPc:X8}"; break; }
                 steps += batch;
+                // HOST-ASSISTED timing skip: Hog udelay (0x86400F54) spins on CP0 Count
+                // until Count reaches a0. Jump Count to a0; no other state changes.
+                { uint upc = cpu.ProgramCounter; if (upc >= 0x86400F64 && upc <= 0x86400F70) { uint tgt = cpu.GetRegister(4); if ((int)(tgt - cp0.Count) > 0) { cp0.Count = tgt; delaySkips++; } } }
                 uint pc = cpu.ProgramCounter;
                 if (mmio.UartOut.Length > uartSeen)
                 {
@@ -139,7 +147,7 @@ namespace ProcessorEmulator
                 {
                     nextStatus += 15000;
                     var hot = mmio.Reads.OrderByDescending(k => k.Value).Take(3).Select(k => $"0x{0x10000000 + k.Key:X8}x{k.Value}");
-                    Log($"status steps={steps} pc=0x{pc:X8} uart={uartSeen} hotR=[{string.Join(",", hot)}]");
+                    Log($"status steps={steps} pc=0x{pc:X8} uart={uartSeen} dskip={delaySkips} hotR=[{string.Join(",", hot)}]");
                 }
             }
             Log($"STOP {why} steps={steps} secs={sw.Elapsed.TotalSeconds:F0}");
