@@ -17,6 +17,9 @@ namespace ProcessorEmulator.Emulation
         private readonly CP0 _cp0;
         public bool IsBigEndian { get; set; } = true; // Default to Big Endian for MIPS set-top boxes
 
+        // Observe-only CP0 view for PcSampler.
+        public string Cp0Snapshot() => _cp0 == null ? "cp0=null" : "Status=0x" + _cp0.Status.ToString("X8") + " Cause=0x" + _cp0.Cause.ToString("X8") + " Count=0x" + _cp0.Count.ToString("X8") + " Compare=0x" + _cp0.Compare.ToString("X8");
+
         public MipsBus(CP0 cp0)
         {
             _cp0 = cp0;
