@@ -85,7 +85,7 @@ namespace ProcessorEmulator
         static int _gwN, _uwN, _uw2, _gwStk;
         static uint _prevPc; static int _ri, _ringDumps; static readonly uint[] _ring = new uint[128], _ring2 = new uint[128], _ringRa = new uint[128];
         static int _rwN; static uint _rwLast = 0x12345678u;
-        static int _hpN; static uint _hpPa = 1, _hpVal = 1; static MipsBus _sbus; public static uint LastInsn, LastFetchPc, LastPcAfterFetch; static int _nwN, _nrN; static uint _slotPa = 0xFFFFFFFFu;
+        static int _hpN, _ldN, _ld2N, _hwN, _hvN; static uint _hpPa = 1, _hpVal = 1; static MipsBus _sbus; public static uint LastInsn, LastFetchPc, LastPcAfterFetch; static int _nwN, _nrN; static uint _slotPa = 0xFFFFFFFFu;
         public static void NoteW(MipsBus bus, uint origVa, uint va, uint value)
         {
             if (!On || _nwN >= 30) return;
@@ -104,6 +104,10 @@ namespace ProcessorEmulator
             _nrN++; BootLog.Write("[PcSample] slotR va=0x" + va.ToString("X8") + " pa=0x" + pa.ToString("X8") + " val=0x" + val.ToString("X8") + " step=" + _steps);
         }        static void DbgProbe(MipsBus bus, uint[] r, uint pc)
         { _sbus = bus;
+            if (pc == 0x80018D78u && _steps > 80000000 && _ldN < 12) { _ldN++; BootLog.Write("[PcSample] ld-entry a0=0x" + r[4].ToString("X8") + " a1=0x" + r[5].ToString("X8") + " a2=0x" + r[6].ToString("X8") + " a3=0x" + r[7].ToString("X8") + " ra=0x" + r[31].ToString("X8") + " DAC0=0x" + P(bus, 0xFFFFDAC0u).ToString("X8") + " DAC4=0x" + P(bus, 0xFFFFDAC4u).ToString("X8") + " alias=0x" + CeRomTocFiles.AliasProcPeek.ToString("X8") + " step=" + _steps); }
+            if (pc == 0x80018E94u && _steps > 80000000 && _ld2N < 12) { _ld2N++; uint s4 = r[20]; BootLog.Write("[PcSample] ld-e94 s4=0x" + s4.ToString("X8") + " *s4=0x" + P(bus, s4).ToString("X8") + " s5=0x" + r[21].ToString("X8") + " s2=0x" + r[18].ToString("X8") + " fp=0x" + r[30].ToString("X8") + " DAC0=0x" + P(bus, 0xFFFFDAC0u).ToString("X8") + " DAC4=0x" + P(bus, 0xFFFFDAC4u).ToString("X8") + " alias=0x" + CeRomTocFiles.AliasProcPeek.ToString("X8") + " slot04=0x" + P(bus, 0x04000000u | (s4 & 0x01FFFFFFu)).ToString("X8") + " slot06=0x" + P(bus, 0x06000000u | (s4 & 0x01FFFFFFu)).ToString("X8") + " slot08=0x" + P(bus, 0x08000000u | (s4 & 0x01FFFFFFu)).ToString("X8") + " slot0A=0x" + P(bus, 0x0A000000u | (s4 & 0x01FFFFFFu)).ToString("X8") + " slot0C=0x" + P(bus, 0x0C000000u | (s4 & 0x01FFFFFFu)).ToString("X8") + " step=" + _steps); }
+            if (pc == 0x800308E0u && _steps > 95000000 && _hwN < 8) { _hwN++; uint h = r[4]; BootLog.Write("[PcSample] h8E0 a0=0x" + h.ToString("X8") + " a1=0x" + r[5].ToString("X8") + " a2=0x" + r[6].ToString("X8") + " a3=0x" + r[7].ToString("X8") + " ra=0x" + r[31].ToString("X8") + " DAC0=0x" + P(bus, 0xFFFFDAC0u).ToString("X8") + " DAC4=0x" + P(bus, 0xFFFFDAC4u).ToString("X8") + " step=" + _steps); }
+            if (pc == 0x80030934u && _steps > 95000000 && _hvN < 8) { _hvN++; uint o = r[2]; BootLog.Write("[PcSample] h934 v0=0x" + o.ToString("X8") + " obj=" + P(bus, o).ToString("X8") + " " + P(bus, o + 4).ToString("X8") + " " + P(bus, o + 8).ToString("X8") + " " + P(bus, o + 12).ToString("X8") + " " + P(bus, o + 16).ToString("X8") + " " + P(bus, o + 20).ToString("X8") + " " + P(bus, o + 24).ToString("X8") + " " + P(bus, o + 28).ToString("X8") + " step=" + _steps); }
             if (_steps > 94000000 && _steps < 96300000 && _rwN < 60)
             {
                 uint w = P(bus, 0x080DF384u);
