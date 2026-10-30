@@ -257,6 +257,11 @@ namespace ProcessorEmulator.Core
         public const uint HkPartTable = 0xFA7F5004;
         public const uint HkProfilePart = 0xFA7F5005;
         public const uint HkFilters = 0xFA7F5006;
+        // Firmware-true: the HD FATFS filter list comes from the real
+        // boot.hv instead of the HOST-ASSISTED single sigcheckfilter key.
+        // binblk opens \Hard Disk\SEC.bin as a B000FF image; on disk it is
+        // EFS-encrypted (01 00 0E 00 ...), so EFSFilter.dll must be in the stack.
+        public static readonly bool HdHiveFiltersFwOn = System.Environment.GetEnvironmentVariable("EXTRAROM_HD_HIVEFILTERS_FW") == "1";
         public const uint HkSigCheck = 0xFA7F5007;
         public const string FilterDll = "sigcheckfilter.dll";
         public const string FilterName = "sigcheckfilter";
@@ -1208,6 +1213,11 @@ namespace ProcessorEmulator.Core
             // this gate so mspart comes from the boot hive.
             if (EqualsIgnore(n, "System\\StorageManager\\Profiles\\HDProfile"))
                 return HkProfile;
+            // EXTRAROM_HD_HIVEFILTERS_FW: leave the Filters subtree to the
+            // firmware boot.hv (HDProfile\FATFS\Filters = BHC/EFS/MyFilter ->
+            // IntegrityCheckFilter.dll, EFSFilter.dll, SigCheckFilter.dll).
+            if (HdHiveFiltersFwOn)
+                return 0;
             // Only the profile Filters key. Serving FATFS\\Filters
             // and StorageManager\\Filters too would InstallFilters
             // three times on the same handle.
@@ -1230,6 +1240,8 @@ namespace ProcessorEmulator.Core
             if (string.IsNullOrEmpty(sub))
                 return 0;
             string n = sub.Replace('/', '\\').TrimStart('\\');
+            if (HdHiveFiltersFwOn)
+                return 0;
             if (parent == HkFilters && IsSigCheckName(n))
                 return HkSigCheck;
             if (parent == HkFatfs && EqualsIgnore(n, "Filters"))
