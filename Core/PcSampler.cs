@@ -84,8 +84,14 @@ namespace ProcessorEmulator
         static int _apiDump; static readonly System.Collections.Generic.Dictionary<uint, int> _apiCnt = new System.Collections.Generic.Dictionary<uint, int>(), _exWin = new System.Collections.Generic.Dictionary<uint, int>(); static readonly System.Collections.Generic.Dictionary<uint, uint> _apiRa = new System.Collections.Generic.Dictionary<uint, uint>();
         static int _gwN, _uwN, _uw2, _gwStk;
         static uint _prevPc; static int _ri, _ringDumps; static readonly uint[] _ring = new uint[128], _ring2 = new uint[128], _ringRa = new uint[128];
+        static int _rwN; static uint _rwLast = 0x12345678u;
         static void DbgProbe(MipsBus bus, uint[] r, uint pc)
         {
+            if (_steps > 94000000 && _steps < 96300000 && _rwN < 60)
+            {
+                uint w = P(bus, 0x080DF384u);
+                if (w != _rwLast) { _rwN++; BootLog.Write("[PcSample] ra-slot 0x080DF384 0x" + _rwLast.ToString("X8") + "->0x" + w.ToString("X8") + " pc=0x" + pc.ToString("X8") + " prev=0x" + _prevPc.ToString("X8") + " ra=0x" + r[31].ToString("X8") + " sp=0x" + r[29].ToString("X8") + " a0=0x" + r[4].ToString("X8") + " a1=0x" + r[5].ToString("X8") + " a2=0x" + r[6].ToString("X8") + " cur=0x" + P(bus, 0xFFFFDAC0).ToString("X8") + " step=" + _steps); _rwLast = w; }
+            }
             if (pc != _prevPc + 4u) { _ring[_ri & 127] = _prevPc; _ring2[_ri & 127] = pc; _ringRa[_ri & 127] = r[31]; _ri++; }
             _prevPc = pc;
             if ((pc == 0x80000000u || pc == 0x80000180u) && _ringDumps < 2 && bus.Cp0Snapshot().Contains("EPC=0x0037D220"))
