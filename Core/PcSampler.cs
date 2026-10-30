@@ -85,15 +85,16 @@ namespace ProcessorEmulator
         static int _gwN, _uwN, _uw2, _gwStk;
         static uint _prevPc; static int _ri, _ringDumps; static readonly uint[] _ring = new uint[128], _ring2 = new uint[128], _ringRa = new uint[128];
         static int _rwN; static uint _rwLast = 0x12345678u;
-        static int _nwN, _nrN; static uint _slotPa = 0xFFFFFFFFu;
+        public static uint LastInsn, LastFetchPc, LastPcAfterFetch; static int _nwN, _nrN; static uint _slotPa = 0xFFFFFFFFu;
         public static void NoteW(MipsBus bus, uint origVa, uint va, uint value)
         {
             if (!On || _nwN >= 30) return;
             if ((origVa & 0x01FFFFFFu) != 0x000DF384u && (va & 0x01FFFFFFu) != 0x000DF384u) { return; }
             uint pa = 0xFFFFFFFFu; try { pa = bus.Translate(va, true); } catch { }
             _nwN++; if (_slotPa == 0xFFFFFFFFu && origVa == 0x080DF384u) _slotPa = pa;
-            BootLog.Write("[PcSample] slotW orig=0x" + origVa.ToString("X8") + " va=0x" + va.ToString("X8") + " pa=0x" + pa.ToString("X8") + " val=0x" + value.ToString("X8") + " step=" + _steps + " host=" + (System.Environment.StackTrace.Contains("CeRomTocFiles") || System.Environment.StackTrace.Contains("HostHardDisk") ? "Y" : "n"));
+            BootLog.Write("[PcSample] slotW orig=0x" + origVa.ToString("X8") + " va=0x" + va.ToString("X8") + " pa=0x" + pa.ToString("X8") + " val=0x" + value.ToString("X8") + " step=" + _steps + " prevpc=0x" + _prevPc.ToString("X8") + " fpc=0x" + LastFetchPc.ToString("X8") + " pcAfter=0x" + LastPcAfterFetch.ToString("X8") + " insn=0x" + LastInsn.ToString("X8") + " host=" + (System.Environment.StackTrace.Contains("CeRomTocFiles") || System.Environment.StackTrace.Contains("HostHardDisk") ? "Y" : "n") + " st=" + StkNames());
         }
+        static string StkNames() { var f = new System.Diagnostics.StackTrace(2, false).GetFrames(); var sb = new System.Text.StringBuilder(); for (int k = 0; k < f.Length && k < 9; k++) { var m = f[k].GetMethod(); sb.Append(m == null ? "?" : (m.DeclaringType == null ? "" : m.DeclaringType.Name) + "." + m.Name).Append('/'); } return sb.ToString(); }
         public static void NoteR(uint pa, uint va, uint val)
         {
             if (!On || _nrN >= 20 || _steps < 96270000 || _steps > 96290000) return;

@@ -379,7 +379,7 @@ namespace ProcessorEmulator.Emulation
                 _currentPc = programCounter;
                 try
                 {
-                    uint instruction = FetchInstruction();
+                    uint instruction = FetchInstruction(); ProcessorEmulator.PcSampler.LastInsn = instruction; ProcessorEmulator.PcSampler.LastFetchPc = _currentPc; ProcessorEmulator.PcSampler.LastPcAfterFetch = programCounter;
                     CeRomTocFiles.TryKeepLeftoverDestLiveDispatch(_bus, _currentPc);
                     CeRomTocFiles.TryResumeTv2LeftoverDestLiveContinue(_bus, registers, ref programCounter);
                     DecodeAndExecute(instruction);
