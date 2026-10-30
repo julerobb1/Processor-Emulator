@@ -55,7 +55,7 @@ namespace ProcessorEmulator
                 // HOST-ASSISTED: MEMC0/1 DDR-PHY op-done bit. Hog writes 1 to
                 // 0x103C00FC / 0x103C03B8 then spins on bit0 of 0x103C0100 /
                 // 0x103C03BC (reShmoo tail). Real PHY sets it when the op ends.
-                if (off == 0x3C0100 || off == 0x3C03BC) v |= 1;
+                if ((off >> 16) >= 0x3A && (off >> 16) <= 0x3C && ((off & 0xFFFF) == 0x0100 || (off & 0xFFFF) == 0x03BC)) v |= 1; // MEMC0..2
                 Note(false, off, v);
                 return v;
             }
