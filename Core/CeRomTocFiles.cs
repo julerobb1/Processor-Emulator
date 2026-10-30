@@ -47351,6 +47351,11 @@ private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
                 return va;
             if (va < ProcessInfoPage || va >= 0x02000000u)
                 return va;
+            if (XipCurProcOn)
+            {
+                uint pp = PerProcInfoKseg(bus, va);
+                return pp != 0 ? (pp | (va & 0xFFFu)) : va;
+            }
             if (_ddiNopInfoKseg != 0)
                 return _ddiNopInfoKseg | (va & 0xFFFu);
             TryResolveDdiNopProcessInfo(bus);
@@ -56912,6 +56917,35 @@ private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
             if (!XipCurProcOn || bus == null || (va & 0xFE000000u) != 0) return false;
             uint cur; if (!PeekWordForSampler(bus, CurProc, out cur)) return false;
             return cur != 0x803402B0u;
+        }
+        // Firmware-true (EXTRAROM_XIP_CURPROC): slot-0 page 0x01FFF000 (coredll per-process data, hProcessHeap
+        // at 0x01FFFFA0) is per process. Walk pCurProc's own section PTE instead of reusing one cached nk page
+        // for every process (that shared page let gwes overwrite filesys's heap handle). Falls back to the VA (TLB).
+        private static readonly System.Collections.Generic.Dictionary<uint, uint> _perProcInfo = new System.Collections.Generic.Dictionary<uint, uint>();
+        private static uint PerProcInfoKseg(MipsBus bus, uint va)
+        {
+            if (bus == null) return 0;
+            try
+            {
+                _ddiNopInfoBusy = true;
+                uint cur = bus.Read32(CurProc);
+                uint vm = bus.Read32(cur + ProcSlot) & 0xFE000000u;
+                uint key = vm | (va & 0x01FFF000u);
+                uint got;
+                if (_perProcInfo.TryGetValue(key, out got)) return got;
+                uint sec = PeekSection(bus, vm >> 25);
+                uint l1, l2, pfn, kseg;
+                if (sec == 0 || !WalkFirmwarePte(bus, sec, va, out l1, out l2, out pfn, out kseg)
+                    || (kseg & 0x1FFFFFFFu) < 0x00010000u)
+                    return 0;
+                got = kseg & ~0xFFFu;
+                _perProcInfo[key] = got;
+                BootLog.Write("[Hive] per-proc slot-0 info page proc=0x" + cur.ToString("X8") + " vm=0x" + vm.ToString("X8") +
+                    " va=0x" + (va & ~0xFFFu).ToString("X8") + " -> 0x" + got.ToString("X8") + " (firmware PTE of pCurProc section; XIP_CURPROC)");
+                return got;
+            }
+            catch { return 0; }
+            finally { _ddiNopInfoBusy = false; }
         }
         private static uint _aliasProc; public static uint AliasProcPeek => _aliasProc;
         private static uint _aliasReal;
