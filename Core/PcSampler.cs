@@ -69,13 +69,43 @@ namespace ProcessorEmulator
             _io++;
             BootLog.Write("[PcSample] io " + tag + " pc=0x" + pc.ToString("X8") + " DAC0=0x" + P(bus, 0xFFFFDAC0).ToString("X8") + " step=" + _steps);
         }
+        // Observe-only (EXTRAROM_PCSAMPLE): kernel debug-print format text, OsAxsT0 handler chain, thread state, exceptions by EPC. No writes.
+        static int _dbgN, _chain, _thrN, _exnN; static readonly System.Collections.Generic.Dictionary<uint, int> _fmt = new System.Collections.Generic.Dictionary<uint, int>(); static readonly System.Collections.Generic.Dictionary<uint, int> _exnEpc = new System.Collections.Generic.Dictionary<uint, int>();
+        static string WStr(MipsBus bus, uint va, int max)
+        {
+            var sb = new System.Text.StringBuilder();
+            for (int k = 0; k < max; k += 2) { uint w = P(bus, va + (uint)(k * 2)); if (w == 0xDEADDEADu) break; char c0 = (char)(w & 0xFFFF), c1 = (char)(w >> 16); if (c0 == 0) break; sb.Append(c0 < 32 ? '.' : c0); if (c1 == 0) break; sb.Append(c1 < 32 ? '.' : c1); }
+            return sb.ToString();
+        }
+        static string Words(MipsBus bus, uint va, int n) { var sb = new System.Text.StringBuilder(); for (int k = 0; k < n; k++) sb.Append(P(bus, va + (uint)(4 * k)).ToString("X8")).Append(' '); return sb.ToString(); }
+        static void DbgProbe(MipsBus bus, uint[] r, uint pc)
+        {
+            if (pc == 0x8004294Cu)
+            {
+                uint f = r[5]; _fmt.TryGetValue(f, out int n); _fmt[f] = ++n;
+                if ((n == 1 && _dbgN < 80) || (n % 500 == 0 && _dbgN < 160)) { _dbgN++; BootLog.Write("[PcSample] dbgfmt #" + n + " fmt@0x" + f.ToString("X8") + " \"" + WStr(bus, f, 120) + "\" a2=0x" + r[6].ToString("X8") + " a3=0x" + r[7].ToString("X8") + " args=" + Words(bus, r[7], 4) + " DAC0=0x" + P(bus, 0xFFFFDAC0).ToString("X8") + " step=" + _steps); }
+            }
+            else if ((pc == 0x800659D0u || pc == 0x03F78B5Cu) && _chain < 24)
+            { _chain++; BootLog.Write("[PcSample] chain pc=0x" + pc.ToString("X8") + " ra=0x" + r[31].ToString("X8") + " a0=0x" + r[4].ToString("X8") + " a1=0x" + r[5].ToString("X8") + " a2=0x" + r[6].ToString("X8") + " a3=0x" + r[7].ToString("X8") + " sp=0x" + r[29].ToString("X8") + " stk=" + Words(bus, r[29], 24) + " DAC0=0x" + P(bus, 0xFFFFDAC0).ToString("X8") + " step=" + _steps); }
+            else if (pc == 0x80000180u && _exnN < 60)
+            {
+                uint epc = bus.Cp0Snapshot() is string s && s.Contains("EPC=0x") ? System.Convert.ToUInt32(s.Substring(s.IndexOf("EPC=0x") + 6, 8), 16) : 0; _exnEpc.TryGetValue(epc, out int n); _exnEpc[epc] = ++n;
+                if (n == 1 || n == 100 || n == 10000) { _exnN++; BootLog.Write("[PcSample] exn #" + n + " " + bus.Cp0Snapshot() + " ra=0x" + r[31].ToString("X8") + " sp=0x" + r[29].ToString("X8") + " DAC0=0x" + P(bus, 0xFFFFDAC0).ToString("X8") + " step=" + _steps); }
+            }
+            if ((_steps & 0x3FFFFF) == 0 && _steps > 36000000 && _thrN < 12)
+            {
+                _thrN++;
+                foreach (uint th in new uint[] { 0x86F7E028u, 0x86F66AE0u, 0x86F66800u, 0x86F68800u, 0x86F68DA8u })
+                    BootLog.Write("[PcSample] thr 0x" + th.ToString("X8") + " +00..+5C=" + Words(bus, th, 24) + " cur=0x" + P(bus, 0xFFFFDAC0).ToString("X8") + " step=" + _steps);
+            }
+        }
         public static void Step(MipsBus bus, uint[] r, uint pc)
         {
             ImStep(bus, r, pc);
             if (!On || r == null || r.Length < 32) return;
             _steps++;
             uint pg = pc >> 12;
-            _pages.TryGetValue(pg, out int c); _pages[pg] = c + 1; _pcs.TryGetValue(pc, out int pcn); _pcs[pc] = pcn + 1; IoProbe(bus, r, pc);
+            _pages.TryGetValue(pg, out int c); _pages[pg] = c + 1; _pcs.TryGetValue(pc, out int pcn); _pcs[pc] = pcn + 1; IoProbe(bus, r, pc); DbgProbe(bus, r, pc);
             for (int i = 0; i < Marks.Length; i++)
                 if (pc == Marks[i] && (_hit.Add(pc) || ((pc == 0x80030604u || pc == 0x80030664u || pc == 0x80030688u || pc == 0x800306A4u || pc == 0x800306D8u || pc == 0x8002FF98u) && _ckt++ < 60)))
                     BootLog.Write("[PcSample] mark pc=0x" + pc.ToString("X8") + " a0=0x" + r[4].ToString("X8") + " a1=0x" + r[5].ToString("X8") + " v0=0x" + r[2].ToString("X8") + " ra=0x" + r[31].ToString("X8") + " sp=0x" + r[29].ToString("X8") + " tmplD890=0x" + P(bus, 0xFFFFD890).ToString("X8") + " " + bus.Cp0Snapshot() + " step=" + _steps);
