@@ -53,13 +53,29 @@ namespace ProcessorEmulator
             r[16] = s0 | _imLatch;
             BootLog.Write("[ImRestore] HOST-ASSISTED at 0x8001443C s0 0x" + s0.ToString("X8") + " -> 0x" + r[16].ToString("X8") + " (IM latched at 0x80014408 from OEMInit HookInterrupt; callee-saved $s0 lost across jal 0x80023500) " + bus.Cp0Snapshot());
         }
+        // Observe-only: who fills 0x80347850 (+0x30 io fn) and what it returns. No writes.
+        static int _io; static uint _ioTgt;
+        static string Hex16(MipsBus bus, uint va) { var sb = new System.Text.StringBuilder(); for (uint k = 0; k < 16; k += 4) sb.Append(P(bus, va + k).ToString("X8")).Append(' '); return sb.ToString(); }
+        static void IoProbe(MipsBus bus, uint[] r, uint pc)
+        {
+            if (_io >= 40) return;
+            string tag = null;
+            if (pc == 0x80061BD0u) tag = "init a0=0x" + r[4].ToString("X8") + " a1=0x" + r[5].ToString("X8") + " a1+30=0x" + P(bus, r[5] + 0x30).ToString("X8") + " a1+90=0x" + P(bus, r[5] + 0x90).ToString("X8") + " a0[]=" + Hex16(bus, r[4]);
+            else if (pc == 0x800657ECu) tag = "F-entry a0=0x" + r[4].ToString("X8") + " a1=0x" + r[5].ToString("X8") + " ra=0x" + r[31].ToString("X8");
+            else if (pc == 0x80065844u || pc == 0x80061E44u || pc == 0x80061A40u) { _ioTgt = (pc == 0x80065844u) ? r[2] : (pc == 0x80061E44u ? r[8] : r[3]); tag = "io-call tgt=0x" + _ioTgt.ToString("X8") + " a0=0x" + r[4].ToString("X8") + " a1=0x" + r[5].ToString("X8") + " a2=0x" + r[6].ToString("X8") + " a3=0x" + r[7].ToString("X8") + " sp10..18=" + Hex16(bus, r[29] + 0x10) + " ra=0x" + r[31].ToString("X8"); }
+            else if (pc == 0x8006584Cu || pc == 0x80061E4Cu) tag = "io-ret v0=0x" + r[2].ToString("X8") + " s6buf@0x" + r[22].ToString("X8") + "=" + Hex16(bus, r[22]) + " fp=0x" + r[30].ToString("X8");
+            else if (_ioTgt != 0 && pc == _ioTgt) tag = "io-tgt-entry a0=0x" + r[4].ToString("X8") + " a1=0x" + r[5].ToString("X8") + " ra=0x" + r[31].ToString("X8");
+            if (tag == null) return;
+            _io++;
+            BootLog.Write("[PcSample] io " + tag + " pc=0x" + pc.ToString("X8") + " DAC0=0x" + P(bus, 0xFFFFDAC0).ToString("X8") + " step=" + _steps);
+        }
         public static void Step(MipsBus bus, uint[] r, uint pc)
         {
             ImStep(bus, r, pc);
             if (!On || r == null || r.Length < 32) return;
             _steps++;
             uint pg = pc >> 12;
-            _pages.TryGetValue(pg, out int c); _pages[pg] = c + 1; _pcs.TryGetValue(pc, out int pcn); _pcs[pc] = pcn + 1;
+            _pages.TryGetValue(pg, out int c); _pages[pg] = c + 1; _pcs.TryGetValue(pc, out int pcn); _pcs[pc] = pcn + 1; IoProbe(bus, r, pc);
             for (int i = 0; i < Marks.Length; i++)
                 if (pc == Marks[i] && (_hit.Add(pc) || ((pc == 0x80030604u || pc == 0x80030664u || pc == 0x80030688u || pc == 0x800306A4u || pc == 0x800306D8u || pc == 0x8002FF98u) && _ckt++ < 60)))
                     BootLog.Write("[PcSample] mark pc=0x" + pc.ToString("X8") + " a0=0x" + r[4].ToString("X8") + " a1=0x" + r[5].ToString("X8") + " v0=0x" + r[2].ToString("X8") + " ra=0x" + r[31].ToString("X8") + " sp=0x" + r[29].ToString("X8") + " tmplD890=0x" + P(bus, 0xFFFFD890).ToString("X8") + " " + bus.Cp0Snapshot() + " step=" + _steps);
