@@ -86,7 +86,7 @@ namespace ProcessorEmulator
         static uint _prevPc; static int _ri, _ringDumps; static readonly uint[] _ring = new uint[128], _ring2 = new uint[128], _ringRa = new uint[128];
         static int _rwN; static uint _rwLast = 0x12345678u;
         static string W(MipsBus bus, uint a, int n) { var sb = new System.Text.StringBuilder(); for (int i = 0; i < n; i++) sb.Append(P(bus, a + (uint)(i * 4)).ToString("X8")).Append(i % 8 == 7 ? "|" : " "); return sb.ToString(); }
-        static bool _sipDump; static int _trN, _gwTr, _o32N, _o32wN; static uint _o32Pa; static int _hpN, _ldN, _ld2N, _hwN, _hvN; static uint _hpPa = 1, _hpVal = 1; static MipsBus _sbus; public static uint LastInsn, LastFetchPc, LastPcAfterFetch; static int _nwN, _nrN; static uint _slotPa = 0xFFFFFFFFu;
+        static bool _sipDump; static int _trN, _gwTr, _o32N, _o32wN, _sipU, _gw8Stk; static uint _sipLast; static bool _sipEntry, _waitDump; static uint _o32Pa; static int _hpN, _ldN, _ld2N, _hwN, _hvN; static uint _hpPa = 1, _hpVal = 1; static MipsBus _sbus; public static uint LastInsn, LastFetchPc, LastPcAfterFetch; static int _nwN, _nrN; static uint _slotPa = 0xFFFFFFFFu;
         public static void NoteW(MipsBus bus, uint origVa, uint va, uint value)
         {
             if (On && _o32wN < 40 && _steps > 80600000)
@@ -110,6 +110,10 @@ namespace ProcessorEmulator
             _nrN++; BootLog.Write("[PcSample] slotR va=0x" + va.ToString("X8") + " pa=0x" + pa.ToString("X8") + " val=0x" + val.ToString("X8") + " step=" + _steps);
         }        static void DbgProbe(MipsBus bus, uint[] r, uint pc)
         { _sbus = bus;
+            if (_steps > 80700000 && _sipU < 12 && pc < 0x80000000u && P(bus, 0xFFFFDAC0u) == 0x86F68DA8u && (pc & 0xFFF00000u) != (_sipLast & 0xFFF00000u)) { _sipU++; _sipLast = pc; BootLog.Write("[PcSample] sip-user pc=0x" + pc.ToString("X8") + " ra=0x" + r[31].ToString("X8") + " sp=0x" + r[29].ToString("X8") + " a0=0x" + r[4].ToString("X8") + " DAC4=0x" + P(bus, 0xFFFFDAC4u).ToString("X8") + " step=" + _steps); }
+            if (pc == 0x000124D8u && P(bus, 0xFFFFDAC4u) == 0x803401E0u && !_sipEntry) { _sipEntry = true; BootLog.Write("[PcSample] sip-ENTRY reached pc=0x000124D8 a0=0x" + r[4].ToString("X8") + " a1=0x" + r[5].ToString("X8") + " step=" + _steps); }
+            if (_steps >= 100000000 && !_waitDump) { _waitDump = true; BootLog.Write("[PcSample] wait-dump fsThr=" + W(bus, 0x86F66AE0u, 56) + " gwThr=" + W(bus, 0x86F0C570u, 56) + " sipThr=" + W(bus, 0x86F68DA8u, 56) + " obj86F68800=" + W(bus, 0x86F68800u, 16) + " obj86F66800=" + W(bus, 0x86F66800u, 16) + " gwSp=0x" + r[29].ToString("X8") + " pc=0x" + pc.ToString("X8") + " cur=0x" + P(bus, 0xFFFFDAC0u).ToString("X8")); }
+            if (pc == 0x800308E0u && _steps > 99000000 && _gw8Stk < 3) { _gw8Stk++; uint sp = r[29]; BootLog.Write("[PcSample] gw8E0-stk a0=0x" + r[4].ToString("X8") + " ra=0x" + r[31].ToString("X8") + " sp=0x" + sp.ToString("X8") + " s0-s7=" + r[16].ToString("X8") + " " + r[17].ToString("X8") + " " + r[18].ToString("X8") + " " + r[19].ToString("X8") + " " + r[20].ToString("X8") + " " + r[21].ToString("X8") + " " + r[22].ToString("X8") + " " + r[23].ToString("X8") + " stk=" + W(bus, sp, 48) + " step=" + _steps); }
             if (pc == 0x8001634Cu && _o32N < 40 && _steps > 80000000) { _o32N++; BootLog.Write("[PcSample] o32chk a0=0x" + r[4].ToString("X8") + " vsize(t6)=0x" + r[14].ToString("X8") + " real(v0)=0x" + r[2].ToString("X8") + " page(a2)=0x" + r[6].ToString("X8") + " left(a1)=" + r[5] + " rec=" + W(bus, r[4], 7) + " DAC0=0x" + P(bus, 0xFFFFDAC0u).ToString("X8") + " step=" + _steps); }
             if (pc == 0x80018E94u && r[20] == 0x00012804u && _trN == 0) _trN = 1;
             if (_trN > 0 && _trN < 4000 && pc != _prevPc + 4u && pc != _prevPc + 8u && !(pc >= 0x80055000u && pc < 0x8005A000u) && !(_prevPc >= 0x80055000u && _prevPc < 0x8005A000u) && pc != 0x8002C070u)
