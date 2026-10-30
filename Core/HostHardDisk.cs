@@ -117,6 +117,9 @@ namespace ProcessorEmulator.Core
         // \Windows\default.hv helper. RunApps 0x00017BAC is the
         // HKLM\init open that was ERROR_BADKEY on boot.hv alone.
         public const uint HiveFlagsGate = 0x0002A7F8;
+        // EXTRAROM_HIVE_FLAGS_FW=1: do not clear the boot.hv BootVars Flags nibble (HOST-ASSISTED
+        // TryRomDefaultHive); let filesys take its own phase-1 path (Start DevMgr / device.exe).
+        public static readonly bool HiveFlagsFwOn = System.Environment.GetEnvironmentVariable("EXTRAROM_HIVE_FLAGS_FW") == "1";
         public const uint HiveDefaultOpen = 0x0002ACD0;
         public const uint HiveDefaultOpenRet = 0x0002ACD8;
         public const uint RunAppsInitChk = 0x00017BAC;
@@ -608,6 +611,12 @@ namespace ProcessorEmulator.Core
             }
             if (pc == HiveFlagsGate)
             {
+                if (HiveFlagsFwOn)
+                {
+                    if (_logged.Add("hive:flags-fw"))
+                        System.Console.WriteLine("[Hive] EXTRAROM_HIVE_FLAGS_FW: HOST-ASSISTED Flags-nibble clear at 0x0002A7F8 OFF; firmware phase-1 path with real boot.hv Flags s3=0x" + registers[19].ToString("X8") + " step=" + PcSampler.Steps);
+                    return false;
+                }
                 TryRomDefaultHive(registers, bus);
                 return false;
             }
