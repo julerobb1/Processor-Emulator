@@ -15,6 +15,7 @@ namespace ProcessorEmulator.Core
     public static class CeRomTocFiles
     {
         public const uint CreateFileFail = 0x8001D400;
+        public static readonly bool NkRomWalkFwOn = System.Environment.GetEnvironmentVariable("EXTRAROM_NK_ROMWALK_FW") == "1";
         // 0x8001D3A0 jal 0x8003D700 then bne v0,-1 at
         // 0x8001D3F8. 0x8001D400 only runs on INVALID_HANDLE.
         // wait59: OpenExe \mscoree.dll entered CreateFile and
@@ -4983,6 +4984,18 @@ namespace ProcessorEmulator.Core
                     "CreateFileFail/OpenFile type-8 FILESentry; firmware SetFilePointer/ReadFile; not a dump 0x81360000 map");
                 _pendingRomFile = null;
                 return true;
+            }
+            // EXTRAROM_NK_ROMWALK_FW=1: firmware OpenExecutable
+            // (0x8001D958 OpenFileFromFilesys -> 2, \Windows\ prefix
+            // s0=1 -> b 0x8001D8E0 -> jal 0x80016AFC) walks
+            // *0x80342B10 itself and sets obj+0=TOCentry, obj+4=7.
+            // Skip the host NK attach so the firmware path runs.
+            if (NkRomWalkFwOn && TryFindTocModule(bus, 0, 80, baseName, out uint nkE, out uint nkA))
+            {
+                LogRomAttach("skip", "NK", "TOC", -1, baseName, 7, 0, 0, 0,
+                    "EXTRAROM_NK_ROMWALK_FW: host type-7 attach off; firmware 0x80016AFC TOC walk");
+                tocEntry = 0; attr = 0;
+                return false;
             }
             if (TryFindTocModule(bus, 0, 80, baseName, out tocEntry, out attr))
             {
