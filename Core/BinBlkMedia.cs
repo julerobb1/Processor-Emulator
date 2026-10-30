@@ -79,8 +79,17 @@ namespace ProcessorEmulator.Core
             return false;
         }
 
+        // Firmware-true (EXTRAROM_BINBLK_FWPNP): fsdmgr drops a BLOCK_DRIVER arrival while
+        // IsAPIReady(SH_DEVMGR_APIS=0x16) is false (0x03E83910 -> 0x03E83974). The host notify
+        // fired at ~70.8M, before device.exe exists (79.58M), so it was dropped. With the flag on,
+        // the HOST-ASSISTED notify/DEVDETAIL are off and BINBlk arrival is left to the firmware's
+        // own AutoLoad (BootPhase=2) + devmgr PnP path.
+        public static readonly bool FwPnpOn = System.Environment.GetEnvironmentVariable("EXTRAROM_BINBLK_FWPNP") == "1";
+
         private static bool TrySatisfyWfmo(uint[] registers, ref uint programCounter)
         {
+            if (FwPnpOn)
+                return false;
             if (_notified)
                 return false;
             _notified = true;
