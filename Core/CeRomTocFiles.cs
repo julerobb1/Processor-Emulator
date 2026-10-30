@@ -40848,6 +40848,15 @@ namespace ProcessorEmulator.Core
         private static bool TryResolveLeftoverApi52Dest(MipsBus bus, out uint dest)
         {
             dest = 0;
+            // EXTRAROM_WIN32_CINFO=1: trap 0xFFFFFB32 = set 0 method 52;
+            // dest is dump-true Wn32 ppfnMethods[52], not pdata 0x8003DBE0.
+            if (TryWin32CinfoTable(bus, out uint wm, out uint wg, out uint wc)
+                && TryPeekWord(bus, wm + LeftoverApi52Off, out uint w52)
+                && IsLeftoverApi52DestLive(w52))
+            {
+                dest = w52;
+                return true;
+            }
             uint live = 0;
             if (TryPeekLeftoverWait99Method(bus, LeftoverApi52Meth, out live)
                 && IsLeftoverApi52DestLive(live))

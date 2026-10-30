@@ -25,7 +25,7 @@ namespace ProcessorEmulator
             {
                 // Headless Boot: --headless-boot <folder> [capSeconds]
                 string hf = e.Args[1];
-                int cap = 120;
+                int cap = 0; // 0 or omitted = no time limit
                 if (e.Args.Length >= 3) int.TryParse(e.Args[2], out cap);
                 BootLog.Open(hf);
                 BootLog.Write("headless start folder=" + hf + " cap=" + cap + "s log=" + BootLog.FilePath);
@@ -36,7 +36,7 @@ namespace ProcessorEmulator
                     catch (Exception ex) { BootLog.Write("headless: " + ex.GetType().Name + ": " + ex.Message); }
                 }) { IsBackground = true };
                 ht.Start();
-                if (!ht.Join(TimeSpan.FromSeconds(cap)))
+                if (!(cap > 0 ? ht.Join(TimeSpan.FromSeconds(cap)) : ht.Join(System.Threading.Timeout.Infinite)))
                 {
                     BootLog.Write("headless cap reached; RequestStop");
                     hs.RequestStop();
