@@ -39595,6 +39595,12 @@ namespace ProcessorEmulator.Core
             cache = 0;
             getproc = 0;
             meth = 0;
+            if (TryWin32CinfoTable(bus, out meth, out getproc, out uint cinfoVa))
+            {
+                cache = meth;
+                RememberLeftoverWait99WrapPlant(meth, getproc);
+                return true;
+            }
             uint slot = 0;
             uint kdata = 0;
             TryPeekWord(bus, ProcessInfoFaultVa, out slot);
@@ -39802,6 +39808,55 @@ namespace ProcessorEmulator.Core
             TryPlantLeftoverApi52Method(bus);
         }
 
+        // EXTRAROM_WIN32_CINFO=1 (HOST-ASSISTED plant, dump-true values).
+        // nk.bin dump: Wn32 CINFO at 0x80011C44 = {"Wn32", disp/type,
+        // cMethods=197, ppfnMethods=0x80011930}. The old plant 0x8005D400
+        // is the kernel .pdata (RUNTIME_FUNCTION {Begin,End,Hdl,Data,
+        // PrologEnd}); its "methods[0]" 0x8003D1DC is PrologEnd of fn
+        // 0x8003D1C0, so jalr through it skipped the -0x50 frame and
+        // drifted $sp. Coredll trap stub -0x64E = set 0 method 148 and
+        // reads *(0x01FFFCA4)+0x250 = 148*4: that slot wants Win32
+        // ppfnMethods. Validate name/count/range; never invent.
+        public const uint Win32CinfoVa = 0x80011C44;
+        public const uint Win32CinfoName = 0x32336E57;
+        private static readonly bool Win32CinfoOn =
+            System.Environment.GetEnvironmentVariable("EXTRAROM_WIN32_CINFO") == "1";
+        private static bool _win32CinfoLogged;
+        private static bool TryWin32CinfoTable(MipsBus bus, out uint methods,
+            out uint getproc, out uint cinfo)
+        {
+            methods = 0;
+            getproc = 0;
+            cinfo = 0;
+            if (!Win32CinfoOn || bus == null)
+                return false;
+            uint name = 0, cnt = 0, ppfn = 0, m148 = 0;
+            if (!TryPeekWord(bus, Win32CinfoVa, out name) || name != Win32CinfoName)
+                return false;
+            if (!TryPeekWord(bus, Win32CinfoVa + 4, out cnt) || (cnt >> 16) <= 152)
+                return false;
+            if (!TryPeekWord(bus, Win32CinfoVa + 8, out ppfn)
+                || ppfn < 0x80010000u || ppfn >= NkImageEnd || (ppfn & 3) != 0)
+                return false;
+            if (!TryPeekWord(bus, ppfn + 0x250, out m148) || m148 == 0)
+                return false;
+            if (!TryPeekWord(bus, ppfn + LeftoverWait99GetProcOff, out getproc))
+                return false;
+            methods = ppfn;
+            cinfo = Win32CinfoVa;
+            if (!_win32CinfoLogged)
+            {
+                _win32CinfoLogged = true;
+                BootLog.Write("[Hive] ExtraROM HOST-ASSISTED win32-cinfo-plant cinfo=0x" +
+                    Win32CinfoVa.ToString("X8") + " cMethods=" + (cnt >> 16) +
+                    " ppfnMethods=0x" + ppfn.ToString("X8") +
+                    " m148=0x" + m148.ToString("X8") +
+                    " m152=0x" + getproc.ToString("X8") +
+                    " (replaces pdata 0x8005D400; slot *0x01FFFCA4 planted by host; values dump-true)");
+            }
+            return true;
+        }
+
         private static bool TryResolveLeftoverWait99GetProcTable(MipsBus bus,
             out uint methods, out uint getproc, out string via, out uint wn32,
             out uint hop)
@@ -39811,6 +39866,11 @@ namespace ProcessorEmulator.Core
             via = "empty";
             wn32 = 0;
             hop = 0;
+            if (TryWin32CinfoTable(bus, out methods, out getproc, out wn32))
+            {
+                via = "cinfo-wn32";
+                return true;
+            }
             uint slot = 0;
             uint kdata = 0;
             TryPeekWord(bus, ProcessInfoFaultVa, out slot);
