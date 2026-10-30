@@ -85,7 +85,21 @@ namespace ProcessorEmulator
         static int _gwN, _uwN, _uw2, _gwStk;
         static uint _prevPc; static int _ri, _ringDumps; static readonly uint[] _ring = new uint[128], _ring2 = new uint[128], _ringRa = new uint[128];
         static int _rwN; static uint _rwLast = 0x12345678u;
-        static void DbgProbe(MipsBus bus, uint[] r, uint pc)
+        static int _nwN, _nrN; static uint _slotPa = 0xFFFFFFFFu;
+        public static void NoteW(MipsBus bus, uint origVa, uint va, uint value)
+        {
+            if (!On || _nwN >= 30) return;
+            if ((origVa & 0x01FFFFFFu) != 0x000DF384u && (va & 0x01FFFFFFu) != 0x000DF384u) { return; }
+            uint pa = 0xFFFFFFFFu; try { pa = bus.Translate(va, true); } catch { }
+            _nwN++; if (_slotPa == 0xFFFFFFFFu && origVa == 0x080DF384u) _slotPa = pa;
+            BootLog.Write("[PcSample] slotW orig=0x" + origVa.ToString("X8") + " va=0x" + va.ToString("X8") + " pa=0x" + pa.ToString("X8") + " val=0x" + value.ToString("X8") + " step=" + _steps + " host=" + (System.Environment.StackTrace.Contains("CeRomTocFiles") || System.Environment.StackTrace.Contains("HostHardDisk") ? "Y" : "n"));
+        }
+        public static void NoteR(uint pa, uint va, uint val)
+        {
+            if (!On || _nrN >= 20 || _steps < 96270000 || _steps > 96290000) return;
+            if ((va & 0x01FFFFFFu) != 0x000DF384u) return;
+            _nrN++; BootLog.Write("[PcSample] slotR va=0x" + va.ToString("X8") + " pa=0x" + pa.ToString("X8") + " val=0x" + val.ToString("X8") + " step=" + _steps);
+        }        static void DbgProbe(MipsBus bus, uint[] r, uint pc)
         {
             if (_steps > 94000000 && _steps < 96300000 && _rwN < 60)
             {

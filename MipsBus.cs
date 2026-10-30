@@ -188,6 +188,7 @@ namespace ProcessorEmulator.Emulation
             if (device != null)
             {
                 uint val = device.Read32(paddr - device.StartAddress);
+                PcSampler.NoteR(paddr, vaddr, val);
                 return IsBigEndian ? Swap(val) : val;
             }
             throw new AddressErrorException($"Read from unmapped physical address 0x{paddr:X8}");
@@ -242,6 +243,7 @@ namespace ProcessorEmulator.Emulation
                 return;
             if (CeRomTocFiles.TrySkipBadABeforeE000DestMissStore(this, vaddr))
                 return;
+            PcSampler.NoteW(this, origVa, vaddr, value);
             CeRomTocFiles.TryNoteDdiNopIatStore(origVa, vaddr, value);
             CeRomTocFiles.TryNoteBindImpIatSw(origVa, value);
             bool watch = CeRomTocFiles.TryNoteDdiNopDecompStore(vaddr, value);
