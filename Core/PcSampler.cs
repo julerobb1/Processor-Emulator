@@ -85,7 +85,7 @@ namespace ProcessorEmulator
         static int _gwN, _uwN, _uw2, _gwStk;
         static uint _prevPc; static int _ri, _ringDumps; static readonly uint[] _ring = new uint[128], _ring2 = new uint[128], _ringRa = new uint[128];
         static int _rwN; static uint _rwLast = 0x12345678u;
-        public static uint LastInsn, LastFetchPc, LastPcAfterFetch; static int _nwN, _nrN; static uint _slotPa = 0xFFFFFFFFu;
+        static int _hpN; static uint _hpPa = 1, _hpVal = 1; static MipsBus _sbus; public static uint LastInsn, LastFetchPc, LastPcAfterFetch; static int _nwN, _nrN; static uint _slotPa = 0xFFFFFFFFu;
         public static void NoteW(MipsBus bus, uint origVa, uint va, uint value)
         {
             if (!On || _nwN >= 30) return;
@@ -95,13 +95,15 @@ namespace ProcessorEmulator
             BootLog.Write("[PcSample] slotW orig=0x" + origVa.ToString("X8") + " va=0x" + va.ToString("X8") + " pa=0x" + pa.ToString("X8") + " val=0x" + value.ToString("X8") + " step=" + _steps + " prevpc=0x" + _prevPc.ToString("X8") + " fpc=0x" + LastFetchPc.ToString("X8") + " pcAfter=0x" + LastPcAfterFetch.ToString("X8") + " insn=0x" + LastInsn.ToString("X8") + " DAC4=0x" + P(bus, 0xFFFFDAC4u).ToString("X8") + " alias=0x" + CeRomTocFiles.AliasProcPeek.ToString("X8") + " thr24=0x" + P(bus, P(bus, 0xFFFFDAC0u) + 0x24u).ToString("X8") + " thr08=0x" + P(bus, P(bus, 0xFFFFDAC0u) + 0x08u).ToString("X8") + " thr0C=0x" + P(bus, P(bus, 0xFFFFDAC0u) + 0x0Cu).ToString("X8") + " host=" + (System.Environment.StackTrace.Contains("CeRomTocFiles") || System.Environment.StackTrace.Contains("HostHardDisk") ? "Y" : "n") + " st=" + StkNames());
         }
         static string StkNames() { var f = new System.Diagnostics.StackTrace(2, false).GetFrames(); var sb = new System.Text.StringBuilder(); for (int k = 0; k < f.Length && k < 9; k++) { var m = f[k].GetMethod(); sb.Append(m == null ? "?" : (m.DeclaringType == null ? "" : m.DeclaringType.Name) + "." + m.Name).Append('/'); } return sb.ToString(); }
-        public static void NoteR(uint pa, uint va, uint val)
+        public static void NoteR(uint pa, uint va, uint val, uint origVa)
         {
+            if (On && _hpN < 40 && (origVa & 0x01FFFFFCu) == 0x01FFFFA0u && _sbus != null && (pa != _hpPa || val != _hpVal))
+            { _hpN++; _hpPa = pa; _hpVal = val; BootLog.Write("[PcSample] hheap orig=0x" + origVa.ToString("X8") + " va=0x" + va.ToString("X8") + " pa=0x" + pa.ToString("X8") + " val=0x" + val.ToString("X8") + " DAC4=0x" + P(_sbus, 0xFFFFDAC4u).ToString("X8") + " DAC0=0x" + P(_sbus, 0xFFFFDAC0u).ToString("X8") + " pc=0x" + _prevPc.ToString("X8") + " step=" + _steps); }
             if (!On || _nrN >= 20 || _steps < 96270000 || _steps > 96290000) return;
             if ((va & 0x01FFFFFFu) != 0x000DF384u) return;
             _nrN++; BootLog.Write("[PcSample] slotR va=0x" + va.ToString("X8") + " pa=0x" + pa.ToString("X8") + " val=0x" + val.ToString("X8") + " step=" + _steps);
         }        static void DbgProbe(MipsBus bus, uint[] r, uint pc)
-        {
+        { _sbus = bus;
             if (_steps > 94000000 && _steps < 96300000 && _rwN < 60)
             {
                 uint w = P(bus, 0x080DF384u);
