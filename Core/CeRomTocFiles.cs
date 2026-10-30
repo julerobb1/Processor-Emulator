@@ -13550,6 +13550,8 @@ namespace ProcessorEmulator.Core
         public static bool TrySkipPage0ListInsertStore(MipsBus bus, uint va,
             uint value)
         {
+            // FW_API: HOST-ASSISTED store-skip off; it dropped sipcfg's o32[0].vsize store at 0x00014998 (TLB miss) so page-in found no section.
+            if (FwApiOn) return false;
             if (!IsDumpMemListInsertStoreSkipArmed(bus))
                 return false;
             if (!IsPage0ListInsertSkipVa(va))
@@ -13606,6 +13608,8 @@ namespace ProcessorEmulator.Core
         public static bool TrySkipLowUsegListInsertStore(MipsBus bus, uint va,
             uint value)
         {
+            // FW_API: HOST-ASSISTED store-skip off; it dropped sipcfg's o32[0].vsize store at 0x00014998 (TLB miss) so page-in found no section.
+            if (FwApiOn) return false;
             if (!IsDumpMemListInsertStoreSkipArmed(bus))
                 return false;
             if (!IsLowUsegListInsertSkipVa(va))
