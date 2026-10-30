@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -30,7 +30,11 @@ namespace ProcessorEmulator
             public uint StartAddress => 0x10000000;
             public uint Size => 0x10000000;
             public const uint Uart = 0x406B40; // from Hog putc: sw 0x6B40 / poll lw 0x6B54 &0x20
-            readonly Dictionary<uint, uint> _regs = new();
+            public readonly Dictionary<uint, uint> _regs = new();
+            public int LogCap = 400;
+            // BCM7435 UPG UARTs A/B/C (16550, 4-byte stride). Hog uses B; the kernel's
+            // ttyS port is whichever it probes. THR captured, LSR reads 0x60 (HOST-ASSISTED).
+            static bool IsThr(uint off) => off == 0x406B00 || off == 0x406B40 || off == 0x406B80;
             public readonly Dictionary<uint, long> Reads = new();
             public readonly Dictionary<uint, long> Writes = new();
             public readonly StringBuilder UartOut = new();
@@ -41,7 +45,7 @@ namespace ProcessorEmulator
             {
                 var d = w ? Writes : Reads;
                 d.TryGetValue(off, out long n); d[off] = n + 1;
-                if (n == 0 && _logged < 400)
+                if (n == 0 && _logged < LogCap)
                 {
                     _logged++;
                     _log($"mmio {(w ? "W" : "R")} 0x{0x10000000 + off:X8} = 0x{v:X8} pc=0x{PcSampler.LastFetchPc:X8}");
@@ -51,7 +55,7 @@ namespace ProcessorEmulator
             {
                 off &= ~3u;
                 uint v;
-                if (off == Uart + 0x14) v = 0x60; // LSR: THRE|TEMT
+                if (IsThr(off - 0x14)) v = 0x60; // LSR: THRE|TEMT
                 else _regs.TryGetValue(off, out v);
                 // HOST-ASSISTED: MEMC0/1 DDR-PHY op-done bit. Hog writes 1 to
                 // 0x103C00FC / 0x103C03B8 then spins on bit0 of 0x103C0100 /
@@ -63,7 +67,7 @@ namespace ProcessorEmulator
             public void Write32(uint off, uint v)
             {
                 off &= ~3u;
-                if (off == Uart) { UartOut.Append((char)(v & 0xFF)); }
+                if (IsThr(off)) { UartOut.Append((char)(v & 0xFF)); }
                 _regs[off] = v;
                 Note(true, off, v);
             }
@@ -73,7 +77,7 @@ namespace ProcessorEmulator
                 uint a = off & ~3u; int sh = (int)((off & 3) * 8);
                 _regs.TryGetValue(a, out uint w);
                 w = (w & ~(0xFFu << sh)) | ((uint)b << sh);
-                if (a == Uart && sh == 0) { UartOut.Append((char)b); _regs[a] = w; Note(true, a, w); return; }
+                if (IsThr(a) && sh == 0) { UartOut.Append((char)b); _regs[a] = w; Note(true, a, w); return; }
                 Write32(a, w);
             }
         }
@@ -140,6 +144,31 @@ namespace ProcessorEmulator
                 {
                     why = $"KERNEL JUMP pc=0x{pc:X8} (entry 0x{KernEntry:X8}); first words at 0x80001000: " +
                           string.Join(" ", Enumerable.Range(0, 8).Select(i => bus.Read32(KernLo + (uint)i * 4).ToString("X8")));
+                    try
+                    {
+                        // Dump the unpacked kernel exactly as Hog's own LZMA code left it (no host data written here).
+                        var dumpPath = logPath + ".kernel.bin";
+                        var buf = new byte[KernHi - KernLo];
+                        for (uint a = 0; a < buf.Length; a += 4)
+                            BitConverter.GetBytes(bus.Read32(KernLo + a)).CopyTo(buf, (int)a);
+                        File.WriteAllBytes(dumpPath, buf);
+                        Log($"DUMP 0x{KernLo:X8}..0x{KernHi:X8} -> {dumpPath} ({buf.Length} bytes)");
+                    }
+                    catch (Exception dx) { Log("DUMP failed: " + dx.Message); }
+                    try
+                    {
+                        // Snapshot for --pace-kernel: emulator state exactly as Hog left it.
+                        var sd = logPath + ".snap"; Directory.CreateDirectory(sd);
+                        File.WriteAllBytes(Path.Combine(sd, "ram.bin"), ram.Memory);
+                        var st = new StringBuilder();
+                        st.AppendLine($"pc {cpu.ProgramCounter:X8}");
+                        for (int r = 0; r < 32; r++) st.AppendLine($"r{r} {cpu.GetRegister(r):X8}");
+                        for (int c = 0; c < 32; c++) st.AppendLine($"c{c} {cp0.ReadRegister(c):X8}");
+                        foreach (var kv in mmio._regs) st.AppendLine($"m{kv.Key:X8} {kv.Value:X8}");
+                        File.WriteAllText(Path.Combine(sd, "state.txt"), st.ToString());
+                        Log($"SNAP -> {sd}");
+                    }
+                    catch (Exception sx) { Log("SNAP failed: " + sx.Message); }
                     break;
                 }
                 if (stopAt >= 0 && steps >= stopAt) { why = "uart error string seen"; break; }
@@ -156,6 +185,79 @@ namespace ProcessorEmulator
             Log("UART-ALL<<" + mmio.UartOut.ToString().Replace("\r", "") + ">>");
             var topR = mmio.Reads.OrderByDescending(k => k.Value).Take(8).Select(k => $"0x{0x10000000 + k.Key:X8}x{k.Value}");
             var topW = mmio.Writes.OrderByDescending(k => k.Value).Take(8).Select(k => $"0x{0x10000000 + k.Key:X8}x{k.Value}");
+            Log($"topR {string.Join(",", topR)} | topW {string.Join(",", topW)}");
+            return 0;
+        }
+
+        // PACE_KERNEL (--pace-kernel <snapdir>): resume the Linux 3.3.8 kernel from the
+        // snapshot taken at Hog's kernel jump. All RAM/regs/CP0 come from the emulator's own
+        // run of Hog (dump-true). HOST-ASSISTED: PRId BMIPS5000 value, UART LSR, sticky MMIO,
+        // CP0 Count-based timer (1 tick per instruction).
+        public const uint HostPrid = 0x00025A11; // HOST-ASSISTED guess: Broadcom BMIPS5000 (impl 0x5A)
+        public static int RunKernel(string snapDir, int capSeconds, string logPath)
+        {
+            using var lw = new StreamWriter(logPath, false) { AutoFlush = true };
+            void Log(string s) => lw.WriteLine($"{DateTime.Now:HH:mm:ss} {s}");
+            try { Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.BelowNormal; } catch { }
+            MipsCpuEmulator.Mips32Ext = true; CP0.HonorPageMask = true; MipsBus.NoCeHooks = true;
+            var cp0 = new CP0();
+            var bus = new MipsBus(cp0) { IsBigEndian = false };
+            var ram = new RamDevice(0, 0x10000000);
+            bus.AddDevice(ram);
+            bus.AddDevice(new RamDevice(0x90000000, 0x08000000));
+            var mmio = new HogMmio(Log) { LogCap = 1500 };
+            bus.AddDevice(mmio);
+            ram.LoadData(0, File.ReadAllBytes(Path.Combine(snapDir, "ram.bin")));
+            var cpu = new MipsCpuEmulator(bus, cp0);
+            foreach (var line in File.ReadAllLines(Path.Combine(snapDir, "state.txt")))
+            {
+                var f = line.Split(' '); if (f.Length != 2) continue;
+                uint v = Convert.ToUInt32(f[1], 16);
+                if (f[0] == "pc") cpu.SetRegister(MipsCpuEmulator.Register.PC, v);
+                else if (f[0][0] == 'r') cpu.SetRegister(int.Parse(f[0].Substring(1)), v);
+                else if (f[0][0] == 'c') { int c = int.Parse(f[0].Substring(1)); if (c == 13) cp0.Cause = v; else if (c != 15) cp0.WriteRegister(c, v); }
+                else if (f[0][0] == 'm') mmio._regs[Convert.ToUInt32(f[0].Substring(1), 16)] = v;
+            }
+            cp0.PRId = HostPrid;
+            Log($"PACE_KERNEL snap={snapDir} pc=0x{cpu.ProgramCounter:X8} cap={capSeconds}s HOST-ASSISTED PRId=0x{HostPrid:X8}");
+            var excCount = new Dictionary<uint, long>(); int excLogged = 0;
+            MipsCpuEmulator.ExcHook = (code, epc, bad) =>
+            {
+                excCount.TryGetValue(code, out long n); excCount[code] = n + 1;
+                if (code != 0 && excLogged < 300) { excLogged++; Log($"EXC code={code} epc=0x{epc:X8} badva=0x{bad:X8} ra=0x{cpu.GetRegister(31):X8} status=0x{cp0.Status:X8}"); }
+            };
+            var pcHist = new Dictionary<uint, long>();
+            var sw = Stopwatch.StartNew();
+            long steps = 0; int uartSeen = 0; long stopAt = -1; string why = "cap"; long nextStatus = 15000;
+            const int batch = 20000;
+            while (sw.Elapsed.TotalSeconds < capSeconds)
+            {
+                try { cpu.Step(batch); }
+                catch (Exception ex) { why = $"host exception {ex.GetType().Name}: {ex.Message} lastFetch=0x{PcSampler.LastFetchPc:X8}"; break; }
+                steps += batch;
+                uint pc = cpu.ProgramCounter;
+                uint bucket = pc & ~0xFFu; pcHist.TryGetValue(bucket, out long hn); pcHist[bucket] = hn + 1;
+                if (mmio.UartOut.Length > uartSeen)
+                {
+                    string add = mmio.UartOut.ToString(uartSeen, mmio.UartOut.Length - uartSeen);
+                    uartSeen = mmio.UartOut.Length;
+                    foreach (var l in add.Split('\n')) if (l.Length > 0) Log("UART| " + l.TrimEnd('\r'));
+                    if (stopAt < 0 && mmio.UartOut.ToString().Contains("Kernel panic")) stopAt = steps + 20_000_000;
+                }
+                if (stopAt >= 0 && steps >= stopAt) { why = "kernel panic seen"; break; }
+                if (sw.ElapsedMilliseconds >= nextStatus)
+                {
+                    nextStatus += 15000;
+                    Log($"status steps={steps} pc=0x{pc:X8} ra=0x{cpu.GetRegister(31):X8} st=0x{cp0.Status:X8} cause=0x{cp0.Cause:X8} epc=0x{cp0.EPC:X8} cnt=0x{cp0.Count:X8} cmp=0x{cp0.Compare:X8} uart={uartSeen} exc=[{string.Join(",", excCount.Select(k => $"{k.Key}:{k.Value}"))}]");
+                }
+            }
+            MipsCpuEmulator.ExcHook = null;
+            Log($"STOP {why} steps={steps} secs={sw.Elapsed.TotalSeconds:F0}");
+            Log("regs " + string.Join(" ", Enumerable.Range(0, 32).Select(i => $"r{i}={cpu.GetRegister(i):X8}")) + $" pc={cpu.ProgramCounter:X8}");
+            Log("hotPC " + string.Join(",", pcHist.OrderByDescending(k => k.Value).Take(12).Select(k => $"0x{k.Key:X8}x{k.Value}")));
+            Log("UART-ALL<<" + mmio.UartOut.ToString().Replace("\r", "") + ">>");
+            var topR = mmio.Reads.OrderByDescending(k => k.Value).Take(10).Select(k => $"0x{0x10000000 + k.Key:X8}x{k.Value}");
+            var topW = mmio.Writes.OrderByDescending(k => k.Value).Take(10).Select(k => $"0x{0x10000000 + k.Key:X8}x{k.Value}");
             Log($"topR {string.Join(",", topR)} | topW {string.Join(",", topW)}");
             return 0;
         }

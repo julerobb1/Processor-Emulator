@@ -31,6 +31,8 @@ namespace ProcessorEmulator.Emulation
         private VirtualRegistry _virtualRegistry; // Declared VirtualRegistry
         private readonly string _logFilePath;
         private bool _inDelaySlot;
+        private bool _excInSlot; // PACE_KERNEL (Mips32Ext only)
+        public static Action<uint, uint, uint>? ExcHook; // PACE_KERNEL: (code, epc, badva)
         private uint _currentPc;
         private uint _hi;
         private uint _lo;
@@ -430,6 +432,19 @@ namespace ProcessorEmulator.Emulation
             // 2. Set Cause register with the exception code
             // Clear existing code, then set new one.
             _cp0.Cause = (_cp0.Cause & 0xFFFFFF83) | (exceptionCode << 2);
+            if (Mips32Ext)
+            {
+                // PACE_KERNEL: precise EPC/BD for synchronous exceptions (syscall,
+                // break, RI, trap...). Interrupts (code 0) are taken between
+                // instructions, so EPC = next PC and BD = 0.
+                if (exceptionCode != 0)
+                {
+                    _cp0.EPC = _currentPc;
+                    if (_inDelaySlot) { _cp0.Cause |= 1u << 31; _excInSlot = true; } else _cp0.Cause &= 0x7FFFFFFF;
+                }
+                else _cp0.Cause &= 0x7FFFFFFF;
+                ExcHook?.Invoke(exceptionCode, _cp0.EPC, _cp0.BadVAddr);
+            }
 
             // 3. Set Status.EXL (Exception Level) bit to 1 to prevent nested interrupts
             _cp0.Status |= (1 << 1);
@@ -474,6 +489,7 @@ namespace ProcessorEmulator.Emulation
 
             _cp0.EPC = _currentPc;
             _cp0.Status |= (1 << 1);
+            if (Mips32Ext) ExcHook?.Invoke(code, _currentPc, ex.FaultingAddress);
 
             bool bev = (_cp0.Status & (1 << 22)) != 0;
             bool refill = !ex.IsInvalid && !alreadyExl;
@@ -493,6 +509,7 @@ namespace ProcessorEmulator.Emulation
             cause &= 0x7FFFFFFF;
             _cp0.Cause = cause;
             _cp0.Status |= (1 << 1);
+            if (Mips32Ext) ExcHook?.Invoke(4, vaddr, vaddr);
             CeRomTocFiles.TryClearImplicitApiK1(registers, vaddr);
             bool bev = (_cp0.Status & (1 << 22)) != 0;
             programCounter = bev ? 0xBFC00380u : 0x80000180u;
@@ -1161,7 +1178,8 @@ namespace ProcessorEmulator.Emulation
                 DecodeAndExecute(delayInstr);
                 CeRomTocFiles.TryKeepLeftoverDestLiveDispatch(_bus, programCounter);
                 CeRomTocFiles.TryResumeTv2LeftoverDestLiveContinue(_bus, registers, ref programCounter);
-                programCounter = target;
+                if (_excInSlot) _excInSlot = false; // PACE_KERNEL: exception in delay slot keeps its vector
+                else programCounter = target;
             }
             catch (TlbMissException ex)
             {

@@ -7,6 +7,7 @@ namespace ProcessorEmulator.Emulation
         public uint StartAddress { get; }
         public uint Size { get; }
         private readonly byte[] _memory;
+        public byte[] Memory => _memory; // PACE_HOG snapshot
 
         public RamDevice(uint startAddress, uint size)
         {

@@ -21,6 +21,16 @@ namespace ProcessorEmulator
                 return;
             }
 
+            if (e.Args != null && e.Args.Length >= 2 && e.Args[0] == "--pace-kernel")
+            {
+                // PACE_KERNEL: --pace-kernel <snapdir from --pace-hog> [capSeconds=600] [log]
+                int kcap = 600;
+                if (e.Args.Length >= 3) int.TryParse(e.Args[2], out kcap);
+                string klog = e.Args.Length >= 4 ? e.Args[3] : System.IO.Path.Combine(e.Args[1], "kernel-run.log");
+                PaceHogSession.RunKernel(e.Args[1], kcap, klog);
+                Shutdown();
+                return;
+            }
             if (e.Args != null && e.Args.Length >= 2 && e.Args[0] == "--pace-hog")
             {
                 // PACE_HOG: --pace-hog <PX013 image> [capSeconds=600] [log]
