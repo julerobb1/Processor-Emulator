@@ -34,19 +34,20 @@ namespace ProcessorEmulator
         // 0x80014440 template = s1. Live run: s0 came back 0 from 0x80023500
         // (callee-saved $s0 lost on a host-assisted path), template stayed 0,
         // Status IM=0 and OEMIdle 0x80059E98 spun with IP7+IP2 pending.
+        // 0x80014408 can be reached again with template already 0; keep the first nonzero IM.
         // Latch IM at 0x80014408 and put it back in $s0 at 0x8001443C.
         static readonly bool ImOn = Environment.GetEnvironmentVariable("EXTRAROM_IM_RESTORE") == "1";
-        static uint _imLatch; static bool _imDone;
+        static uint _imLatch; static bool _imDone; static int _imHits;
         static void ImStep(MipsBus bus, uint[] r, uint pc)
         {
             if (!ImOn || _imDone || r == null || r.Length < 32) return;
-            if (pc == 0x80014408u) { uint t = P(bus, 0xFFFFD890u); if (t != 0xDEADDEADu) _imLatch = t & 0xFF00u; return; }
+            if (pc == 0x80014408u) { uint t = P(bus, 0xFFFFD890u); _imHits++; if (t != 0xDEADDEADu && (t & 0xFF00u) != 0) _imLatch = t & 0xFF00u; return; }
             if (pc != 0x8001443Cu) return;
             _imDone = true;
             uint s0 = r[16];
             if (_imLatch == 0 || (s0 & 0xFF00u) == _imLatch)
             {
-                BootLog.Write("[ImRestore] at 0x8001443C s0=0x" + s0.ToString("X8") + " latch=0x" + _imLatch.ToString("X8") + " (firmware s0 intact; no host action)");
+                BootLog.Write("[ImRestore] at 0x8001443C s0=0x" + s0.ToString("X8") + " latch=0x" + _imLatch.ToString("X8") + " hits14408=" + _imHits + " (firmware s0 intact; no host action)");
                 return;
             }
             r[16] = s0 | _imLatch;
