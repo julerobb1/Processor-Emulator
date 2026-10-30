@@ -8697,10 +8697,10 @@ namespace ProcessorEmulator.Core
                 {
                     uint[] blob = slot.Data[s];
                     uint ptr = slot.DataPtr[s];
-                    if (blob == null || blob.Length == 0 || ptr == 0) continue;
+                    if (blob == null || blob.Length == 0 || ptr == 0) { BootLog.Write("[Hive] XROM_SECDATA TOC[" + slot.Index + "] " + slot.Name + " sec" + s + " skip: no cached bytes ptr=0x" + ptr.ToString("X8") + " len=" + (blob == null ? -1 : blob.Length)); continue; }
                     bool allZero = true;
                     try { for (int w = 0; w < blob.Length && allZero; w++) if (bus.Read32(ptr + (uint)(w * 4)) != 0) allZero = false; } catch { allZero = false; }
-                    if (!allZero) continue;
+                    if (!allZero) { if (slot.Name == "sipcfg.exe") BootLog.Write("[Hive] XROM_SECDATA TOC[" + slot.Index + "] sipcfg.exe sec" + s + " skip: live not all zero ptr=0x" + ptr.ToString("X8")); continue; }
                     try
                     {
                         for (int w = 0; w < blob.Length; w++) bus.Write32(ptr + (uint)(w * 4), blob[w]);
