@@ -84,6 +84,18 @@ namespace ProcessorEmulator.Emulation
         /// <summary>
         /// Maps a device to a specific range of the address space.
         /// </summary>
+        // PACE_HOG: skip the WinCE VA remap hooks (off by default).
+        public static bool NoCeHooks;
+
+        private IBusDevice RawDev(uint vaddr, bool store, out uint off)
+        {
+            uint p = Translate(vaddr, store);
+            IBusDevice d = _lookupTable[p >> 16];
+            if (d == null)
+                throw new AddressErrorException($"{(store ? "Write to" : "Read from")} unmapped physical address 0x{p:X8}");
+            off = p - d.StartAddress;
+            return d;
+        }
         public void AddDevice(IBusDevice device)
         {
             // Determine the start and end indices in the lookup table
@@ -148,6 +160,7 @@ namespace ProcessorEmulator.Emulation
 
         public uint Read32(uint vaddr)
         {
+            if (NoCeHooks && !IsBigEndian) { var d = RawDev(vaddr, false, out uint o); return d.Read32(o); }
             uint origVa0 = vaddr;
             vaddr = CeRomTocFiles.MapBindImpIatRealVa(vaddr);
             vaddr = CeRomTocFiles.MapDdiNopProcessInfoVa(this, vaddr);
@@ -197,6 +210,7 @@ namespace ProcessorEmulator.Emulation
 
         public void Write32(uint vaddr, uint value)
         {
+            if (NoCeHooks && !IsBigEndian) { var d = RawDev(vaddr, true, out uint o); d.Write32(o, value); return; }
             HostHardDisk.NoteDispC8Write(vaddr, value, this);
             uint origVa = vaddr;
             vaddr = CeRomTocFiles.MapBindImpIatRealVa(vaddr);
@@ -271,6 +285,7 @@ namespace ProcessorEmulator.Emulation
         
         public byte Read8(uint vaddr)
         {
+            if (NoCeHooks && !IsBigEndian) { var d = RawDev(vaddr, false, out uint o); return d.Read8(o); }
             vaddr = CeRomTocFiles.MapBindImpIatRealVa(vaddr);
             vaddr = CeRomTocFiles.MapDdiNopProcessInfoVa(this, vaddr);
             vaddr = CeRomTocFiles.MapDdiNopGwesDispFetchVa(this, vaddr);
@@ -319,6 +334,7 @@ namespace ProcessorEmulator.Emulation
 
         public void Write8(uint vaddr, byte value)
         {
+            if (NoCeHooks && !IsBigEndian) { var d = RawDev(vaddr, true, out uint o); d.Write8(o, value); return; }
             HostHardDisk.NoteDispC8Write(vaddr, value, this);
             vaddr = CeRomTocFiles.MapBindImpIatRealVa(vaddr);
             vaddr = CeRomTocFiles.MapDdiNopProcessInfoVa(this, vaddr);

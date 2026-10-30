@@ -89,6 +89,21 @@ namespace ProcessorEmulator.Emulation
         {
             for (int i = 0; i < count; i++)
             {
+                if (Mips32Ext) // PACE_HOG fast path: no WinCE PC hooks
+                {
+                    if (_cp0.ShouldTriggerInterrupt()) { TriggerException(0); continue; }
+                    _currentPc = programCounter;
+                    try
+                    {
+                        uint insnF = FetchInstruction();
+                        ProcessorEmulator.PcSampler.LastFetchPc = _currentPc;
+                        DecodeAndExecute(insnF);
+                    }
+                    catch (TlbMissException ex) { TriggerTlbException(ex); }
+                    catch (CpuAlignmentException) { TriggerAddressError(_currentPc); }
+                    _cp0.UpdateTimer(1);
+                    continue;
+                }
                 // Live b4b6454: poll sat after this continue,
                 // so an interrupt/TLB storm after BindImp
                 // skipped CallDLL-miss forever. Count here
@@ -1081,6 +1096,11 @@ namespace ProcessorEmulator.Emulation
                         break;
                     case 0x2F: // cache â€” no data cache in this interpreter
                         break;
+                    case 0x1C when Mips32Ext: ExecuteSpecial2(instruction); break; // PACE_HOG mul/clz/madd
+                    case 0x14 when Mips32Ext: BranchLikely(instruction, 0); break; // beql
+                    case 0x15 when Mips32Ext: BranchLikely(instruction, 1); break; // bnel
+                    case 0x16 when Mips32Ext: BranchLikely(instruction, 2); break; // blezl
+                    case 0x17 when Mips32Ext: BranchLikely(instruction, 3); break; // bgtzl
                     default:
                         TriggerException(10); // 10 is Reserved Instruction exception
                         break;
@@ -1294,6 +1314,20 @@ namespace ProcessorEmulator.Emulation
                 return;
             }
 
+            if (Mips32Ext) // PACE_HOG: MIPS32 ops the WinCE path never used
+            {
+                if (funct == 0x0F) return; // sync
+                if (funct >= 0x30 && funct <= 0x36 && funct != 0x35) // tge tgeu tlt tltu teq tne
+                {
+                    int a = (int)registers[rs], b = (int)registers[rt];
+                    uint ua = registers[rs], ub = registers[rt];
+                    bool trap = funct switch { 0x30 => a >= b, 0x31 => ua >= ub, 0x32 => a < b, 0x33 => ua < ub, 0x34 => ua == ub, _ => ua != ub };
+                    if (trap) TriggerException(13);
+                    return;
+                }
+                if (funct == 0x0A) { if (rd != 0 && registers[rt] == 0) registers[rd] = registers[rs]; return; } // movz
+                if (funct == 0x0B) { if (rd != 0 && registers[rt] != 0) registers[rd] = registers[rs]; return; } // movn
+            }
             if (rd == 0) return;
 
             switch (funct)
@@ -1703,6 +1737,35 @@ namespace ProcessorEmulator.Emulation
                 TakeBranch(offset, greaterThan ? "BGTZ" : "BLEZ");
         }
 
+        // PACE_HOG: off by default so the WinCE/Uverse path is unchanged.
+        public static bool Mips32Ext;
+
+        private void BranchLikely(uint instruction, int kind)
+        {
+            uint rs = (instruction >> 21) & 0x1F, rt = (instruction >> 16) & 0x1F;
+            short off = (short)(instruction & 0xFFFF);
+            int a = (int)registers[rs];
+            bool taken = kind switch { 0 => registers[rs] == registers[rt], 1 => registers[rs] != registers[rt], 2 => a <= 0, _ => a > 0 };
+            if (taken) TakeBranch(off, "BL" + kind);
+            else programCounter += 4; // likely: delay slot nullified
+        }
+
+        private void ExecuteSpecial2(uint ins)
+        {
+            uint funct = ins & 0x3F, rs = (ins >> 21) & 0x1F, rt = (ins >> 16) & 0x1F, rd = (ins >> 11) & 0x1F;
+            long acc = (long)(((ulong)_hi << 32) | _lo);
+            switch (funct)
+            {
+                case 0x02: if (rd != 0) registers[rd] = (uint)((int)registers[rs] * (int)registers[rt]); break; // mul
+                case 0x00: acc += (long)(int)registers[rs] * (int)registers[rt]; _lo = (uint)acc; _hi = (uint)((ulong)acc >> 32); break; // madd
+                case 0x01: { ulong u = (ulong)acc + (ulong)registers[rs] * registers[rt]; _lo = (uint)u; _hi = (uint)(u >> 32); break; } // maddu
+                case 0x04: acc -= (long)(int)registers[rs] * (int)registers[rt]; _lo = (uint)acc; _hi = (uint)((ulong)acc >> 32); break; // msub
+                case 0x05: { ulong u = (ulong)acc - (ulong)registers[rs] * registers[rt]; _lo = (uint)u; _hi = (uint)(u >> 32); break; } // msubu
+                case 0x20: if (rd != 0) registers[rd] = (uint)System.Numerics.BitOperations.LeadingZeroCount(registers[rs]); break; // clz
+                case 0x21: if (rd != 0) registers[rd] = (uint)System.Numerics.BitOperations.LeadingZeroCount(~registers[rs]); break; // clo
+                default: TriggerException(10); break;
+            }
+        }
         private void TakeBranch(short offset, string name)
         {
             uint oldPc = programCounter;

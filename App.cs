@@ -21,6 +21,17 @@ namespace ProcessorEmulator
                 return;
             }
 
+            if (e.Args != null && e.Args.Length >= 2 && e.Args[0] == "--pace-hog")
+            {
+                // PACE_HOG: --pace-hog <PX013 image> [capSeconds=600] [log]
+                int hcap = 600;
+                if (e.Args.Length >= 3) int.TryParse(e.Args[2], out hcap);
+                string hlog = e.Args.Length >= 4 ? e.Args[3]
+                    : System.IO.Path.Combine(System.IO.Path.GetDirectoryName(e.Args[1]) ?? ".", "hog-run.log");
+                PaceHogSession.Run(e.Args[1], hcap, hlog);
+                Shutdown();
+                return;
+            }
             if (e.Args != null && e.Args.Length >= 2 && e.Args[0] == "--headless-boot")
             {
                 // Headless Boot: --headless-boot <folder> [capSeconds]

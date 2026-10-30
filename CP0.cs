@@ -221,9 +221,34 @@ namespace ProcessorEmulator.Emulation
             return global || ((entry.EntryHi & 0xFF) == asid);
         }
 
+        // PACE_HOG: honor PageMask (Hog maps 0xE0000000 with 64MB pages).
+        // Off by default; WinCE path keeps the 4K-only walk below.
+        public static bool HonorPageMask;
+
+        private TlbTranslateStatus TryTranslateMasked(uint vaddr, out uint paddr)
+        {
+            paddr = 0;
+            uint asid = _entryHi & 0xFF;
+            for (int i = 0; i < TLB_ENTRIES; i++)
+            {
+                uint span = (_tlb[i].PageMask | 0x1FFFu) + 1; // even+odd pair
+                uint half = span >> 1;
+                if (((_tlb[i].EntryHi ^ vaddr) & ~(span - 1)) != 0)
+                    continue;
+                if (!AsidMatches(_tlb[i], asid))
+                    continue;
+                uint lo = (vaddr & half) != 0 ? _tlb[i].EntryLo1 : _tlb[i].EntryLo0;
+                if ((lo & 2) == 0)
+                    return TlbTranslateStatus.Invalid;
+                paddr = (((lo & 0x3FFFFC0) << 6) & ~(half - 1)) | (vaddr & (half - 1));
+                return TlbTranslateStatus.Hit;
+            }
+            return TlbTranslateStatus.Miss;
+        }
         public TlbTranslateStatus TryTranslate(uint vaddr, out uint paddr)
         {
             paddr = 0;
+            if (HonorPageMask) return TryTranslateMasked(vaddr, out paddr);
             uint vpn2 = (vaddr >> 13) & 0x7FFFF;
             bool odd = (vaddr & 0x1000) != 0;
             uint pageOffset = vaddr & 0x0FFF;
