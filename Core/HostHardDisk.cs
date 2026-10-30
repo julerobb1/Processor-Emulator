@@ -954,6 +954,11 @@ namespace ProcessorEmulator.Core
                 LogHiveCreateProcessRet(registers, bus);
                 return false;
             }
+            if (pc == FsdIsApiReadyRet)
+            {
+                NoteFsdIsApiReady(registers);
+                return false;
+            }
             if (pc == KernelCreateFile)
             {
                 string kn = ReadUtf16(bus, registers[4]);
@@ -1427,8 +1432,51 @@ namespace ProcessorEmulator.Core
                 " (not ExtraROM/gwes/coredll/BINFS/tv2 dump unless proven)");
         }
 
+        // EXTRAROM_HD_AFTER_DEVMGR (HOST-ASSISTED device arrival, firmware-ordered):
+        // binblk DSK_Init (fsdmgr AutoLoad, ~72.02M) opens \Hard Disk\ETC.bin and
+        // \Hard Disk\NK.bin, so BINBlk depends on Hard Disk, not the reverse. fsdmgr
+        // drops a BLOCK_DRIVER arrival while IsAPIReady(SH_DEVMGR_APIS=0x16) is false
+        // (0x03E83910 -> 0x03E83974), so a PnP arrival cannot land before device.exe.
+        // With the flag on: deliver the HDProf arrival without waiting for BINBlk; if
+        // fsdmgr drops it (IsAPIReady v0=0 at 0x03E83918), re-arm and let the next real
+        // WFMO run with a 200 ms timeout (firmware handles WAIT_TIMEOUT at 0x03E88E04)
+        // instead of INFINITE, then deliver again. Disk bytes stay the real read-only files.
+        public static readonly bool HdAfterDevmgrOn = System.Environment.GetEnvironmentVariable("EXTRAROM_HD_AFTER_DEVMGR") == "1";
+        private static bool _hdClampPending;
+        private static int _hdDrops;
+        public const uint FsdIsApiReadyRet = 0x03E83918;
+
+        public static void NoteFsdIsApiReady(uint[] registers)
+        {
+            if (!HdAfterDevmgrOn || !_detailFilled || registers[2] != 0)
+                return;
+            _hdDrops++;
+            _notified = false;
+            _detailFilled = false;
+            _hdClampPending = true;
+            if (_hdDrops <= 3 || _hdDrops % 50 == 0)
+                System.Console.WriteLine("[HardDisk] HOST-ASSISTED HDProf arrival dropped by fsdmgr (IsAPIReady(SH_DEVMGR_APIS)=0) #" + _hdDrops + "; re-arm");
+        }
+
         private static bool TrySatisfyWfmo(uint[] registers, ref uint programCounter)
         {
+            if (_notified)
+                return false;
+            if (HdAfterDevmgrOn)
+            {
+                if (_hdClampPending)
+                {
+                    _hdClampPending = false;
+                    registers[7] = 200;
+                    return false;
+                }
+                _notified = true;
+                registers[2] = 0;
+                registers[4] = 3;
+                programCounter = BinBlkMedia.WfmoRet;
+                System.Console.WriteLine("[HardDisk] HOST-ASSISTED notify BLOCK_DRIVER HDProfile (after-devmgr mode, try " + (_hdDrops + 1) + ")");
+                return true;
+            }
             if (_notified)
                 return false;
             // WFMO #2 is the HD slot. Do not fire before BINBlk
