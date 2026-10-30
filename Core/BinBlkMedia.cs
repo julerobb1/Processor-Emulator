@@ -58,9 +58,45 @@ namespace ProcessorEmulator.Core
                 System.Console.WriteLine($"[BINBlk] media {_image.Length} bytes name={HiveName}");
         }
 
+        // HOST_SKIP_SECBIN / EXTRAROM_HOST_SKIP_SECBIN=1:
+        // On the real ISB7500, \Hard Disk\SEC.bin is EFS-encrypted (header
+        // 01 00 0E 00). EFSFilter + the BCM7405 security processor decrypt it
+        // to a B000FF image using OTP keys that never leave the chip and are
+        // not in the dump. We cannot decrypt and we do NOT invent plaintext.
+        // This host shortcut only skips binblk's B000FF verify/fatal when that
+        // EFS magic is seen, so boot can continue toward Media Room without
+        // AT&T auth. Clearly labeled; off unless the env flag is set.
+        public static readonly bool HostSkipSecbinOn =
+            System.Environment.GetEnvironmentVariable("EXTRAROM_HOST_SKIP_SECBIN") == "1"
+            || System.Environment.GetEnvironmentVariable("HOST_SKIP_SECBIN") == "1";
+
+        // binblk B000FF header-compare site (ETC: v0=0 + hdr B000FF; SEC: v0=-1 + hdr 000E0001)
+        public const uint BbHdrCompare = 0x03DC383Cu;
+        // binblk post-image site (ETC success hits with v0=1; SEC verify-fail with v0=0)
+        public const uint BbImageDone = 0x03DC40E4u;
+        // binblk verify-fail leaf (callers of SEC fail land here with v0=0)
+        public const uint BbVerifyFail = 0x03DC17C8u;
+        // CreateFile/open probe that logs the path (watch-only to latch SEC.bin)
+        public const uint BbHdrPath = 0x03DC37DCu;
+        // EFS magic LE word as read into hdr slot (01 00 0E 00)
+        public const uint EfsMagicLe = 0x000E0001u;
+        // B000FF LE word ("B000")
+        public const uint B000FfMagicLe = 0x30303042u;
+
+        private static bool _secPathSeen;
+        private static bool _secEfsSeen;
+        private static bool _secSkipDone;
+
         public static bool TryStep(uint[] registers, MipsBus bus, ref uint programCounter)
         {
-            if (!IsPresent || registers == null || bus == null)
+            if (registers == null || bus == null)
+                return false;
+
+            // HOST_SKIP_SECBIN: gate only; no decrypt, no fake B000FF bytes.
+            if (HostSkipSecbinOn && TryHostSkipSecbin(registers, bus, ref programCounter))
+                return true;
+
+            if (!IsPresent)
                 return false;
 
             uint pc = programCounter;
@@ -85,6 +121,70 @@ namespace ProcessorEmulator.Core
         // the HOST-ASSISTED notify/DEVDETAIL are off and BINBlk arrival is left to the firmware's
         // own AutoLoad (BootPhase=2) + devmgr PnP path.
         public static readonly bool FwPnpOn = System.Environment.GetEnvironmentVariable("EXTRAROM_BINBLK_FWPNP") == "1";
+
+        private static bool TryHostSkipSecbin(uint[] registers, MipsBus bus, ref uint programCounter)
+        {
+            uint pc = programCounter;
+            if (pc != BbHdrPath && pc != BbHdrCompare && pc != BbImageDone && pc != BbVerifyFail)
+                return false;
+
+            // Latch when binblk opens \Hard Disk\SEC.bin (observe-only).
+            if (pc == BbHdrPath)
+            {
+                try
+                {
+                    string path = ReadUtf16(bus, registers[5]);
+                    if (!string.IsNullOrEmpty(path) && path.IndexOf("SEC.bin", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        _secPathSeen = true;
+                        BootLog.Write("[BINBlk] HOST_SKIP_SECBIN: saw path \"" + path + "\" at 0x" + pc.ToString("X8") + " step=" + PcSampler.Steps);
+                    }
+                }
+                catch { }
+                return false; // never rewrite the path probe
+            }
+
+            // At B000FF compare: detect EFS magic on SEC (do not pretend it is B000FF).
+            if (pc == BbHdrCompare)
+            {
+                uint hdr = 0;
+                try { hdr = bus.Read32(registers[29] + 0x1Cu); } catch { return false; }
+                if (hdr == EfsMagicLe)
+                {
+                    _secEfsSeen = true;
+                    if (!_secSkipDone)
+                    {
+                        // Soft-skip: jump to the post-image site with v0=1 (same
+                        // shape as a finished ETC.bin), without mapping SEC and
+                        // without inventing decrypted bytes.
+                        _secSkipDone = true;
+                        registers[2] = 1;
+                        programCounter = BbImageDone;
+                        BootLog.Write("[BINBlk] HOST_SKIP_SECBIN: EFS header 0x" + hdr.ToString("X8") +
+                            " (not B000FF); skipping SEC.bin verify/decrypt at 0x" + pc.ToString("X8") +
+                            " -> 0x" + BbImageDone.ToString("X8") + " v0=1 (no plaintext invented) step=" + PcSampler.Steps);
+                        System.Console.WriteLine("[BINBlk] HOST_SKIP_SECBIN: skip EFS SEC.bin verify (no decrypt)");
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            // Backup: if we still reach verify-fail/done with v0=0 after EFS SEC, force soft continue once.
+            if (_secEfsSeen && !_secSkipDone && registers[2] == 0 && (pc == BbImageDone || pc == BbVerifyFail))
+            {
+                _secSkipDone = true;
+                registers[2] = 1;
+                if (pc == BbVerifyFail && registers[31] != 0)
+                    programCounter = registers[31];
+                BootLog.Write("[BINBlk] HOST_SKIP_SECBIN: soft-continue at verify site pc=0x" + pc.ToString("X8") +
+                    " v0=1 ra=0x" + registers[31].ToString("X8") + " (no decrypt) step=" + PcSampler.Steps);
+                System.Console.WriteLine("[BINBlk] HOST_SKIP_SECBIN: soft-continue past SEC verify-fail");
+                return true;
+            }
+
+            return false;
+        }
 
         private static bool TrySatisfyWfmo(uint[] registers, ref uint programCounter)
         {
