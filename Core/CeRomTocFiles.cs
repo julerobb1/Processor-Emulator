@@ -35708,6 +35708,10 @@ namespace ProcessorEmulator.Core
         // $v1). Do not plant dest-e32 SIZE
         // 0x1B0C / dest-fp50 / leftover dest as
         // the slot or as the thunk.
+        private static readonly bool NoCodePlantOn =
+            System.Environment.GetEnvironmentVariable("EXTRAROM_NO_CODE_PLANT") == "1";
+        private static int _noCodePlantLog;
+
         private static void TryPlantHdDllIatStub(MipsBus bus, uint slot,
             string stub)
         {
@@ -35725,6 +35729,18 @@ namespace ProcessorEmulator.Core
             uint cur = PeekDestWord(bus, slot);
             if (cur == va || IsLeftoverBindRefuse(cur))
                 return;
+            // EXTRAROM_NO_CODE_PLANT=1: never plant a fake IAT word into the
+            // nk.bin image (0x80010000..NkImageEnd). Live 2026-10-29: this wrote
+            // 0x8006DB0C over kernel code 0x80037178..0x800371C8 (lui $v1,0x8034),
+            // so the stores of coredll GetProcAddress results (*0x8033FF00 etc.)
+            // went to $v1=1-0x100, DoCreateThread 0x8002FF98 saw 0 and failed,
+            // and RunApps 0x8003EABC (filesys.exe) was never created.
+            if (NoCodePlantOn && slot >= 0x80010000u && slot < NkImageEnd)
+            {
+                if (_noCodePlantLog++ < 8)
+                    BootLog.Write("[Hive] ExtraROM no-code-plant refuse slot=0x" + slot.ToString("X8") + " cur=0x" + cur.ToString("X8") + " stub=" + stub + " va=0x" + va.ToString("X8") + " (slot is nk.bin image/code; firmware word kept)");
+                return;
+            }
             try
             {
                 bus.Write32(slot, va);

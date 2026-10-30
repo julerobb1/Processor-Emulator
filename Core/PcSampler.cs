@@ -22,8 +22,8 @@ namespace ProcessorEmulator
         static long _next, _steps;
         static readonly Dictionary<uint, int> _pages = new Dictionary<uint, int>();
         static uint _k0, _k1; static bool _kInit; static int _sw_n;
-        static readonly HashSet<uint> _hit = new HashSet<uint>();
-        static readonly uint[] Marks = { 0x8003EABC, 0x80034D2C, 0x8003EB48, 0x8003EB74, 0x80030604, 0x8003EB80, 0x800143E8, 0x80014408, 0x80014440, 0x80054F8C, 0x80020B98, 0x80055F90, 0x8005688C, 0x80015B64, 0x80014424, 0x80014428, 0x80014438, 0x800151E0, 0x8001728C, 0x80023500 };
+        static readonly HashSet<uint> _hit = new HashSet<uint>(); static int _ckt, _api, _exn, _gpa;
+        static readonly uint[] Marks = { 0x8003EABC, 0x80034D2C, 0x8003EB48, 0x8003EB74, 0x80030604, 0x8003EB80, 0x800143E8, 0x80014408, 0x80014440, 0x80054F8C, 0x80020B98, 0x80055F90, 0x8005688C, 0x80015B64, 0x80014424, 0x80014428, 0x80014438, 0x800151E0, 0x8001728C, 0x80023500, 0x80037338, 0x80037340, 0x80037360, 0x80037368, 0x80037370, 0x80037380, 0x80037388, 0x800373C0, 0x800356FC, 0x80040CA8, 0x80030664, 0x80030688, 0x800306A4, 0x800306D8, 0x8002FF98 };
 
         static uint P(MipsBus bus, uint va) { uint w; return CeRomTocFiles.PeekWordForSampler(bus, va, out w) ? w : 0xDEADDEADu; }
 
@@ -61,8 +61,21 @@ namespace ProcessorEmulator
             uint pg = pc >> 12;
             _pages.TryGetValue(pg, out int c); _pages[pg] = c + 1;
             for (int i = 0; i < Marks.Length; i++)
-                if (pc == Marks[i] && _hit.Add(pc))
+                if (pc == Marks[i] && (_hit.Add(pc) || ((pc == 0x80030604u || pc == 0x80030664u || pc == 0x80030688u || pc == 0x800306A4u || pc == 0x800306D8u || pc == 0x8002FF98u) && _ckt++ < 60)))
                     BootLog.Write("[PcSample] mark pc=0x" + pc.ToString("X8") + " a0=0x" + r[4].ToString("X8") + " a1=0x" + r[5].ToString("X8") + " v0=0x" + r[2].ToString("X8") + " ra=0x" + r[31].ToString("X8") + " sp=0x" + r[29].ToString("X8") + " tmplD890=0x" + P(bus, 0xFFFFD890).ToString("X8") + " " + bus.Cp0Snapshot() + " step=" + _steps);
+            // GetProcAddress-by-ordinal (m[144] -> 0x8001F7BC) on the kernel's
+            // coredll handle: TBFf = ordinal 19 (0x13). DoCreateThread 0x8002FF98
+            // fails (ERROR_NOT_ENOUGH_MEMORY) when *(0x8033FF00) is 0.
+            if ((pc == 0x8001F7E4u || pc == 0x800201B4u || pc == 0x8001F794u || pc == 0x8001F7F8u) && _gpa++ < 60)
+            {
+                uint mod = r[4];
+                BootLog.Write("[PcSample] gpa pc=0x" + pc.ToString("X8") + " v0=0x" + r[2].ToString("X8") + " v1=0x" + r[3].ToString("X8") + " a0=0x" + r[4].ToString("X8") + " a1=0x" + r[5].ToString("X8") + " a2=0x" + r[6].ToString("X8") + " a3=0x" + r[7].ToString("X8") + " ra=0x" + r[31].ToString("X8")
+                    + (pc == 0x8001F7E4u ? " exp+10=0x" + P(bus, r[2] + 0x10).ToString("X8") + " exp+14=0x" + P(bus, r[2] + 0x14).ToString("X8") + " exp+1C=0x" + P(bus, r[2] + 0x1C).ToString("X8") + " eat[a1-base]=0x" + P(bus, r[7] + 4 * (r[5] - P(bus, r[2] + 0x10))).ToString("X8") : "")
+                    + " FF00=0x" + P(bus, 0x8033FF00u).ToString("X8") + " step=" + _steps);
+            }            if (pc >= 0xFFFFF000u && _api++ < 24)
+                BootLog.Write("[PcSample] api-fetch pc=0x" + pc.ToString("X8") + " api=" + ((0xFFFFFC02u - pc) / 4) + " ra=0x" + r[31].ToString("X8") + " sp=0x" + r[29].ToString("X8") + " " + bus.Cp0Snapshot() + " step=" + _steps);
+            if (pc == 0x80000180u && _exn++ < 40)
+                BootLog.Write("[PcSample] exn-vec ra=0x" + r[31].ToString("X8") + " sp=0x" + r[29].ToString("X8") + " epc=0x" + bus.PeekEpc().ToString("X8") + " " + bus.Cp0Snapshot() + " step=" + _steps);
             if ((_steps & 0xFFF) == 0)
             {
                 uint k0 = P(bus, 0xFFFFDAC0), k1 = P(bus, 0xFFFFDAC4);
