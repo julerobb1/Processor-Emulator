@@ -81,8 +81,20 @@ namespace ProcessorEmulator
         static int _poolN, _poolC; static uint _poolW = 0xFFFFFFFFu;
         static int _hcN;
         static int _shaN, _cpN, _raN;
+        static int _apiDump; static readonly System.Collections.Generic.Dictionary<uint, int> _apiCnt = new System.Collections.Generic.Dictionary<uint, int>(), _exWin = new System.Collections.Generic.Dictionary<uint, int>(); static readonly System.Collections.Generic.Dictionary<uint, uint> _apiRa = new System.Collections.Generic.Dictionary<uint, uint>();
         static void DbgProbe(MipsBus bus, uint[] r, uint pc)
         {
+            if (pc >= 0xFFFFF000u) { _apiCnt.TryGetValue(pc, out int ac); _apiCnt[pc] = ac + 1; _apiRa[pc] = r[31]; }
+            if (pc == 0x80000180u) { uint ex = (System.Convert.ToUInt32(bus.Cp0Snapshot().Substring(bus.Cp0Snapshot().IndexOf("Cause=0x") + 8, 8), 16) >> 2) & 0x1F; if (ex != 0) { string s = bus.Cp0Snapshot(); uint bva = System.Convert.ToUInt32(s.Substring(s.IndexOf("BadVA=0x") + 8, 8), 16); uint key = (ex << 27) ^ (bva & 0x07FFFFFF); _exWin.TryGetValue(key, out int ec); _exWin[key] = ec + 1; } }
+            if ((_steps & 0x3FFFFF) == 0 && _steps > 60000000 && _apiDump < 60)
+            {
+                _apiDump++;
+                var sb = new System.Text.StringBuilder("[PcSample] api-hist step=" + _steps + " DAC0=0x" + P(bus, 0xFFFFDAC0).ToString("X8") + " :");
+                foreach (var kv in System.Linq.Enumerable.Take(System.Linq.Enumerable.OrderByDescending(_apiCnt, x => x.Value), 6)) sb.Append(" api" + ((int)((0xFFFFFC02u - kv.Key) / 4)).ToString() + "(pc=0x" + kv.Key.ToString("X8") + ")x" + kv.Value + " ra=0x" + _apiRa[kv.Key].ToString("X8") + ";");
+                sb.Append(" exn:");
+                foreach (var kv in System.Linq.Enumerable.Take(System.Linq.Enumerable.OrderByDescending(_exWin, x => x.Value), 4)) sb.Append(" code" + (kv.Key >> 27) + "/bva~0x" + (kv.Key & 0x07FFFFFF).ToString("X") + "x" + kv.Value + ";");
+                BootLog.Write(sb.ToString()); _apiCnt.Clear(); _exWin.Clear();
+            }
             if (pc == 0x03F65C1Cu) { _shaN++; if (_shaN <= 6 || _shaN % 2000 == 0) BootLog.Write("[PcSample] sha-caller #" + _shaN + " ra=0x" + r[31].ToString("X8") + " a0=0x" + r[4].ToString("X8") + " a1=0x" + r[5].ToString("X8") + " a2=0x" + r[6].ToString("X8") + " a3=0x" + r[7].ToString("X8") + " stk=" + Words(bus, r[29], 12) + " step=" + _steps); }
             if (pc == 0x80034D2Cu && _cpN < 30) { _cpN++; BootLog.Write("[PcSample] CreateProcess #" + _cpN + " name=\"" + WStr(bus, r[4], 60) + "\" args=\"" + WStr(bus, r[5], 60) + "\" ra=0x" + r[31].ToString("X8") + " DAC0=0x" + P(bus, 0xFFFFDAC0).ToString("X8") + " step=" + _steps); }
             if ((pc == 0x8003EB10u || pc == 0x8003EB48u || pc == 0x8003EB74u || pc == 0x8003EB80u) && _raN < 40) { _raN++; BootLog.Write("[PcSample] runapps pc=0x" + pc.ToString("X8") + " v0=0x" + r[2].ToString("X8") + " a0=0x" + r[4].ToString("X8") + " step=" + _steps); }
