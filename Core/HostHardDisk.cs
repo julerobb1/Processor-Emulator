@@ -2047,7 +2047,7 @@ namespace ProcessorEmulator.Core
             bus.Write32(sg + 12, 0);
             _fatSeen = true;
             if (_logged.Add("read:" + start))
-                System.Console.WriteLine($"[HardDisk] DISK_READ lba={start} n={num} step={PcSampler.Steps}");
+                System.Console.WriteLine($"[HardDisk] DISK_READ lba={start} n={num} {(PcSampler.Steps > 100000000 ? DescribeLba(start) : "")} step={PcSampler.Steps}");
             return 0;
         }
 
