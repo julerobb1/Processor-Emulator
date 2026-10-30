@@ -80,8 +80,12 @@ namespace ProcessorEmulator
         static string Words(MipsBus bus, uint va, int n) { var sb = new System.Text.StringBuilder(); for (int k = 0; k < n; k++) sb.Append(P(bus, va + (uint)(4 * k)).ToString("X8")).Append(' '); return sb.ToString(); }
         static int _poolN, _poolC; static uint _poolW = 0xFFFFFFFFu;
         static int _hcN;
+        static int _shaN, _cpN, _raN;
         static void DbgProbe(MipsBus bus, uint[] r, uint pc)
         {
+            if (pc == 0x03F65C1Cu) { _shaN++; if (_shaN <= 6 || _shaN % 2000 == 0) BootLog.Write("[PcSample] sha-caller #" + _shaN + " ra=0x" + r[31].ToString("X8") + " a0=0x" + r[4].ToString("X8") + " a1=0x" + r[5].ToString("X8") + " a2=0x" + r[6].ToString("X8") + " a3=0x" + r[7].ToString("X8") + " stk=" + Words(bus, r[29], 12) + " step=" + _steps); }
+            if (pc == 0x80034D2Cu && _cpN < 30) { _cpN++; BootLog.Write("[PcSample] CreateProcess #" + _cpN + " name=\"" + WStr(bus, r[4], 60) + "\" args=\"" + WStr(bus, r[5], 60) + "\" ra=0x" + r[31].ToString("X8") + " DAC0=0x" + P(bus, 0xFFFFDAC0).ToString("X8") + " step=" + _steps); }
+            if ((pc == 0x8003EB10u || pc == 0x8003EB48u || pc == 0x8003EB74u || pc == 0x8003EB80u) && _raN < 40) { _raN++; BootLog.Write("[PcSample] runapps pc=0x" + pc.ToString("X8") + " v0=0x" + r[2].ToString("X8") + " a0=0x" + r[4].ToString("X8") + " step=" + _steps); }
             if ((pc == 0x8003CF0Cu || pc == 0x8003CF00u) && _hcN < 8) { _hcN++; BootLog.Write("[PcSample] hcheck pc=0x" + pc.ToString("X8") + " s6=0x" + r[22].ToString("X8") + " *s6=0x" + P(bus, r[22]).ToString("X8") + " a0=0x" + r[4].ToString("X8") + " *a0=0x" + P(bus, r[4]).ToString("X8") + " ra=0x" + r[31].ToString("X8") + " sp=0x" + r[29].ToString("X8") + " stk=" + Words(bus, r[29], 16) + " DAC0=0x" + P(bus, 0xFFFFDAC0).ToString("X8") + " step=" + _steps); }
             if (pc == 0x80041B88u || pc == 0x8004231Cu && _poolN < 6) { if (pc == 0x8004231Cu) _poolN++; BootLog.Write("[PcSample] pool pc=0x" + pc.ToString("X8") + " v1=0x" + r[3].ToString("X8") + " a2=0x" + r[6].ToString("X8") + " v0=0x" + r[2].ToString("X8") + " A30..A3C=" + Words(bus, 0x80320A30u, 4) + " ra=0x" + r[31].ToString("X8") + " step=" + _steps); }
             if ((_steps & 0x3FF) == 0) { uint pw = P(bus, 0x80320A34u); if (pw != _poolW && _poolC < 40) { _poolC++; BootLog.Write("[PcSample] pool-watch 0x80320A34 0x" + _poolW.ToString("X8") + "->0x" + pw.ToString("X8") + " pc=0x" + pc.ToString("X8") + " ra=0x" + r[31].ToString("X8") + " A30..A3C=" + Words(bus, 0x80320A30u, 4) + " step=" + _steps); _poolW = pw; } }
