@@ -83,11 +83,11 @@ namespace ProcessorEmulator
             if (pc == 0x8004294Cu)
             {
                 uint f = r[5]; _fmt.TryGetValue(f, out int n); _fmt[f] = ++n;
-                if ((n == 1 && _dbgN < 80) || (n % 500 == 0 && _dbgN < 160)) { _dbgN++; BootLog.Write("[PcSample] dbgfmt #" + n + " fmt@0x" + f.ToString("X8") + " \"" + WStr(bus, f, 120) + "\" a2=0x" + r[6].ToString("X8") + " a3=0x" + r[7].ToString("X8") + " args=" + Words(bus, r[7], 4) + " DAC0=0x" + P(bus, 0xFFFFDAC0).ToString("X8") + " step=" + _steps); }
+                if ((n == 1 || n == 2 || n == 3 || n == 10 || n == 100 || n == 1000 || n == 10000) && _dbgN < 200) { _dbgN++; BootLog.Write("[PcSample] dbgfmt #" + n + " fmt@0x" + f.ToString("X8") + " \"" + WStr(bus, f, 120) + "\" a2=0x" + r[6].ToString("X8") + " a3=0x" + r[7].ToString("X8") + " va=" + Words(bus, r[6], 10) + " DAC0=0x" + P(bus, 0xFFFFDAC0).ToString("X8") + " step=" + _steps); }
             }
             else if ((pc == 0x800659D0u || pc == 0x03F78B5Cu) && _chain < 24)
             { _chain++; BootLog.Write("[PcSample] chain pc=0x" + pc.ToString("X8") + " ra=0x" + r[31].ToString("X8") + " a0=0x" + r[4].ToString("X8") + " a1=0x" + r[5].ToString("X8") + " a2=0x" + r[6].ToString("X8") + " a3=0x" + r[7].ToString("X8") + " sp=0x" + r[29].ToString("X8") + " stk=" + Words(bus, r[29], 24) + " DAC0=0x" + P(bus, 0xFFFFDAC0).ToString("X8") + " step=" + _steps); }
-            else if (pc == 0x80000180u && _exnN < 60)
+            else if (pc == 0x80000180u && _exnN < 60 && ((bus.Cp0Snapshot().Contains("Cause=0x") ? System.Convert.ToUInt32(bus.Cp0Snapshot().Substring(bus.Cp0Snapshot().IndexOf("Cause=0x") + 8, 8), 16) : 0u) & 0x7Cu) != 0)
             {
                 uint epc = bus.Cp0Snapshot() is string s && s.Contains("EPC=0x") ? System.Convert.ToUInt32(s.Substring(s.IndexOf("EPC=0x") + 6, 8), 16) : 0; _exnEpc.TryGetValue(epc, out int n); _exnEpc[epc] = ++n;
                 if (n == 1 || n == 100 || n == 10000) { _exnN++; BootLog.Write("[PcSample] exn #" + n + " " + bus.Cp0Snapshot() + " ra=0x" + r[31].ToString("X8") + " sp=0x" + r[29].ToString("X8") + " DAC0=0x" + P(bus, 0xFFFFDAC0).ToString("X8") + " step=" + _steps); }
