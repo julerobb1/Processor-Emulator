@@ -86,7 +86,7 @@ namespace ProcessorEmulator
         static uint _prevPc; static int _ri, _ringDumps; static readonly uint[] _ring = new uint[128], _ring2 = new uint[128], _ringRa = new uint[128];
         static int _rwN; static uint _rwLast = 0x12345678u;
         static string W(MipsBus bus, uint a, int n) { var sb = new System.Text.StringBuilder(); for (int i = 0; i < n; i++) sb.Append(P(bus, a + (uint)(i * 4)).ToString("X8")).Append(i % 8 == 7 ? "|" : " "); return sb.ToString(); }
-        static bool _sipDump; static int _trN, _gwTr; static int _hpN, _ldN, _ld2N, _hwN, _hvN; static uint _hpPa = 1, _hpVal = 1; static MipsBus _sbus; public static uint LastInsn, LastFetchPc, LastPcAfterFetch; static int _nwN, _nrN; static uint _slotPa = 0xFFFFFFFFu;
+        static bool _sipDump; static int _trN, _gwTr, _o32N; static int _hpN, _ldN, _ld2N, _hwN, _hvN; static uint _hpPa = 1, _hpVal = 1; static MipsBus _sbus; public static uint LastInsn, LastFetchPc, LastPcAfterFetch; static int _nwN, _nrN; static uint _slotPa = 0xFFFFFFFFu;
         public static void NoteW(MipsBus bus, uint origVa, uint va, uint value)
         {
             if (!On || _nwN >= 30) return;
@@ -105,6 +105,7 @@ namespace ProcessorEmulator
             _nrN++; BootLog.Write("[PcSample] slotR va=0x" + va.ToString("X8") + " pa=0x" + pa.ToString("X8") + " val=0x" + val.ToString("X8") + " step=" + _steps);
         }        static void DbgProbe(MipsBus bus, uint[] r, uint pc)
         { _sbus = bus;
+            if (pc == 0x8001634Cu && _o32N < 40 && _steps > 80000000) { _o32N++; BootLog.Write("[PcSample] o32chk a0=0x" + r[4].ToString("X8") + " vsize(t6)=0x" + r[14].ToString("X8") + " real(v0)=0x" + r[2].ToString("X8") + " page(a2)=0x" + r[6].ToString("X8") + " left(a1)=" + r[5] + " rec=" + W(bus, r[4], 7) + " DAC0=0x" + P(bus, 0xFFFFDAC0u).ToString("X8") + " step=" + _steps); }
             if (pc == 0x80018E94u && r[20] == 0x00012804u && _trN == 0) _trN = 1;
             if (_trN > 0 && _trN < 4000 && pc != _prevPc + 4u && pc != _prevPc + 8u && !(pc >= 0x80055000u && pc < 0x8005A000u) && !(_prevPc >= 0x80055000u && _prevPc < 0x8005A000u) && pc != 0x8002C070u)
             {
