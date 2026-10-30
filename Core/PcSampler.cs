@@ -86,9 +86,10 @@ namespace ProcessorEmulator
         static uint _prevPc; static int _ri, _ringDumps; static readonly uint[] _ring = new uint[128], _ring2 = new uint[128], _ringRa = new uint[128];
         static int _rwN; static uint _rwLast = 0x12345678u;
         static string W(MipsBus bus, uint a, int n) { var sb = new System.Text.StringBuilder(); for (int i = 0; i < n; i++) sb.Append(P(bus, a + (uint)(i * 4)).ToString("X8")).Append(i % 8 == 7 ? "|" : " "); return sb.ToString(); }
-        static bool _sipDump; static int _trN, _gwTr, _o32N, _o32wN, _sipU, _gw8Stk; static uint _sipLast; static bool _sipEntry, _waitDump; static int _e14N, _ipTr, _dwN, _smN, _apiN, _wfN, _bbN, _alN; static uint _smThr; static uint _dwLast; static uint _o32Pa; static int _hpN, _ldN, _ld2N, _hwN, _hvN; static uint _hpPa = 1, _hpVal = 1; static MipsBus _sbus; public static uint LastInsn, LastFetchPc, LastPcAfterFetch; static int _nwN, _nrN; static uint _slotPa = 0xFFFFFFFFu;
+        static bool _sipDump; static int _trN, _gwTr, _o32N, _o32wN, _sipU, _gw8Stk; static uint _sipLast; static bool _sipEntry, _waitDump; static int _e14N, _e14W, _ipTr, _dwN, _smN, _apiN, _wfN, _bbN, _alN; static uint _smThr; static uint _dwLast; static uint _o32Pa; static int _hpN, _ldN, _ld2N, _hwN, _hvN; static uint _hpPa = 1, _hpVal = 1; static MipsBus _sbus; public static uint LastInsn, LastFetchPc, LastPcAfterFetch; static int _nwN, _nrN; static uint _slotPa = 0xFFFFFFFFu;
         public static void NoteW(MipsBus bus, uint origVa, uint va, uint value)
         {
+            if (value == 14u && _steps > 48000000 && _steps < 48200000 && _e14W < 40 && va >= 0x86000000u && va < 0x88000000u) { _e14W++; BootLog.Write("[PcSample] err14-w va=0x" + va.ToString("X8") + " pc=0x" + LastFetchPc.ToString("X8") + " DAC0=0x" + P(bus, 0xFFFFDAC0u).ToString("X8") + " DAC4=0x" + P(bus, 0xFFFFDAC4u).ToString("X8") + " step=" + _steps); }
             if (On && _o32wN < 40 && _steps > 80600000)
             {
                 uint lo = origVa & 0x01FFFFFFu, lo2 = va & 0x01FFFFFFu;
