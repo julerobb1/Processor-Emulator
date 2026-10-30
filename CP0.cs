@@ -114,7 +114,9 @@ namespace ProcessorEmulator.Emulation
                     Cause &= ~CAUSE_IP7_BIT;
                     registers[CompareReg] = value;
                     uint passed = Count - value;
-                    if (passed < 0x80u)
+                    // PACE_KERNEL: real MIPS semantics (Linux c0_compare_int_usable
+                    // checks that a Compare write does NOT leave IP7 pending).
+                    if (passed < 0x80u && !MipsCpuEmulator.Mips32Ext)
                         Cause |= CAUSE_IP7_BIT;
                     return;
                 }
@@ -189,6 +191,7 @@ namespace ProcessorEmulator.Emulation
         {
             uint old_count = Count;
             Count += (uint)cycles;
+            Ticks += (ulong)cycles; // PACE_KERNEL: monotonic, unaffected by guest Count writes
             
             // The guest OS sets the Compare register to schedule an interrupt.
             // When Count matches Compare, we set the interrupt pending bit.
@@ -224,6 +227,9 @@ namespace ProcessorEmulator.Emulation
         // PACE_HOG: honor PageMask (Hog maps 0xE0000000 with 64MB pages).
         // Off by default; WinCE path keeps the 4K-only walk below.
         public static bool HonorPageMask;
+        // PACE_KERNEL: CP0 registers with sel != 0, keyed rd*8+sel (Mips32Ext only).
+        public static readonly Dictionary<int, uint> SelRegs = new();
+        public ulong Ticks;
 
         private TlbTranslateStatus TryTranslateMasked(uint vaddr, out uint paddr)
         {

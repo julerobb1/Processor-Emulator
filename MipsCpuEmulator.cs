@@ -32,6 +32,7 @@ namespace ProcessorEmulator.Emulation
         private readonly string _logFilePath;
         private bool _inDelaySlot;
         private bool _excInSlot; // PACE_KERNEL (Mips32Ext only)
+        private static uint VecBase() => CP0.SelRegs.TryGetValue(15 * 8 + 1, out uint eb) && (eb & 0xFFFFF000u) != 0 ? 0x80000000u | (eb & 0x3FFFF000u) : 0x80000000u;
         public static Action<uint, uint, uint>? ExcHook; // PACE_KERNEL: (code, epc, badva)
         private uint _currentPc;
         private uint _hi;
@@ -459,6 +460,12 @@ namespace ProcessorEmulator.Emulation
             {
                 programCounter = 0x80000180;
             }
+            if (Mips32Ext && (_cp0.Status & (1 << 22)) == 0)
+            {
+                // PACE_KERNEL: EBase (CP0 15 sel 1) + Cause.IV interrupt vector at +0x200.
+                bool iv = exceptionCode == 0 && (_cp0.Cause & (1u << 23)) != 0;
+                programCounter = VecBase() + (iv ? 0x200u : 0x180u);
+            }
             HostHardDisk.NoteCpuException(exceptionCode, _cp0.EPC, 0, programCounter, registers, _bus);
             // wait127: leftover dest-live I-fetch of dest-live
             // next / PC+4 after dest-live delay+4 walk takes
@@ -497,6 +504,7 @@ namespace ProcessorEmulator.Emulation
                 programCounter = bev ? 0xBFC00200u : 0x80000000u;
             else
                 programCounter = bev ? 0xBFC00380u : 0x80000180u;
+            if (Mips32Ext && !bev) programCounter = VecBase() + (refill ? 0u : 0x180u); // PACE_KERNEL: EBase
             HostHardDisk.NoteCpuException(code, _cp0.EPC, ex.FaultingAddress, programCounter, registers, _bus);
         }
 
@@ -513,6 +521,7 @@ namespace ProcessorEmulator.Emulation
             CeRomTocFiles.TryClearImplicitApiK1(registers, vaddr);
             bool bev = (_cp0.Status & (1 << 22)) != 0;
             programCounter = bev ? 0xBFC00380u : 0x80000180u;
+            if (Mips32Ext && !bev) programCounter = VecBase() + 0x180u; // PACE_KERNEL: EBase
             HostHardDisk.NoteCpuException(4, _cp0.EPC, vaddr, programCounter, registers, _bus);
         }
 
@@ -1118,6 +1127,10 @@ namespace ProcessorEmulator.Emulation
                     case 0x15 when Mips32Ext: BranchLikely(instruction, 1); break; // bnel
                     case 0x16 when Mips32Ext: BranchLikely(instruction, 2); break; // blezl
                     case 0x17 when Mips32Ext: BranchLikely(instruction, 3); break; // bgtzl
+                    // PACE_KERNEL: ll/sc on a single core (sc always succeeds), pref = nop
+                    case 0x30 when Mips32Ext: ExecuteLoadWord(instruction); break; // ll
+                    case 0x38 when Mips32Ext: ExecuteStoreWord(instruction); { int sct = (int)((instruction >> 16) & 31); if (sct != 0) registers[sct] = 1; } break; // sc
+                    case 0x33 when Mips32Ext: break; // pref
                     default:
                         TriggerException(10); // 10 is Reserved Instruction exception
                         break;
@@ -1205,6 +1218,12 @@ namespace ProcessorEmulator.Emulation
 
             switch (rs) // The 'rs' field (bits 25-21) defines the major COP0 operation
             {
+                case 0x00 when Mips32Ext && (instruction & 7) != 0: // PACE_KERNEL: mfc0 with sel
+                    { CP0.SelRegs.TryGetValue((int)(rd * 8 + (instruction & 7)), out uint sv); if (rt != 0) registers[rt] = sv; }
+                    break;
+                case 0x04 when Mips32Ext && (instruction & 7) != 0: // PACE_KERNEL: mtc0 with sel
+                    CP0.SelRegs[(int)(rd * 8 + (instruction & 7))] = registers[rt];
+                    break;
                 case 0x00: // MFC0 (Move From Coprocessor 0)
                     Execute_MFC0(rt, rd);
                     break;
@@ -1238,6 +1257,8 @@ namespace ProcessorEmulator.Emulation
                                 && CeRomTocFiles.TryFixTv2LeftoverJump(_bus, registers, ref eretPc))
                                 _cp0.EPC = eretPc;
                             programCounter = eretPc;
+                            break;
+                        case 0x20 when Mips32Ext: // PACE_KERNEL: wait = nop
                             break;
                         default:
                             System.Diagnostics.Debug.WriteLine($"[MIPS] Unhandled COP0 funct: 0x{funct:X}");

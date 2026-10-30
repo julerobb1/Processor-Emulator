@@ -32,6 +32,9 @@ namespace ProcessorEmulator
             public const uint Uart = 0x406B40; // from Hog putc: sw 0x6B40 / poll lw 0x6B54 &0x20
             public readonly Dictionary<uint, uint> _regs = new();
             public int LogCap = 400;
+            // HOST-ASSISTED WKTMR (0x10409580): 27 MHz ticks derived from CP0 Count at 202 MHz
+            // (Hog's udelay rate). COUNTER (+4) = seconds, PRESCALER_VAL (+0x10) counts down.
+            public Func<ulong>? Ticks27;
             // BCM7435 UPG UARTs A/B/C (16550, 4-byte stride). Hog uses B; the kernel's
             // ttyS port is whichever it probes. THR captured, LSR reads 0x60 (HOST-ASSISTED).
             static bool IsThr(uint off) => off == 0x406B00 || off == 0x406B40 || off == 0x406B80;
@@ -56,6 +59,11 @@ namespace ProcessorEmulator
                 off &= ~3u;
                 uint v;
                 if (IsThr(off - 0x14)) v = 0x60; // LSR: THRE|TEMT
+                else if (Ticks27 != null && (off == 0x409584 || off == 0x409590))
+                {
+                    ulong t = Ticks27();
+                    v = off == 0x409584 ? (uint)(t / 27000000UL) : (uint)(27000000UL - 1 - t % 27000000UL);
+                }
                 else _regs.TryGetValue(off, out v);
                 // HOST-ASSISTED: MEMC0/1 DDR-PHY op-done bit. Hog writes 1 to
                 // 0x103C00FC / 0x103C03B8 then spins on bit0 of 0x103C0100 /
@@ -207,7 +215,18 @@ namespace ProcessorEmulator
             bus.AddDevice(new RamDevice(0x90000000, 0x08000000));
             var mmio = new HogMmio(Log) { LogCap = 1500 };
             bus.AddDevice(mmio);
-            ram.LoadData(0, File.ReadAllBytes(Path.Combine(snapDir, "ram.bin")));
+            byte[] snapRam = File.ReadAllBytes(Path.Combine(snapDir, "ram.bin"));
+            // HOST-ASSISTED boot-arg edit: only one emulated core, so "maxcpus=2" -> "maxcpus=1"
+            // in Hog's command line (otherwise __cpu_up spins forever waiting for CPU1).
+            var pat = Encoding.ASCII.GetBytes("maxcpus=2"); int patched = 0;
+            for (int i = 0; i + pat.Length <= snapRam.Length; i++)
+            {
+                if (snapRam[i] != (byte)'m') continue;
+                int j = 1; while (j < pat.Length && snapRam[i + j] == pat[j]) j++;
+                if (j == pat.Length) { snapRam[i + 8] = (byte)'1'; patched++; }
+            }
+            ram.LoadData(0, snapRam);
+            Log($"HOST-ASSISTED maxcpus=2->1 patched {patched} copies");
             var cpu = new MipsCpuEmulator(bus, cp0);
             foreach (var line in File.ReadAllLines(Path.Combine(snapDir, "state.txt")))
             {
@@ -219,12 +238,28 @@ namespace ProcessorEmulator
                 else if (f[0][0] == 'm') mmio._regs[Convert.ToUInt32(f[0].Substring(1), 16)] = v;
             }
             cp0.PRId = HostPrid;
-            Log($"PACE_KERNEL snap={snapDir} pc=0x{cpu.ProgramCounter:X8} cap={capSeconds}s HOST-ASSISTED PRId=0x{HostPrid:X8}");
+            ulong t0 = (ulong)cp0.Count * 27UL / 202UL;
+            mmio.Ticks27 = () => t0 + cp0.Ticks * 27UL / 202UL;
+            // HOST-ASSISTED Config0/Config1 (BMIPS5000-like): M=1, MT=TLB, K0=3; 32-entry TLB,
+            // 32 KB 2-way 64 B I/D caches. The real values come from the core, not the image.
+            cp0.WriteRegister(16, (cp0.ReadRegister(16) & ~0x7u) | 0x80000083u);
+            CP0.SelRegs[16 * 8 + 1] = 0xBEA95480u; // M=1 -> Config2
+            CP0.SelRegs[16 * 8 + 2] = 0x00000463u; // HOST-ASSISTED L2: 1024 sets x 128 B x 4-way = 512 KB
+            // HOST-ASSISTED SUN_TOP_CTRL chip family/product ID = BCM7435 B0 (kernel checks it).
+            mmio._regs[0x404000] = 0x74350010u; mmio._regs[0x404004] = 0x74350010u;
+            Log($"PACE_KERNEL snap={snapDir} pc=0x{cpu.ProgramCounter:X8} cap={capSeconds}s HOST-ASSISTED PRId=0x{HostPrid:X8} Config0=0x{cp0.ReadRegister(16):X8} Config1=0xBEA95480 Config2=0x463 chipid=0x74350010");
             var excCount = new Dictionary<uint, long>(); int excLogged = 0;
             MipsCpuEmulator.ExcHook = (code, epc, bad) =>
             {
                 excCount.TryGetValue(code, out long n); excCount[code] = n + 1;
-                if (code != 0 && excLogged < 300) { excLogged++; Log($"EXC code={code} epc=0x{epc:X8} badva=0x{bad:X8} ra=0x{cpu.GetRegister(31):X8} status=0x{cp0.Status:X8}"); }
+                if (code != 0 && excLogged < 300)
+                {
+                    excLogged++; Log($"EXC code={code} epc=0x{epc:X8} badva=0x{bad:X8} ra=0x{cpu.GetRegister(31):X8} status=0x{cp0.Status:X8} ctx=0x{cp0.Context:X8} k0=0x{cpu.GetRegister(26):X8} k1=0x{cpu.GetRegister(27):X8}");
+                    if (excLogged <= 3 && (epc >> 29) == 4) // kseg0: dump code around EPC (runtime-generated handlers are not in the image dump)
+                        Log($"  code@0x{epc - 0x40:X8}: " + string.Join(" ", Enumerable.Range(0, 24).Select(i => ram.Read32((epc & 0x1FFFFFFF) - 0x40 + (uint)i * 4).ToString("X8"))));
+                    if (excLogged == 1)
+                        Log($"  vec@0x80000000: " + string.Join(" ", Enumerable.Range(0, 8).Select(i => ram.Read32((uint)i * 4).ToString("X8"))) + " | vec@0x80000180: " + string.Join(" ", Enumerable.Range(0, 8).Select(i => ram.Read32(0x180 + (uint)i * 4).ToString("X8"))));
+                }
             };
             var pcHist = new Dictionary<uint, long>();
             var sw = Stopwatch.StartNew();
