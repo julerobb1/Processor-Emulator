@@ -54449,6 +54449,9 @@ private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
                 uint ctxPc = bus.Read32(_tv2Thread + ThreadCtxPc);
                 uint startip = bus.Read32(_tv2Thread + ThreadStartip);
                 uint cur = bus.Read32(CurProc);
+            // Firmware-true: slot 0 belongs to KData pCurProc (0xFFFFDAC4), not the thread's stack slot.
+            // Off by default; HOST-ASSISTED stack-slot guess stays when the flag is unset.
+            if (XipCurProcOn) return cur;
                 uint owner = bus.Read32(_tv2Thread + ThreadPrc);
                 uint savedRa = bus.Read32(_tv2Thread + ThreadCtxRa);
                 bool notable = ctxPc == _tv2Startip
@@ -54486,6 +54489,9 @@ private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
                     return;
                 _tv2CurThreadLogged = true;
                 uint cur = bus.Read32(CurProc);
+            // Firmware-true: slot 0 belongs to KData pCurProc (0xFFFFDAC4), not the thread's stack slot.
+            // Off by default; HOST-ASSISTED stack-slot guess stays when the flag is unset.
+            if (XipCurProcOn) return cur;
                 uint ctxPc = bus.Read32(_tv2Thread + ThreadCtxPc);
                 System.Console.WriteLine("[Hive] FILE[25] CurThread=0x" +
                     curThr.ToString("X8") +
@@ -56823,6 +56829,9 @@ private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
             try
             {
                 uint cur = bus.Read32(CurProc);
+            // Firmware-true: slot 0 belongs to KData pCurProc (0xFFFFDAC4), not the thread's stack slot.
+            // Off by default; HOST-ASSISTED stack-slot guess stays when the flag is unset.
+            if (XipCurProcOn) return cur;
                 if (cur != _tv2Proc)
                     return;
                 _tv2ProcSwitchLogged = true;
@@ -56897,7 +56906,8 @@ private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
         }
 
         private static bool _aliasBusy;
-        private static uint _aliasProc;
+        private static readonly bool XipCurProcOn = System.Environment.GetEnvironmentVariable("EXTRAROM_XIP_CURPROC") == "1";
+        private static uint _aliasProc; public static uint AliasProcPeek => _aliasProc;
         private static uint _aliasReal;
         private static uint _aliasEnd;
         private static uint _aliasRom;
@@ -58065,6 +58075,9 @@ private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
         private static uint ProcessForXipAlias(MipsBus bus)
         {
             uint cur = bus.Read32(CurProc);
+            // Firmware-true: slot 0 belongs to KData pCurProc (0xFFFFDAC4), not the thread's stack slot.
+            // Off by default; HOST-ASSISTED stack-slot guess stays when the flag is unset.
+            if (XipCurProcOn) return cur;
             try
             {
                 uint thr = bus.Read32(ThreadPtr);
