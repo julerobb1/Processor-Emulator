@@ -4647,7 +4647,12 @@ namespace ProcessorEmulator.Core
                 int rootSlots = DirSlots(tree, true);
                 int rootEnt = Math.Max(512, Align(rootSlots, 16));
                 int need = CountClusters(tree, true);
-                int clusters = Math.Max(4085, need + 8);
+                // EXTRAROM_HD_RAMWRITE: the firmware creates Documents and Settings\system.hv
+                // and grows it to 0x20000 (SetEndOfFile). With only 8 spare clusters the
+                // volume is full and SetEndOfFile fails (run 57). Add empty free clusters
+                // (zeros, RAM only; no file data invented). FAT16 limit 65524 clusters.
+                int spare = HdRamWriteOn ? 16384 : 0;
+                int clusters = Math.Min(65524, Math.Max(4085, need + 8 + spare));
                 int fatBytes = Align((clusters + 2) * 2, Bps);
                 int fatSec = fatBytes / Bps;
                 int rootSec = (rootEnt * 32) / Bps;
