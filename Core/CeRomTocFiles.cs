@@ -5384,6 +5384,7 @@ namespace ProcessorEmulator.Core
         public const uint ExtraRomTocDestHostLim = 0x8F000000;
         public const uint CeAllocGranularity = 0x10000;
 
+        private static int _nkVallocSkipN;
         public static bool TryReserveExtraRomValloc(uint[] regs)
         {
             if (regs == null || regs.Length <= 6)
@@ -5393,6 +5394,22 @@ namespace ProcessorEmulator.Core
             if (type7 == null && (dest & 0xF0000000u) == 0x60000000u
                 && !string.IsNullOrEmpty(_loadE32OkName))
                 type7 = FindCachedExtraRomToc(_loadE32OkName);
+            // EXTRAROM_NK_ROMWALK_FW: the dest match is by VA range
+            // only, so an NK module (device.exe o32[1] commit at
+            // 0x00012000) hit an ExtraROM cached dest and got a0
+            // rewritten to 0x00011000 + MEM_RESERVE inside its own
+            // image reservation -> VirtualAlloc 0 -> 0x8001AD4C
+            // ERROR_OUTOFMEMORY. Only rewrite when the LoadE32 that
+            // just ran was that ExtraROM module.
+            if (NkRomWalkFwOn && type7 != null
+                && !NamesMatchRom(type7.Name, _loadE32OkName ?? ""))
+            {
+                if (_nkVallocSkipN++ < 8)
+                    BootLog.Write("[Rom] skip HOST-ASSISTED ExtraROM VALLOC rewrite a0=0x" + dest.ToString("X8") +
+                        " (matched " + type7.Name + " by VA; last LoadE32 \"" + (_loadE32OkName ?? "") +
+                        "\"; EXTRAROM_NK_ROMWALK_FW; firmware args kept)");
+                return false;
+            }
             if (type7 != null && type7.Dest != 0
                 && !NamesMatchRom(type7.Name, "ddi_nop.dll"))
                 return TryReserveExtraRomType7DestDump(regs, type7);
