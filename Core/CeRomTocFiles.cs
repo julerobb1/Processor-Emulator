@@ -33539,6 +33539,7 @@ namespace ProcessorEmulator.Core
         public static bool TryRefuseMinusOnePlant(MipsBus bus, uint[] regs,
             ref uint programCounter)
         {
+            if (FwApiOn) return false; // FW_API: firmware ObjectCall return path untouched
             uint pc = programCounter;
             if (pc != LeftoverOrRa && pc != LeftoverMtc0Epc
                 && pc != LeftoverJrRa && pc != LeftoverEret)
@@ -34021,6 +34022,8 @@ namespace ProcessorEmulator.Core
         public static bool TryRefuseLeftoverWait99Wrap(MipsBus bus, uint[] regs,
             ref uint pc)
         {
+            if (FwApiOn)
+                return false; // FW_API: whole wait99 wrap refusal off (wrap 0x03F716F0..0x03F71740)
             if (TryLeftoverWait99O32RaSrc(bus, regs, ref pc))
                 return true;
             if (TryLeftoverWait99O32FirstSwRa(bus, regs, ref pc))
@@ -39061,6 +39064,8 @@ namespace ProcessorEmulator.Core
         private static bool TryLeftoverWait99O32FirstSwRa(MipsBus bus,
             uint[] regs, ref uint pc)
         {
+            if (FwApiOn)
+                return false; // FW_API: no sw-1c halt at wrap 0x03F716F4
             if (_leftoverWait99O32SwLogged)
             {
                 if (_leftoverWait99O32HaltLogged
@@ -46720,6 +46725,7 @@ private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
         public static void TryFixLeftoverCstkRa(MipsBus bus, uint[] regs,
             uint pc)
         {
+            if (FwApiOn) return; // FW_API: firmware ObjectCall return path untouched
             if (pc != LeftoverCstkSw)
                 return;
             if (regs == null || regs.Length <= 30)
