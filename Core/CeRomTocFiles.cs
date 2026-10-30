@@ -47424,6 +47424,7 @@ private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
         // dest / 0x03FAD2E0 / zero code bytes.
         public static uint MapDdiNopGwesDispFetchVa(MipsBus bus, uint va)
         {
+            if (GwesSlot0NotCurrent(bus, va)) return va; // XIP_CURPROC: slot 0 is pCurProc's image, not gwes's
             if (_ddiNopGwesFetchBusy)
                 return va;
             if (!IsDdiNopGwesDispFetchArmed())
@@ -47517,6 +47518,7 @@ private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
         // invent dest-word or zero-fill.
         public static uint MapDdiNopGwesDispDataVa(MipsBus bus, uint va)
         {
+            if (GwesSlot0NotCurrent(bus, va)) return va; // XIP_CURPROC: slot 0 is pCurProc's image, not gwes's
             if (_ddiNopGwesDataBusy)
                 return va;
             if (!IsDdiNopGwesDispDataArmed())
@@ -47612,6 +47614,7 @@ private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
         // steal sipcfg 0x00011000.
         public static uint MapDdiNopGwesTextBaseVa(MipsBus bus, uint va)
         {
+            if (GwesSlot0NotCurrent(bus, va)) return va; // XIP_CURPROC: slot 0 is pCurProc's image, not gwes's
             if (_ddiNopGwesTextBusy)
                 return va;
             if (!IsDdiNopGwesTextBaseArmed())
@@ -47705,6 +47708,7 @@ private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
         // 0x000B7A1D. Firmware PTE only. Do not invent dest.
         public static uint MapDdiNopGwesDispData2Va(MipsBus bus, uint va)
         {
+            if (GwesSlot0NotCurrent(bus, va)) return va; // XIP_CURPROC: slot 0 is pCurProc's image, not gwes's
             if (_ddiNopGwesData2Busy)
                 return va;
             if (!IsDdiNopGwesDispData2Armed())
@@ -47798,6 +47802,7 @@ private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
         // Do not invent dest.
         public static uint MapDdiNopGwesDispData3Va(MipsBus bus, uint va)
         {
+            if (GwesSlot0NotCurrent(bus, va)) return va; // XIP_CURPROC: slot 0 is pCurProc's image, not gwes's
             if (_ddiNopGwesData3Busy)
                 return va;
             if (!IsDdiNopGwesDispData3Armed())
@@ -47892,6 +47897,7 @@ private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
         // dest or steal tv2 PE 0x00014000.
         public static uint MapDdiNopGwesText2Va(MipsBus bus, uint va)
         {
+            if (GwesSlot0NotCurrent(bus, va)) return va; // XIP_CURPROC: slot 0 is pCurProc's image, not gwes's
             if (_ddiNopGwesText2Busy)
                 return va;
             if (!IsDdiNopGwesText2Armed())
@@ -47993,6 +47999,7 @@ private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
         // a missing section. Named pages keep tags.
         public static uint MapDdiNopGwesImageVa(MipsBus bus, uint va)
         {
+            if (GwesSlot0NotCurrent(bus, va)) return va; // XIP_CURPROC: slot 0 is pCurProc's image, not gwes's
             if (_gwesImageBusy)
                 return va;
             if (!IsDdiNopGwesImageArmed())
@@ -56898,6 +56905,14 @@ private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
 
         private static bool _aliasBusy;
         private static readonly bool XipCurProcOn = System.Environment.GetEnvironmentVariable("EXTRAROM_XIP_CURPROC") == "1";
+        // Firmware-true (EXTRAROM_XIP_CURPROC): HOST-ASSISTED gwes slot-0 page remaps apply only while
+        // KData pCurProc (0xFFFFDAC4) is gwes (0x803402B0); in a PSL call slot 0 is the server's image.
+        private static bool GwesSlot0NotCurrent(MipsBus bus, uint va)
+        {
+            if (!XipCurProcOn || bus == null || (va & 0xFE000000u) != 0) return false;
+            uint cur; if (!PeekWordForSampler(bus, CurProc, out cur)) return false;
+            return cur != 0x803402B0u;
+        }
         private static uint _aliasProc; public static uint AliasProcPeek => _aliasProc;
         private static uint _aliasReal;
         private static uint _aliasEnd;
