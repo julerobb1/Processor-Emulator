@@ -82,8 +82,17 @@ namespace ProcessorEmulator
         static int _hcN;
         static int _shaN, _cpN, _raN;
         static int _apiDump; static readonly System.Collections.Generic.Dictionary<uint, int> _apiCnt = new System.Collections.Generic.Dictionary<uint, int>(), _exWin = new System.Collections.Generic.Dictionary<uint, int>(); static readonly System.Collections.Generic.Dictionary<uint, uint> _apiRa = new System.Collections.Generic.Dictionary<uint, uint>();
+        static int _gwN, _uwN, _uw2, _gwStk;
         static void DbgProbe(MipsBus bus, uint[] r, uint pc)
         {
+            if (_steps > 80600000)
+            {
+                uint cur = P(bus, 0xFFFFDAC0);
+                if ((pc == 0x80000180u || pc == 0x80000000u) && cur == 0x86F0C570u && _gwN < 40) { _gwN++; BootLog.Write("[PcSample] gwes-exn vec=0x" + pc.ToString("X8") + " " + bus.Cp0Snapshot() + " ra=0x" + r[31].ToString("X8") + " sp=0x" + r[29].ToString("X8") + " step=" + _steps); }
+                if (pc == 0x800466D0u) { _uwN++; if (_uwN <= 12 || _uwN % 5000 == 0) BootLog.Write("[PcSample] uw466D0 #" + _uwN + " a0=0x" + r[4].ToString("X8") + " a1=0x" + r[5].ToString("X8") + " a2=0x" + r[6].ToString("X8") + " ra=0x" + r[31].ToString("X8") + " sp=0x" + r[29].ToString("X8") + " cur=0x" + cur.ToString("X8") + " step=" + _steps); }
+                if (pc == 0x80047C90u || pc == 0x80047CB8u) { _uw2++; if (_uw2 <= 16 || _uw2 % 5000 == 0) BootLog.Write("[PcSample] uw47C #" + _uw2 + " pc=0x" + pc.ToString("X8") + " s4=0x" + r[20].ToString("X8") + " s6=0x" + r[22].ToString("X8") + " sp184=0x" + P(bus, r[29] + 0x184).ToString("X8") + " ra=0x" + r[31].ToString("X8") + " sp=0x" + r[29].ToString("X8") + " step=" + _steps); }
+                if (cur == 0x86F0C570u && (_steps & 0x3FFFFF) == 0x200000 && _gwStk < 10) { _gwStk++; BootLog.Write("[PcSample] gwes-stk pc=0x" + pc.ToString("X8") + " ra=0x" + r[31].ToString("X8") + " sp=0x" + r[29].ToString("X8") + " words=" + Words(bus, r[29], 96) + " step=" + _steps); }
+            }
             if (pc >= 0xFFFFF000u) { _apiCnt.TryGetValue(pc, out int ac); _apiCnt[pc] = ac + 1; _apiRa[pc] = r[31]; }
             if (pc == 0x80000180u) { uint ex = (System.Convert.ToUInt32(bus.Cp0Snapshot().Substring(bus.Cp0Snapshot().IndexOf("Cause=0x") + 8, 8), 16) >> 2) & 0x1F; if (ex != 0) { string s = bus.Cp0Snapshot(); uint bva = System.Convert.ToUInt32(s.Substring(s.IndexOf("BadVA=0x") + 8, 8), 16); uint key = (ex << 27) ^ (bva & 0x07FFFFFF); _exWin.TryGetValue(key, out int ec); _exWin[key] = ec + 1; } }
             if ((_steps & 0x3FFFFF) == 0 && _steps > 60000000 && _apiDump < 60)
