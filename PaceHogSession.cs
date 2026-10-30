@@ -52,6 +52,10 @@ namespace ProcessorEmulator
                 uint v;
                 if (off == Uart + 0x14) v = 0x60; // LSR: THRE|TEMT
                 else _regs.TryGetValue(off, out v);
+                // HOST-ASSISTED: MEMC0/1 DDR-PHY op-done bit. Hog writes 1 to
+                // 0x103C00FC / 0x103C03B8 then spins on bit0 of 0x103C0100 /
+                // 0x103C03BC (reShmoo tail). Real PHY sets it when the op ends.
+                if (off == 0x3C0100 || off == 0x3C03BC) v |= 1;
                 Note(false, off, v);
                 return v;
             }
@@ -106,7 +110,9 @@ namespace ProcessorEmulator
             const int batch = 20000;
             while (sw.Elapsed.TotalSeconds < capSeconds)
             {
-                cpu.Step(batch); steps += batch;
+                try { cpu.Step(batch); }
+                catch (Exception ex) { why = $"host exception {ex.GetType().Name}: {ex.Message} lastFetch=0x{PcSampler.LastFetchPc:X8}"; break; }
+                steps += batch;
                 uint pc = cpu.ProgramCounter;
                 if (mmio.UartOut.Length > uartSeen)
                 {
