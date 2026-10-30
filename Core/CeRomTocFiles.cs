@@ -8688,6 +8688,28 @@ namespace ProcessorEmulator.Core
         {
             if (bus == null || slot == null || slot.Entry == 0 || slot.TocWords == null)
                 return;
+            // HOST-ASSISTED (EXTRAROM_XROM_SECDATA): firmware RAM reuse zeroed this ExtraROM module's o32 section
+            // data (e.g. sipcfg.exe TOC[55] 0x80AD626C). Put back the real etc.bin bytes cached at map time, only when
+            // the whole live section reads zero, so nothing the firmware wrote there is overwritten.
+            if (XromSecDataOn && slot.Data != null && slot.DataPtr != null)
+            {
+                for (int s = 0; s < slot.Data.Length; s++)
+                {
+                    uint[] blob = slot.Data[s];
+                    uint ptr = slot.DataPtr[s];
+                    if (blob == null || blob.Length == 0 || ptr == 0) continue;
+                    bool allZero = true;
+                    try { for (int w = 0; w < blob.Length && allZero; w++) if (bus.Read32(ptr + (uint)(w * 4)) != 0) allZero = false; } catch { allZero = false; }
+                    if (!allZero) continue;
+                    try
+                    {
+                        for (int w = 0; w < blob.Length; w++) bus.Write32(ptr + (uint)(w * 4), blob[w]);
+                        BootLog.Write("[Hive] ExtraROM TOC[" + slot.Index + "] " + slot.Name + " sec" + s + " data 0x" + ptr.ToString("X8") +
+                            " len=" + (blob.Length * 4) + " first=0x" + blob[0].ToString("X8") + " restored from etc.bin (was all zero; HOST-ASSISTED XROM_SECDATA)");
+                    }
+                    catch { }
+                }
+            }
             uint liveE32 = 0;
             uint liveO32 = 0;
             uint liveObjcnt = 0;
@@ -56947,6 +56969,7 @@ private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
             catch { return 0; }
             finally { _ddiNopInfoBusy = false; }
         }
+        private static readonly bool XromSecDataOn = System.Environment.GetEnvironmentVariable("EXTRAROM_XROM_SECDATA") == "1";
         private static uint _aliasProc; public static uint AliasProcPeek => _aliasProc;
         private static uint _aliasReal;
         private static uint _aliasEnd;
