@@ -1584,7 +1584,10 @@ namespace ProcessorEmulator.Core
                 return false;
             try
             {
-                return string.Equals(ReadUtf16(bus, store + 0x336), ProfileName, System.StringComparison.OrdinalIgnoreCase);
+                // Run 54: mspart's first read lands at ~47.66M (firmware TOC load is
+                // faster) before +0x336 is filled; +0x9A0 already holds "HDProfile".
+                return string.Equals(ReadUtf16(bus, store + 0x336), ProfileName, System.StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(ReadUtf16(bus, store + 0x9A0), ProfileName, System.StringComparison.OrdinalIgnoreCase);
             }
             catch
             {
