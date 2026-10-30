@@ -119,6 +119,7 @@ namespace ProcessorEmulator.Core
         public const uint HiveFlagsGate = 0x0002A7F8;
         // EXTRAROM_HIVE_FLAGS_FW=1: do not clear the boot.hv BootVars Flags nibble (HOST-ASSISTED
         // TryRomDefaultHive); let filesys take its own phase-1 path (Start DevMgr / device.exe).
+        public static readonly bool HdPageableFwOn = System.Environment.GetEnvironmentVariable("EXTRAROM_HD_PAGEABLE_FW") == "1";
         public static readonly bool HiveFlagsFwOn = System.Environment.GetEnvironmentVariable("EXTRAROM_HIVE_FLAGS_FW") == "1";
         public const uint HiveDefaultOpen = 0x0002ACD0;
         public const uint HiveDefaultOpenRet = 0x0002ACD8;
@@ -1799,7 +1800,16 @@ namespace ProcessorEmulator.Core
                     bus.Write32(buf + 12, heads);
                     bus.Write32(buf + 16, spt);
                     // DISK_INFO_FLAG_MBR. Image has a real MBR + FAT16 LBA.
-                    bus.Write32(buf + 20, 1);
+                    // EXTRAROM_HD_PAGEABLE_FW=1: firmware-true di_flags. The real HD driver
+                    // bcmatapi.dll DISK_IOCTL_GETINFO (0x03E066DC..0x03E066F4) does
+                    // di_flags |= 8 (DISK_INFO_FLAG_PAGEABLE) and &= ~4 (UNFORMATTED).
+                    // fatfsd ReadFileWithSeek(NULL,0) probe (0x03EE666C) tests that bit;
+                    // without it kernel CreateFileMapping(PAGE_INTERNALDBMAPPING) of
+                    // system.hv fails with ERROR_NOT_SUPPORTED (0x32) and the hive never loads.
+                    uint diFlags = HdPageableFwOn ? ((1u | 8u) & ~4u) : 1u;
+                    bus.Write32(buf + 20, diFlags);
+                    if (HdPageableFwOn && _logged.Add("hd:pageable-fw"))
+                        System.Console.WriteLine("[HardDisk] EXTRAROM_HD_PAGEABLE_FW: GETINFO di_flags=0x" + diFlags.ToString("X") + " (MBR|PAGEABLE, as bcmatapi.dll 0x03E066E0 ori 8)");
                     return 0;
                 }
                 if (code == BinBlkMedia.IoctlDiskGetName && buf != 0)
