@@ -47179,6 +47179,7 @@ private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
         public static void TryFixLeftoverRetRa(MipsBus bus, uint[] regs,
             uint pc)
         {
+            if (FwApiOn) return; // FW_API: keep firmware ObjectCall saved ra (no HOST-ASSISTED ret-fix)
             if (pc != LeftoverLoadS3)
                 return;
             if (regs == null || regs.Length <= 4 || bus == null)
