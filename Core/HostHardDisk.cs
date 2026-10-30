@@ -965,7 +965,7 @@ namespace ProcessorEmulator.Core
                 if (!string.IsNullOrEmpty(kn))
                     CeRomTocFiles.NotePendingRomFile(kn);
                 if ((_notified || IsHardDiskPath(kn)) && _logged.Add("k:" + kn))
-                    System.Console.WriteLine($"[HardDisk] kCreateFile \"{kn}\"");
+                    System.Console.WriteLine($"[HardDisk] kCreateFile \"{kn}\" step={PcSampler.Steps}");
                 if (BootLog.IsGuestIoName(kn) && _logged.Add("rom:cf:" + kn))
                     BootLog.Rom("ok", "ExtraROM", "", -1, kn, 0, 0, 0, 0,
                         "CreateFile guest IO name; no NIC on the MIPS bus; do not invent a NIC or UART");
@@ -1448,14 +1448,14 @@ namespace ProcessorEmulator.Core
 
         public static void NoteFsdIsApiReady(uint[] registers)
         {
-            if (!HdAfterDevmgrOn || !_detailFilled || registers[2] != 0)
+            if (!HdAfterDevmgrOn || !_detailFilled || registers[2] != 0 || _opened)
                 return;
             _hdDrops++;
             _notified = false;
             _detailFilled = false;
             _hdClampPending = true;
             if (_hdDrops <= 3 || _hdDrops % 50 == 0)
-                System.Console.WriteLine("[HardDisk] HOST-ASSISTED HDProf arrival dropped by fsdmgr (IsAPIReady(SH_DEVMGR_APIS)=0) #" + _hdDrops + "; re-arm");
+                System.Console.WriteLine("[HardDisk] HOST-ASSISTED HDProf arrival dropped by fsdmgr (IsAPIReady(SH_DEVMGR_APIS)=0) #" + _hdDrops + "; re-arm step=" + PcSampler.Steps);
         }
 
         private static bool TrySatisfyWfmo(uint[] registers, ref uint programCounter)
@@ -1464,6 +1464,8 @@ namespace ProcessorEmulator.Core
                 return false;
             if (HdAfterDevmgrOn)
             {
+                if (_opened)
+                    return false;
                 if (_hdClampPending)
                 {
                     _hdClampPending = false;
@@ -1474,7 +1476,7 @@ namespace ProcessorEmulator.Core
                 registers[2] = 0;
                 registers[4] = 3;
                 programCounter = BinBlkMedia.WfmoRet;
-                System.Console.WriteLine("[HardDisk] HOST-ASSISTED notify BLOCK_DRIVER HDProfile (after-devmgr mode, try " + (_hdDrops + 1) + ")");
+                System.Console.WriteLine("[HardDisk] HOST-ASSISTED notify BLOCK_DRIVER HDProfile (after-devmgr mode, try " + (_hdDrops + 1) + ") step=" + PcSampler.Steps);
                 return true;
             }
             if (_notified)
@@ -1680,7 +1682,7 @@ namespace ProcessorEmulator.Core
                 registers[2] = 1;
                 programCounter = registers[31];
                 if (_logged.Add("volname"))
-                    System.Console.WriteLine("[HardDisk] DiskIoControl 0x71C20 \"" + FolderName + "\"");
+                    System.Console.WriteLine("[HardDisk] DiskIoControl 0x71C20 \"" + FolderName + "\" step=" + PcSampler.Steps);
                 return true;
             }
             uint info = 0;
@@ -1890,7 +1892,7 @@ namespace ProcessorEmulator.Core
             bus.Write32(sg + 12, 0);
             _fatSeen = true;
             if (_logged.Add("read:" + start))
-                System.Console.WriteLine($"[HardDisk] DISK_READ lba={start} n={num}");
+                System.Console.WriteLine($"[HardDisk] DISK_READ lba={start} n={num} step={PcSampler.Steps}");
             return 0;
         }
 

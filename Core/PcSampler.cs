@@ -19,7 +19,7 @@ namespace ProcessorEmulator
         static readonly bool On = Environment.GetEnvironmentVariable("EXTRAROM_PCSAMPLE") == "1";
         static readonly int Sec = int.TryParse(Environment.GetEnvironmentVariable("EXTRAROM_PCSAMPLE_SEC"), out var s) && s > 0 ? s : 5;
         static readonly System.Diagnostics.Stopwatch _sw = System.Diagnostics.Stopwatch.StartNew();
-        static long _next, _steps;
+        static long _next, _steps; public static long Steps => _steps;
         static readonly Dictionary<uint, int> _pages = new Dictionary<uint, int>(); static readonly Dictionary<uint, int> _pcs = new Dictionary<uint, int>();
         static uint _k0, _k1; static bool _kInit; static int _sw_n;
         static readonly HashSet<uint> _hit = new HashSet<uint>(); static int _ckt, _api, _exn, _gpa;
