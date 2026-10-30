@@ -28,30 +28,33 @@ namespace ProcessorEmulator
         static uint P(MipsBus bus, uint va) { uint w; return CeRomTocFiles.PeekWordForSampler(bus, va, out w) ? w : 0xDEADDEADu; }
 
         // EXTRAROM_IM_RESTORE=1 (HOST-ASSISTED, firmware-computed value).
-        // Kernel start 0x80014408 takes IM = *(0xFFFFD890) & 0xFF00 (set by
-        // OEMInit HookInterrupt: hw0 PIC 0x400, hw5 timer 0x8000), clears it,
-        // and restores template |= IM at 0x80014440 before first schedule.
-        // In the emulator 0x80014440 never runs, so INTERRUPTS_ON 0x80014F1C
-        // writes Status=1 with IM=0 and OEMIdle 0x80059E98 spins forever with
-        // IP7/IP2 pending. Latch IM at 14408; if 14440 was never executed,
-        // OR it back into the template once at the first INTERRUPTS_ON.
+        // Kernel start: 0x80014410/14 s0 = *(0xFFFFD890) & 0xFF00 (IM set by
+        // OEMInit HookInterrupt: hw0 PIC 0x400 + hw5 timer 0x8000 = 0x8400),
+        // then jal 0x8001728C / 0x80023500, then 0x8001443C or s1,s1,s0 and
+        // 0x80014440 template = s1. Live run: s0 came back 0 from 0x80023500
+        // (callee-saved $s0 lost on a host-assisted path), template stayed 0,
+        // Status IM=0 and OEMIdle 0x80059E98 spun with IP7+IP2 pending.
+        // Latch IM at 0x80014408 and put it back in $s0 at 0x8001443C.
         static readonly bool ImOn = Environment.GetEnvironmentVariable("EXTRAROM_IM_RESTORE") == "1";
-        static uint _imLatch; static bool _imSeen14440, _imDone;
-        static void ImStep(MipsBus bus, uint pc)
+        static uint _imLatch; static bool _imDone;
+        static void ImStep(MipsBus bus, uint[] r, uint pc)
         {
-            if (!ImOn || _imDone) return;
+            if (!ImOn || _imDone || r == null || r.Length < 32) return;
             if (pc == 0x80014408u) { uint t = P(bus, 0xFFFFD890u); if (t != 0xDEADDEADu) _imLatch = t & 0xFF00u; return; }
-            if (pc == 0x80014440u) { _imSeen14440 = true; _imDone = true; BootLog.Write("[ImRestore] firmware restored IM itself at 0x80014440; no host action"); return; }
-            if (pc != 0x80014F1Cu || _imLatch == 0 || _imSeen14440) return;
-            uint tmpl = P(bus, 0xFFFFD890u);
-            if (tmpl == 0xDEADDEADu || (tmpl & 0xFF00u) != 0) return;
-            try { bus.Write32(0xFFFFD890u, tmpl | _imLatch); } catch { return; }
+            if (pc != 0x8001443Cu) return;
             _imDone = true;
-            BootLog.Write("[ImRestore] HOST-ASSISTED template 0xFFFFD890 0x" + tmpl.ToString("X8") + " -> 0x" + (tmpl | _imLatch).ToString("X8") + " (IM latched at 0x80014408 from OEMInit HookInterrupt; 0x80014440 restore never ran) " + bus.Cp0Snapshot());
+            uint s0 = r[16];
+            if (_imLatch == 0 || (s0 & 0xFF00u) == _imLatch)
+            {
+                BootLog.Write("[ImRestore] at 0x8001443C s0=0x" + s0.ToString("X8") + " latch=0x" + _imLatch.ToString("X8") + " (firmware s0 intact; no host action)");
+                return;
+            }
+            r[16] = s0 | _imLatch;
+            BootLog.Write("[ImRestore] HOST-ASSISTED at 0x8001443C s0 0x" + s0.ToString("X8") + " -> 0x" + r[16].ToString("X8") + " (IM latched at 0x80014408 from OEMInit HookInterrupt; callee-saved $s0 lost across jal 0x80023500) " + bus.Cp0Snapshot());
         }
         public static void Step(MipsBus bus, uint[] r, uint pc)
         {
-            ImStep(bus, pc);
+            ImStep(bus, r, pc);
             if (!On || r == null || r.Length < 32) return;
             _steps++;
             uint pg = pc >> 12;
