@@ -212,7 +212,10 @@ namespace ProcessorEmulator
             var bus = new MipsBus(cp0) { IsBigEndian = false };
             var ram = new RamDevice(0, 0x10000000);
             bus.AddDevice(ram);
-            bus.AddDevice(new RamDevice(0x90000000, 0x08000000));
+            // Board RAM per the kernel's own map: MEMC0 0..256M + 0x20000000..+256M, MEMC1 at 0x90000000..+512M
+            bus.AddDevice(new RamDevice(0x20000000, 0x10000000));
+            bus.AddDevice(new RamDevice(0x90000000, 0x20000000));
+            Console.SetOut(TextWriter.Null); // CP0/exception Console spam costs time
             var mmio = new HogMmio(Log) { LogCap = 1500 };
             bus.AddDevice(mmio);
             byte[] snapRam = File.ReadAllBytes(Path.Combine(snapDir, "ram.bin"));
