@@ -83,8 +83,18 @@ namespace ProcessorEmulator
         static int _shaN, _cpN, _raN;
         static int _apiDump; static readonly System.Collections.Generic.Dictionary<uint, int> _apiCnt = new System.Collections.Generic.Dictionary<uint, int>(), _exWin = new System.Collections.Generic.Dictionary<uint, int>(); static readonly System.Collections.Generic.Dictionary<uint, uint> _apiRa = new System.Collections.Generic.Dictionary<uint, uint>();
         static int _gwN, _uwN, _uw2, _gwStk;
+        static uint _prevPc; static int _ri, _ringDumps; static readonly uint[] _ring = new uint[128], _ring2 = new uint[128], _ringRa = new uint[128];
         static void DbgProbe(MipsBus bus, uint[] r, uint pc)
         {
+            if (pc != _prevPc + 4u) { _ring[_ri & 127] = _prevPc; _ring2[_ri & 127] = pc; _ringRa[_ri & 127] = r[31]; _ri++; }
+            _prevPc = pc;
+            if ((pc == 0x80000000u || pc == 0x80000180u) && _ringDumps < 2 && bus.Cp0Snapshot().Contains("EPC=0x0037D220"))
+            {
+                _ringDumps++;
+                var sb = new System.Text.StringBuilder("[PcSample] trail-to-0x0037D220 " + bus.Cp0Snapshot() + " ra=0x" + r[31].ToString("X8") + " sp=0x" + r[29].ToString("X8") + " a0=0x" + r[4].ToString("X8") + " v0=0x" + r[2].ToString("X8") + " t9=0x" + r[25].ToString("X8") + " cur=0x" + P(bus, 0xFFFFDAC0).ToString("X8") + " step=" + _steps + " jumps(from->to,ra):");
+                for (int k = 128; k >= 1; k--) { int ix = (_ri - k) & 127; sb.Append(" " + _ring[ix].ToString("X8") + "->" + _ring2[ix].ToString("X8") + "," + _ringRa[ix].ToString("X8")); }
+                BootLog.Write(sb.ToString());
+            }
             if (_steps > 80600000)
             {
                 uint cur = P(bus, 0xFFFFDAC0);
