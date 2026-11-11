@@ -335,6 +335,16 @@ namespace ProcessorEmulator.Emulation
                     }
                 }
 
+                if (programCounter == ExtraRomBtv.CoredllDeviceIoControl)
+                {
+                    if (ExtraRomBtv.TryDeviceIoControl(_bus, registers, ref programCounter))
+                    {
+                        _cp0.UpdateTimer(1);
+                        _bus.Tick(1);
+                        continue;
+                    }
+                }
+
                 if (programCounter == CeRomTocFiles.HeapCreateStore)
                     registers[2] = CeRomTocFiles.KeepProcessHeapIfCreateFailed(_bus, registers[2], registers[3]);
 

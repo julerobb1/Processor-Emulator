@@ -3,6 +3,9 @@ using System.Drawing;
 using System.IO;
 using System.Threading;
 using System.Windows.Forms;
+using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
+using ProcessorEmulator.Emulation;
 using ProcessorEmulator.Core;
 
 namespace ProcessorEmulator
@@ -20,6 +23,7 @@ namespace ProcessorEmulator
         private readonly PictureBox _frame;
         private MediaroomSession _session;
         private Thread _worker;
+        private Action<byte[], int, int, int> _frameHandler;
         private string _statusFull = "Stopped";
         private const int StatusDisplayMax = 400;
 
@@ -92,6 +96,10 @@ namespace ProcessorEmulator
             Controls.Add(top);
 
             AutoFillFolder();
+            KeyPreview = true;
+            PreviewKeyDown += HostPreviewKeyDown;
+            KeyDown += HostKeyDown;
+            KeyUp += HostKeyUp;
 
             HandleCreated += (_, __) => Win7VisualStyle.ApplyToHwnd(Handle);
             FormClosing += (_, __) => { _session?.RequestStop(); BootLog.UartFlush(); };
@@ -203,8 +211,15 @@ namespace ProcessorEmulator
             BootLog.Open(feed);
             BootLog.Listener = ShowStatus;
             BootLog.Write("start folder=" + (feed ?? "") + " log=" + BootLog.FilePath);
-            BootLog.Write("cli=tail that log (ExtraROM FILE/TOC attach + UART TX). guest frame black; no _frame.Image blit; GuestVideoWrote=false; Display=ddi_nop.dll ExtraROM TOC[33] stub; MipsUart 0xB0000000 TX -> this file; no NIC on the MIPS bus");
+            if (ExtraRomBtv.IsEnabled)
+            {
+                ExtraRomBtv.Reset();
+                BootLog.Write("cli=tail that log (ExtraROM FILE/TOC attach + UART TX). EXTRAROM_BTV=1: PictureBox blit only on UpdateFrameBuffer from guest A8R8G8B8 at 0x8F000000; IR 0xB0400140/0144; GuestVideoWrote=false until a guest flip; MipsUart 0xB0000000 TX -> this file; no NIC on the MIPS bus");
+            }
+            else
+                BootLog.Write("cli=tail that log (ExtraROM FILE/TOC attach + UART TX). guest frame black; no _frame.Image blit; GuestVideoWrote=false; Display=ddi_nop.dll ExtraROM TOC[33] stub; MipsUart 0xB0000000 TX -> this file; no NIC on the MIPS bus");
             _session = new MediaroomSession(BootLog.Write);
+            HookBtvFrame();
             _worker = new Thread(() =>
             {
                 try
@@ -228,6 +243,83 @@ namespace ProcessorEmulator
             });
             _worker.IsBackground = true;
             _worker.Start();
+        }
+
+        private void HookBtvFrame()
+        {
+            if (_frameHandler != null && ExtraRomBtv.Live != null)
+                ExtraRomBtv.Live.FrameReady -= _frameHandler;
+            _frameHandler = null;
+            if (!ExtraRomBtv.IsEnabled)
+                return;
+            ExtraRomBtv btv = ExtraRomBtv.Ensure();
+            _frameHandler = OnBtvFrame;
+            btv.FrameReady += _frameHandler;
+        }
+
+        private void OnBtvFrame(byte[] pixels, int width, int height, int stride)
+        {
+            if (pixels == null || width <= 0 || height <= 0 || stride <= 0)
+                return;
+            if (IsDisposed || !IsHandleCreated)
+                return;
+            try
+            {
+                BeginInvoke(new Action(() => BlitGuestFrame(pixels, width, height, stride)));
+            }
+            catch
+            {
+            }
+        }
+
+        private void BlitGuestFrame(byte[] pixels, int width, int height, int stride)
+        {
+            if (IsDisposed || pixels == null)
+                return;
+            Bitmap bmp = new Bitmap(width, height, PixelFormat.Format32bppArgb);
+            BitmapData data = bmp.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+            try
+            {
+                if (data.Stride == stride)
+                    Marshal.Copy(pixels, 0, data.Scan0, stride * height);
+                else
+                {
+                    int row = Math.Min(stride, Math.Abs(data.Stride));
+                    for (int y = 0; y < height; y++)
+                    {
+                        IntPtr dest = data.Scan0 + y * data.Stride;
+                        Marshal.Copy(pixels, y * stride, dest, row);
+                    }
+                }
+            }
+            finally
+            {
+                bmp.UnlockBits(data);
+            }
+            Image old = _frame.Image;
+            _frame.Image = bmp;
+            old?.Dispose();
+            _session?.MarkGuestVideoWrote();
+        }
+
+        private static void HostPreviewKeyDown(object sender, PreviewKeyDownEventArgs e)
+        {
+            if (e.KeyCode == Keys.Left || e.KeyCode == Keys.Right || e.KeyCode == Keys.Up || e.KeyCode == Keys.Down || e.KeyCode == Keys.Menu)
+                e.IsInputKey = true;
+        }
+
+        private void HostKeyDown(object sender, KeyEventArgs e)
+        {
+            if (!ExtraRomBtv.IsEnabled)
+                return;
+            ExtraRomBtv.Live?.SetKey(e.KeyValue, true);
+        }
+
+        private void HostKeyUp(object sender, KeyEventArgs e)
+        {
+            if (!ExtraRomBtv.IsEnabled)
+                return;
+            ExtraRomBtv.Live?.SetKey(e.KeyValue, false);
         }
     }
 }

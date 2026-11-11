@@ -28,6 +28,10 @@
     <Page Remove="archive\**" />
     <EmbeddedResource Remove="archive\**" />
     <None Remove="archive\**" />
+    <Compile Remove="_backup_phaseB_20261111\**" />
+    <Page Remove="_backup_phaseB_20261111\**" />
+    <EmbeddedResource Remove="_backup_phaseB_20261111\**" />
+    <None Remove="_backup_phaseB_20261111\**" />
   </ItemGroup>
 
 </Project>

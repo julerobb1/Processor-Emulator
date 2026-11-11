@@ -51844,6 +51844,11 @@ private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
                     || (name[2] != 'V' && name[2] != 'v')
                     || name[3] != '1')
                     return false;
+                if (ExtraRomBtv.TryOpenCreateFile(regs, ref programCounter))
+                {
+                    System.Console.WriteLine("[WinCE] CreateFile(BTV1:) EXTRAROM_BTV handle 0xB7100001");
+                    return true;
+                }
                 regs[2] = 0xFFFFFFFFu;
                 programCounter = regs[31];
                 return true;

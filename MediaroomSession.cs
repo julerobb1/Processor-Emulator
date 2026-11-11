@@ -41,6 +41,11 @@ namespace ProcessorEmulator
         public bool KernelLoaded { get; private set; }
         public bool GuestVideoWrote { get; private set; }
 
+        public void MarkGuestVideoWrote()
+        {
+            GuestVideoWrote = true;
+        }
+
         public MediaroomSession(Action<string> status)
         {
             _status = status ?? (_ => { });
@@ -97,6 +102,11 @@ namespace ProcessorEmulator
             _bus.AddDevice(new BcmStickyMmio(0xF0600000, 0x1000, "MMIOF060"));
             _cpu = new MipsCpuEmulator(_bus, _cp0);
             _bus.AddDevice(new MipsUart(UartBase, UartSize));
+            if (ExtraRomBtv.IsEnabled)
+            {
+                ExtraRomBtv.Ensure();
+                _bus.AddDevice(new ExtraRomIrMmio());
+            }
 
             NkLoadResult loaded;
             try
@@ -112,7 +122,10 @@ namespace ProcessorEmulator
             KernelLoaded = true;
             DumpRoot = HostHardDisk.Root;
             GuestVideoWrote = false;
-            _status("display ddi_nop.dll ExtraROM TOC[33] stub; guest screen black until a real DDI writes pixels; GuestVideoWrote=false; no framebuffer blit");
+            if (ExtraRomBtv.IsEnabled)
+                _status("EXTRAROM_BTV=1: BTV1: + coredll DeviceIoControl 0x3F780E4; Nexus surface 0x8F000000 wrapper 0x8EFFFF80 reserved below SP 0x8FFFF000; IR MMIO 0xB0400140/0144 0-bit=pressed; PictureBox blit only on UpdateFrameBuffer from guest A8R8G8B8; GuestVideoWrote=false until then");
+            else
+                _status("display ddi_nop.dll ExtraROM TOC[33] stub; guest screen black until a real DDI writes pixels; GuestVideoWrote=false; no framebuffer blit");
             _cpu.SetRegister(MipsCpuEmulator.Register.PC, (uint)loaded.EntryPoint);
             _cpu.SetRegister(MipsCpuEmulator.Register.SP, 0x80000000u + RamSize - 0x1000u);
             _lastPc = (uint)loaded.EntryPoint;
