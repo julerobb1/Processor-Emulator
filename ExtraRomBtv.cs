@@ -1,4 +1,10 @@
 using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.IO;
+using System.Runtime.InteropServices;
+using ProcessorEmulator.Core;
 using ProcessorEmulator.Emulation;
 
 namespace ProcessorEmulator.Emulation
@@ -101,6 +107,15 @@ namespace ProcessorEmulator.Emulation
         // packed 16-bit state, 1 = released (idle). 0-bit = pressed.
         private int _irPacked = 0xFFFF;
         private readonly uint[] _irOther = new uint[IrMmioSize / 4];
+        private int _createFileHits;
+        private int _ioctlTotal;
+        private int _updateCount;
+        private int _ir140Reads;
+        private int _ir144Reads;
+        private int _irOtherReads;
+        private string _framePath = "";
+        private readonly Dictionary<uint, int> _ioctlCounts = new Dictionary<uint, int>();
+        private readonly Dictionary<uint, string> _ioctlLast = new Dictionary<uint, string>();
 
         public event Action<byte[], int, int, int> FrameReady;
 
@@ -118,7 +133,9 @@ namespace ProcessorEmulator.Emulation
         {
             if (!IsEnabled || regs == null || regs.Length <= 31)
                 return false;
-            Ensure();
+            ExtraRomBtv btv = Ensure();
+            btv._createFileHits++;
+            BootLog.Write("[BTV] CreateFile(BTV1:) handle 0x" + DeviceHandle.ToString("X8") + " count=" + btv._createFileHits);
             regs[2] = DeviceHandle;
             programCounter = regs[31];
             return true;
@@ -164,6 +181,17 @@ namespace ProcessorEmulator.Emulation
         private bool HandleIoctl(MipsBus bus, uint code, uint inPtr, uint inLen, uint outPtr, uint outLen, out uint written)
         {
             written = 0;
+            _ioctlTotal++;
+            int ncode;
+            if (!_ioctlCounts.TryGetValue(code, out ncode))
+                ncode = 0;
+            ncode++;
+            _ioctlCounts[code] = ncode;
+            string last = "in=0x" + inLen.ToString("X") + " out=0x" + outLen.ToString("X")
+                + " inPtr=0x" + inPtr.ToString("X8") + " outPtr=0x" + outPtr.ToString("X8");
+            _ioctlLast[code] = last;
+            if (ncode <= 8 || (ncode % 50) == 0)
+                BootLog.Write("[BTV] IOCTL 0x" + code.ToString("X8") + " #" + ncode + " " + last);
             try
             {
                 switch (code)
@@ -292,9 +320,12 @@ namespace ProcessorEmulator.Emulation
                 pixels[off + 2] = (byte)(w >> 16);
                 pixels[off + 3] = (byte)(w >> 24);
             }
+            _updateCount++;
             GuestVideoWrote = true;
+            TrySaveFrame(pixels, Width, Height, Stride);
             var ev = FrameReady;
             ev?.Invoke(pixels, Width, Height, Stride);
+            BootLog.Write("[BTV] UpdateFrameBuffer #" + _updateCount + " " + Width + "x" + Height + " stride=" + Stride + " path=" + _framePath);
             return true;
         }
 
@@ -319,9 +350,19 @@ namespace ProcessorEmulator.Emulation
         public uint ReadIr32(uint offset)
         {
             if (offset == IrReg140)
+            {
+                _ir140Reads++;
+                if (_ir140Reads <= 4 || (_ir140Reads % 1000) == 0)
+                    BootLog.Write("[BTV] IR MMIO read 0xB0400140 #" + _ir140Reads + " packed=0x" + _irPacked.ToString("X4"));
                 return (uint)((_irPacked >> 8) & 0xFF);
+            }
             if (offset == IrReg144)
+            {
+                _ir144Reads++;
+                if (_ir144Reads <= 4 || (_ir144Reads % 1000) == 0)
+                    BootLog.Write("[BTV] IR MMIO read 0xB0400144 #" + _ir144Reads + " packed=0x" + _irPacked.ToString("X4"));
                 return (uint)(_irPacked & 0xFF);
+            }
             if (offset + 4 <= IrMmioSize)
                 return _irOther[offset / 4];
             return 0;
@@ -334,6 +375,83 @@ namespace ProcessorEmulator.Emulation
             if (offset + 4 <= IrMmioSize)
                 _irOther[offset / 4] = value;
         }
+
+        public static void WriteCaptureSummary()
+        {
+            ExtraRomBtv btv = Live;
+            if (btv == null)
+            {
+                BootLog.Write("[BTV] capture: no ExtraRomBtv instance (flag off or never opened)");
+                return;
+            }
+            BootLog.Write("[BTV] capture CreateFileHits=" + btv._createFileHits
+                + " ioctlTotal=" + btv._ioctlTotal
+                + " UpdateFrameBuffer=" + btv._updateCount
+                + " GuestVideoWrote=" + btv.GuestVideoWrote
+                + " surface=" + btv.SurfaceReady
+                + " " + btv.Width + "x" + btv.Height
+                + " ir140=" + btv._ir140Reads
+                + " ir144=" + btv._ir144Reads
+                + " frame=" + (string.IsNullOrEmpty(btv._framePath) ? "(none)" : btv._framePath));
+            foreach (KeyValuePair<uint, int> kv in btv._ioctlCounts)
+            {
+                string last;
+                if (!btv._ioctlLast.TryGetValue(kv.Key, out last))
+                    last = "";
+                BootLog.Write("[BTV] capture IOCTL 0x" + kv.Key.ToString("X8") + " count=" + kv.Value + " last " + last);
+            }
+        }
+
+        private void TrySaveFrame(byte[] pixels, int width, int height, int stride)
+        {
+            if (pixels == null || width <= 0 || height <= 0 || stride <= 0)
+                return;
+            try
+            {
+                string dest = Environment.GetEnvironmentVariable("EXTRAROM_BTV_FRAME");
+                if (string.IsNullOrWhiteSpace(dest))
+                {
+                    string dir = "";
+                    try { dir = Path.GetDirectoryName(BootLog.FilePath); } catch { }
+                    if (string.IsNullOrEmpty(dir))
+                        dir = Path.GetTempPath();
+                    dest = Path.Combine(dir, "extrarom-btv-frame.png");
+                }
+                using (Bitmap bmp = new Bitmap(width, height, PixelFormat.Format32bppArgb))
+                {
+                    BitmapData data = bmp.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+                    try
+                    {
+                        if (data.Stride == stride)
+                            Marshal.Copy(pixels, 0, data.Scan0, stride * height);
+                        else
+                        {
+                            int row = Math.Min(stride, Math.Abs(data.Stride));
+                            for (int y = 0; y < height; y++)
+                            {
+                                IntPtr destRow = data.Scan0 + y * data.Stride;
+                                Marshal.Copy(pixels, y * stride, destRow, row);
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        bmp.UnlockBits(data);
+                    }
+                    string tmp = dest + ".tmp";
+                    bmp.Save(tmp, ImageFormat.Png);
+                    if (File.Exists(dest))
+                        File.Delete(dest);
+                    File.Move(tmp, dest);
+                }
+                _framePath = dest;
+            }
+            catch (Exception ex)
+            {
+                BootLog.Write("[BTV] frame save failed: " + ex.GetType().Name + ": " + ex.Message);
+            }
+        }
+
     }
 
     public sealed class ExtraRomIrMmio : IBusDevice

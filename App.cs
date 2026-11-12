@@ -63,7 +63,8 @@ namespace ProcessorEmulator
                     hs.RequestStop();
                     ht.Join(TimeSpan.FromSeconds(10));
                 }
-                BootLog.Write("headless end");
+                BootLog.Write("headless end steps=" + hs.Steps + " pc=0x" + hs.ProgramCounter.ToString("X8") + " hz=" + hs.Hertz + " GuestVideoWrote=" + hs.GuestVideoWrote + (string.IsNullOrEmpty(hs.MemsetNote) ? "" : " " + hs.MemsetNote));
+                ProcessorEmulator.Emulation.ExtraRomBtv.WriteCaptureSummary();
                 BootLog.UartFlush();
                 Shutdown();
                 return;
