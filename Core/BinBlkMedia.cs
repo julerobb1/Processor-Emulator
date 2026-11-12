@@ -55,7 +55,7 @@ namespace ProcessorEmulator.Core
             _opened = false;
             _readServed = false;
             if (IsPresent)
-                System.Console.WriteLine($"[BINBlk] media {_image.Length} bytes name={HiveName}");
+                BootLog.Write("[BINBlk] media " + _image.Length + " bytes name=" + HiveName);
         }
 
         // HOST_SKIP_SECBIN / EXTRAROM_HOST_SKIP_SECBIN=1:
@@ -196,7 +196,7 @@ namespace ProcessorEmulator.Core
             registers[2] = 0;
             registers[4] = 3;
             programCounter = WfmoRet;
-            System.Console.WriteLine("[BINBlk] notify BLOCK_DRIVER");
+            BootLog.Write("[BINBlk] notify BLOCK_DRIVER");
             return true;
         }
 
@@ -230,7 +230,7 @@ namespace ProcessorEmulator.Core
             registers[2] = 1;
             programCounter = ReadMsgRet;
             _detailFilled = true;
-            System.Console.WriteLine("[BINBlk] DEVDETAIL");
+            BootLog.Write("[BINBlk] DEVDETAIL");
             return true;
         }
 

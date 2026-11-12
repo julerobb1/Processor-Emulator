@@ -378,25 +378,25 @@ namespace ProcessorEmulator.Core
             string dir = ResolveRoot();
             if (string.IsNullOrEmpty(dir))
             {
-                System.Console.WriteLine("[HardDisk] no dump root (pass a folder, set " + EnvName + ", or FirmwarePath)");
+                BootLog.Write("[HardDisk] no dump root (pass a folder, set " + EnvName + ", or FirmwarePath)");
                 return;
             }
             try
             {
                 _image = Fat16.Build(dir);
                 _root = dir;
-                System.Console.WriteLine($"[HardDisk] FAT {_image.Length} bytes root={dir} name={FolderName}");
+                BootLog.Write("[HardDisk] FAT " + _image.Length + " bytes root=" + dir + " name=" + FolderName);
                 NoteDumpImages(dir);
                 if (!string.IsNullOrEmpty(_nkDir))
                     NoteDumpImages(_nkDir);
                 foreach (string extra in _extraRoms)
-                    System.Console.WriteLine("[HardDisk] ExtraROM candidate " + extra);
+                    BootLog.Write("[HardDisk] ExtraROM candidate " + extra);
                 RememberLastUsed(dir);
             }
             catch (Exception ex)
             {
                 _image = Array.Empty<byte>();
-                System.Console.WriteLine("[HardDisk] FAT build failed: " + ex.Message);
+                BootLog.Write("[HardDisk] FAT build failed: " + ex.Message);
             }
         }
 
@@ -980,7 +980,7 @@ namespace ProcessorEmulator.Core
                 if (!string.IsNullOrEmpty(kn))
                     CeRomTocFiles.NotePendingRomFile(kn);
                 if ((_notified || IsHardDiskPath(kn)) && _logged.Add("k:" + kn))
-                    System.Console.WriteLine($"[HardDisk] kCreateFile \"{kn}\" step={PcSampler.Steps}");
+                    BootLog.Write($"[HardDisk] kCreateFile \"{kn}\" step={PcSampler.Steps}");
                 if (BootLog.IsGuestIoName(kn) && _logged.Add("rom:cf:" + kn))
                     BootLog.Rom("ok", "ExtraROM", "", -1, kn, 0, 0, 0, 0,
                         "CreateFile guest IO name; no NIC on the MIPS bus; do not invent a NIC or UART");
@@ -991,6 +991,13 @@ namespace ProcessorEmulator.Core
             if (pc == CeRomTocFiles.CreateFileFail)
             {
                 LogCreateFileFail(registers, bus);
+                return false;
+            }
+
+            if (pc == BinBlkMedia.WfmoJalr && !IsPresent)
+            {
+                if (_logged.Add("hdd:wfmo:nopresent"))
+                    BootLog.Write("[HardDisk] WFMO 0x03E88DF8 skipped: FAT not present HdAfterDevmgr=" + (HdAfterDevmgrOn ? "1" : "0") + " step=" + PcSampler.Steps);
                 return false;
             }
 
@@ -1005,7 +1012,7 @@ namespace ProcessorEmulator.Core
             {
                 string fn = ReadUtf16(bus, registers[4]);
                 if (_notified && _logged.Add("f:" + fn))
-                    System.Console.WriteLine($"[HardDisk] fsdCreateFile \"{fn}\"");
+                    BootLog.Write($"[HardDisk] fsdCreateFile \"{fn}\"");
                 return TryCreateFile(registers, bus, pc, ref programCounter);
             }
             if (pc == BinBlkMedia.DiskIoctl)
@@ -1054,7 +1061,7 @@ namespace ProcessorEmulator.Core
             registers[2] = 0;
             programCounter = registers[31];
             if (_logged.Add("ro:" + path))
-                System.Console.WriteLine($"[HardDisk] RegOpen \"{path}\" hk=0x{hk:X8} phk=0x{phk:X8} ra=0x{registers[31]:X8}");
+                BootLog.Write($"[HardDisk] RegOpen \"{path}\" hk=0x{hk:X8} phk=0x{phk:X8} ra=0x{registers[31]:X8}");
             return true;
         }
 
@@ -1127,7 +1134,7 @@ namespace ProcessorEmulator.Core
                 registers[2] = 2;
                 programCounter = registers[31];
                 if (_logged.Add("rqmiss:" + hKey.ToString("X") + ":" + name))
-                    System.Console.WriteLine($"[HardDisk] RegQuery \"{name}\" hk=0x{hKey:X8} miss");
+                    BootLog.Write($"[HardDisk] RegQuery \"{name}\" hk=0x{hKey:X8} miss");
                 return true;
             }
             uint type = isDword ? 4u : 1u;
@@ -1194,7 +1201,7 @@ namespace ProcessorEmulator.Core
             registers[2] = 0;
             programCounter = registers[31];
             if (_logged.Add("rq:" + name + "=" + (isDword ? dword.ToString() : text)))
-                System.Console.WriteLine($"[HardDisk] RegQuery \"{name}\"={(isDword ? dword.ToString() : text)}");
+                BootLog.Write($"[HardDisk] RegQuery \"{name}\"={(isDword ? dword.ToString() : text)}");
             return true;
         }
 
@@ -1498,7 +1505,7 @@ namespace ProcessorEmulator.Core
                 registers[2] = 0;
                 registers[4] = 3;
                 programCounter = BinBlkMedia.WfmoRet;
-                System.Console.WriteLine("[HardDisk] HOST-ASSISTED notify BLOCK_DRIVER HDProfile (after-devmgr mode, try " + (_hdDrops + 1) + ") step=" + PcSampler.Steps);
+                BootLog.Write("[HardDisk] HOST-ASSISTED notify BLOCK_DRIVER HDProfile (after-devmgr mode, try " + (_hdDrops + 1) + ") step=" + PcSampler.Steps);
                 return true;
             }
             if (_notified)
@@ -1514,7 +1521,7 @@ namespace ProcessorEmulator.Core
             registers[2] = 0;
             registers[4] = 3;
             programCounter = BinBlkMedia.WfmoRet;
-            System.Console.WriteLine("[HardDisk] notify BLOCK_DRIVER HDProfile");
+            BootLog.Write("[HardDisk] notify BLOCK_DRIVER HDProfile");
             return true;
         }
 
@@ -1548,7 +1555,7 @@ namespace ProcessorEmulator.Core
             registers[2] = 1;
             programCounter = BinBlkMedia.ReadMsgRet;
             _detailFilled = true;
-            System.Console.WriteLine("[HardDisk] DEVDETAIL " + DeviceName);
+            BootLog.Write("[HardDisk] DEVDETAIL " + DeviceName);
             return true;
         }
 
@@ -1566,7 +1573,7 @@ namespace ProcessorEmulator.Core
             registers[2] = Handle;
             programCounter = pc + 8;
             _opened = true;
-            System.Console.WriteLine("[HardDisk] CreateFile " + DeviceName);
+            BootLog.Write("[HardDisk] CreateFile " + DeviceName);
             return true;
         }
 
@@ -1583,7 +1590,7 @@ namespace ProcessorEmulator.Core
             uint err = ServeIoctl(bus, code, buf, size, registers[29]);
             registers[2] = err;
             programCounter = registers[31];
-            System.Console.WriteLine($"[HardDisk] IOCTL 0x{code:X} err={err}");
+            BootLog.Write($"[HardDisk] IOCTL 0x{code:X} err={err}");
             return true;
         }
 
@@ -1664,7 +1671,7 @@ namespace ProcessorEmulator.Core
             // on 0. This entry is BOOL (1=ok), not a Win32 error code.
             registers[2] = err == 0 ? 1u : 0u;
             programCounter = registers[31];
-            System.Console.WriteLine($"[HardDisk] IOCTL2 0x{code:X} err={err} v0={registers[2]} buf=0x{buf:X8} size={size}");
+            BootLog.Write($"[HardDisk] IOCTL2 0x{code:X} err={err} v0={registers[2]} buf=0x{buf:X8} size={size}");
             return true;
         }
 
@@ -1789,7 +1796,7 @@ namespace ProcessorEmulator.Core
             uint err = ServeIoctl(bus, code, buf, size, registers[29]);
             registers[2] = err == 0 ? 1u : 0u;
             programCounter = registers[31];
-            System.Console.WriteLine($"[HardDisk] FSDIOCTL 0x{code:X} err={err} v0={registers[2]}");
+            BootLog.Write($"[HardDisk] FSDIOCTL 0x{code:X} err={err} v0={registers[2]}");
             return true;
         }
 
@@ -1821,7 +1828,7 @@ namespace ProcessorEmulator.Core
                     uint diFlags = HdPageableFwOn ? ((1u | 8u) & ~4u) : 1u;
                     bus.Write32(buf + 20, diFlags);
                     if (HdPageableFwOn && _logged.Add("hd:pageable-fw"))
-                        System.Console.WriteLine("[HardDisk] EXTRAROM_HD_PAGEABLE_FW: GETINFO di_flags=0x" + diFlags.ToString("X") + " (MBR|PAGEABLE, as bcmatapi.dll 0x03E066E0 ori 8)");
+                        BootLog.Write("[HardDisk] EXTRAROM_HD_PAGEABLE_FW: GETINFO di_flags=0x" + diFlags.ToString("X") + " (MBR|PAGEABLE, as bcmatapi.dll 0x03E066E0 ori 8)");
                     return 0;
                 }
                 if (code == BinBlkMedia.IoctlDiskGetName && buf != 0)
@@ -2059,7 +2066,7 @@ namespace ProcessorEmulator.Core
             bus.Write32(sg + 12, 0);
             _fatSeen = true;
             if (_logged.Add("read:" + start))
-                System.Console.WriteLine($"[HardDisk] DISK_READ lba={start} n={num} {(PcSampler.Steps > 100000000 ? DescribeLba(start) : "")} step={PcSampler.Steps}");
+                BootLog.Write($"[HardDisk] DISK_READ lba={start} n={num} {(PcSampler.Steps > 100000000 ? DescribeLba(start) : "")} step={PcSampler.Steps}");
             return 0;
         }
 
