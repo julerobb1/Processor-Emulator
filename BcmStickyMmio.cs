@@ -1,4 +1,5 @@
 using System;
+using ProcessorEmulator.Core;
 
 namespace ProcessorEmulator.Emulation
 {
@@ -17,12 +18,22 @@ namespace ProcessorEmulator.Emulation
             _regs = new uint[size / 4];
         }
 
+        // WinExe headless has no console. MMIO11F (ceddk/BC bus) is the
+        // post-ceddk window vs fwapi64; keep those lines in boot.log.
+        private void Log(string line)
+        {
+            if (_tag == "MMIO11F")
+                BootLog.Write(line);
+            else
+                Console.WriteLine(line);
+        }
+
         public uint Read32(uint offset)
         {
             if (offset + 4 > Size)
                 return 0;
             uint value = _regs[offset / 4];
-            Console.WriteLine($"[{_tag}] Read 0x{StartAddress + offset:X8} = 0x{value:X8}");
+            Log($"[{_tag}] Read 0x{StartAddress + offset:X8} = 0x{value:X8}");
             return value;
         }
 
@@ -31,7 +42,7 @@ namespace ProcessorEmulator.Emulation
             if (offset + 4 > Size)
                 return;
             _regs[offset / 4] = value;
-            Console.WriteLine($"[{_tag}] Write 0x{StartAddress + offset:X8} = 0x{value:X8}");
+            Log($"[{_tag}] Write 0x{StartAddress + offset:X8} = 0x{value:X8}");
         }
 
         public void Or32(uint offset, uint bits)
@@ -39,7 +50,7 @@ namespace ProcessorEmulator.Emulation
             if (offset + 4 > Size)
                 return;
             _regs[offset / 4] |= bits;
-            Console.WriteLine($"[{_tag}] Or 0x{StartAddress + offset:X8} |= 0x{bits:X8} -> 0x{_regs[offset / 4]:X8}");
+            Log($"[{_tag}] Or 0x{StartAddress + offset:X8} |= 0x{bits:X8} -> 0x{_regs[offset / 4]:X8}");
         }
 
         public byte Read8(uint offset)
