@@ -248,10 +248,10 @@ namespace ProcessorEmulator
             {
                 uint k0 = P(bus, 0xFFFFDAC0), k1 = P(bus, 0xFFFFDAC4);
                 if (!_kInit) { _kInit = true; _k0 = k0; _k1 = k1; }
-                else if ((k0 != _k0 || k1 != _k1) && _sw_n < 80)
+                else if ((k0 != _k0 || k1 != _k1) && _sw_n < 200)
                 {
                     _sw_n++;
-                    BootLog.Write("[PcSample] kdata-switch DAC0 0x" + _k0.ToString("X8") + "->0x" + k0.ToString("X8") + " DAC4 0x" + _k1.ToString("X8") + "->0x" + k1.ToString("X8") + " pc=0x" + pc.ToString("X8") + " step=" + _steps);
+                    BootLog.Write("[PcSample] kdata-switch DAC0 0x" + _k0.ToString("X8") + "->0x" + k0.ToString("X8") + " DAC4 0x" + _k1.ToString("X8") + "->0x" + k1.ToString("X8") + " pc=0x" + pc.ToString("X8") + " " + bus.Cp0Snapshot() + " step=" + _steps);
                     _k0 = k0; _k1 = k1;
                 }
                 long ms = _sw.ElapsedMilliseconds;

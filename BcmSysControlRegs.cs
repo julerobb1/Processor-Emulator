@@ -1,4 +1,5 @@
 using System;
+using ProcessorEmulator.Core;
 
 namespace ProcessorEmulator.Emulation
 {
@@ -24,7 +25,14 @@ namespace ProcessorEmulator.Emulation
         // when it fits the cap; otherwise wait this many Count ticks.
         private const uint OffCalibCtrl = 0x07C0;
         private const uint OffCalibData = 0x07C8;
+        // Dump nk 0x800557F4: sw 0 then 0xB0479E80 at 0xB04007D4,
+        // then lw 0xB04007E4, and 0x3FFFFFFF, divu 27, *10.
+        // 07E4 is the free-running 27 MHz WKTMR; 07D4 programs it.
+        private const uint OffTickCtrl = 0x07D4;
+        private const uint OffTickCount = 0x07E4;
         private const uint CalibWaitCap = 0x10000;
+        private bool _tickProgrammed;
+        private int _tickLog;
         // Walker at 0x80056500: (~*0x1000140C) & *0x10001400. IRQ 23 = bit 23.
         private const uint PicStatusOff = 0x400;
         private const uint Irq23Bit = 1u << 23;
@@ -48,6 +56,9 @@ namespace ProcessorEmulator.Emulation
                 CompleteCalibIfReady();
                 return _regs[offset / 4];
             }
+            // 07E4 is polled from the OEM tick path; do not flood the console.
+            if (offset == OffTickCount || offset == OffTickCtrl)
+                return _regs[offset / 4];
             uint value = _regs[offset / 4];
             Console.WriteLine($"[SYSCTL] Read 0x{StartAddress + offset:X8} = 0x{value:X8}");
             return value;
@@ -63,6 +74,19 @@ namespace ProcessorEmulator.Emulation
                 _calibRunning = true;
                 _calibAnchor = _cp0 != null ? _cp0.Count : 0;
                 Console.WriteLine($"[SYSCTL] Write 0x{StartAddress + offset:X8} = 0x{value:X8} (bit0 cleared)");
+                return;
+            }
+            if (offset == OffTickCtrl)
+            {
+                _regs[offset / 4] = value;
+                _tickProgrammed = value != 0;
+                if (_tickLog < 4)
+                {
+                    _tickLog++;
+                    BootLog.Write("[SYSCTL] tick 07D4=0x" + value.ToString("X8") +
+                        " 07E4=0x" + _regs[OffTickCount / 4].ToString("X8") +
+                        " (nk 0x800557F4 programs 0 then 0xB0479E80; 07E4 counts while programmed)");
+                }
                 return;
             }
             bool hadPending = (_regs[OffStatus / 4] & 1u) != 0;
@@ -99,6 +123,11 @@ namespace ProcessorEmulator.Emulation
         public void Tick(int cycles)
         {
             CompleteCalibIfReady();
+            // Dump 0x800557F4: 07E4 is a free-running counter after 07D4 is
+            // programmed. Advance it with the same guest cycle the CPU uses
+            // for CP0 Count (firmware then divu 27, *10).
+            if (_tickProgrammed && cycles > 0)
+                _regs[OffTickCount / 4] += (uint)cycles;
             if (!_running || _remaining == 0 || cycles <= 0)
                 return;
             if (_remaining > (uint)cycles)

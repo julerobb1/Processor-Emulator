@@ -1076,7 +1076,7 @@ namespace ProcessorEmulator.Core
                 registers[2] = 259;
                 programCounter = registers[31];
                 if (_logged.Add("re:end"))
-                    System.Console.WriteLine("[HardDisk] RegEnum Filters done index=" + index);
+                    BootLog.Write("[HardDisk] RegEnum Filters done index=" + index);
                 return true;
             }
             uint nameBuf = registers[6];
@@ -1112,7 +1112,7 @@ namespace ProcessorEmulator.Core
             registers[2] = 0;
             programCounter = registers[31];
             if (_logged.Add("re:" + filt))
-                System.Console.WriteLine("[HardDisk] RegEnum Filters \"" + filt + "\"");
+                BootLog.Write("[HardDisk] RegEnum Filters \"" + filt + "\"");
             return true;
         }
 
@@ -1727,13 +1727,13 @@ namespace ProcessorEmulator.Core
             if (info == 0)
             {
                 if (_logged.Add("gdi"))
-                    System.Console.WriteLine($"[HardDisk] GetDiskInfo miss a0=0x{a0:X8} a1=0x{a1:X8} ra=0x{registers[31]:X8} names={ScanNames(bus, a0)}");
+                    BootLog.Write($"[HardDisk] GetDiskInfo miss a0=0x{a0:X8} a1=0x{a1:X8} ra=0x{registers[31]:X8} names={ScanNames(bus, a0)}");
                 return false;
             }
             uint err = ServeIoctl(bus, BinBlkMedia.DiskIoctlGetInfo, info, 24, registers[29]);
             registers[2] = err == 0 ? 1u : 0u;
             programCounter = registers[31];
-            System.Console.WriteLine($"[HardDisk] GetDiskInfo err={err} info=0x{info:X8}");
+            BootLog.Write($"[HardDisk] GetDiskInfo err={err} info=0x{info:X8}");
             return true;
         }
 
@@ -1782,7 +1782,7 @@ namespace ProcessorEmulator.Core
                 uint errInfo = ServeIoctl(bus, BinBlkMedia.DiskIoctlGetInfo, a1, 24, registers[29]);
                 registers[2] = errInfo == 0 ? 1u : 0u;
                 programCounter = registers[31];
-                System.Console.WriteLine($"[HardDisk] GetDiskInfo err={errInfo} v0={registers[2]}");
+                BootLog.Write($"[HardDisk] GetDiskInfo err={errInfo} v0={registers[2]}");
                 return true;
             }
             uint code = a1;
@@ -2204,7 +2204,7 @@ namespace ProcessorEmulator.Core
             if (!_logged.Add("hive:init:" + v0.ToString("X")))
                 return;
             string note = v0 == 0 ? "OK" : (v0 == ErrorBadKey ? "ERROR_BADKEY" : "");
-            System.Console.WriteLine("[Hive] RunApps HKLM\\init v0=0x" + v0.ToString("X8") +
+            BootLog.Write("[Hive] RunApps HKLM\\init v0=0x" + v0.ToString("X8") +
                 (note.Length == 0 ? "" : " " + note));
         }
 
@@ -2218,7 +2218,7 @@ namespace ProcessorEmulator.Core
             if (string.IsNullOrEmpty(name))
                 return;
             if (_logged.Add("hive:launch:" + name))
-                System.Console.WriteLine("[Hive] RunApps \"" + name + "\"");
+                BootLog.Write("[Hive] RunApps \"" + name + "\"");
         }
 
         // RunApps 0x00017FB0: Depend WORD in v0, ready flag at
@@ -2420,7 +2420,7 @@ namespace ProcessorEmulator.Core
                 {
                     if (!string.IsNullOrEmpty(n) && n != "(null)")
                         CeRomTocFiles.NotePendingRomFile(n);
-                    System.Console.WriteLine("[Hive] ActivateDevice \"" + n + "\" pc=0x" +
+                    BootLog.Write("[Hive] ActivateDevice \"" + n + "\" pc=0x" +
                         pc.ToString("X8"));
                     BootLog.Rom("ok", "ExtraROM", "", -1, n, 0, 0, 0, 0,
                         BootLog.IsGuestIoName(n)
@@ -3951,7 +3951,7 @@ namespace ProcessorEmulator.Core
                 return;
             if (!_logged.Add("hive:calldllret:" + module.ToString("X") + ":" + reason.ToString("X")))
                 return;
-            System.Console.WriteLine("[Hive] CallDLL DllMain ret v0=0x" + v0.ToString("X8") +
+            BootLog.Write("[Hive] CallDLL DllMain ret v0=0x" + v0.ToString("X8") +
                 " reason=" + reason +
                 " module=0x" + module.ToString("X8") +
                 " startip=0x" + ip.ToString("X8"));
