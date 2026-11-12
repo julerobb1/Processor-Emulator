@@ -13460,6 +13460,7 @@ namespace ProcessorEmulator.Core
         public static bool TrySkipFfffE000ListInsertStore(MipsBus bus, uint va,
             uint value)
         {
+            if (FwApiOn) return false; // FW_API: no HOST-ASSISTED store-skip/stack remap; firmware TLB-miss path handles it
             if (!IsDumpMemListInsertStoreSkipArmed(bus))
                 return false;
             if (!IsFfffE000ListInsertSkipVa(va))
@@ -13523,6 +13524,7 @@ namespace ProcessorEmulator.Core
         public static bool TrySkipFfffF000ListInsertStore(MipsBus bus, uint va,
             uint value)
         {
+            if (FwApiOn) return false; // FW_API: no HOST-ASSISTED store-skip/stack remap; firmware TLB-miss path handles it
             if (!IsDumpMemListInsertStoreSkipArmed(bus))
                 return false;
             if (!IsFfffF000ListInsertSkipVa(va))
