@@ -46,10 +46,12 @@ namespace ProcessorEmulator.Emulation
         public const uint IoctlGfxInit = 0x80032084;
 
         public const uint CoredllDeviceIoControl = 0x3F780E4;
-        public const uint IrMmioBase = 0xB0400000;
-        public const uint IrMmioSize = 0x5000;
-        public const uint IrReg140 = 0x140;
-        public const uint IrReg144 = 0x144;
+        // Guest programs kseg1 0xB0400140/0144; bus Translate maps that to
+        // phys 0x10400140/0144 (same 64KB page as BcmSysControlRegs).
+        public const uint IrMmioBase = 0x10400140;
+        public const uint IrMmioSize = 8; // 0x10400140 and 0x10400144 only
+        public const uint IrReg140 = 0x0;
+        public const uint IrReg144 = 0x4;
 
         // Dump table at 0x1E9C2C8, 16 bytes. 0 = unused bit.
         public static readonly byte[] BitKeycodes =
@@ -106,13 +108,11 @@ namespace ProcessorEmulator.Emulation
 
         // packed 16-bit state, 1 = released (idle). 0-bit = pressed.
         private int _irPacked = 0xFFFF;
-        private readonly uint[] _irOther = new uint[IrMmioSize / 4];
         private int _createFileHits;
         private int _ioctlTotal;
         private int _updateCount;
         private int _ir140Reads;
         private int _ir144Reads;
-        private int _irOtherReads;
         private string _framePath = "";
         private readonly Dictionary<uint, int> _ioctlCounts = new Dictionary<uint, int>();
         private readonly Dictionary<uint, string> _ioctlLast = new Dictionary<uint, string>();
@@ -125,8 +125,6 @@ namespace ProcessorEmulator.Emulation
             Height = DefaultHeight;
             Stride = DefaultWidth * BytesPerPixel;
             ModeId = 0;
-            for (int i = 0; i < _irOther.Length; i++)
-                _irOther[i] = 0;
         }
 
         public static bool TryOpenCreateFile(uint[] regs, ref uint programCounter)
@@ -353,27 +351,24 @@ namespace ProcessorEmulator.Emulation
             {
                 _ir140Reads++;
                 if (_ir140Reads <= 4 || (_ir140Reads % 1000) == 0)
-                    BootLog.Write("[BTV] IR MMIO read 0xB0400140 #" + _ir140Reads + " packed=0x" + _irPacked.ToString("X4"));
+                    BootLog.Write("[BTV] IR MMIO read phys 0x10400140 (kseg1 0xB0400140) #" + _ir140Reads + " packed=0x" + _irPacked.ToString("X4"));
                 return (uint)((_irPacked >> 8) & 0xFF);
             }
             if (offset == IrReg144)
             {
                 _ir144Reads++;
                 if (_ir144Reads <= 4 || (_ir144Reads % 1000) == 0)
-                    BootLog.Write("[BTV] IR MMIO read 0xB0400144 #" + _ir144Reads + " packed=0x" + _irPacked.ToString("X4"));
+                    BootLog.Write("[BTV] IR MMIO read phys 0x10400144 (kseg1 0xB0400144) #" + _ir144Reads + " packed=0x" + _irPacked.ToString("X4"));
                 return (uint)(_irPacked & 0xFF);
             }
-            if (offset + 4 <= IrMmioSize)
-                return _irOther[offset / 4];
             return 0;
         }
 
         public void WriteIr32(uint offset, uint value)
         {
-            if (offset == IrReg140 || offset == IrReg144)
-                return;
-            if (offset + 4 <= IrMmioSize)
-                _irOther[offset / 4] = value;
+            // 0x140/0x144 are read-side packed halfwords; do not let guest writes
+            // clobber the 0-bit=pressed idle state. Other offsets are not ours.
+            _ = value;
         }
 
         public static void WriteCaptureSummary()

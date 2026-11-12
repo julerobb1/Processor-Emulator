@@ -105,7 +105,7 @@ namespace ProcessorEmulator
             if (ExtraRomBtv.IsEnabled)
             {
                 ExtraRomBtv.Ensure();
-                _bus.AddDevice(new ExtraRomIrMmio());
+                _bus.AddOverlayDevice(new ExtraRomIrMmio());
             }
 
             NkLoadResult loaded;

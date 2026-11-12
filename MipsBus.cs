@@ -13,6 +13,9 @@ namespace ProcessorEmulator.Emulation
         // This gives 65,536 entries, each covering a 64KB chunk of the 4GB address space.
         private readonly IBusDevice[] _lookupTable = new IBusDevice[1 << 16];
         private readonly System.Collections.Generic.List<IBusDevice> _devices = new System.Collections.Generic.List<IBusDevice>();
+        // Sub-page overlays checked before the 64KB lookup so they do not
+        // steal a whole slot (BcmSysControlRegs at 0x10400000: calib 07C0/07C8, tick 07D4).
+        private readonly System.Collections.Generic.List<IBusDevice> _overlays = new System.Collections.Generic.List<IBusDevice>();
 
         private readonly CP0 _cp0;
         public bool IsBigEndian { get; set; } = true; // Default to Big Endian for MIPS set-top boxes
@@ -87,15 +90,46 @@ namespace ProcessorEmulator.Emulation
         // PACE_HOG: skip the WinCE VA remap hooks (off by default).
         public static bool NoCeHooks;
 
+        private IBusDevice DevAt(uint paddr, out uint off)
+        {
+            for (int i = 0; i < _overlays.Count; i++)
+            {
+                IBusDevice o = _overlays[i];
+                uint start = o.StartAddress;
+                if (paddr >= start && (paddr - start) < o.Size)
+                {
+                    off = paddr - start;
+                    return o;
+                }
+            }
+            IBusDevice d = _lookupTable[paddr >> 16];
+            off = d != null ? paddr - d.StartAddress : 0;
+            return d;
+        }
+
         private IBusDevice RawDev(uint vaddr, bool store, out uint off)
         {
             uint p = Translate(vaddr, store);
-            IBusDevice d = _lookupTable[p >> 16];
+            IBusDevice d = DevAt(p, out off);
             if (d == null)
                 throw new AddressErrorException($"{(store ? "Write to" : "Read from")} unmapped physical address 0x{p:X8}");
-            off = p - d.StartAddress;
             return d;
         }
+
+        /// <summary>
+        /// Sub-page device that does not claim a 64KB lookup slot.
+        /// EXTRAROM_BTV IR lives at phys 0x10400140/0x10400144 only, leaving
+        /// BcmSysControlRegs (calib 07C0/07C8, tick 07D4) on 0x10400000.
+        /// </summary>
+        public void AddOverlayDevice(IBusDevice device)
+        {
+            if (device == null)
+                throw new ArgumentNullException(nameof(device));
+            if (device.Size == 0)
+                throw new ArgumentException("overlay size must be non-zero", nameof(device));
+            _overlays.Add(device);
+        }
+
         public void AddDevice(IBusDevice device)
         {
             // Determine the start and end indices in the lookup table
@@ -197,11 +231,11 @@ namespace ProcessorEmulator.Emulation
             if (CeRomTocFiles.TrySkipBadALhuZero(this, vaddr))
                 return 0;
             uint paddr = Translate(vaddr, isStore: false);
-            IBusDevice device = _lookupTable[paddr >> 16];
+            IBusDevice device = DevAt(paddr, out uint devOff);
 
             if (device != null)
             {
-                uint val = device.Read32(paddr - device.StartAddress);
+                uint val = device.Read32(devOff);
                 PcSampler.NoteR(paddr, vaddr, val, origVa0);
                 return IsBigEndian ? Swap(val) : val;
             }
@@ -265,12 +299,12 @@ namespace ProcessorEmulator.Emulation
             try
             {
                 uint paddr = Translate(vaddr, isStore: true);
-                IBusDevice device = _lookupTable[paddr >> 16];
+                IBusDevice device = DevAt(paddr, out uint devOff);
 
                 if (device != null)
                 {
                     uint valueToStore = IsBigEndian ? Swap(value) : value;
-                    device.Write32(paddr - device.StartAddress, valueToStore);
+                    device.Write32(devOff, valueToStore);
                     return;
                 }
                 throw new AddressErrorException($"Write to unmapped physical address 0x{paddr:X8}");
@@ -321,13 +355,13 @@ namespace ProcessorEmulator.Emulation
             if (CeRomTocFiles.TrySkipBadALhuZero(this, vaddr))
                 return 0;
             uint paddr = Translate(vaddr, isStore: false);
-            IBusDevice device = _lookupTable[paddr >> 16];
+            IBusDevice device = DevAt(paddr, out uint devOff);
 
             if (device != null)
             {
                 // For byte access, endianness of the byte itself doesn't matter,
                 // but the address translation must be correct.
-                return device.Read8(paddr - device.StartAddress);
+                return device.Read8(devOff);
             }
             throw new AddressErrorException($"Read from unmapped physical address 0x{paddr:X8}");
         }
@@ -375,11 +409,11 @@ namespace ProcessorEmulator.Emulation
             try
             {
                 uint paddr = Translate(vaddr, isStore: true);
-                IBusDevice device = _lookupTable[paddr >> 16];
+                IBusDevice device = DevAt(paddr, out uint devOff);
 
                 if (device != null)
                 {
-                    device.Write8(paddr - device.StartAddress, value);
+                    device.Write8(devOff, value);
                     return;
                 }
                 throw new AddressErrorException($"Write to unmapped physical address 0x{paddr:X8}");
