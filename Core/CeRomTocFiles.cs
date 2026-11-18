@@ -47401,6 +47401,15 @@ private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
             return _ddiNopIatStoreN >= BindImpObserveMax;
         }
 
+        // Always use the per-process firmware PTE for 0x01FFF000
+        // (*0x01FFFFA0 hProcessHeap). Do not reuse _ddiNopInfoKseg
+        // for every process: that shared page let device.exe's
+        // HeapCreate overwrite filesys's heap handle, then FSDMGR
+        // HeapAlloc'd 0x06030000 and AVd. EXTRAROM_XIP_CURPROC
+        // stays off (gwes slot-0 remaps unchanged). If this
+        // process's walk misses, return the VA and let the TLB
+        // / ASID path handle it — never fall back to another
+        // process's cached page.
         public static uint MapDdiNopProcessInfoVa(MipsBus bus, uint va)
         {
             if (_ddiNopInfoPeekRaw || _ddiNopInfoBusy)
@@ -47409,16 +47418,9 @@ private static bool TryPlantLeftoverWait99ApiMethod(MipsBus bus,
                 return va;
             if (va < ProcessInfoPage || va >= 0x02000000u)
                 return va;
-            if (XipCurProcOn)
-            {
-                uint pp = PerProcInfoKseg(bus, va);
-                return pp != 0 ? (pp | (va & 0xFFFu)) : va;
-            }
-            if (_ddiNopInfoKseg != 0)
-                return _ddiNopInfoKseg | (va & 0xFFFu);
-            TryResolveDdiNopProcessInfo(bus);
-            if (_ddiNopInfoKseg != 0)
-                return _ddiNopInfoKseg | (va & 0xFFFu);
+            uint pp = PerProcInfoKseg(bus, va);
+            if (pp != 0)
+                return pp | (va & 0xFFFu);
             return va;
         }
 
